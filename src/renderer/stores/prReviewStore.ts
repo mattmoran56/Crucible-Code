@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { PRFile, PRComment, PRReviewEvent, PRMergeMethod } from '../../shared/types'
+import { useToastStore } from './toastStore'
 
 interface PRReviewState {
   prNumber: number | null
@@ -31,18 +32,24 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
 
   loadPR: async (repoPath, prNumber) => {
     set({ loading: true, prNumber, files: [], fullDiff: null, comments: [], selectedFilePath: null })
-    const [files, fullDiff, comments] = await Promise.all([
-      window.api.github.getFiles(repoPath, prNumber),
-      window.api.github.getDiff(repoPath, prNumber),
-      window.api.github.getComments(repoPath, prNumber),
-    ])
-    set({
-      files,
-      fullDiff,
-      comments,
-      loading: false,
-      selectedFilePath: files.length > 0 ? files[0].path : null,
-    })
+    try {
+      const [files, fullDiff, comments] = await Promise.all([
+        window.api.github.getFiles(repoPath, prNumber),
+        window.api.github.getDiff(repoPath, prNumber),
+        window.api.github.getComments(repoPath, prNumber),
+      ])
+      set({
+        files,
+        fullDiff,
+        comments,
+        loading: false,
+        selectedFilePath: files.length > 0 ? files[0].path : null,
+      })
+    } catch (err) {
+      const { addToast } = useToastStore.getState()
+      addToast('error', err instanceof Error ? err.message : String(err))
+      set({ loading: false })
+    }
   },
 
   selectFile: (filePath) => {
@@ -50,23 +57,37 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
   },
 
   addComment: async (repoPath, prNumber, body, path, line) => {
-    const comment = await window.api.github.createComment(repoPath, prNumber, body, path, line)
-    set({ comments: [...get().comments, comment] })
+    const { addToast } = useToastStore.getState()
+    try {
+      const comment = await window.api.github.createComment(repoPath, prNumber, body, path, line)
+      set({ comments: [...get().comments, comment] })
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+    }
   },
 
   submitReview: async (repoPath, prNumber, event, body) => {
+    const { addToast } = useToastStore.getState()
     set({ reviewLoading: true })
     try {
       await window.api.github.submitReview(repoPath, prNumber, event, body)
+      const label = event === 'APPROVE' ? 'Approved' : event === 'REQUEST_CHANGES' ? 'Changes requested' : 'Comment submitted'
+      addToast('success', `${label} on PR #${prNumber}`)
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
     } finally {
       set({ reviewLoading: false })
     }
   },
 
   merge: async (repoPath, prNumber, method) => {
+    const { addToast } = useToastStore.getState()
     set({ mergeLoading: true })
     try {
       await window.api.github.merge(repoPath, prNumber, method)
+      addToast('success', `PR #${prNumber} merged`)
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
     } finally {
       set({ mergeLoading: false })
     }

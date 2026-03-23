@@ -233,7 +233,8 @@ export function PRReviewPanel() {
           value={reviewBody}
           onChange={(e) => setReviewBody(e.target.value)}
           placeholder={reviewEvent === 'APPROVE' ? 'Optional comment...' : 'Describe the changes needed...'}
-          className="w-full bg-bg text-text text-xs border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-accent mb-4"
+          className="w-full bg-bg text-text text-xs border border-border rounded resize-none focus:outline-none focus:border-accent mb-4"
+          style={{ padding: '10px 12px' }}
           rows={4}
           autoFocus
         />
