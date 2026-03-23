@@ -31,57 +31,67 @@ const PRIcon = () => (
 )
 
 export function SessionWorkspace() {
-  const { activeWorkspaceTab, setActiveWorkspaceTab, activeSessionId, sessions } = useSessionStore()
-  const activeSession = sessions.find((s) => s.id === activeSessionId)
-  const hasPR = activeSession?.prNumber != null
+  const { activeWorkspaceTab, setActiveWorkspaceTab, activeSessionId, activePRNumber } = useSessionStore()
+
+  // PR-only mode: no session, just viewing a PR
+  const prOnlyMode = activePRNumber != null && activeSessionId == null
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Toolbar */}
       <div className="flex items-center bg-bg-tertiary border-b border-border" style={{ padding: '0 8px' }}>
-        <WorkspaceTab
-          active={activeWorkspaceTab === 'agent'}
-          onClick={() => setActiveWorkspaceTab('agent')}
-          icon={<TerminalIcon />}
-          label="Agent"
-        />
-        <WorkspaceTab
-          active={activeWorkspaceTab === 'git'}
-          onClick={() => setActiveWorkspaceTab('git')}
-          icon={<GitIcon />}
-          label="Git"
-        />
-        <WorkspaceTab
-          active={activeWorkspaceTab === 'pr'}
-          onClick={() => hasPR && setActiveWorkspaceTab('pr')}
-          icon={<PRIcon />}
-          label="PR"
-          disabled={!hasPR}
-        />
+        {!prOnlyMode && (
+          <>
+            <WorkspaceTab
+              active={activeWorkspaceTab === 'agent'}
+              onClick={() => setActiveWorkspaceTab('agent')}
+              icon={<TerminalIcon />}
+              label="Agent"
+            />
+            <WorkspaceTab
+              active={activeWorkspaceTab === 'git'}
+              onClick={() => setActiveWorkspaceTab('git')}
+              icon={<GitIcon />}
+              label="Git"
+            />
+          </>
+        )}
+        {(prOnlyMode || activePRNumber != null) && (
+          <WorkspaceTab
+            active={activeWorkspaceTab === 'pr'}
+            onClick={() => setActiveWorkspaceTab('pr')}
+            icon={<PRIcon />}
+            label="PR"
+          />
+        )}
       </div>
 
-      {/* Content — all panels always mounted, visibility toggled */}
+      {/* Content */}
       <div className="flex-1 flex flex-col min-h-0 relative">
-        <div
-          className="absolute inset-0 flex flex-col min-h-0"
-          style={{
-            visibility: activeWorkspaceTab === 'agent' ? 'visible' : 'hidden',
-            pointerEvents: activeWorkspaceTab === 'agent' ? 'auto' : 'none',
-            zIndex: activeWorkspaceTab === 'agent' ? 1 : 0,
-          }}
-        >
-          <TerminalPanel mode="claude" visible={activeWorkspaceTab === 'agent'} />
-        </div>
-        <div
-          className="absolute inset-0 flex min-h-0"
-          style={{
-            visibility: activeWorkspaceTab === 'git' ? 'visible' : 'hidden',
-            pointerEvents: activeWorkspaceTab === 'git' ? 'auto' : 'none',
-            zIndex: activeWorkspaceTab === 'git' ? 1 : 0,
-          }}
-        >
-          <GitPanel />
-        </div>
+        {!prOnlyMode && (
+          <>
+            <div
+              className="absolute inset-0 flex flex-col min-h-0"
+              style={{
+                visibility: activeWorkspaceTab === 'agent' ? 'visible' : 'hidden',
+                pointerEvents: activeWorkspaceTab === 'agent' ? 'auto' : 'none',
+                zIndex: activeWorkspaceTab === 'agent' ? 1 : 0,
+              }}
+            >
+              <TerminalPanel mode="claude" visible={activeWorkspaceTab === 'agent'} />
+            </div>
+            <div
+              className="absolute inset-0 flex min-h-0"
+              style={{
+                visibility: activeWorkspaceTab === 'git' ? 'visible' : 'hidden',
+                pointerEvents: activeWorkspaceTab === 'git' ? 'auto' : 'none',
+                zIndex: activeWorkspaceTab === 'git' ? 1 : 0,
+              }}
+            >
+              <GitPanel />
+            </div>
+          </>
+        )}
         <div
           className="absolute inset-0 flex min-h-0"
           style={{
@@ -102,32 +112,27 @@ function WorkspaceTab({
   onClick,
   icon,
   label,
-  disabled,
 }: {
   active: boolean
   onClick: () => void
   icon: React.ReactNode
   label: string
-  disabled?: boolean
 }) {
   return (
     <button
-      onClick={disabled ? undefined : onClick}
+      onClick={onClick}
       role="tab"
       aria-selected={active}
-      aria-disabled={disabled}
       className={`flex items-center gap-1.5 text-xs transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-        disabled
-          ? 'text-text-muted/30 cursor-not-allowed'
-          : active
-            ? 'text-text'
-            : 'text-text-muted hover:text-text'
+        active
+          ? 'text-text'
+          : 'text-text-muted hover:text-text'
       }`}
       style={{ padding: '8px 12px' }}
     >
       {icon}
       {label}
-      {active && !disabled && (
+      {active && (
         <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />
       )}
     </button>

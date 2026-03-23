@@ -21,4 +21,8 @@ export function registerGitHandlers() {
       return gitService.getFileDiff(repoPath, commitHash, filePath)
     }
   )
+
+  ipcMain.handle(IPC.GIT_CHECKOUT, async (_e, repoPath: string, branch: string) => {
+    return gitService.checkoutBranch(repoPath, branch)
+  })
 }

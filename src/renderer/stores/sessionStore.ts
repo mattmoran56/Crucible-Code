@@ -6,18 +6,21 @@ type WorkspaceTab = 'agent' | 'git' | 'pr'
 interface SessionState {
   sessions: Session[]
   activeSessionId: string | null
+  activePRNumber: number | null
   activeWorkspaceTab: WorkspaceTab
   loadSessions: (projectId: string) => Promise<void>
   createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string) => Promise<void>
-  createSessionForPR: (projectId: string, repoPath: string, pr: PullRequest) => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
   setActiveSession: (id: string) => void
   setActiveWorkspaceTab: (tab: WorkspaceTab) => void
+  openPR: (repoPath: string, pr: PullRequest) => Promise<void>
+  closePR: () => void
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
+  activePRNumber: null,
   activeWorkspaceTab: 'agent' as WorkspaceTab,
 
   loadSessions: async (projectId: string) => {
@@ -41,7 +44,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const sessions = [...get().sessions, session]
     await window.api.session.save(projectId, sessions)
-    set({ sessions, activeSessionId: session.id })
+    set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent' })
   },
 
   removeSession: async (projectId, repoPath, sessionId) => {
@@ -66,36 +69,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  createSessionForPR: async (projectId, repoPath, pr) => {
-    // If a session already exists for this branch, just activate it
-    const existing = get().sessions.find((s) => s.branchName === pr.headRefName)
-    if (existing) {
-      set({ activeSessionId: existing.id, activeWorkspaceTab: 'pr' })
-      return
-    }
-
-    const sessionName = `pr-${pr.number}`
-    const wtInfo = await window.api.worktree.createFromBranch(repoPath, sessionName, pr.headRefName)
-    const session: Session = {
-      id: crypto.randomUUID(),
-      name: `PR #${pr.number}: ${pr.title}`,
-      branchName: wtInfo.branch,
-      worktreePath: wtInfo.path,
-      projectId,
-      createdAt: new Date().toISOString(),
-      prNumber: pr.number,
-    }
-
-    const sessions = [...get().sessions, session]
-    await window.api.session.save(projectId, sessions)
-    set({ sessions, activeSessionId: session.id, activeWorkspaceTab: 'pr' })
-  },
-
   setActiveSession: (id: string) => {
-    set({ activeSessionId: id })
+    set({ activeSessionId: id, activePRNumber: null, activeWorkspaceTab: 'agent' })
   },
 
   setActiveWorkspaceTab: (tab: WorkspaceTab) => {
     set({ activeWorkspaceTab: tab })
+  },
+
+  openPR: async (repoPath, pr) => {
+    // Checkout the PR branch in the main repo
+    await window.api.git.checkout(repoPath, pr.headRefName)
+    set({
+      activeSessionId: null,
+      activePRNumber: pr.number,
+      activeWorkspaceTab: 'pr',
+    })
+  },
+
+  closePR: () => {
+    set({ activePRNumber: null })
   },
 }))

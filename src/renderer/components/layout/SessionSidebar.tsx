@@ -14,7 +14,7 @@ const PR_POLL_INTERVAL = 30_000
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, loadSessions, setActiveSession, removeSession, createSessionForPR } =
+  const { sessions, activeSessionId, activePRNumber, loadSessions, setActiveSession, removeSession, openPR } =
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, markSeen, clear: clearPRs } =
     usePRStore()
@@ -83,7 +83,7 @@ export function SessionSidebar() {
 
   const handlePRClick = async (pr: (typeof pullRequests)[0]) => {
     markSeen(activeProject.id, pr.number)
-    await createSessionForPR(activeProject.id, activeProject.repoPath, pr)
+    await openPR(activeProject.repoPath, pr)
   }
 
   return (
@@ -142,7 +142,7 @@ export function SessionSidebar() {
                   key={pr.number}
                   pr={pr}
                   isNew={!seenPRs.includes(pr.number)}
-                  isActive={sessions.some((s) => s.branchName === pr.headRefName)}
+                  isActive={activePRNumber === pr.number}
                   onClick={() => handlePRClick(pr)}
                 />
               ))

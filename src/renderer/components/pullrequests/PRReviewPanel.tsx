@@ -45,7 +45,7 @@ function extractFileDiff(fullDiff: string, filePath: string): string {
 }
 
 export function PRReviewPanel() {
-  const { activeSessionId, sessions } = useSessionStore()
+  const { activePRNumber } = useSessionStore()
   const { projects, activeProjectId } = useProjectStore()
   const {
     files, selectedFilePath, fullDiff, comments, loading,
@@ -58,13 +58,12 @@ export function PRReviewPanel() {
   const [reviewBody, setReviewBody] = useState('')
   const [showMergeConfirm, setShowMergeConfirm] = useState(false)
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId)
   const activeProject = projects.find((p) => p.id === activeProjectId)
-  const prNumber = activeSession?.prNumber
+  const prNumber = activePRNumber
 
   const filesCol = useResizable({ direction: 'horizontal', initialSize: 240, minSize: 160, maxSize: 400 })
 
-  // Load PR data when session changes
+  // Load PR data when active PR changes
   useEffect(() => {
     if (prNumber && activeProject) {
       loadPR(activeProject.repoPath, prNumber)

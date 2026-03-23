@@ -11,6 +11,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_DIFF, repoPath, commitHash),
     fileDiff: (repoPath: string, commitHash: string, filePath: string): Promise<string> =>
       ipcRenderer.invoke(IPC.GIT_FILE_DIFF, repoPath, commitHash, filePath),
+    checkout: (repoPath: string, branch: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_CHECKOUT, repoPath, branch),
   },
 
   worktree: {

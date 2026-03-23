@@ -5,6 +5,7 @@ export const IPC = {
   GIT_LOG: 'git:log',
   GIT_DIFF: 'git:diff',
   GIT_FILE_DIFF: 'git:file-diff',
+  GIT_CHECKOUT: 'git:checkout',
 
   // Worktree
   WORKTREE_CREATE: 'worktree:create',

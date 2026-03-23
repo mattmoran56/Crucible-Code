@@ -47,6 +47,17 @@ export async function getFileDiff(
   return patch
 }
 
+export async function checkoutBranch(repoPath: string, branch: string): Promise<void> {
+  const g = git(repoPath)
+  await g.raw(['fetch', 'origin', branch])
+  // Try checking out existing local branch, or create from origin
+  try {
+    await g.raw(['checkout', branch])
+  } catch {
+    await g.raw(['checkout', '-b', branch, `origin/${branch}`])
+  }
+}
+
 export async function getWorkingDiff(repoPath: string): Promise<string> {
   const g = git(repoPath)
   // Show both staged and unstaged changes
