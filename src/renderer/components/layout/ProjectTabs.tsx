@@ -46,7 +46,8 @@ export function ProjectTabs() {
       {/* Add project — right aligned with padding */}
       <button
         onClick={addProject}
-        className="titlebar-no-drag px-5 py-1.5 mr-4 rounded text-xs text-text-muted hover:text-text hover:bg-bg-secondary border border-border transition-colors"
+        className="titlebar-no-drag rounded text-xs text-text-muted hover:text-text hover:bg-bg-secondary border border-border transition-colors"
+        style={{ padding: '8px 20px', marginRight: '20px' }}
         title="Add project"
       >
         Add Project
