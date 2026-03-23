@@ -22,8 +22,8 @@ const api = {
   },
 
   terminal: {
-    spawn: (sessionId: string, cwd: string): Promise<string> =>
-      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd),
+    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude'): Promise<string> =>
+      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd, mode),
     write: (terminalId: string, data: string) =>
       ipcRenderer.invoke(IPC.TERMINAL_WRITE, terminalId, data),
     resize: (terminalId: string, cols: number, rows: number) =>

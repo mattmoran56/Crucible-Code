@@ -41,10 +41,28 @@ export function SessionWorkspace() {
         />
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col min-h-0">
-        {activeTab === 'agent' && <TerminalPanel />}
-        {activeTab === 'git' && <GitPanel />}
+      {/* Content — both panels always mounted, visibility toggled */}
+      <div className="flex-1 flex flex-col min-h-0 relative">
+        <div
+          className="absolute inset-0 flex flex-col min-h-0"
+          style={{
+            visibility: activeTab === 'agent' ? 'visible' : 'hidden',
+            pointerEvents: activeTab === 'agent' ? 'auto' : 'none',
+            zIndex: activeTab === 'agent' ? 1 : 0,
+          }}
+        >
+          <TerminalPanel mode="claude" visible={activeTab === 'agent'} />
+        </div>
+        <div
+          className="absolute inset-0 flex min-h-0"
+          style={{
+            visibility: activeTab === 'git' ? 'visible' : 'hidden',
+            pointerEvents: activeTab === 'git' ? 'auto' : 'none',
+            zIndex: activeTab === 'git' ? 1 : 0,
+          }}
+        >
+          <GitPanel />
+        </div>
       </div>
     </div>
   )

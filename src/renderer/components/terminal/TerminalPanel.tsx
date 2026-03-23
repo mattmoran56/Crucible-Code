@@ -1,45 +1,55 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect } from 'react'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useSessionStore } from '../../stores/sessionStore'
-import { useTerminal } from './useTerminal'
+import { TerminalView } from './TerminalView'
 
-export function TerminalPanel() {
+interface Props {
+  mode?: 'shell' | 'claude'
+  visible?: boolean
+}
+
+export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
   const { activeSessionId, sessions } = useSessionStore()
-  const { terminals, spawnTerminal } = useTerminalStore()
-  const [terminalId, setTerminalId] = useState<string | null>(null)
+  const { terminals, spawnTerminal, getTerminal } = useTerminalStore()
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId)
-
+  // Ensure every session gets a terminal spawned when it becomes active
   useEffect(() => {
-    if (!activeSession) {
-      setTerminalId(null)
-      return
+    const activeSession = sessions.find((s) => s.id === activeSessionId)
+    if (!activeSession) return
+
+    const existing = getTerminal(activeSession.id, mode)
+    if (!existing) {
+      spawnTerminal(activeSession.id, activeSession.worktreePath, mode)
     }
+  }, [activeSessionId, mode, sessions, getTerminal, spawnTerminal])
 
-    const existing = terminals[activeSession.id]
-    if (existing) {
-      setTerminalId(existing.terminalId)
-    } else {
-      spawnTerminal(activeSession.id, activeSession.worktreePath).then(setTerminalId)
-    }
-  }, [activeSession, terminals, spawnTerminal])
-
-  const { containerRef } = useTerminal({
-    terminalId,
-    sessionName: activeSession?.name ?? '',
-  })
-
-  if (!activeSession) {
+  if (sessions.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
-        Select a session to open a terminal
+        Select a session to get started
       </div>
     )
   }
 
+  // Render a TerminalView for every session that has a terminal of this mode.
+  // All stay mounted; only the active one is visible.
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <div ref={containerRef} className="flex-1 min-h-0 p-1" />
+    <div className="flex-1 relative min-h-0">
+      {sessions.map((session) => {
+        const instance = getTerminal(session.id, mode)
+        if (!instance) return null
+
+        const isActive = session.id === activeSessionId && visible
+
+        return (
+          <TerminalView
+            key={instance.terminalId}
+            terminalId={instance.terminalId}
+            sessionName={session.name}
+            visible={isActive}
+          />
+        )
+      })}
     </div>
   )
 }
