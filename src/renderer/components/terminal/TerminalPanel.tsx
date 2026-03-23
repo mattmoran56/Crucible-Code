@@ -45,6 +45,7 @@ export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
           <TerminalView
             key={instance.terminalId}
             terminalId={instance.terminalId}
+            sessionId={session.id}
             sessionName={session.name}
             visible={isActive}
           />

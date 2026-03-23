@@ -45,6 +45,34 @@ const api = {
   notification: {
     show: (title: string, body: string) =>
       ipcRenderer.invoke(IPC.NOTIFICATION_SHOW, title, body),
+    getPort: (): Promise<number | null> => ipcRenderer.invoke(IPC.NOTIFICATION_GET_PORT),
+    triggerForSession: (sessionId: string, sessionName: string) =>
+      ipcRenderer.invoke(IPC.NOTIFICATION_HOOK_EVENT, sessionId, sessionName),
+    onHookEvent: (callback: (sessionId: string) => void) => {
+      const listener = (_e: any, sessionId: string) => callback(sessionId)
+      ipcRenderer.on(IPC.NOTIFICATION_HOOK_EVENT, listener)
+      return () => ipcRenderer.removeListener(IPC.NOTIFICATION_HOOK_EVENT, listener)
+    },
+    registerSession: (
+      sessionId: string,
+      sessionName: string,
+      projectId: string,
+      worktreePath: string
+    ) =>
+      ipcRenderer.invoke(
+        'notification:register-session',
+        sessionId,
+        sessionName,
+        projectId,
+        worktreePath
+      ),
+    unregisterSession: (worktreePath: string) =>
+      ipcRenderer.invoke('notification:unregister-session', worktreePath),
+  },
+
+  focus: {
+    setActiveContext: (projectId: string | null, sessionId: string | null) =>
+      ipcRenderer.invoke(IPC.FOCUS_SET_ACTIVE_CONTEXT, projectId, sessionId),
   },
 
   project: {

@@ -3,12 +3,13 @@ import { useTerminal } from './useTerminal'
 
 interface Props {
   terminalId: string
+  sessionId: string
   sessionName: string
   visible: boolean
 }
 
-export function TerminalView({ terminalId, sessionName, visible }: Props) {
-  const { containerRef } = useTerminal({ terminalId, sessionName, visible })
+export function TerminalView({ terminalId, sessionId, sessionName, visible }: Props) {
+  const { containerRef } = useTerminal({ terminalId, sessionId, sessionName, visible })
 
   return (
     <div

@@ -21,6 +21,12 @@ export const IPC = {
 
   // Notifications
   NOTIFICATION_SHOW: 'notification:show',
+  NOTIFICATION_HOOK_EVENT: 'notification:hook-event',
+  NOTIFICATION_CLEAR: 'notification:clear',
+  NOTIFICATION_GET_PORT: 'notification:get-port',
+
+  // Focus tracking
+  FOCUS_SET_ACTIVE_CONTEXT: 'focus:set-active-context',
 
   // Projects (persisted via electron-store)
   PROJECT_LIST: 'project:list',

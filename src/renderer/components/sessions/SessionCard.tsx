@@ -7,6 +7,7 @@ import { Button } from '../ui/Button'
 interface Props {
   session: Session
   isActive: boolean
+  hasPendingNotification: boolean
   onClick: () => void
   onDelete: () => void
 }
@@ -18,7 +19,7 @@ const TrashIcon = () => (
   </svg>
 )
 
-export function SessionCard({ session, isActive, onClick, onDelete }: Props) {
+export function SessionCard({ session, isActive, hasPendingNotification, onClick, onDelete }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
 
   return (
@@ -32,7 +33,12 @@ export function SessionCard({ session, isActive, onClick, onDelete }: Props) {
         }`}
         style={{ padding: '8px 12px' }}
       >
-        <div className="font-medium truncate pr-5">{session.name}</div>
+        <div className="flex items-center gap-2">
+          <div className="font-medium truncate flex-1 pr-5">{session.name}</div>
+          {hasPendingNotification && (
+            <span className="shrink-0 w-2 h-2 rounded-full bg-warning" />
+          )}
+        </div>
         <div className="text-text-muted text-[10px] mt-1 truncate pr-5">
           {session.branchName}
         </div>

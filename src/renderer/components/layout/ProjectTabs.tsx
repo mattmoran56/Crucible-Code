@@ -1,5 +1,7 @@
 import React from 'react'
 import { useProjectStore } from '../../stores/projectStore'
+import { useSessionStore } from '../../stores/sessionStore'
+import { useNotificationStore } from '../../stores/notificationStore'
 import { TabBar, Tab } from '../ui/TabBar'
 import { IconButton } from '../ui/IconButton'
 import { Button } from '../ui/Button'
@@ -7,6 +9,11 @@ import { Button } from '../ui/Button'
 export function ProjectTabs() {
   const { projects, activeProjectId, setActiveProject, addProject, removeProject } =
     useProjectStore()
+  const { sessions } = useSessionStore()
+  const { pendingSessionIds } = useNotificationStore()
+
+  const getPendingCount = (projectId: string) =>
+    sessions.filter((s) => s.projectId === projectId && pendingSessionIds.has(s.id)).length
 
   return (
     <div className="titlebar-drag flex h-11 items-center bg-bg-tertiary border-b border-border">
@@ -23,6 +30,14 @@ export function ProjectTabs() {
             className="titlebar-no-drag group w-44 px-5"
           >
             <span className="truncate">{project.name}</span>
+            {(() => {
+              const count = getPendingCount(project.id)
+              return count > 0 ? (
+                <span className="shrink-0 min-w-[16px] h-4 px-1 rounded-full bg-warning text-bg text-[10px] font-bold flex items-center justify-center leading-none">
+                  {count}
+                </span>
+              ) : null
+            })()}
             <IconButton
               label={`Close ${project.name}`}
               variant="ghost"
