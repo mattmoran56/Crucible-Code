@@ -4,6 +4,7 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { CommitList } from './CommitList'
 import { ChangedFiles } from './ChangedFiles'
 import { DiffViewer } from './DiffViewer'
+import { IconButton } from '../ui/IconButton'
 
 export function GitPanel() {
   const { activeSessionId, sessions } = useSessionStore()
@@ -33,13 +34,13 @@ export function GitPanel() {
       <div className="w-72 border-r border-border flex flex-col min-h-0">
         <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted flex items-center justify-between">
           <span>Commits</span>
-          <button
+          <IconButton
+            label="Refresh commits"
             onClick={() => loadCommits(activeSession.worktreePath)}
             className="text-accent hover:text-accent-hover"
-            title="Refresh"
           >
             ↻
-          </button>
+          </IconButton>
         </div>
         <CommitList repoPath={activeSession.worktreePath} />
       </div>

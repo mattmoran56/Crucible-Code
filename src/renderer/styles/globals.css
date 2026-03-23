@@ -1,6 +1,19 @@
 @import "tailwindcss";
 
-@theme {
+/*
+ * Theme system
+ *
+ * Colors are defined as CSS custom properties on [data-theme].
+ * The @theme block maps them into Tailwind so utilities like
+ * bg-bg, text-accent, border-border etc. work automatically.
+ *
+ * To add a new theme: add a [data-theme="your-theme"] block below
+ * with the same custom property names. Switch theme by setting
+ * data-theme on <html>.
+ */
+
+/* --- Tokyo Night (default dark) --- */
+[data-theme="dark"], :root {
   --color-bg: #1a1b26;
   --color-bg-secondary: #24283b;
   --color-bg-tertiary: #1f2335;
@@ -12,6 +25,51 @@
   --color-success: #9ece6a;
   --color-danger: #f7768e;
   --color-warning: #e0af68;
+}
+
+/* --- Light --- */
+[data-theme="light"] {
+  --color-bg: #f5f5f5;
+  --color-bg-secondary: #e8e8e8;
+  --color-bg-tertiary: #efefef;
+  --color-border: #d0d0d0;
+  --color-text: #1a1a2e;
+  --color-text-muted: #6b7280;
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+  --color-success: #22c55e;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+}
+
+/* --- Ultra Dark --- */
+[data-theme="ultra-dark"] {
+  --color-bg: #0d0d0d;
+  --color-bg-secondary: #141414;
+  --color-bg-tertiary: #111111;
+  --color-border: #252525;
+  --color-text: #d4d4d4;
+  --color-text-muted: #525252;
+  --color-accent: #6d9efd;
+  --color-accent-hover: #85b0ff;
+  --color-success: #4ade80;
+  --color-danger: #fb7185;
+  --color-warning: #fbbf24;
+}
+
+/* Tailwind theme tokens — reference the CSS custom properties */
+@theme {
+  --color-bg: var(--color-bg);
+  --color-bg-secondary: var(--color-bg-secondary);
+  --color-bg-tertiary: var(--color-bg-tertiary);
+  --color-border: var(--color-border);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-success: var(--color-success);
+  --color-danger: var(--color-danger);
+  --color-warning: var(--color-warning);
 }
 
 * {
