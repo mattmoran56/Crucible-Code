@@ -33,7 +33,7 @@ export function ProjectTabs() {
             {(() => {
               const count = getPendingCount(project.id)
               return count > 0 ? (
-                <span className="shrink-0 min-w-[16px] h-4 px-1 rounded-full bg-warning text-bg text-[10px] font-bold flex items-center justify-center leading-none">
+                <span className="shrink-0 min-w-[16px] h-4 px-1 ml-2 rounded-full bg-warning text-bg text-[10px] font-bold flex items-center justify-center leading-none">
                   {count}
                 </span>
               ) : null
