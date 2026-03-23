@@ -31,4 +31,12 @@ export const IPC = {
   // Sessions
   SESSION_LIST: 'session:list',
   SESSION_SAVE: 'session:save',
+
+  // Pull Requests
+  PR_LIST: 'pr:list',
+  PR_SEEN_GET: 'pr:seen:get',
+  PR_SEEN_SET: 'pr:seen:set',
+
+  // Worktree (remote branch)
+  WORKTREE_CREATE_FROM_BRANCH: 'worktree:create-from-branch',
 } as const

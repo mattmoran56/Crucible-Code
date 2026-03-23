@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest } from '../shared/types'
 
 const api = {
   git: {
@@ -19,6 +19,12 @@ const api = {
     list: (repoPath: string) => ipcRenderer.invoke(IPC.WORKTREE_LIST, repoPath),
     remove: (repoPath: string, worktreePath: string) =>
       ipcRenderer.invoke(IPC.WORKTREE_REMOVE, repoPath, worktreePath),
+    createFromBranch: (
+      repoPath: string,
+      sessionName: string,
+      remoteBranch: string
+    ): Promise<{ path: string; branch: string }> =>
+      ipcRenderer.invoke(IPC.WORKTREE_CREATE_FROM_BRANCH, repoPath, sessionName, remoteBranch),
   },
 
   terminal: {
@@ -53,6 +59,15 @@ const api = {
     remove: (projectId: string): Promise<Project[]> =>
       ipcRenderer.invoke(IPC.PROJECT_REMOVE, projectId),
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.PROJECT_SELECT_FOLDER),
+  },
+
+  github: {
+    listPRs: (repoPath: string): Promise<PullRequest[]> =>
+      ipcRenderer.invoke(IPC.PR_LIST, repoPath),
+    getSeenPRs: (projectId: string): Promise<number[]> =>
+      ipcRenderer.invoke(IPC.PR_SEEN_GET, projectId),
+    markPRSeen: (projectId: string, prNumber: number): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_SEEN_SET, projectId, prNumber),
   },
 
   session: {

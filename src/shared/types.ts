@@ -31,3 +31,11 @@ export interface WorktreeInfo {
   path: string
   branch: string
 }
+
+export interface PullRequest {
+  number: number
+  title: string
+  headRefName: string
+  author: string
+  updatedAt: string
+}

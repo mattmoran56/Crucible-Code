@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { GitPanel } from '../git/GitPanel'
 import { TerminalPanel } from '../terminal/TerminalPanel'
+import { useSessionStore } from '../../stores/sessionStore'
 
 const TerminalIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -18,24 +19,22 @@ const GitIcon = () => (
   </svg>
 )
 
-type ViewTab = 'agent' | 'git'
-
 export function SessionWorkspace() {
-  const [activeTab, setActiveTab] = useState<ViewTab>('agent')
+  const { activeWorkspaceTab, setActiveWorkspaceTab } = useSessionStore()
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Toolbar */}
       <div className="flex items-center bg-bg-tertiary border-b border-border" style={{ padding: '0 8px' }}>
         <WorkspaceTab
-          active={activeTab === 'agent'}
-          onClick={() => setActiveTab('agent')}
+          active={activeWorkspaceTab === 'agent'}
+          onClick={() => setActiveWorkspaceTab('agent')}
           icon={<TerminalIcon />}
           label="Agent"
         />
         <WorkspaceTab
-          active={activeTab === 'git'}
-          onClick={() => setActiveTab('git')}
+          active={activeWorkspaceTab === 'git'}
+          onClick={() => setActiveWorkspaceTab('git')}
           icon={<GitIcon />}
           label="Git"
         />
@@ -46,19 +45,19 @@ export function SessionWorkspace() {
         <div
           className="absolute inset-0 flex flex-col min-h-0"
           style={{
-            visibility: activeTab === 'agent' ? 'visible' : 'hidden',
-            pointerEvents: activeTab === 'agent' ? 'auto' : 'none',
-            zIndex: activeTab === 'agent' ? 1 : 0,
+            visibility: activeWorkspaceTab === 'agent' ? 'visible' : 'hidden',
+            pointerEvents: activeWorkspaceTab === 'agent' ? 'auto' : 'none',
+            zIndex: activeWorkspaceTab === 'agent' ? 1 : 0,
           }}
         >
-          <TerminalPanel mode="claude" visible={activeTab === 'agent'} />
+          <TerminalPanel mode="claude" visible={activeWorkspaceTab === 'agent'} />
         </div>
         <div
           className="absolute inset-0 flex min-h-0"
           style={{
-            visibility: activeTab === 'git' ? 'visible' : 'hidden',
-            pointerEvents: activeTab === 'git' ? 'auto' : 'none',
-            zIndex: activeTab === 'git' ? 1 : 0,
+            visibility: activeWorkspaceTab === 'git' ? 'visible' : 'hidden',
+            pointerEvents: activeWorkspaceTab === 'git' ? 'auto' : 'none',
+            zIndex: activeWorkspaceTab === 'git' ? 1 : 0,
           }}
         >
           <GitPanel />
