@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useGitStore } from '../../stores/gitStore'
+import { Button } from '../ui/Button'
 import type { PRComment } from '../../../shared/types'
 
 // --- Patch parsing ---
@@ -314,26 +315,28 @@ function SplitView({
 
 function DiffModeToggle({ mode, onChange }: { mode: DiffMode; onChange: (m: DiffMode) => void }) {
   return (
-    <div className="flex text-[10px] border border-border rounded overflow-hidden ml-3">
-      <button
+    <div className="flex gap-1 ml-3">
+      <Button
+        variant={mode === 'unified' ? 'primary' : 'ghost'}
+        size="sm"
         onClick={() => onChange('unified')}
-        className={`px-3 py-1 ${mode === 'unified' ? 'bg-accent text-bg' : 'text-text-muted hover:text-text'}`}
       >
         Unified
-      </button>
-      <button
+      </Button>
+      <Button
+        variant={mode === 'split' ? 'primary' : 'ghost'}
+        size="sm"
         onClick={() => onChange('split')}
-        className={`px-3 py-1 ${mode === 'split' ? 'bg-accent text-bg' : 'text-text-muted hover:text-text'}`}
       >
         Split
-      </button>
+      </Button>
     </div>
   )
 }
 
 function DiffHeader({ filePath, mode, onModeChange }: { filePath: string; mode: DiffMode; onModeChange: (m: DiffMode) => void }) {
   return (
-    <div className="px-3 py-2 bg-bg-tertiary border-b border-border flex items-center justify-between">
+    <div className="px-3 py-2.5 bg-bg-tertiary border-b border-border flex items-center justify-between">
       <span className="text-xs text-text-muted truncate">{filePath}</span>
       <DiffModeToggle mode={mode} onChange={onModeChange} />
     </div>
