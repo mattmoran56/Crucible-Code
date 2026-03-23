@@ -6,7 +6,7 @@ import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, loadSessions, setActiveSession } = useSessionStore()
+  const { sessions, activeSessionId, loadSessions, setActiveSession, removeSession } = useSessionStore()
   const [showCreate, setShowCreate] = useState(false)
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
@@ -49,6 +49,7 @@ export function SessionSidebar() {
             session={session}
             isActive={session.id === activeSessionId}
             onClick={() => setActiveSession(session.id)}
+            onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
           />
         ))}
         {sessions.length === 0 && (
