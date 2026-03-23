@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useGitStore } from '../../stores/gitStore'
-import { Button } from '../ui/Button'
+import { ToggleGroup } from '../ui/ToggleGroup'
 import type { PRComment } from '../../../shared/types'
 
 // --- Patch parsing ---
@@ -311,34 +311,21 @@ function SplitView({
   )
 }
 
-// --- Toggle button ---
+// --- Diff header with mode toggle ---
 
-function DiffModeToggle({ mode, onChange }: { mode: DiffMode; onChange: (m: DiffMode) => void }) {
-  return (
-    <div className="flex gap-1 ml-3">
-      <Button
-        variant={mode === 'unified' ? 'primary' : 'ghost'}
-        size="sm"
-        onClick={() => onChange('unified')}
-      >
-        Unified
-      </Button>
-      <Button
-        variant={mode === 'split' ? 'primary' : 'ghost'}
-        size="sm"
-        onClick={() => onChange('split')}
-      >
-        Split
-      </Button>
-    </div>
-  )
-}
+const DIFF_MODE_OPTIONS = [
+  { value: 'unified' as DiffMode, label: 'Unified' },
+  { value: 'split' as DiffMode, label: 'Split' },
+]
 
 function DiffHeader({ filePath, mode, onModeChange }: { filePath: string; mode: DiffMode; onModeChange: (m: DiffMode) => void }) {
   return (
-    <div className="px-3 py-2.5 bg-bg-tertiary border-b border-border flex items-center justify-between">
-      <span className="text-xs text-text-muted truncate">{filePath}</span>
-      <DiffModeToggle mode={mode} onChange={onModeChange} />
+    <div
+      className="bg-bg-tertiary border-b border-border flex items-center justify-between"
+      style={{ padding: '6px 12px' }}
+    >
+      <span className="text-xs text-text-muted truncate mr-3">{filePath}</span>
+      <ToggleGroup options={DIFF_MODE_OPTIONS} value={mode} onChange={onModeChange} />
     </div>
   )
 }
