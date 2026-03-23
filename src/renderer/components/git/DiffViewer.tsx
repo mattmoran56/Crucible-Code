@@ -1,7 +1,12 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useMemo } from 'react'
 import { useGitStore } from '../../stores/gitStore'
 import { ToggleGroup } from '../ui/ToggleGroup'
+import { Button } from '../ui/Button'
+import { marked } from 'marked'
 import type { PRComment } from '../../../shared/types'
+
+// Configure marked for inline rendering
+marked.setOptions({ breaks: true })
 
 // --- Patch parsing ---
 
@@ -275,18 +280,19 @@ function InlineCommentForm({
             if (e.key === 'Escape') onCancel()
           }}
         />
-        <div className="flex flex-col gap-1">
-          <button
+        <div className="flex flex-col gap-1.5">
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => {
               if (text.trim()) onSubmit(text.trim())
             }}
-            className="text-[10px] px-2 py-0.5 bg-accent text-bg rounded hover:bg-accent-hover"
           >
             Comment
-          </button>
-          <button onClick={onCancel} className="text-[10px] px-2 py-0.5 text-text-muted hover:text-text">
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -295,14 +301,26 @@ function InlineCommentForm({
 
 // --- Inline comment display ---
 
+function formatTime(dateStr: string): string {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+    ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
 function InlineComment({ comment }: { comment: PRComment }) {
+  const html = useMemo(() => marked.parse(comment.body) as string, [comment.body])
+
   return (
-    <div className="px-2 py-1.5 bg-bg-secondary border-y border-border">
-      <div className="flex items-center gap-2 text-[10px] text-text-muted mb-1">
-        <span className="font-medium text-text">{comment.author}</span>
-        <span>{new Date(comment.createdAt).toLocaleDateString()}</span>
+    <div className="px-3 py-2 bg-bg-secondary border-y border-border" style={{ marginLeft: '20px' }}>
+      <div className="flex items-center gap-2 text-[10px] text-text-muted mb-2">
+        <span className="font-semibold text-text">{comment.author}</span>
+        <span>&middot;</span>
+        <span>{formatTime(comment.createdAt)}</span>
       </div>
-      <div className="text-xs text-text whitespace-pre-wrap">{comment.body}</div>
+      <div
+        className="text-xs text-text prose prose-xs prose-invert max-w-none [&_p]:my-1 [&_code]:bg-bg-tertiary [&_code]:px-1 [&_code]:rounded [&_pre]:bg-bg-tertiary [&_pre]:p-2 [&_pre]:rounded [&_a]:text-accent"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   )
 }
@@ -459,27 +477,43 @@ function SplitView({
                 <pre className="flex-1 whitespace-pre-wrap break-all">{row.right?.content ?? ''}</pre>
               </div>
             </div>
-            {leftComments.map((c) => (
-              <InlineComment key={c.id} comment={c} />
-            ))}
-            {showLeftForm && (
-              <InlineCommentForm
-                startLine={commentRange.startLine}
-                endLine={commentRange.endLine}
-                onSubmit={submitComment}
-                onCancel={cancelComment}
-              />
+            {/* Left-side comments/form */}
+            {(leftComments.length > 0 || showLeftForm) && (
+              <div className="flex">
+                <div className="w-1/2 border-r border-border">
+                  {leftComments.map((c) => (
+                    <InlineComment key={c.id} comment={c} />
+                  ))}
+                  {showLeftForm && (
+                    <InlineCommentForm
+                      startLine={commentRange.startLine}
+                      endLine={commentRange.endLine}
+                      onSubmit={submitComment}
+                      onCancel={cancelComment}
+                    />
+                  )}
+                </div>
+                <div className="w-1/2" />
+              </div>
             )}
-            {rightComments.map((c) => (
-              <InlineComment key={c.id} comment={c} />
-            ))}
-            {showRightForm && (
-              <InlineCommentForm
-                startLine={commentRange.startLine}
-                endLine={commentRange.endLine}
-                onSubmit={submitComment}
-                onCancel={cancelComment}
-              />
+            {/* Right-side comments/form */}
+            {(rightComments.length > 0 || showRightForm) && (
+              <div className="flex">
+                <div className="w-1/2 border-r border-border" />
+                <div className="w-1/2">
+                  {rightComments.map((c) => (
+                    <InlineComment key={c.id} comment={c} />
+                  ))}
+                  {showRightForm && (
+                    <InlineCommentForm
+                      startLine={commentRange.startLine}
+                      endLine={commentRange.endLine}
+                      onSubmit={submitComment}
+                      onCancel={cancelComment}
+                    />
+                  )}
+                </div>
+              </div>
             )}
           </React.Fragment>
         )
