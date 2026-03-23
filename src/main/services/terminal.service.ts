@@ -29,8 +29,8 @@ function spawnPty(
   if (instance.mode === 'claude') {
     // Use the shell to run claude so PATH is resolved
     command = shell
-    // --resume picks up the last session in this directory (or starts fresh)
-    args = ['-l', '-c', isResume ? 'claude --resume' : 'claude --resume']
+    // First launch: plain `claude`. After exit/restart: `claude --resume`
+    args = ['-l', '-c', isResume ? 'claude --resume' : 'claude']
   } else {
     command = shell
     args = []
@@ -90,7 +90,7 @@ export function spawnTerminal(
   const terminalId = `term-${++terminalCounter}`
 
   const instanceBase = { sessionId, mode, cwd, window }
-  const ptyProcess = spawnPty(terminalId, instanceBase, true)
+  const ptyProcess = spawnPty(terminalId, instanceBase, false)
 
   terminals.set(terminalId, { ...instanceBase, pty: ptyProcess, stopped: false })
   return terminalId
