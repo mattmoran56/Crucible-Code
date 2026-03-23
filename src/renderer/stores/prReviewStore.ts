@@ -8,6 +8,7 @@ interface PRReviewState {
   selectedFilePath: string | null
   fullDiff: string | null
   comments: PRComment[]
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
   loading: boolean
   reviewLoading: boolean
   mergeLoading: boolean
@@ -26,22 +27,25 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
   selectedFilePath: null,
   fullDiff: null,
   comments: [],
+  mergeable: 'UNKNOWN',
   loading: false,
   reviewLoading: false,
   mergeLoading: false,
 
   loadPR: async (repoPath, prNumber) => {
-    set({ loading: true, prNumber, files: [], fullDiff: null, comments: [], selectedFilePath: null })
+    set({ loading: true, prNumber, files: [], fullDiff: null, comments: [], mergeable: 'UNKNOWN', selectedFilePath: null })
     try {
-      const [files, fullDiff, comments] = await Promise.all([
+      const [files, fullDiff, comments, mergeabilityResult] = await Promise.all([
         window.api.github.getFiles(repoPath, prNumber),
         window.api.github.getDiff(repoPath, prNumber),
         window.api.github.getComments(repoPath, prNumber),
+        window.api.github.getMergeability(repoPath, prNumber),
       ])
       set({
         files,
         fullDiff,
         comments,
+        mergeable: mergeabilityResult.mergeable,
         loading: false,
         selectedFilePath: files.length > 0 ? files[0].path : null,
       })
@@ -100,6 +104,7 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
       selectedFilePath: null,
       fullDiff: null,
       comments: [],
+      mergeable: 'UNKNOWN',
       loading: false,
       reviewLoading: false,
       mergeLoading: false,

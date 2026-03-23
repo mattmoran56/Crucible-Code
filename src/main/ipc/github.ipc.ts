@@ -57,6 +57,13 @@ export function registerGithubHandlers() {
   )
 
   ipcMain.handle(
+    IPC.PR_MERGEABILITY,
+    async (_e, repoPath: string, prNumber: number) => {
+      return githubService.getPRMergeability(repoPath, prNumber)
+    }
+  )
+
+  ipcMain.handle(
     IPC.PR_MERGE,
     async (_e, repoPath: string, prNumber: number, method: PRMergeMethod) => {
       return githubService.mergePR(repoPath, prNumber, method)

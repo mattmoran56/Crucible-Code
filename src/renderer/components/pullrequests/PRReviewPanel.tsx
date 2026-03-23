@@ -48,7 +48,7 @@ export function PRReviewPanel() {
   const { activePRNumber, didStash } = useSessionStore()
   const { projects, activeProjectId } = useProjectStore()
   const {
-    files, selectedFilePath, fullDiff, comments, loading,
+    files, selectedFilePath, fullDiff, comments, loading, mergeable,
     reviewLoading, mergeLoading,
     loadPR, selectFile, addComment, submitReview, merge, clear,
   } = usePRReviewStore()
@@ -151,14 +151,27 @@ export function PRReviewPanel() {
           >
             Approve
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setShowMergeConfirm(true)}
-            disabled={mergeLoading}
-          >
-            {mergeLoading ? 'Merging...' : 'Merge'}
-          </Button>
+          {mergeable === 'CONFLICTING' ? (
+            <span
+              className="text-danger text-xs font-medium flex items-center gap-1"
+              style={{ padding: '4px 2px' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm.75-4.5h-1.5L7 4.5h2l-.25 4z"/>
+              </svg>
+              Merge conflicts
+            </span>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowMergeConfirm(true)}
+              disabled={mergeLoading || mergeable === 'UNKNOWN'}
+              title={mergeable === 'UNKNOWN' ? 'Mergeability unknown' : undefined}
+            >
+              {mergeLoading ? 'Merging...' : 'Merge'}
+            </Button>
+          )}
         </div>
       </div>
 

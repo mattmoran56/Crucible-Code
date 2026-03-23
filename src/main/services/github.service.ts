@@ -178,6 +178,23 @@ export async function submitPRReview(
   await execFileAsync('gh', args, { cwd: repoPath })
 }
 
+export async function getPRMergeability(
+  repoPath: string,
+  prNumber: number
+): Promise<{ mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' }> {
+  try {
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['pr', 'view', String(prNumber), '--json', 'mergeable'],
+      { cwd: repoPath }
+    )
+    const data = JSON.parse(stdout) as { mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' }
+    return data
+  } catch {
+    return { mergeable: 'UNKNOWN' }
+  }
+}
+
 export async function mergePR(
   repoPath: string,
   prNumber: number,

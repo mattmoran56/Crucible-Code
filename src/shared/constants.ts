@@ -50,6 +50,7 @@ export const IPC = {
   PR_COMMENT_CREATE: 'pr:comment:create',
   PR_REVIEW: 'pr:review',
   PR_MERGE: 'pr:merge',
+  PR_MERGEABILITY: 'pr:mergeability',
 
   // Worktree (remote branch)
   WORKTREE_CREATE_FROM_BRANCH: 'worktree:create-from-branch',

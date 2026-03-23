@@ -123,6 +123,8 @@ const api = {
       body?: string
     ): Promise<void> =>
       ipcRenderer.invoke(IPC.PR_REVIEW, repoPath, prNumber, event, body),
+    getMergeability: (repoPath: string, prNumber: number): Promise<{ mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' }> =>
+      ipcRenderer.invoke(IPC.PR_MERGEABILITY, repoPath, prNumber),
     merge: (repoPath: string, prNumber: number, method: PRMergeMethod): Promise<void> =>
       ipcRenderer.invoke(IPC.PR_MERGE, repoPath, prNumber, method),
   },
