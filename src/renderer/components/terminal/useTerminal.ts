@@ -70,7 +70,10 @@ export function useTerminal({ terminalId, sessionName, visible = true }: UseTerm
     // Receive data from pty — always active, even when hidden
     window.api.terminal.onData((id, data) => {
       if (id !== terminalId) return
+      // Only auto-scroll if user is already near the bottom
+      const isNearBottom = term.buffer.active.viewportY >= term.buffer.active.baseY - 5
       term.write(data)
+      if (isNearBottom) term.scrollToBottom()
 
       // Intervention detection
       lineBuffer.current += data
@@ -96,11 +99,12 @@ export function useTerminal({ terminalId, sessionName, visible = true }: UseTerm
 
     terminalInstances.set(terminalId, { term, fitAddon, attached: true })
 
-    // Initial fit
+    // Initial fit + scroll to bottom
     requestAnimationFrame(() => {
       fitAddon.fit()
       const { cols, rows } = term
       window.api.terminal.resize(terminalId, cols, rows)
+      term.scrollToBottom()
     })
 
     // Never dispose — terminal lives for the lifetime of the app
