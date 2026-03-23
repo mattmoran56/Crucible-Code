@@ -96,9 +96,9 @@ export function PRReviewPanel() {
     ? comments.filter((c) => c.path === selectedFilePath)
     : []
 
-  const handleAddComment = async (line: number, body: string) => {
+  const handleAddComment = async (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => {
     if (!selectedFilePath) return
-    await addComment(activeProject.repoPath, prNumber, body, selectedFilePath, line)
+    await addComment(activeProject.repoPath, prNumber, body, selectedFilePath, startLine, endLine, side)
   }
 
   const handleSubmitReview = async () => {

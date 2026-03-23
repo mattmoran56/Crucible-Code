@@ -111,9 +111,11 @@ const api = {
       prNumber: number,
       body: string,
       path: string,
-      line: number
+      line: number,
+      startLine?: number,
+      side?: 'LEFT' | 'RIGHT'
     ): Promise<PRComment> =>
-      ipcRenderer.invoke(IPC.PR_COMMENT_CREATE, repoPath, prNumber, body, path, line),
+      ipcRenderer.invoke(IPC.PR_COMMENT_CREATE, repoPath, prNumber, body, path, line, startLine, side),
     submitReview: (
       repoPath: string,
       prNumber: number,

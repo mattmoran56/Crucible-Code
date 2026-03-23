@@ -107,7 +107,9 @@ export async function createPRComment(
   prNumber: number,
   body: string,
   path: string,
-  line: number
+  line: number,
+  startLine?: number,
+  side?: 'LEFT' | 'RIGHT'
 ): Promise<PRComment> {
   const { stdout: repoInfo } = await execFileAsync(
     'gh',
@@ -124,19 +126,21 @@ export async function createPRComment(
   )
   const { headRefOid } = JSON.parse(prInfo) as { headRefOid: string }
 
-  const { stdout } = await execFileAsync(
-    'gh',
-    [
-      'api',
-      `repos/${owner.login}/${name}/pulls/${prNumber}/comments`,
-      '-f', `body=${body}`,
-      '-f', `path=${path}`,
-      '-F', `line=${line}`,
-      '-f', 'side=RIGHT',
-      '-f', `commit_id=${headRefOid}`,
-    ],
-    { cwd: repoPath }
-  )
+  const args = [
+    'api',
+    `repos/${owner.login}/${name}/pulls/${prNumber}/comments`,
+    '-f', `body=${body}`,
+    '-f', `path=${path}`,
+    '-F', `line=${line}`,
+    '-f', `side=${side || 'RIGHT'}`,
+    '-f', `commit_id=${headRefOid}`,
+  ]
+  if (startLine != null) {
+    args.push('-F', `start_line=${startLine}`)
+    args.push('-f', `start_side=${side || 'RIGHT'}`)
+  }
+
+  const { stdout } = await execFileAsync('gh', args, { cwd: repoPath })
   const c = JSON.parse(stdout) as {
     id: number
     body: string

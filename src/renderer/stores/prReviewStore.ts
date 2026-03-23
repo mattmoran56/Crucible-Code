@@ -14,7 +14,7 @@ interface PRReviewState {
 
   loadPR: (repoPath: string, prNumber: number) => Promise<void>
   selectFile: (filePath: string) => void
-  addComment: (repoPath: string, prNumber: number, body: string, path: string, line: number) => Promise<void>
+  addComment: (repoPath: string, prNumber: number, body: string, path: string, startLine: number, endLine: number, side: 'LEFT' | 'RIGHT') => Promise<void>
   submitReview: (repoPath: string, prNumber: number, event: PRReviewEvent, body?: string) => Promise<void>
   merge: (repoPath: string, prNumber: number, method: PRMergeMethod) => Promise<void>
   clear: () => void
@@ -56,10 +56,10 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
     set({ selectedFilePath: filePath })
   },
 
-  addComment: async (repoPath, prNumber, body, path, line) => {
+  addComment: async (repoPath, prNumber, body, path, startLine, endLine, side) => {
     const { addToast } = useToastStore.getState()
     try {
-      const comment = await window.api.github.createComment(repoPath, prNumber, body, path, line)
+      const comment = await window.api.github.createComment(repoPath, prNumber, body, path, endLine, startLine !== endLine ? startLine : undefined, side)
       set({ comments: [...get().comments, comment] })
     } catch (err) {
       addToast('error', err instanceof Error ? err.message : String(err))

@@ -44,8 +44,8 @@ export function registerGithubHandlers() {
 
   ipcMain.handle(
     IPC.PR_COMMENT_CREATE,
-    async (_e, repoPath: string, prNumber: number, body: string, path: string, line: number) => {
-      return githubService.createPRComment(repoPath, prNumber, body, path, line)
+    async (_e, repoPath: string, prNumber: number, body: string, path: string, line: number, startLine?: number, side?: 'LEFT' | 'RIGHT') => {
+      return githubService.createPRComment(repoPath, prNumber, body, path, line, startLine, side)
     }
   )
 

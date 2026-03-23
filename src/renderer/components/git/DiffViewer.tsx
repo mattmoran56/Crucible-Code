@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { useGitStore } from '../../stores/gitStore'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import type { PRComment } from '../../../shared/types'
@@ -36,7 +36,12 @@ export function parsePatch(patch: string): DiffLine[] {
     } else if (line.startsWith('-')) {
       result.push({ type: 'delete', content: line.slice(1), oldLine: oldLine++ })
     } else {
-      result.push({ type: 'context', content: line.startsWith(' ') ? line.slice(1) : line, oldLine: oldLine++, newLine: newLine++ })
+      result.push({
+        type: 'context',
+        content: line.startsWith(' ') ? line.slice(1) : line,
+        oldLine: oldLine++,
+        newLine: newLine++,
+      })
     }
   }
 
@@ -64,7 +69,6 @@ function toSplitRows(lines: DiffLine[]): SplitRow[] {
       rows.push({ left: line, right: line })
       i++
     } else if (line.type === 'delete') {
-      // Collect consecutive deletes and adds to pair them
       const deletes: DiffLine[] = []
       while (i < lines.length && lines[i].type === 'delete') {
         deletes.push(lines[i])
@@ -105,40 +109,185 @@ const LINE_STYLES: Record<string, string> = {
 
 type DiffMode = 'unified' | 'split'
 
+// --- Comment range tracking ---
+
+interface CommentRange {
+  startLine: number
+  endLine: number
+  side: 'LEFT' | 'RIGHT'
+}
+
+function useLineDrag(onAddComment?: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void) {
+  const [dragRange, setDragRange] = useState<{ start: number; end: number; side: 'LEFT' | 'RIGHT' } | null>(null)
+  const [commentRange, setCommentRange] = useState<CommentRange | null>(null)
+  const isDragging = useRef(false)
+
+  const startDrag = useCallback((lineNum: number, side: 'LEFT' | 'RIGHT') => {
+    if (!onAddComment) return
+    isDragging.current = true
+    setDragRange({ start: lineNum, end: lineNum, side })
+    setCommentRange(null)
+
+    const handleMouseUp = () => {
+      isDragging.current = false
+      setDragRange((prev) => {
+        if (prev) {
+          const startLine = Math.min(prev.start, prev.end)
+          const endLine = Math.max(prev.start, prev.end)
+          setCommentRange({ startLine, endLine, side: prev.side })
+        }
+        return null
+      })
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+    document.addEventListener('mouseup', handleMouseUp)
+  }, [onAddComment])
+
+  const extendDrag = useCallback((lineNum: number, side: 'LEFT' | 'RIGHT') => {
+    if (!isDragging.current) return
+    setDragRange((prev) => {
+      if (!prev || prev.side !== side) return prev
+      return { ...prev, end: lineNum }
+    })
+  }, [])
+
+  const rangePosition = useCallback((lineNum: number, side: 'LEFT' | 'RIGHT'): 'none' | 'first' | 'middle' | 'last' | 'only' => {
+    // Check active drag first, then settled comment range
+    let lo: number, hi: number, rangeSide: 'LEFT' | 'RIGHT'
+    if (dragRange) {
+      lo = Math.min(dragRange.start, dragRange.end)
+      hi = Math.max(dragRange.start, dragRange.end)
+      rangeSide = dragRange.side
+    } else if (commentRange) {
+      lo = commentRange.startLine
+      hi = commentRange.endLine
+      rangeSide = commentRange.side
+    } else {
+      return 'none'
+    }
+    if (rangeSide !== side) return 'none'
+    if (lineNum < lo || lineNum > hi) return 'none'
+    if (lo === hi) return 'only'
+    if (lineNum === lo) return 'first'
+    if (lineNum === hi) return 'last'
+    return 'middle'
+  }, [dragRange, commentRange])
+
+  const isInRange = useCallback((lineNum: number, side: 'LEFT' | 'RIGHT') => {
+    return rangePosition(lineNum, side) !== 'none'
+  }, [rangePosition])
+
+  const cancelComment = useCallback(() => {
+    setCommentRange(null)
+  }, [])
+
+  const submitComment = useCallback((body: string) => {
+    if (!commentRange || !onAddComment) return
+    onAddComment(commentRange.startLine, commentRange.endLine, commentRange.side, body)
+    setCommentRange(null)
+  }, [commentRange, onAddComment])
+
+  return { dragRange, commentRange, startDrag, extendDrag, isInRange, rangePosition, cancelComment, submitComment }
+}
+
+// --- Plus button gutter ---
+
+function GutterButton({
+  lineNum,
+  side,
+  rangePos,
+  onMouseDown,
+  onMouseEnter,
+}: {
+  lineNum: number
+  side: 'LEFT' | 'RIGHT'
+  rangePos: 'none' | 'first' | 'middle' | 'last' | 'only'
+  onMouseDown: (lineNum: number, side: 'LEFT' | 'RIGHT') => void
+  onMouseEnter: (lineNum: number, side: 'LEFT' | 'RIGHT') => void
+}) {
+  const inRange = rangePos !== 'none'
+  return (
+    <span
+      className={`w-5 shrink-0 flex items-center justify-center cursor-pointer select-none relative ${
+        inRange ? 'text-accent' : 'opacity-0 group-hover:opacity-100 text-accent'
+      }`}
+      style={{ fontSize: '14px', fontWeight: 700 }}
+      onMouseDown={(e) => {
+        e.preventDefault()
+        onMouseDown(lineNum, side)
+      }}
+      onMouseEnter={() => onMouseEnter(lineNum, side)}
+      title="Add comment (drag to select range)"
+    >
+      {/* Vertical selection bar */}
+      {(rangePos === 'first' || rangePos === 'middle' || rangePos === 'last') && (
+        <span
+          className="absolute left-[9px] bg-accent"
+          style={{
+            width: '2px',
+            top: rangePos === 'first' ? '50%' : '0',
+            bottom: rangePos === 'last' ? '50%' : '0',
+          }}
+        />
+      )}
+      {inRange ? (
+        <span className="relative z-10 w-2.5 h-2.5 rounded-full bg-accent" />
+      ) : (
+        '+'
+      )}
+    </span>
+  )
+}
+
 // --- Comment form inline ---
 
-function InlineCommentForm({ onSubmit, onCancel }: { onSubmit: (body: string) => void; onCancel: () => void }) {
+function InlineCommentForm({
+  startLine,
+  endLine,
+  onSubmit,
+  onCancel,
+}: {
+  startLine: number
+  endLine: number
+  onSubmit: (body: string) => void
+  onCancel: () => void
+}) {
   const [text, setText] = useState('')
+  const rangeLabel = startLine === endLine ? `Line ${startLine}` : `Lines ${startLine}–${endLine}`
+
   return (
-    <div className="flex gap-2 px-2 py-1.5 bg-bg-secondary border-y border-border">
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Add a comment..."
-        className="flex-1 bg-bg text-text text-xs font-mono border border-border rounded px-2 py-1 resize-none focus:outline-none focus:border-accent"
-        rows={2}
-        autoFocus
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault()
-            if (text.trim()) onSubmit(text.trim())
-          }
-          if (e.key === 'Escape') onCancel()
-        }}
-      />
-      <div className="flex flex-col gap-1">
-        <button
-          onClick={() => { if (text.trim()) onSubmit(text.trim()) }}
-          className="text-[10px] px-2 py-0.5 bg-accent text-bg rounded hover:bg-accent-hover"
-        >
-          Comment
-        </button>
-        <button
-          onClick={onCancel}
-          className="text-[10px] px-2 py-0.5 text-text-muted hover:text-text"
-        >
-          Cancel
-        </button>
+    <div className="flex flex-col gap-1.5 px-2 py-2 bg-bg-secondary border-y border-border">
+      <span className="text-[10px] text-text-muted">{rangeLabel}</span>
+      <div className="flex gap-2">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Add a comment..."
+          className="flex-1 bg-bg text-text text-xs font-mono border border-border rounded resize-none focus:outline-none focus:border-accent"
+          style={{ padding: '8px 10px' }}
+          rows={2}
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault()
+              if (text.trim()) onSubmit(text.trim())
+            }
+            if (e.key === 'Escape') onCancel()
+          }}
+        />
+        <div className="flex flex-col gap-1">
+          <button
+            onClick={() => {
+              if (text.trim()) onSubmit(text.trim())
+            }}
+            className="text-[10px] px-2 py-0.5 bg-accent text-bg rounded hover:bg-accent-hover"
+          >
+            Comment
+          </button>
+          <button onClick={onCancel} className="text-[10px] px-2 py-0.5 text-text-muted hover:text-text">
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -165,29 +314,38 @@ function UnifiedView({
   comments,
   filePath,
   onAddComment,
-  commentingLine,
-  setCommentingLine,
 }: {
   lines: DiffLine[]
   comments: PRComment[]
   filePath: string | null
-  onAddComment?: (line: number, body: string) => void
-  commentingLine: number | null
-  setCommentingLine: (line: number | null) => void
+  onAddComment?: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
 }) {
+  const { commentRange, startDrag, extendDrag, rangePosition, cancelComment, submitComment } = useLineDrag(onAddComment)
+
   return (
     <div>
       {lines.map((line, i) => {
         const lineNum = line.newLine ?? line.oldLine
+        const canComment = onAddComment && lineNum != null && (line.type === 'add' || line.type === 'delete' || line.type === 'context')
+        const side: 'LEFT' | 'RIGHT' = line.type === 'delete' ? 'LEFT' : 'RIGHT'
+        const rangePos = lineNum != null ? rangePosition(lineNum, side) : 'none' as const
+        const highlighted = rangePos !== 'none'
         const lineComments = filePath
           ? comments.filter((c) => c.path === filePath && c.line === lineNum)
           : []
+        const showForm = commentRange && lineNum === commentRange.endLine && commentRange.side === side
 
         return (
           <React.Fragment key={i}>
             <div
-              className={`group flex px-2 leading-5 ${LINE_STYLES[line.type] || ''}`}
+              className={`group flex px-2 leading-5 ${LINE_STYLES[line.type] || ''} ${highlighted ? 'bg-accent/15' : ''}`}
+              onMouseEnter={() => lineNum != null && extendDrag(lineNum, side)}
             >
+              {canComment ? (
+                <GutterButton lineNum={lineNum!} side={side} rangePos={rangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
+              ) : (
+                <span className="w-5 shrink-0" />
+              )}
               <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
                 {line.oldLine ?? ''}
               </span>
@@ -198,26 +356,16 @@ function UnifiedView({
                 {line.type === 'add' ? '+' : line.type === 'delete' ? '-' : ''}
               </span>
               <pre className="flex-1 whitespace-pre-wrap break-all">{line.content}</pre>
-              {onAddComment && line.newLine != null && (
-                <button
-                  onClick={() => setCommentingLine(line.newLine!)}
-                  className="opacity-0 group-hover:opacity-100 text-accent text-[10px] px-1 shrink-0"
-                  title="Add comment"
-                >
-                  +
-                </button>
-              )}
             </div>
             {lineComments.map((c) => (
               <InlineComment key={c.id} comment={c} />
             ))}
-            {commentingLine === lineNum && lineNum != null && onAddComment && (
+            {showForm && (
               <InlineCommentForm
-                onSubmit={(body) => {
-                  onAddComment(lineNum, body)
-                  setCommentingLine(null)
-                }}
-                onCancel={() => setCommentingLine(null)}
+                startLine={commentRange.startLine}
+                endLine={commentRange.endLine}
+                onSubmit={submitComment}
+                onCancel={cancelComment}
               />
             )}
           </React.Fragment>
@@ -234,19 +382,17 @@ function SplitView({
   comments,
   filePath,
   onAddComment,
-  commentingLine,
-  setCommentingLine,
 }: {
   lines: DiffLine[]
   comments: PRComment[]
   filePath: string | null
-  onAddComment?: (line: number, body: string) => void
-  commentingLine: number | null
-  setCommentingLine: (line: number | null) => void
+  onAddComment?: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
 }) {
   const rows = toSplitRows(lines)
+  const { commentRange, startDrag, extendDrag, rangePosition, cancelComment, submitComment } = useLineDrag(onAddComment)
 
-  const cellStyle = (line: DiffLine | null) => {
+  const cellStyle = (line: DiffLine | null, highlighted: boolean) => {
+    if (highlighted) return 'bg-accent/15'
     if (!line) return 'bg-bg-tertiary/30'
     return LINE_STYLES[line.type] || ''
   }
@@ -254,16 +400,38 @@ function SplitView({
   return (
     <div>
       {rows.map((row, i) => {
+        const leftLineNum = row.left?.oldLine
         const rightLineNum = row.right?.newLine
-        const lineComments = filePath && rightLineNum != null
-          ? comments.filter((c) => c.path === filePath && c.line === rightLineNum)
+        const canCommentLeft = onAddComment && leftLineNum != null && row.left && (row.left.type === 'delete' || row.left.type === 'context')
+        const canCommentRight = onAddComment && rightLineNum != null && row.right && (row.right.type === 'add' || row.right.type === 'context')
+        const leftRangePos = leftLineNum != null ? rangePosition(leftLineNum, 'LEFT') : 'none' as const
+        const rightRangePos = rightLineNum != null ? rangePosition(rightLineNum, 'RIGHT') : 'none' as const
+        const leftHighlighted = leftRangePos !== 'none'
+        const rightHighlighted = rightRangePos !== 'none'
+
+        const leftComments = filePath && leftLineNum != null
+          ? comments.filter((c) => c.path === filePath && c.line === leftLineNum && c.side === 'LEFT')
           : []
+        const rightComments = filePath && rightLineNum != null
+          ? comments.filter((c) => c.path === filePath && c.line === rightLineNum && (c.side === 'RIGHT' || !c.side))
+          : []
+
+        const showLeftForm = commentRange && commentRange.side === 'LEFT' && leftLineNum === commentRange.endLine
+        const showRightForm = commentRange && commentRange.side === 'RIGHT' && rightLineNum === commentRange.endLine
 
         return (
           <React.Fragment key={i}>
             <div className="group flex leading-5">
               {/* Left side */}
-              <div className={`flex w-1/2 border-r border-border px-2 ${cellStyle(row.left)}`}>
+              <div
+                className={`flex w-1/2 border-r border-border px-2 ${cellStyle(row.left, leftHighlighted)}`}
+                onMouseEnter={() => leftLineNum != null && extendDrag(leftLineNum, 'LEFT')}
+              >
+                {canCommentLeft ? (
+                  <GutterButton lineNum={leftLineNum!} side="LEFT" rangePos={leftRangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
+                ) : (
+                  <span className="w-5 shrink-0" />
+                )}
                 <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
                   {row.left?.oldLine ?? ''}
                 </span>
@@ -273,7 +441,15 @@ function SplitView({
                 <pre className="flex-1 whitespace-pre-wrap break-all">{row.left?.content ?? ''}</pre>
               </div>
               {/* Right side */}
-              <div className={`flex w-1/2 px-2 ${cellStyle(row.right)}`}>
+              <div
+                className={`flex w-1/2 px-2 ${cellStyle(row.right, rightHighlighted)}`}
+                onMouseEnter={() => rightLineNum != null && extendDrag(rightLineNum, 'RIGHT')}
+              >
+                {canCommentRight ? (
+                  <GutterButton lineNum={rightLineNum!} side="RIGHT" rangePos={rightRangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
+                ) : (
+                  <span className="w-5 shrink-0" />
+                )}
                 <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
                   {row.right?.newLine ?? ''}
                 </span>
@@ -281,27 +457,28 @@ function SplitView({
                   {row.right?.type === 'add' ? '+' : ''}
                 </span>
                 <pre className="flex-1 whitespace-pre-wrap break-all">{row.right?.content ?? ''}</pre>
-                {onAddComment && row.right?.newLine != null && (
-                  <button
-                    onClick={() => setCommentingLine(row.right!.newLine!)}
-                    className="opacity-0 group-hover:opacity-100 text-accent text-[10px] px-1 shrink-0"
-                    title="Add comment"
-                  >
-                    +
-                  </button>
-                )}
               </div>
             </div>
-            {lineComments.map((c) => (
+            {leftComments.map((c) => (
               <InlineComment key={c.id} comment={c} />
             ))}
-            {commentingLine === rightLineNum && rightLineNum != null && onAddComment && (
+            {showLeftForm && (
               <InlineCommentForm
-                onSubmit={(body) => {
-                  onAddComment(rightLineNum, body)
-                  setCommentingLine(null)
-                }}
-                onCancel={() => setCommentingLine(null)}
+                startLine={commentRange.startLine}
+                endLine={commentRange.endLine}
+                onSubmit={submitComment}
+                onCancel={cancelComment}
+              />
+            )}
+            {rightComments.map((c) => (
+              <InlineComment key={c.id} comment={c} />
+            ))}
+            {showRightForm && (
+              <InlineCommentForm
+                startLine={commentRange.startLine}
+                endLine={commentRange.endLine}
+                onSubmit={submitComment}
+                onCancel={cancelComment}
               />
             )}
           </React.Fragment>
@@ -318,12 +495,17 @@ const DIFF_MODE_OPTIONS = [
   { value: 'split' as DiffMode, label: 'Split' },
 ]
 
-function DiffHeader({ filePath, mode, onModeChange }: { filePath: string; mode: DiffMode; onModeChange: (m: DiffMode) => void }) {
+function DiffHeader({
+  filePath,
+  mode,
+  onModeChange,
+}: {
+  filePath: string
+  mode: DiffMode
+  onModeChange: (m: DiffMode) => void
+}) {
   return (
-    <div
-      className="bg-bg-tertiary border-b border-border flex items-center justify-between"
-      style={{ padding: '6px 12px' }}
-    >
+    <div className="bg-bg-tertiary border-b border-border flex items-center justify-between" style={{ padding: '6px 12px' }}>
       <span className="text-xs text-text-muted truncate mr-3">{filePath}</span>
       <ToggleGroup options={DIFF_MODE_OPTIONS} value={mode} onChange={onModeChange} />
     </div>
@@ -359,9 +541,9 @@ export function DiffViewer() {
       <DiffHeader filePath={selectedFilePath} mode={mode} onModeChange={setMode} />
       <div className="flex-1 overflow-auto font-mono text-xs">
         {mode === 'unified' ? (
-          <UnifiedView lines={lines} comments={[]} filePath={null} commentingLine={null} setCommentingLine={() => {}} />
+          <UnifiedView lines={lines} comments={[]} filePath={null} />
         ) : (
-          <SplitView lines={lines} comments={[]} filePath={null} commentingLine={null} setCommentingLine={() => {}} />
+          <SplitView lines={lines} comments={[]} filePath={null} />
         )}
       </div>
     </div>
@@ -379,10 +561,9 @@ export function PRDiffViewer({
   patch: string
   filePath: string
   comments: PRComment[]
-  onAddComment: (line: number, body: string) => void
+  onAddComment: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
 }) {
   const [mode, setMode] = useState<DiffMode>('split')
-  const [commentingLine, setCommentingLine] = useState<number | null>(null)
   const lines = parsePatch(patch)
 
   return (
@@ -390,23 +571,9 @@ export function PRDiffViewer({
       <DiffHeader filePath={filePath} mode={mode} onModeChange={setMode} />
       <div className="flex-1 overflow-auto font-mono text-xs">
         {mode === 'unified' ? (
-          <UnifiedView
-            lines={lines}
-            comments={comments}
-            filePath={filePath}
-            onAddComment={onAddComment}
-            commentingLine={commentingLine}
-            setCommentingLine={setCommentingLine}
-          />
+          <UnifiedView lines={lines} comments={comments} filePath={filePath} onAddComment={onAddComment} />
         ) : (
-          <SplitView
-            lines={lines}
-            comments={comments}
-            filePath={filePath}
-            onAddComment={onAddComment}
-            commentingLine={commentingLine}
-            setCommentingLine={setCommentingLine}
-          />
+          <SplitView lines={lines} comments={comments} filePath={filePath} onAddComment={onAddComment} />
         )}
       </div>
     </div>
