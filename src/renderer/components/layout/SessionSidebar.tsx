@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
+import { useNotificationStore } from '../../stores/notificationStore'
 import { SessionCard } from '../sessions/SessionCard'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
 import { PRCard } from '../pullrequests/PRCard'
@@ -18,6 +19,7 @@ export function SessionSidebar() {
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, markSeen, clear: clearPRs } =
     usePRStore()
+  const { pendingSessionIds, clearPending } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
 
@@ -69,6 +71,18 @@ export function SessionSidebar() {
     return () => clearInterval(interval)
   }, [activeProject?.id])
 
+  // Register all sessions with the main process for notification routing
+  useEffect(() => {
+    for (const session of sessions) {
+      window.api.notification.registerSession(
+        session.id,
+        session.name,
+        session.projectId,
+        session.worktreePath
+      )
+    }
+  }, [sessions])
+
   if (!activeProject) {
     return (
       <Sidebar>
@@ -108,7 +122,11 @@ export function SessionSidebar() {
                 key={session.id}
                 session={session}
                 isActive={session.id === activeSessionId}
-                onClick={() => setActiveSession(session.id)}
+                hasPendingNotification={pendingSessionIds.has(session.id)}
+                onClick={() => {
+                  setActiveSession(session.id)
+                  clearPending(session.id)
+                }}
                 onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
               />
             ))}

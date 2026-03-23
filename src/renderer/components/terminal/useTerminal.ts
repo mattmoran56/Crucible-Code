@@ -6,6 +6,7 @@ import { INTERVENTION_PATTERNS } from '../../../shared/patterns'
 
 interface UseTerminalOptions {
   terminalId: string | null
+  sessionId: string | null
   sessionName: string
   visible?: boolean
 }
@@ -16,7 +17,7 @@ const terminalInstances = new Map<
   { term: Terminal; fitAddon: FitAddon; attached: boolean }
 >()
 
-export function useTerminal({ terminalId, sessionName, visible = true }: UseTerminalOptions) {
+export function useTerminal({ terminalId, sessionId, sessionName, visible = true }: UseTerminalOptions) {
   const containerRef = useRef<HTMLDivElement>(null)
   const lineBuffer = useRef('')
 
@@ -70,7 +71,10 @@ export function useTerminal({ terminalId, sessionName, visible = true }: UseTerm
     // Receive data from pty — always active, even when hidden
     window.api.terminal.onData((id, data) => {
       if (id !== terminalId) return
+      // Only auto-scroll if user is already near the bottom
+      const isNearBottom = term.buffer.active.viewportY >= term.buffer.active.baseY - 5
       term.write(data)
+      if (isNearBottom) term.scrollToBottom()
 
       // Intervention detection
       lineBuffer.current += data
@@ -79,11 +83,11 @@ export function useTerminal({ terminalId, sessionName, visible = true }: UseTerm
       }
       for (const pattern of INTERVENTION_PATTERNS) {
         if (pattern.test(lineBuffer.current)) {
-          window.api.notification.show(
-            'CodeCrucible',
-            `Session "${sessionName}" needs your attention`
-          )
-          lineBuffer.current = ''
+          // Route through the notification system (in-app indicator + conditional OS notification)
+          if (sessionId) {
+            window.api.notification.triggerForSession(sessionId, sessionName)
+          }
+          lineBuffer.current = '' // Reset to avoid repeat notifications
           break
         }
       }
@@ -96,15 +100,16 @@ export function useTerminal({ terminalId, sessionName, visible = true }: UseTerm
 
     terminalInstances.set(terminalId, { term, fitAddon, attached: true })
 
-    // Initial fit
+    // Initial fit + scroll to bottom
     requestAnimationFrame(() => {
       fitAddon.fit()
       const { cols, rows } = term
       window.api.terminal.resize(terminalId, cols, rows)
+      term.scrollToBottom()
     })
 
     // Never dispose — terminal lives for the lifetime of the app
-  }, [terminalId, sessionName])
+  }, [terminalId, sessionId, sessionName])
 
   // Re-fit and scroll to bottom when becoming visible
   useEffect(() => {

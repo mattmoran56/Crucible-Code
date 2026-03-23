@@ -1,10 +1,15 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { registerAllHandlers } from './ipc/register'
+import {
+  startNotificationServer,
+  stopNotificationServer,
+  setWindowFocused,
+} from './services/notification-server'
 
 let mainWindow: BrowserWindow | null = null
 
-function createWindow() {
+async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -18,7 +23,14 @@ function createWindow() {
     },
   })
 
+  // Start the notification HTTP server before registering handlers
+  await startNotificationServer(mainWindow)
+
   registerAllHandlers(mainWindow)
+
+  // Track window focus for notification suppression
+  mainWindow.on('focus', () => setWindowFocused(true))
+  mainWindow.on('blur', () => setWindowFocused(false))
 
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -30,6 +42,7 @@ function createWindow() {
 app.whenReady().then(createWindow)
 
 app.on('window-all-closed', () => {
+  stopNotificationServer()
   app.quit()
 })
 
