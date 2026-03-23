@@ -1,20 +1,38 @@
 import { create } from 'zustand'
 import type { Session, PullRequest } from '../../shared/types'
+import { useToastStore } from './toastStore'
 
 type WorkspaceTab = 'agent' | 'git' | 'pr'
+
+interface DetachedWorktreeInfo {
+  worktreePath: string
+  branch: string
+}
 
 interface SessionState {
   sessions: Session[]
   activeSessionId: string | null
   activePRNumber: number | null
   activeWorkspaceTab: WorkspaceTab
+  didStash: boolean
+  detachedWorktree: DetachedWorktreeInfo | null
   loadSessions: (projectId: string) => Promise<void>
   createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string) => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
-  setActiveSession: (id: string) => void
+  setActiveSession: (id: string) => Promise<void>
   setActiveWorkspaceTab: (tab: WorkspaceTab) => void
   openPR: (repoPath: string, pr: PullRequest) => Promise<void>
-  closePR: () => void
+  closePR: () => Promise<void>
+}
+
+async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
+  if (!info) return
+  const { addToast } = useToastStore.getState()
+  try {
+    await window.api.git.restoreWorktree(info.worktreePath, info.branch)
+  } catch (err) {
+    addToast('error', `Failed to restore worktree branch: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -22,6 +40,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeSessionId: null,
   activePRNumber: null,
   activeWorkspaceTab: 'agent' as WorkspaceTab,
+  didStash: false,
+  detachedWorktree: null,
 
   loadSessions: async (projectId: string) => {
     const sessions = await window.api.session.list(projectId)
@@ -44,7 +64,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const sessions = [...get().sessions, session]
     await window.api.session.save(projectId, sessions)
-    set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent' })
+    await restoreDetachedWorktree(get().detachedWorktree)
+    set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
   },
 
   removeSession: async (projectId, repoPath, sessionId) => {
@@ -69,8 +90,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  setActiveSession: (id: string) => {
-    set({ activeSessionId: id, activePRNumber: null, activeWorkspaceTab: 'agent' })
+  setActiveSession: async (id: string) => {
+    await restoreDetachedWorktree(get().detachedWorktree)
+    set({ activeSessionId: id, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null })
   },
 
   setActiveWorkspaceTab: (tab: WorkspaceTab) => {
@@ -78,16 +100,39 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   openPR: async (repoPath, pr) => {
-    // Checkout the PR branch in the main repo
-    await window.api.git.checkout(repoPath, pr.headRefName)
-    set({
-      activeSessionId: null,
-      activePRNumber: pr.number,
-      activeWorkspaceTab: 'pr',
-    })
+    const { addToast } = useToastStore.getState()
+
+    // Restore any previously detached worktree first
+    await restoreDetachedWorktree(get().detachedWorktree)
+
+    try {
+      const { stashed, detachedWorktree, error } = await window.api.git.checkout(repoPath, pr.headRefName)
+      if (error) {
+        addToast('error', error)
+      }
+      set({
+        activeSessionId: null,
+        activePRNumber: pr.number,
+        activeWorkspaceTab: 'pr',
+        didStash: stashed,
+        detachedWorktree: detachedWorktree
+          ? { worktreePath: detachedWorktree, branch: pr.headRefName }
+          : null,
+      })
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+      set({
+        activeSessionId: null,
+        activePRNumber: pr.number,
+        activeWorkspaceTab: 'pr',
+        didStash: false,
+        detachedWorktree: null,
+      })
+    }
   },
 
-  closePR: () => {
-    set({ activePRNumber: null })
+  closePR: async () => {
+    await restoreDetachedWorktree(get().detachedWorktree)
+    set({ activePRNumber: null, detachedWorktree: null })
   },
 }))

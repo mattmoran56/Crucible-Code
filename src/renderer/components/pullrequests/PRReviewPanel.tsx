@@ -45,7 +45,7 @@ function extractFileDiff(fullDiff: string, filePath: string): string {
 }
 
 export function PRReviewPanel() {
-  const { activePRNumber } = useSessionStore()
+  const { activePRNumber, didStash } = useSessionStore()
   const { projects, activeProjectId } = useProjectStore()
   const {
     files, selectedFilePath, fullDiff, comments, loading,
@@ -161,6 +161,16 @@ export function PRReviewPanel() {
           </Button>
         </div>
       </div>
+
+      {/* Stash notice */}
+      {didStash && (
+        <div
+          className="flex items-center gap-2 bg-warning/10 border-b border-warning/30 text-warning text-xs"
+          style={{ padding: '4px 12px' }}
+        >
+          <span>Uncommitted changes were stashed. Run <code className="font-mono bg-bg/50 px-1 rounded">git stash pop</code> to restore them.</span>
+        </div>
+      )}
 
       {/* File list + Diff viewer */}
       <div className="flex-1 flex min-h-0">

@@ -25,4 +25,8 @@ export function registerGitHandlers() {
   ipcMain.handle(IPC.GIT_CHECKOUT, async (_e, repoPath: string, branch: string) => {
     return gitService.checkoutBranch(repoPath, branch)
   })
+
+  ipcMain.handle(IPC.GIT_RESTORE_WORKTREE, async (_e, worktreePath: string, branch: string) => {
+    return gitService.restoreWorktreeBranch(worktreePath, branch)
+  })
 }
