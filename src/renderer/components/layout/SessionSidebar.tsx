@@ -29,7 +29,7 @@ export function SessionSidebar() {
 
   return (
     <div className="w-56 bg-bg-secondary border-r border-border flex flex-col">
-      <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+      <div style={{ padding: '10px 12px' }} className="border-b border-border flex items-center justify-between">
         <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
           Sessions
         </span>
