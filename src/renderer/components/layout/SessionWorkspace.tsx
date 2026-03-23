@@ -1,6 +1,7 @@
 import React from 'react'
 import { GitPanel } from '../git/GitPanel'
 import { TerminalPanel } from '../terminal/TerminalPanel'
+import { PRReviewPanel } from '../pullrequests/PRReviewPanel'
 import { useSessionStore } from '../../stores/sessionStore'
 
 const TerminalIcon = () => (
@@ -19,8 +20,20 @@ const GitIcon = () => (
   </svg>
 )
 
+const PRIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="18" cy="18" r="3" />
+    <circle cx="6" cy="6" r="3" />
+    <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+    <path d="M6 9v12" />
+    <path d="M18 15v-4a2 2 0 0 0-2-2h-3" />
+  </svg>
+)
+
 export function SessionWorkspace() {
-  const { activeWorkspaceTab, setActiveWorkspaceTab } = useSessionStore()
+  const { activeWorkspaceTab, setActiveWorkspaceTab, activeSessionId, sessions } = useSessionStore()
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const hasPR = activeSession?.prNumber != null
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -38,9 +51,16 @@ export function SessionWorkspace() {
           icon={<GitIcon />}
           label="Git"
         />
+        <WorkspaceTab
+          active={activeWorkspaceTab === 'pr'}
+          onClick={() => hasPR && setActiveWorkspaceTab('pr')}
+          icon={<PRIcon />}
+          label="PR"
+          disabled={!hasPR}
+        />
       </div>
 
-      {/* Content — both panels always mounted, visibility toggled */}
+      {/* Content — all panels always mounted, visibility toggled */}
       <div className="flex-1 flex flex-col min-h-0 relative">
         <div
           className="absolute inset-0 flex flex-col min-h-0"
@@ -62,6 +82,16 @@ export function SessionWorkspace() {
         >
           <GitPanel />
         </div>
+        <div
+          className="absolute inset-0 flex min-h-0"
+          style={{
+            visibility: activeWorkspaceTab === 'pr' ? 'visible' : 'hidden',
+            pointerEvents: activeWorkspaceTab === 'pr' ? 'auto' : 'none',
+            zIndex: activeWorkspaceTab === 'pr' ? 1 : 0,
+          }}
+        >
+          <PRReviewPanel />
+        </div>
       </div>
     </div>
   )
@@ -72,27 +102,32 @@ function WorkspaceTab({
   onClick,
   icon,
   label,
+  disabled,
 }: {
   active: boolean
   onClick: () => void
   icon: React.ReactNode
   label: string
+  disabled?: boolean
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
       role="tab"
       aria-selected={active}
+      aria-disabled={disabled}
       className={`flex items-center gap-1.5 text-xs transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
-        active
-          ? 'text-text'
-          : 'text-text-muted hover:text-text'
+        disabled
+          ? 'text-text-muted/30 cursor-not-allowed'
+          : active
+            ? 'text-text'
+            : 'text-text-muted hover:text-text'
       }`}
       style={{ padding: '8px 12px' }}
     >
       {icon}
       {label}
-      {active && (
+      {active && !disabled && (
         <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />
       )}
     </button>

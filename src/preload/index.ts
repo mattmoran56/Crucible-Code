@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod } from '../shared/types'
 
 const api = {
   git: {
@@ -68,6 +68,29 @@ const api = {
       ipcRenderer.invoke(IPC.PR_SEEN_GET, projectId),
     markPRSeen: (projectId: string, prNumber: number): Promise<void> =>
       ipcRenderer.invoke(IPC.PR_SEEN_SET, projectId, prNumber),
+    getDiff: (repoPath: string, prNumber: number): Promise<string> =>
+      ipcRenderer.invoke(IPC.PR_DIFF, repoPath, prNumber),
+    getFiles: (repoPath: string, prNumber: number): Promise<PRFile[]> =>
+      ipcRenderer.invoke(IPC.PR_FILES, repoPath, prNumber),
+    getComments: (repoPath: string, prNumber: number): Promise<PRComment[]> =>
+      ipcRenderer.invoke(IPC.PR_COMMENTS, repoPath, prNumber),
+    createComment: (
+      repoPath: string,
+      prNumber: number,
+      body: string,
+      path: string,
+      line: number
+    ): Promise<PRComment> =>
+      ipcRenderer.invoke(IPC.PR_COMMENT_CREATE, repoPath, prNumber, body, path, line),
+    submitReview: (
+      repoPath: string,
+      prNumber: number,
+      event: PRReviewEvent,
+      body?: string
+    ): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_REVIEW, repoPath, prNumber, event, body),
+    merge: (repoPath: string, prNumber: number, method: PRMergeMethod): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_MERGE, repoPath, prNumber, method),
   },
 
   session: {

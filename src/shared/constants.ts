@@ -36,6 +36,12 @@ export const IPC = {
   PR_LIST: 'pr:list',
   PR_SEEN_GET: 'pr:seen:get',
   PR_SEEN_SET: 'pr:seen:set',
+  PR_DIFF: 'pr:diff',
+  PR_FILES: 'pr:files',
+  PR_COMMENTS: 'pr:comments',
+  PR_COMMENT_CREATE: 'pr:comment:create',
+  PR_REVIEW: 'pr:review',
+  PR_MERGE: 'pr:merge',
 
   // Worktree (remote branch)
   WORKTREE_CREATE_FROM_BRANCH: 'worktree:create-from-branch',

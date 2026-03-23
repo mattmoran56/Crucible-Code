@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Session, PullRequest } from '../../shared/types'
 
-type WorkspaceTab = 'agent' | 'git'
+type WorkspaceTab = 'agent' | 'git' | 'pr'
 
 interface SessionState {
   sessions: Session[]
@@ -70,7 +70,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // If a session already exists for this branch, just activate it
     const existing = get().sessions.find((s) => s.branchName === pr.headRefName)
     if (existing) {
-      set({ activeSessionId: existing.id, activeWorkspaceTab: 'git' })
+      set({ activeSessionId: existing.id, activeWorkspaceTab: 'pr' })
       return
     }
 
@@ -83,11 +83,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       worktreePath: wtInfo.path,
       projectId,
       createdAt: new Date().toISOString(),
+      prNumber: pr.number,
     }
 
     const sessions = [...get().sessions, session]
     await window.api.session.save(projectId, sessions)
-    set({ sessions, activeSessionId: session.id, activeWorkspaceTab: 'git' })
+    set({ sessions, activeSessionId: session.id, activeWorkspaceTab: 'pr' })
   },
 
   setActiveSession: (id: string) => {
