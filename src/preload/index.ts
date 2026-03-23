@@ -1,0 +1,68 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import { IPC } from '../shared/constants'
+import type { Project, Session, Commit, FileDiff } from '../shared/types'
+
+const api = {
+  git: {
+    status: (repoPath: string) => ipcRenderer.invoke(IPC.GIT_STATUS, repoPath),
+    log: (repoPath: string, maxCount?: number): Promise<Commit[]> =>
+      ipcRenderer.invoke(IPC.GIT_LOG, repoPath, maxCount),
+    diff: (repoPath: string, commitHash: string): Promise<FileDiff[]> =>
+      ipcRenderer.invoke(IPC.GIT_DIFF, repoPath, commitHash),
+    fileDiff: (repoPath: string, commitHash: string, filePath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.GIT_FILE_DIFF, repoPath, commitHash, filePath),
+  },
+
+  worktree: {
+    create: (repoPath: string, sessionName: string, baseBranch?: string) =>
+      ipcRenderer.invoke(IPC.WORKTREE_CREATE, repoPath, sessionName, baseBranch),
+    list: (repoPath: string) => ipcRenderer.invoke(IPC.WORKTREE_LIST, repoPath),
+    remove: (repoPath: string, worktreePath: string) =>
+      ipcRenderer.invoke(IPC.WORKTREE_REMOVE, repoPath, worktreePath),
+  },
+
+  terminal: {
+    spawn: (sessionId: string, cwd: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd),
+    write: (terminalId: string, data: string) =>
+      ipcRenderer.invoke(IPC.TERMINAL_WRITE, terminalId, data),
+    resize: (terminalId: string, cols: number, rows: number) =>
+      ipcRenderer.invoke(IPC.TERMINAL_RESIZE, terminalId, cols, rows),
+    kill: (terminalId: string) => ipcRenderer.invoke(IPC.TERMINAL_KILL, terminalId),
+    onData: (callback: (terminalId: string, data: string) => void) => {
+      const listener = (_e: any, terminalId: string, data: string) => callback(terminalId, data)
+      ipcRenderer.on(IPC.TERMINAL_DATA, listener)
+      return () => ipcRenderer.removeListener(IPC.TERMINAL_DATA, listener)
+    },
+    onExit: (callback: (terminalId: string, exitCode: number) => void) => {
+      const listener = (_e: any, terminalId: string, exitCode: number) =>
+        callback(terminalId, exitCode)
+      ipcRenderer.on(IPC.TERMINAL_EXIT, listener)
+      return () => ipcRenderer.removeListener(IPC.TERMINAL_EXIT, listener)
+    },
+  },
+
+  notification: {
+    show: (title: string, body: string) =>
+      ipcRenderer.invoke(IPC.NOTIFICATION_SHOW, title, body),
+  },
+
+  project: {
+    list: (): Promise<Project[]> => ipcRenderer.invoke(IPC.PROJECT_LIST),
+    add: (project: Project): Promise<Project[]> => ipcRenderer.invoke(IPC.PROJECT_ADD, project),
+    remove: (projectId: string): Promise<Project[]> =>
+      ipcRenderer.invoke(IPC.PROJECT_REMOVE, projectId),
+    selectFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.PROJECT_SELECT_FOLDER),
+  },
+
+  session: {
+    list: (projectId: string): Promise<Session[]> =>
+      ipcRenderer.invoke(IPC.SESSION_LIST, projectId),
+    save: (projectId: string, sessions: Session[]) =>
+      ipcRenderer.invoke(IPC.SESSION_SAVE, projectId, sessions),
+  },
+}
+
+export type ApiType = typeof api
+
+contextBridge.exposeInMainWorld('api', api)
