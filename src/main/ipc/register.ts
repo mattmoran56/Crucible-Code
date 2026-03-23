@@ -1,9 +1,14 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
+import { IPC } from '../../shared/constants'
 import { registerGitHandlers } from './git.ipc'
 import { registerWorktreeHandlers } from './worktree.ipc'
 import { registerTerminalHandlers } from './terminal.ipc'
 import { registerNotificationHandlers } from './notification.ipc'
 import { registerProjectHandlers } from './project.ipc'
+import {
+  registerSessionMapping,
+  removeSessionMapping,
+} from '../services/notification-server'
 
 export function registerAllHandlers(window: BrowserWindow) {
   registerGitHandlers()
@@ -11,4 +16,22 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerTerminalHandlers(window)
   registerNotificationHandlers()
   registerProjectHandlers(window)
+
+  // Session mapping management for notification routing
+  ipcMain.handle(
+    'notification:register-session',
+    async (
+      _e,
+      sessionId: string,
+      sessionName: string,
+      projectId: string,
+      worktreePath: string
+    ) => {
+      registerSessionMapping({ sessionId, sessionName, projectId, worktreePath })
+    }
+  )
+
+  ipcMain.handle('notification:unregister-session', async (_e, worktreePath: string) => {
+    removeSessionMapping(worktreePath)
+  })
 }

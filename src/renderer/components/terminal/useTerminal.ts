@@ -6,10 +6,11 @@ import { INTERVENTION_PATTERNS } from '../../../shared/patterns'
 
 interface UseTerminalOptions {
   terminalId: string | null
+  sessionId: string | null
   sessionName: string
 }
 
-export function useTerminal({ terminalId, sessionName }: UseTerminalOptions) {
+export function useTerminal({ terminalId, sessionId, sessionName }: UseTerminalOptions) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -75,10 +76,10 @@ export function useTerminal({ terminalId, sessionName }: UseTerminalOptions) {
 
       for (const pattern of INTERVENTION_PATTERNS) {
         if (pattern.test(lineBuffer.current)) {
-          window.api.notification.show(
-            'CodeCrucible',
-            `Session "${sessionName}" needs your attention`
-          )
+          // Route through the notification system (in-app indicator + conditional OS notification)
+          if (sessionId) {
+            window.api.notification.triggerForSession(sessionId, sessionName)
+          }
           lineBuffer.current = '' // Reset to avoid repeat notifications
           break
         }
@@ -109,7 +110,7 @@ export function useTerminal({ terminalId, sessionName }: UseTerminalOptions) {
       terminalRef.current = null
       fitAddonRef.current = null
     }
-  }, [terminalId, sessionName, handleResize])
+  }, [terminalId, sessionId, sessionName, handleResize])
 
   return { containerRef }
 }

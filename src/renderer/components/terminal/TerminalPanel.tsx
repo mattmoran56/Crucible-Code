@@ -26,6 +26,7 @@ export function TerminalPanel() {
 
   const { containerRef } = useTerminal({
     terminalId,
+    sessionId: activeSession?.id ?? null,
     sessionName: activeSession?.name ?? '',
   })
 
