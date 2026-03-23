@@ -2,13 +2,17 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
 import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
+import type { TerminalMode } from '../services/terminal.service'
 
 export function registerTerminalHandlers(window: BrowserWindow) {
-  ipcMain.handle(IPC.TERMINAL_SPAWN, async (_e, sessionId: string, cwd: string) => {
-    // Write Claude Code hook settings so notifications route to our server
-    writeClaudeHookSettings(cwd)
-    return terminalService.spawnTerminal(window, sessionId, cwd)
-  })
+  ipcMain.handle(
+    IPC.TERMINAL_SPAWN,
+    async (_e, sessionId: string, cwd: string, mode?: TerminalMode) => {
+      // Write Claude Code hook settings so notifications route to our server
+      writeClaudeHookSettings(cwd)
+      return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell')
+    }
+  )
 
   ipcMain.handle(IPC.TERMINAL_WRITE, async (_e, terminalId: string, data: string) => {
     terminalService.writeTerminal(terminalId, data)

@@ -2,6 +2,9 @@ import React from 'react'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { TabBar, Tab } from '../ui/TabBar'
+import { IconButton } from '../ui/IconButton'
+import { Button } from '../ui/Button'
 
 export function ProjectTabs() {
   const { projects, activeProjectId, setActiveProject, addProject, removeProject } =
@@ -18,16 +21,13 @@ export function ProjectTabs() {
       <div className="w-[78px] shrink-0" />
 
       {/* Tabs — left aligned, uniform width */}
-      <div className="flex items-center h-full min-w-0 gap-px">
+      <TabBar label="Projects" className="gap-px min-w-0">
         {projects.map((project) => (
-          <button
+          <Tab
             key={project.id}
+            active={project.id === activeProjectId}
             onClick={() => setActiveProject(project.id)}
-            className={`titlebar-no-drag group relative flex items-center justify-center gap-2 w-44 px-5 h-full text-xs transition-colors ${
-              project.id === activeProjectId
-                ? 'bg-bg text-text'
-                : 'text-text-muted hover:text-text hover:bg-bg-secondary'
-            }`}
+            className="titlebar-no-drag group w-44 px-5"
           >
             <span className="truncate">{project.name}</span>
             {(() => {
@@ -38,35 +38,36 @@ export function ProjectTabs() {
                 </span>
               ) : null
             })()}
-            <span
+            <IconButton
+              label={`Close ${project.name}`}
+              variant="ghost"
+              size="sm"
               onClick={(e) => {
                 e.stopPropagation()
                 removeProject(project.id)
               }}
-              className="opacity-0 group-hover:opacity-100 hover:text-danger text-[10px] absolute right-2"
+              className="opacity-0 group-hover:opacity-100 hover:!text-danger absolute right-2"
             >
-              ×
-            </span>
-            {/* Active indicator underline */}
-            {project.id === activeProjectId && (
-              <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />
-            )}
-          </button>
+              <span className="text-[10px]">×</span>
+            </IconButton>
+          </Tab>
         ))}
-      </div>
+      </TabBar>
 
       {/* Spacer — draggable area fills the middle */}
       <div className="flex-1" />
 
-      {/* Add project — right aligned with padding */}
-      <button
+      {/* Add project — right aligned */}
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={addProject}
-        className="titlebar-no-drag rounded text-xs text-text-muted hover:text-text hover:bg-bg-secondary border border-border transition-colors"
+        className="titlebar-no-drag border border-border"
         style={{ padding: '8px 20px', marginRight: '20px' }}
         title="Add project"
       >
         Add Project
-      </button>
+      </Button>
     </div>
   )
 }

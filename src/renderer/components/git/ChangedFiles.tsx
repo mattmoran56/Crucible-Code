@@ -1,5 +1,6 @@
 import React from 'react'
 import { useGitStore } from '../../stores/gitStore'
+import { ListBox, ListItem } from '../ui/ListBox'
 
 interface Props {
   repoPath: string
@@ -31,16 +32,20 @@ export function ChangedFiles({ repoPath }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <ListBox
+      label="Changed files"
+      className="flex-1 overflow-y-auto"
+      onSelect={(index) =>
+        selectFile(repoPath, selectedCommitHash, changedFiles[index].filePath)
+      }
+    >
       {changedFiles.map((file) => (
-        <button
+        <ListItem
           key={file.filePath}
+          selected={file.filePath === selectedFilePath}
           onClick={() => selectFile(repoPath, selectedCommitHash, file.filePath)}
-          className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors ${
-            file.filePath === selectedFilePath
-              ? 'bg-accent/10 text-accent'
-              : 'hover:bg-bg-tertiary'
-          }`}
+          className="text-xs flex items-center gap-2"
+          style={{ padding: '6px 12px' }}
         >
           <span className={`font-mono font-bold ${STATUS_COLORS[file.status] || ''}`}>
             {STATUS_LABELS[file.status] || '?'}
@@ -52,8 +57,8 @@ export function ChangedFiles({ repoPath }: Props) {
               {file.deletions > 0 && <span className="text-danger">-{file.deletions}</span>}
             </span>
           )}
-        </button>
+        </ListItem>
       ))}
-    </div>
+    </ListBox>
   )
 }

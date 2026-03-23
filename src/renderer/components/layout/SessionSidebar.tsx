@@ -4,10 +4,13 @@ import { useProjectStore } from '../../stores/projectStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { SessionCard } from '../sessions/SessionCard'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
+import { Sidebar, SidebarSection } from '../ui/Sidebar'
+import { IconButton } from '../ui/IconButton'
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, loadSessions, setActiveSession } = useSessionStore()
+  const { sessions, activeSessionId, loadSessions, setActiveSession, removeSession } =
+    useSessionStore()
   const { pendingSessionIds, clearPending } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
 
@@ -33,30 +36,28 @@ export function SessionSidebar() {
 
   if (!activeProject) {
     return (
-      <div className="w-56 bg-bg-secondary border-r border-border flex items-center justify-center p-6">
-        <p className="text-text-muted text-xs text-center">
-          Add a project to get started
-        </p>
-      </div>
+      <Sidebar>
+        <div className="flex-1 flex items-center justify-center p-6">
+          <p className="text-text-muted text-xs text-center">Add a project to get started</p>
+        </div>
+      </Sidebar>
     )
   }
 
   return (
-    <div className="w-56 bg-bg-secondary border-r border-border flex flex-col">
-      <div style={{ padding: '10px 12px' }} className="border-b border-border flex items-center justify-between">
-        <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
-          Sessions
-        </span>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="text-accent hover:text-accent-hover text-sm leading-none"
-          title="New session"
-        >
-          +
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+    <Sidebar>
+      <SidebarSection
+        title="Sessions"
+        action={
+          <IconButton
+            label="New session"
+            onClick={() => setShowCreate(true)}
+            className="text-accent hover:text-accent-hover text-sm"
+          >
+            +
+          </IconButton>
+        }
+      >
         {sessions.map((session) => (
           <SessionCard
             key={session.id}
@@ -67,21 +68,19 @@ export function SessionSidebar() {
               setActiveSession(session.id)
               clearPending(session.id)
             }}
+            onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
           />
         ))}
         {sessions.length === 0 && (
-          <p className="text-text-muted text-xs text-center py-4">
-            No sessions yet
-          </p>
+          <p className="text-text-muted text-xs text-center py-4">No sessions yet</p>
         )}
-      </div>
+      </SidebarSection>
 
-      {showCreate && (
-        <CreateSessionDialog
-          project={activeProject}
-          onClose={() => setShowCreate(false)}
-        />
-      )}
-    </div>
+      <CreateSessionDialog
+        open={showCreate}
+        project={activeProject}
+        onClose={() => setShowCreate(false)}
+      />
+    </Sidebar>
   )
 }

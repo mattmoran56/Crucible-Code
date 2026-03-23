@@ -1,16 +1,19 @@
 import React, { useEffect } from 'react'
 import { ProjectTabs } from './components/layout/ProjectTabs'
 import { SessionSidebar } from './components/layout/SessionSidebar'
-import { GitPanel } from './components/git/GitPanel'
-import { TerminalPanel } from './components/terminal/TerminalPanel'
+import { SessionWorkspace } from './components/layout/SessionWorkspace'
+import { ResizeHandle } from './components/ui/ResizeHandle'
 import { useProjectStore } from './stores/projectStore'
 import { useSessionStore } from './stores/sessionStore'
 import { useNotificationStore } from './stores/notificationStore'
+import { useResizable } from './hooks/useResizable'
 
 export default function App() {
   const { loadProjects, activeProjectId } = useProjectStore()
   const { activeSessionId } = useSessionStore()
   const { addPending, clearPending } = useNotificationStore()
+
+  const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
 
   useEffect(() => {
     loadProjects()
@@ -38,26 +41,17 @@ export default function App() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Project tabs along the top */}
       <ProjectTabs />
 
-      {/* Main content: sidebar + work area */}
       <div className="flex-1 flex min-h-0">
-        {/* Session sidebar */}
-        <SessionSidebar />
-
-        {/* Work area: git panel (top) + terminal (bottom) */}
-        <div className="flex-1 flex flex-col min-h-0">
-          {/* Git panel — upper half */}
-          <div className="flex-1 flex min-h-0 border-b border-border">
-            <GitPanel />
-          </div>
-
-          {/* Terminal — lower half */}
-          <div className="h-72 flex flex-col min-h-0">
-            <TerminalPanel />
-          </div>
+        {/* Session sidebar — resizable width */}
+        <div style={{ width: sidebar.size }} className="flex-shrink-0">
+          <SessionSidebar />
         </div>
+        <ResizeHandle direction="horizontal" onMouseDown={sidebar.onMouseDown} />
+
+        {/* Session workspace: toolbar + content (agent or git view) */}
+        <SessionWorkspace />
       </div>
     </div>
   )
