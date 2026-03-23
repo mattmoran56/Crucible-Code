@@ -75,6 +75,7 @@ Every interactive element in the app should use these — never raw `<button>`, 
 | `TabBar` / `Tab` | Horizontal tab navigation | `role="tablist"/"tab"`, roving tabindex (Arrow L/R) |
 | `ListBox` / `ListItem` | Vertical selectable list | `role="listbox"/"option"`, roving tabindex (Arrow U/D) |
 | `Sidebar` / `SidebarSection` | Sidebar layout container | `<aside>` landmark, `<h2>` section headers |
+| `ResizeHandle` | Draggable divider between panels | `role="separator"`, focusable |
 
 All base components are exported from `components/ui/index.ts`.
 
@@ -122,8 +123,9 @@ To add a new theme: add a `[data-theme="your-theme"]` block with the same proper
 | `danger` | Deleted files, destructive actions |
 | `warning` | Modified files, caution |
 
-## Style Preferences
+## Layout Principles
 
+- **All panels are resizable** — Every block/panel in the IDE should be resizable by dragging its edge. Use `ResizeHandle` + `useResizable` hook for this. The sidebar, terminal, commit list, changed files columns are all resizable.
 - Compact UI with modest padding (8-12px internal, 10-12px section headers)
 - Flush/edge-to-edge panels — no border radius on panels, no gaps between sections
 - Inline `style={{ padding: '...' }}` for reliable padding values

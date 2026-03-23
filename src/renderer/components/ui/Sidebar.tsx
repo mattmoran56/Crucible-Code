@@ -8,11 +8,10 @@ interface SidebarProps {
   className?: string
 }
 
-export function Sidebar({ children, width = '14rem', className = '' }: SidebarProps) {
+export function Sidebar({ children, className = '' }: SidebarProps) {
   return (
     <aside
-      style={{ width }}
-      className={`bg-bg-secondary border-r border-border flex flex-col ${className}`}
+      className={`h-full bg-bg-secondary flex flex-col ${className}`}
     >
       {children}
     </aside>
