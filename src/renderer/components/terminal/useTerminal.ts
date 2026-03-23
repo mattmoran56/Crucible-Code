@@ -68,13 +68,36 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       window.api.terminal.write(terminalId, data)
     })
 
+    // Track user-initiated scrolls only (wheel/keyboard), not programmatic ones
+    let anchoredToBottom = true
+    let userScrolling = false
+
+    const el = containerRef.current!
+    el.addEventListener('wheel', () => {
+      userScrolling = true
+      requestAnimationFrame(() => {
+        const buf = term.buffer.active
+        anchoredToBottom = buf.viewportY >= buf.baseY - 3
+        userScrolling = false
+      })
+    })
+
+    // Also catch keyboard scrolling (Shift+PageUp/Down etc)
+    term.onKey(({ domEvent }) => {
+      if (domEvent.key === 'PageUp' || domEvent.key === 'PageDown' ||
+          (domEvent.shiftKey && (domEvent.key === 'ArrowUp' || domEvent.key === 'ArrowDown'))) {
+        requestAnimationFrame(() => {
+          const buf = term.buffer.active
+          anchoredToBottom = buf.viewportY >= buf.baseY - 3
+        })
+      }
+    })
+
     // Receive data from pty — always active, even when hidden
     window.api.terminal.onData((id, data) => {
       if (id !== terminalId) return
-      // Only auto-scroll if user is already near the bottom
-      const isNearBottom = term.buffer.active.viewportY >= term.buffer.active.baseY - 5
       term.write(data)
-      if (isNearBottom) term.scrollToBottom()
+      if (anchoredToBottom && !userScrolling) term.scrollToBottom()
 
       // Intervention detection
       lineBuffer.current += data
