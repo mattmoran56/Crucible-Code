@@ -36,6 +36,22 @@ const THEMES: { name: ThemeName; label: string; colors: Record<string, string> }
     },
   },
   {
+    name: 'soft-light',
+    label: 'Soft Light',
+    colors: {
+      bg: '#faf6f1',
+      'bg-secondary': '#f0ebe4',
+      'bg-tertiary': '#f5f0ea',
+      border: '#ddd5ca',
+      text: '#3d3229',
+      'text-muted': '#8c7e72',
+      accent: '#7c6f9b',
+      success: '#6a9e6b',
+      danger: '#c46a6a',
+      warning: '#c4976a',
+    },
+  },
+  {
     name: 'ultra-dark',
     label: 'Ultra Dark',
     colors: {

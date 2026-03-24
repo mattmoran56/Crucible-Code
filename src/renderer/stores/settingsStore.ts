@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ThemeName = 'dark' | 'light' | 'ultra-dark'
+export type ThemeName = 'dark' | 'light' | 'soft-light' | 'ultra-dark'
 
 interface SettingsState {
   isOpen: boolean
