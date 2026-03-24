@@ -8,7 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
-    "dist": "electron-vite build && electron-builder --dir"
+    "dist": "electron-vite build && electron-builder --dir && rm -rf /Applications/CodeCrucible.app && mv /Applications/mac-arm64/CodeCrucible.app /Applications/CodeCrucible.app && rm -rf /Applications/mac-arm64"
   },
   "build": {
     "appId": "com.codecrucible.app",
