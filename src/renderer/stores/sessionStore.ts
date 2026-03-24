@@ -50,9 +50,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   loadSessions: async (projectId: string) => {
     const sessions = await window.api.session.list(projectId)
+    const currentId = get().activeSessionId
+    const stillExists = currentId && sessions.some((s) => s.id === currentId)
     set({
       sessions,
-      activeSessionId: sessions.length > 0 ? (get().activeSessionId ?? sessions[0].id) : null,
+      staleSessions: [],
+      activeSessionId: sessions.length > 0 ? (stillExists ? currentId : sessions[0].id) : null,
+      // Reset workspace state so we don't carry over PR/git tab from previous project
+      ...(!stillExists && {
+        activePRNumber: null,
+        activeWorkspaceTab: 'agent' as WorkspaceTab,
+        didStash: false,
+        detachedWorktree: null,
+      }),
     })
   },
 
