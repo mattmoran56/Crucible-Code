@@ -96,11 +96,8 @@ const api = {
       ),
     unregisterSession: (worktreePath: string) =>
       ipcRenderer.invoke('notification:unregister-session', worktreePath),
-  },
-
-  focus: {
-    setActiveContext: (projectId: string | null, sessionId: string | null) =>
-      ipcRenderer.invoke(IPC.FOCUS_SET_ACTIVE_CONTEXT, projectId, sessionId),
+    setBadge: (count: number) =>
+      ipcRenderer.invoke(IPC.NOTIFICATION_SET_BADGE, count),
   },
 
   project: {

@@ -1,12 +1,7 @@
 import http from 'node:http'
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
 import { showNotification } from './notification.service'
-
-interface ActiveContext {
-  projectId: string | null
-  sessionId: string | null
-}
 
 interface SessionMapping {
   sessionId: string
@@ -18,20 +13,18 @@ interface SessionMapping {
 let server: http.Server | null = null
 let serverPort: number | null = null
 let mainWindow: BrowserWindow | null = null
-let windowFocused = true
-let activeContext: ActiveContext = { projectId: null, sessionId: null }
 const sessionMappings = new Map<string, SessionMapping>()
 
 export function getNotificationServerPort(): number | null {
   return serverPort
 }
 
-export function setActiveContext(context: ActiveContext) {
-  activeContext = context
-}
-
-export function setWindowFocused(focused: boolean) {
-  windowFocused = focused
+export function setBadgeCount(count: number) {
+  if (process.platform === 'darwin') {
+    app.dock.setBadge(count > 0 ? String(count) : '')
+  } else {
+    app.setBadgeCount(count)
+  }
 }
 
 export function registerSessionMapping(mapping: SessionMapping) {
@@ -60,23 +53,14 @@ function findSessionByWorktreePath(cwd: string): SessionMapping | undefined {
   return undefined
 }
 
-function shouldSuppressNotification(sessionId: string): boolean {
-  return (
-    windowFocused &&
-    activeContext.sessionId === sessionId
-  )
-}
-
 export function handleNotificationForSession(sessionId: string, sessionName: string) {
   if (!mainWindow) return
 
   // Always send the in-app indicator to the renderer
   mainWindow.webContents.send(IPC.NOTIFICATION_HOOK_EVENT, sessionId)
 
-  // Only show OS notification if user isn't already looking at this session
-  if (!shouldSuppressNotification(sessionId)) {
-    showNotification('Crucible Code', `Session "${sessionName}" needs your attention`)
-  }
+  // Always show OS notification regardless of which session/project is active
+  showNotification('Crucible Code', `Session "${sessionName}" needs your attention`)
 }
 
 export function startNotificationServer(window: BrowserWindow): Promise<number> {

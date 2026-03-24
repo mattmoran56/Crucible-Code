@@ -2,11 +2,11 @@ import { ipcMain } from 'electron'
 import { IPC } from '../../shared/constants'
 import { showNotification } from '../services/notification.service'
 import {
-  setActiveContext,
   getNotificationServerPort,
   registerSessionMapping,
   removeSessionMapping,
   handleNotificationForSession,
+  setBadgeCount,
 } from '../services/notification-server'
 
 export function registerNotificationHandlers() {
@@ -18,12 +18,9 @@ export function registerNotificationHandlers() {
     return getNotificationServerPort()
   })
 
-  ipcMain.handle(
-    IPC.FOCUS_SET_ACTIVE_CONTEXT,
-    async (_e, projectId: string | null, sessionId: string | null) => {
-      setActiveContext({ projectId, sessionId })
-    }
-  )
+  ipcMain.handle(IPC.NOTIFICATION_SET_BADGE, async (_e, count: number) => {
+    setBadgeCount(count)
+  })
 
   // Called by the renderer when a pattern-match notification fires (fallback path)
   ipcMain.handle(
