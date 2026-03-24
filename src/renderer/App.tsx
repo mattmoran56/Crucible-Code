@@ -10,11 +10,14 @@ import { useSessionStore } from './stores/sessionStore'
 import { useNotificationStore } from './stores/notificationStore'
 import { useResizable } from './hooks/useResizable'
 import { ToastContainer } from './components/ui/ToastContainer'
+import { SettingsPage } from './components/settings/SettingsPage'
+import { useSettingsStore } from './stores/settingsStore'
 
 export default function App() {
   const { loadProjects, activeProjectId } = useProjectStore()
   const { activeSessionId } = useSessionStore()
   const { addPending, clearPending } = useNotificationStore()
+  const { isOpen: settingsOpen } = useSettingsStore()
 
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
   const rightPanel = useResizable({ direction: 'horizontal', initialSize: 300, minSize: 200, maxSize: 600, inverted: true })
@@ -46,6 +49,15 @@ export default function App() {
       clearPending(activeSessionId)
     }
   }, [activeSessionId, clearPending])
+
+  if (settingsOpen) {
+    return (
+      <div className="h-full flex flex-col">
+        <SettingsPage />
+        <ToastContainer />
+      </div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col">

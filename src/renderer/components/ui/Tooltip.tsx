@@ -7,7 +7,7 @@ interface TooltipProps {
   className?: string
 }
 
-export function Tooltip({ content, children, side = 'top', className = '' }: TooltipProps) {
+export function Tooltip({ content, children, side = 'bottom', className = '' }: TooltipProps) {
   const isTop = side === 'top'
   const isLeft = side === 'left'
 
