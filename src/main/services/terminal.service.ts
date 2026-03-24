@@ -11,6 +11,7 @@ interface TerminalInstance {
   cwd: string
   window: BrowserWindow
   stopped: boolean
+  isDark: boolean
 }
 
 const terminals = new Map<string, TerminalInstance>()
@@ -90,11 +91,12 @@ export function spawnTerminal(
   window: BrowserWindow,
   sessionId: string,
   cwd: string,
-  mode: TerminalMode = 'shell'
+  mode: TerminalMode = 'shell',
+  isDark = true
 ): string {
   const terminalId = `term-${++terminalCounter}`
 
-  const instanceBase = { sessionId, mode, cwd, window }
+  const instanceBase = { sessionId, mode, cwd, window, isDark }
   const ptyProcess = spawnPty(terminalId, instanceBase, false)
 
   terminals.set(terminalId, { ...instanceBase, pty: ptyProcess, stopped: false })

@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { THEMES } from '../../shared/themes'
+import { useSettingsStore } from './settingsStore'
 
 type TerminalMode = 'shell' | 'claude' | 'review'
 
@@ -29,7 +31,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const existing = get().terminals[key]
     if (existing) return existing.terminalId
 
-    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode)
+    const { theme } = useSettingsStore.getState()
+    const isDark = THEMES.find((t) => t.name === theme)?.isDark ?? true
+    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, isDark)
     set((state) => ({
       terminals: {
         ...state.terminals,

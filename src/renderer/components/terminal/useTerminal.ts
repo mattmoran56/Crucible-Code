@@ -4,6 +4,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { INTERVENTION_PATTERNS } from '../../../shared/patterns'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useSettingsStore } from '../../stores/settingsStore'
+import { THEMES } from '../../../shared/themes'
 
 interface UseTerminalOptions {
   terminalId: string | null
@@ -18,9 +20,24 @@ const terminalInstances = new Map<
   { term: Terminal; fitAddon: FitAddon; attached: boolean }
 >()
 
+function getCurrentTerminalTheme() {
+  const { theme } = useSettingsStore.getState()
+  return THEMES.find((t) => t.name === theme)?.terminal ?? THEMES[0].terminal
+}
+
 export function useTerminal({ terminalId, sessionId, sessionName, visible = true }: UseTerminalOptions) {
   const containerRef = useRef<HTMLDivElement>(null)
   const lineBuffer = useRef('')
+
+  // Update terminal theme when app theme changes
+  useEffect(() => {
+    return useSettingsStore.subscribe((state) => {
+      const terminalTheme = THEMES.find((t) => t.name === state.theme)?.terminal ?? THEMES[0].terminal
+      for (const { term } of terminalInstances.values()) {
+        term.options.theme = terminalTheme
+      }
+    })
+  }, [])
 
   // Create terminal instance once, attach to DOM once
   useEffect(() => {
@@ -45,20 +62,7 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
 
     // Brand new terminal
     const term = new Terminal({
-      theme: {
-        background: '#1a1b26',
-        foreground: '#c0caf5',
-        cursor: '#c0caf5',
-        selectionBackground: '#33467c',
-        black: '#15161e',
-        red: '#f7768e',
-        green: '#9ece6a',
-        yellow: '#e0af68',
-        blue: '#7aa2f7',
-        magenta: '#bb9af7',
-        cyan: '#7dcfff',
-        white: '#a9b1d6',
-      },
+      theme: getCurrentTerminalTheme(),
       fontSize: 13,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       cursorBlink: true,
