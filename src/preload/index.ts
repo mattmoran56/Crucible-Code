@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod } from '../shared/types'
 
 const api = {
   git: {
@@ -11,6 +11,10 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_DIFF, repoPath, commitHash),
     fileDiff: (repoPath: string, commitHash: string, filePath: string): Promise<string> =>
       ipcRenderer.invoke(IPC.GIT_FILE_DIFF, repoPath, commitHash, filePath),
+    checkout: (repoPath: string, branch: string): Promise<{ stashed: boolean; detachedWorktree?: string; error?: string }> =>
+      ipcRenderer.invoke(IPC.GIT_CHECKOUT, repoPath, branch),
+    restoreWorktree: (worktreePath: string, branch: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_RESTORE_WORKTREE, worktreePath, branch),
   },
 
   worktree: {
@@ -19,6 +23,12 @@ const api = {
     list: (repoPath: string) => ipcRenderer.invoke(IPC.WORKTREE_LIST, repoPath),
     remove: (repoPath: string, worktreePath: string) =>
       ipcRenderer.invoke(IPC.WORKTREE_REMOVE, repoPath, worktreePath),
+    createFromBranch: (
+      repoPath: string,
+      sessionName: string,
+      remoteBranch: string
+    ): Promise<{ path: string; branch: string }> =>
+      ipcRenderer.invoke(IPC.WORKTREE_CREATE_FROM_BRANCH, repoPath, sessionName, remoteBranch),
   },
 
   terminal: {
@@ -81,6 +91,42 @@ const api = {
     remove: (projectId: string): Promise<Project[]> =>
       ipcRenderer.invoke(IPC.PROJECT_REMOVE, projectId),
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.PROJECT_SELECT_FOLDER),
+  },
+
+  github: {
+    listPRs: (repoPath: string): Promise<PullRequest[]> =>
+      ipcRenderer.invoke(IPC.PR_LIST, repoPath),
+    getSeenPRs: (projectId: string): Promise<number[]> =>
+      ipcRenderer.invoke(IPC.PR_SEEN_GET, projectId),
+    markPRSeen: (projectId: string, prNumber: number): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_SEEN_SET, projectId, prNumber),
+    getDiff: (repoPath: string, prNumber: number): Promise<string> =>
+      ipcRenderer.invoke(IPC.PR_DIFF, repoPath, prNumber),
+    getFiles: (repoPath: string, prNumber: number): Promise<PRFile[]> =>
+      ipcRenderer.invoke(IPC.PR_FILES, repoPath, prNumber),
+    getComments: (repoPath: string, prNumber: number): Promise<PRComment[]> =>
+      ipcRenderer.invoke(IPC.PR_COMMENTS, repoPath, prNumber),
+    createComment: (
+      repoPath: string,
+      prNumber: number,
+      body: string,
+      path: string,
+      line: number,
+      startLine?: number,
+      side?: 'LEFT' | 'RIGHT'
+    ): Promise<PRComment> =>
+      ipcRenderer.invoke(IPC.PR_COMMENT_CREATE, repoPath, prNumber, body, path, line, startLine, side),
+    submitReview: (
+      repoPath: string,
+      prNumber: number,
+      event: PRReviewEvent,
+      body?: string
+    ): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_REVIEW, repoPath, prNumber, event, body),
+    getMergeability: (repoPath: string, prNumber: number): Promise<{ mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' }> =>
+      ipcRenderer.invoke(IPC.PR_MERGEABILITY, repoPath, prNumber),
+    merge: (repoPath: string, prNumber: number, method: PRMergeMethod): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_MERGE, repoPath, prNumber, method),
   },
 
   session: {
