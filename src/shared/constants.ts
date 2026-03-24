@@ -68,4 +68,9 @@ export const IPC = {
   UPDATE_STATUS: 'update:status',
   UPDATE_APPLY: 'update:apply',
   UPDATE_LOG: 'update:log',
+
+  // Notes
+  NOTES_LIST: 'notes:list',
+  NOTES_SAVE: 'notes:save',
+  NOTES_DELETE: 'notes:delete',
 } as const
