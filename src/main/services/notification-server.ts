@@ -75,7 +75,7 @@ export function handleNotificationForSession(sessionId: string, sessionName: str
 
   // Only show OS notification if user isn't already looking at this session
   if (!shouldSuppressNotification(sessionId)) {
-    showNotification('CodeCrucible', `Session "${sessionName}" needs your attention`)
+    showNotification('Crucible Code', `Session "${sessionName}" needs your attention`)
   }
 }
 

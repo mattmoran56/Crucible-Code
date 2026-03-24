@@ -365,7 +365,7 @@ export function LoadingScreen({ visible }: LoadingScreenProps) {
           marginBottom: 6,
         }}
       >
-        CodeCrucible
+        Crucible Code
       </div>
 
       <div

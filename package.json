@@ -8,11 +8,11 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
-    "dist": "electron-vite build && electron-builder --dir && rm -rf /Applications/CodeCrucible.app && mv /Applications/mac-arm64/CodeCrucible.app /Applications/CodeCrucible.app && rm -rf /Applications/mac-arm64"
+    "dist": "electron-vite build && electron-builder --dir && rm -rf \"/Applications/Crucible Code.app\" && mv \"/Applications/mac-arm64/Crucible Code.app\" \"/Applications/Crucible Code.app\" && rm -rf /Applications/mac-arm64"
   },
   "build": {
     "appId": "com.codecrucible.app",
-    "productName": "CodeCrucible",
+    "productName": "Crucible Code",
     "asar": false,
     "files": [
       "out/**/*",
@@ -21,6 +21,7 @@
     "directories": {
       "output": "/Applications"
     },
+    "icon": "resources/icon.icns",
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
