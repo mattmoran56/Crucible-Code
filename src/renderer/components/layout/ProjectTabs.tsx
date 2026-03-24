@@ -211,7 +211,7 @@ export function ProjectTabs() {
         title="Close project"
       >
         <p className="text-sm text-text-muted mb-4">
-          Remove <span className="text-text font-medium">{projectToClose?.name}</span> from CodeCrucible?
+          Remove <span className="text-text font-medium">{projectToClose?.name}</span> from Crucible Code?
         </p>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={() => setProjectToClose(null)}>

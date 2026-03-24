@@ -60,7 +60,7 @@ export function handleNotificationForSession(sessionId: string, sessionName: str
   mainWindow.webContents.send(IPC.NOTIFICATION_HOOK_EVENT, sessionId)
 
   // Always show OS notification regardless of which session/project is active
-  showNotification('CodeCrucible', `Session "${sessionName}" needs your attention`)
+  showNotification('Crucible Code', `Session "${sessionName}" needs your attention`)
 }
 
 export function startNotificationServer(window: BrowserWindow): Promise<number> {
