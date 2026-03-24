@@ -5,13 +5,14 @@ type TerminalMode = 'shell' | 'claude'
 interface TerminalInstance {
   terminalId: string
   sessionId: string
+  sessionName: string
   mode: TerminalMode
 }
 
 interface TerminalState {
   // Keyed by `${sessionId}:${mode}` so each session can have both a claude and shell terminal
   terminals: Record<string, TerminalInstance>
-  spawnTerminal: (sessionId: string, cwd: string, mode?: TerminalMode) => Promise<string>
+  spawnTerminal: (sessionId: string, sessionName: string, cwd: string, mode?: TerminalMode) => Promise<string>
   killTerminal: (sessionId: string, mode?: TerminalMode) => Promise<void>
   getTerminal: (sessionId: string, mode?: TerminalMode) => TerminalInstance | undefined
 }
@@ -23,7 +24,7 @@ function terminalKey(sessionId: string, mode: TerminalMode) {
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   terminals: {},
 
-  spawnTerminal: async (sessionId: string, cwd: string, mode: TerminalMode = 'shell') => {
+  spawnTerminal: async (sessionId: string, sessionName: string, cwd: string, mode: TerminalMode = 'shell') => {
     const key = terminalKey(sessionId, mode)
     const existing = get().terminals[key]
     if (existing) return existing.terminalId
@@ -32,7 +33,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set((state) => ({
       terminals: {
         ...state.terminals,
-        [key]: { terminalId, sessionId, mode },
+        [key]: { terminalId, sessionId, sessionName, mode },
       },
     }))
     return terminalId

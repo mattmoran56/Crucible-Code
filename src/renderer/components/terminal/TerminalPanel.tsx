@@ -19,11 +19,16 @@ export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
 
     const existing = getTerminal(activeSession.id, mode)
     if (!existing) {
-      spawnTerminal(activeSession.id, activeSession.worktreePath, mode)
+      spawnTerminal(activeSession.id, activeSession.name, activeSession.worktreePath, mode)
     }
   }, [activeSessionId, mode, sessions, getTerminal, spawnTerminal])
 
-  if (sessions.length === 0) {
+  // Render ALL terminals of this mode (across all projects) so they never
+  // unmount during project switches — mirrors the within-project pattern
+  // where all session terminals stay mounted and toggle visibility.
+  const allInstances = Object.values(terminals).filter((t) => t.mode === mode)
+
+  if (sessions.length === 0 && allInstances.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
         Select a session to get started
@@ -31,22 +36,17 @@ export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
     )
   }
 
-  // Render a TerminalView for every session that has a terminal of this mode.
-  // All stay mounted; only the active one is visible.
   return (
     <div className="flex-1 relative min-h-0">
-      {sessions.map((session) => {
-        const instance = getTerminal(session.id, mode)
-        if (!instance) return null
-
-        const isActive = session.id === activeSessionId && visible
+      {allInstances.map((instance) => {
+        const isActive = instance.sessionId === activeSessionId && visible
 
         return (
           <TerminalView
             key={instance.terminalId}
             terminalId={instance.terminalId}
-            sessionId={session.id}
-            sessionName={session.name}
+            sessionId={instance.sessionId}
+            sessionName={instance.sessionName}
             visible={isActive}
           />
         )
