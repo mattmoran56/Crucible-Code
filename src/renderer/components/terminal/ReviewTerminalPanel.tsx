@@ -22,7 +22,7 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
 
     if (!existing) {
       sentCommandRef.current = null
-      spawnTerminal(activeSession.id, activeSession.worktreePath, 'review').then(
+      spawnTerminal(activeSession.id, activeSession.name, activeSession.worktreePath, 'review').then(
         (terminalId) => {
           if (sentCommandRef.current !== commandKey) {
             // Wait briefly for claude to initialize, then send the review command
