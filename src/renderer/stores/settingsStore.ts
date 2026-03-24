@@ -2,6 +2,15 @@ import { create } from 'zustand'
 
 export type ThemeName = 'dark' | 'light' | 'soft-light' | 'ultra-dark'
 
+const THEME_STORAGE_KEY = 'codecrucible-theme'
+
+function loadTheme(): ThemeName {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY) as ThemeName | null
+  const theme = stored || 'dark'
+  document.documentElement.setAttribute('data-theme', theme)
+  return theme
+}
+
 interface SettingsState {
   isOpen: boolean
   theme: ThemeName
@@ -12,11 +21,12 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   isOpen: false,
-  theme: (document.documentElement.getAttribute('data-theme') as ThemeName) || 'dark',
+  theme: loadTheme(),
   openSettings: () => set({ isOpen: true }),
   closeSettings: () => set({ isOpen: false }),
   setTheme: (theme) => {
     document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem(THEME_STORAGE_KEY, theme)
     set({ theme })
   },
 }))
