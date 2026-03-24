@@ -69,6 +69,32 @@ export interface Note {
   updatedAt: string
 }
 
+export interface PRDetail {
+  body: string
+  author: string
+  title: string
+  createdAt: string
+  baseRefName: string
+  headRefName: string
+}
+
+export interface PRConversationComment {
+  id: number
+  body: string
+  author: string
+  createdAt: string
+  authorAssociation: string
+}
+
+export interface PRCheck {
+  name: string
+  status: 'queued' | 'in_progress' | 'completed' | 'waiting' | 'pending'
+  conclusion: 'success' | 'failure' | 'neutral' | 'cancelled' | 'timed_out' | 'action_required' | 'skipped' | 'stale' | null
+  startedAt: string | null
+  completedAt: string | null
+  detailsUrl: string | null
+}
+
 export type PRReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
 export type PRMergeMethod = 'merge' | 'squash' | 'rebase'
 
