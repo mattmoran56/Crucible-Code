@@ -113,7 +113,7 @@ export function SessionWorkspace() {
         resetLayout(['pr', 'review'], 'pr')
       } else if (activeSessionId) {
         const tabs: WorkspaceTab[] =
-          activePRNumber != null
+          effectivePRNumber != null
             ? ['agent', 'git', 'pr', 'review']
             : ['agent', 'git', 'review']
         resetLayout(tabs, 'agent')
@@ -122,7 +122,7 @@ export function SessionWorkspace() {
       }
       initializedRef.current = true
     } else if (prChanged && !prOnlyMode && activeSessionId) {
-      if (activePRNumber != null) {
+      if (effectivePRNumber != null) {
         addAvailableTab('pr')
         // Activate the PR tab in whichever column has it
         const cols = useWorkspaceLayoutStore.getState().columns
@@ -134,8 +134,8 @@ export function SessionWorkspace() {
     }
 
     prevSessionRef.current = activeSessionId
-    prevPRRef.current = activePRNumber
-  }, [activeSessionId, activePRNumber, prOnlyMode])
+    prevPRRef.current = effectivePRNumber
+  }, [activeSessionId, effectivePRNumber, prOnlyMode])
 
   // Column resize state
   const columnsRef = useRef<HTMLDivElement>(null)
