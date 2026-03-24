@@ -80,7 +80,7 @@ export function SidebarSection({
         {action && <div onClick={(e) => e.stopPropagation()}>{action}</div>}
       </div>
       {!collapsed && (
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-2">
           {children}
         </div>
       )}
