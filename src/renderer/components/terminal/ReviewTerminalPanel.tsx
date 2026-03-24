@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useProjectStore } from '../../stores/projectStore'
 import { TerminalView } from './TerminalView'
 
 interface Props {
@@ -9,20 +10,28 @@ interface Props {
 
 export function ReviewTerminalPanel({ visible = true }: Props) {
   const { activeSessionId, activePRNumber, sessions } = useSessionStore()
-  const { spawnTerminal, getTerminal, killTerminal } = useTerminalStore()
+  const { projects, activeProjectId } = useProjectStore()
+  const { spawnTerminal, getTerminal, killTerminal, terminals } = useTerminalStore()
   const sentCommandRef = useRef<string | null>(null)
+
+  // Derive cwd and a stable key for the terminal
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const activeProject = projects.find((p) => p.id === activeProjectId)
+  const cwd = activeSession?.worktreePath ?? activeProject?.repoPath
+  // Use session ID if available, otherwise a synthetic key for PR-only mode
+  const terminalSessionId = activeSessionId ?? (activePRNumber != null ? `pr-review-${activePRNumber}` : null)
+  const terminalName = activeSession?.name ?? `PR #${activePRNumber}`
 
   // Spawn a review terminal and send /review command
   useEffect(() => {
-    const activeSession = sessions.find((s) => s.id === activeSessionId)
-    if (!activeSession || activePRNumber == null) return
+    if (!cwd || !terminalSessionId || activePRNumber == null) return
 
-    const existing = getTerminal(activeSession.id, 'review')
-    const commandKey = `${activeSession.id}:${activePRNumber}`
+    const existing = getTerminal(terminalSessionId, 'review')
+    const commandKey = `${terminalSessionId}:${activePRNumber}`
 
     if (!existing) {
       sentCommandRef.current = null
-      spawnTerminal(activeSession.id, activeSession.name, activeSession.worktreePath, 'review').then(
+      spawnTerminal(terminalSessionId, terminalName, cwd, 'review').then(
         (terminalId) => {
           if (sentCommandRef.current !== commandKey) {
             // Wait briefly for claude to initialize, then send the review command
@@ -34,24 +43,25 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
         }
       )
     }
-  }, [activeSessionId, activePRNumber, sessions, getTerminal, spawnTerminal])
+  }, [terminalSessionId, activePRNumber, cwd, terminalName, getTerminal, spawnTerminal])
 
   // Kill the review terminal when PR changes or closes
   useEffect(() => {
     return () => {
-      const session = useSessionStore.getState().sessions.find(
-        (s) => s.id === useSessionStore.getState().activeSessionId
-      )
-      if (session) {
-        const existing = useTerminalStore.getState().getTerminal(session.id, 'review')
+      const state = useSessionStore.getState()
+      const sid = state.activeSessionId
+      const prNum = state.activePRNumber
+      const key = sid ?? (prNum != null ? `pr-review-${prNum}` : null)
+      if (key) {
+        const existing = useTerminalStore.getState().getTerminal(key, 'review')
         if (existing) {
-          useTerminalStore.getState().killTerminal(session.id, 'review')
+          useTerminalStore.getState().killTerminal(key, 'review')
         }
       }
     }
   }, [activePRNumber])
 
-  if (!activeSessionId || activePRNumber == null) {
+  if (activePRNumber == null) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
         Open a PR to start a review
@@ -59,10 +69,9 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
     )
   }
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId)
-  if (!activeSession) return null
+  if (!terminalSessionId) return null
 
-  const instance = getTerminal(activeSession.id, 'review')
+  const instance = getTerminal(terminalSessionId, 'review')
   if (!instance) return null
 
   return (
@@ -70,8 +79,8 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
       <TerminalView
         key={instance.terminalId}
         terminalId={instance.terminalId}
-        sessionId={activeSession.id}
-        sessionName={activeSession.name}
+        sessionId={terminalSessionId}
+        sessionName={terminalName}
         visible={visible}
       />
     </div>
