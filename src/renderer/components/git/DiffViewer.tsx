@@ -3,6 +3,8 @@ import { useGitStore } from '../../stores/gitStore'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { Button } from '../ui/Button'
 import { marked } from 'marked'
+import { useDiffHighlighting, type TokenMap } from '../../hooks/useDiffHighlighting'
+import type { ThemedToken } from 'shiki'
 import type { PRComment } from '../../../shared/types'
 
 // Configure marked for inline rendering
@@ -108,8 +110,28 @@ const LINE_STYLES: Record<string, string> = {
   header: 'text-text-muted bg-bg-tertiary',
   hunk: 'text-accent bg-accent/5',
   context: '',
-  add: 'bg-success/10 text-success',
-  delete: 'bg-danger/10 text-danger',
+  add: 'bg-success/10',
+  delete: 'bg-danger/10',
+}
+
+const INDICATOR_STYLES: Record<string, string> = {
+  add: 'text-success',
+  delete: 'text-danger',
+}
+
+// --- Highlighted code rendering ---
+
+function HighlightedCode({ tokens, fallback }: { tokens?: ThemedToken[]; fallback: string }) {
+  if (!tokens || tokens.length === 0) return <>{fallback}</>
+  return (
+    <>
+      {tokens.map((token, i) => (
+        <span key={i} style={{ color: token.color }}>
+          {token.content}
+        </span>
+      ))}
+    </>
+  )
 }
 
 type DiffMode = 'unified' | 'split'
@@ -331,11 +353,13 @@ function UnifiedView({
   lines,
   comments,
   filePath,
+  tokenMap,
   onAddComment,
 }: {
   lines: DiffLine[]
   comments: PRComment[]
   filePath: string | null
+  tokenMap: TokenMap | null
   onAddComment?: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
 }) {
   const { commentRange, startDrag, extendDrag, rangePosition, cancelComment, submitComment } = useLineDrag(onAddComment)
@@ -370,10 +394,12 @@ function UnifiedView({
               <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
                 {line.newLine ?? ''}
               </span>
-              <span className="w-4 text-center select-none shrink-0">
+              <span className={`w-4 text-center select-none shrink-0 ${INDICATOR_STYLES[line.type] || ''}`}>
                 {line.type === 'add' ? '+' : line.type === 'delete' ? '-' : ''}
               </span>
-              <pre className="flex-1 whitespace-pre-wrap break-all">{line.content}</pre>
+              <pre className="flex-1 whitespace-pre-wrap break-all">
+                <HighlightedCode tokens={tokenMap?.get(i)} fallback={line.content} />
+              </pre>
             </div>
             {lineComments.map((c) => (
               <InlineComment key={c.id} comment={c} />
@@ -399,15 +425,24 @@ function SplitView({
   lines,
   comments,
   filePath,
+  tokenMap,
   onAddComment,
 }: {
   lines: DiffLine[]
   comments: PRComment[]
   filePath: string | null
+  tokenMap: TokenMap | null
   onAddComment?: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
 }) {
   const rows = toSplitRows(lines)
   const { commentRange, startDrag, extendDrag, rangePosition, cancelComment, submitComment } = useLineDrag(onAddComment)
+
+  // Map DiffLine references back to original indices for token lookup
+  const lineToIndex = useMemo(() => {
+    const map = new Map<DiffLine, number>()
+    lines.forEach((line, i) => map.set(line, i))
+    return map
+  }, [lines])
 
   const cellStyle = (line: DiffLine | null, highlighted: boolean) => {
     if (highlighted) return 'bg-accent/15'
@@ -453,10 +488,15 @@ function SplitView({
                 <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
                   {row.left?.oldLine ?? ''}
                 </span>
-                <span className="w-4 text-center select-none shrink-0">
+                <span className={`w-4 text-center select-none shrink-0 ${row.left ? INDICATOR_STYLES[row.left.type] || '' : ''}`}>
                   {row.left?.type === 'delete' ? '-' : ''}
                 </span>
-                <pre className="flex-1 whitespace-pre-wrap break-all">{row.left?.content ?? ''}</pre>
+                <pre className="flex-1 whitespace-pre-wrap break-all">
+                  <HighlightedCode
+                    tokens={row.left ? tokenMap?.get(lineToIndex.get(row.left)!) : undefined}
+                    fallback={row.left?.content ?? ''}
+                  />
+                </pre>
               </div>
               {/* Right side */}
               <div
@@ -471,10 +511,15 @@ function SplitView({
                 <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
                   {row.right?.newLine ?? ''}
                 </span>
-                <span className="w-4 text-center select-none shrink-0">
+                <span className={`w-4 text-center select-none shrink-0 ${row.right ? INDICATOR_STYLES[row.right.type] || '' : ''}`}>
                   {row.right?.type === 'add' ? '+' : ''}
                 </span>
-                <pre className="flex-1 whitespace-pre-wrap break-all">{row.right?.content ?? ''}</pre>
+                <pre className="flex-1 whitespace-pre-wrap break-all">
+                  <HighlightedCode
+                    tokens={row.right ? tokenMap?.get(lineToIndex.get(row.right)!) : undefined}
+                    fallback={row.right?.content ?? ''}
+                  />
+                </pre>
               </div>
             </div>
             {/* Left-side comments/form */}
@@ -551,6 +596,8 @@ function DiffHeader({
 export function DiffViewer() {
   const { filePatch, selectedFilePath } = useGitStore()
   const [mode, setMode] = useState<DiffMode>('unified')
+  const lines = useMemo(() => (filePatch ? parsePatch(filePatch) : []), [filePatch])
+  const tokenMap = useDiffHighlighting(lines, selectedFilePath)
 
   if (!selectedFilePath) {
     return (
@@ -568,16 +615,14 @@ export function DiffViewer() {
     )
   }
 
-  const lines = parsePatch(filePatch)
-
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <DiffHeader filePath={selectedFilePath} mode={mode} onModeChange={setMode} />
       <div className="flex-1 overflow-auto font-mono text-xs">
         {mode === 'unified' ? (
-          <UnifiedView lines={lines} comments={[]} filePath={null} />
+          <UnifiedView lines={lines} comments={[]} filePath={null} tokenMap={tokenMap} />
         ) : (
-          <SplitView lines={lines} comments={[]} filePath={null} />
+          <SplitView lines={lines} comments={[]} filePath={null} tokenMap={tokenMap} />
         )}
       </div>
     </div>
@@ -598,16 +643,17 @@ export function PRDiffViewer({
   onAddComment: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
 }) {
   const [mode, setMode] = useState<DiffMode>('split')
-  const lines = parsePatch(patch)
+  const lines = useMemo(() => parsePatch(patch), [patch])
+  const tokenMap = useDiffHighlighting(lines, filePath)
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <DiffHeader filePath={filePath} mode={mode} onModeChange={setMode} />
       <div className="flex-1 overflow-auto font-mono text-xs">
         {mode === 'unified' ? (
-          <UnifiedView lines={lines} comments={comments} filePath={filePath} onAddComment={onAddComment} />
+          <UnifiedView lines={lines} comments={comments} filePath={filePath} tokenMap={tokenMap} onAddComment={onAddComment} />
         ) : (
-          <SplitView lines={lines} comments={comments} filePath={filePath} onAddComment={onAddComment} />
+          <SplitView lines={lines} comments={comments} filePath={filePath} tokenMap={tokenMap} onAddComment={onAddComment} />
         )}
       </div>
     </div>
