@@ -6,6 +6,7 @@ import simpleGit from 'simple-git'
 import type { UpdateStatus } from '../../shared/types'
 
 declare const __REPO_PATH__: string
+declare const __BUILT_COMMIT__: string
 
 let pollInterval: NodeJS.Timeout | null = null
 
@@ -17,8 +18,8 @@ export async function startUpdatePoller(
   const check = async () => {
     try {
       const g = simpleGit(__REPO_PATH__)
-      await g.fetch(['origin', 'main', '--quiet'])
-      const result = await g.raw(['rev-list', '--count', 'HEAD..origin/main'])
+      await g.fetch(['origin', '--quiet'])
+      const result = await g.raw(['rev-list', '--count', `${__BUILT_COMMIT__}..origin/main`])
       const count = parseInt(result.trim(), 10)
       if (count > 0) {
         onStatus({ state: 'available', commitCount: count })
@@ -31,7 +32,7 @@ export async function startUpdatePoller(
   }
 
   await check()
-  pollInterval = setInterval(check, 5 * 60 * 1000)
+  pollInterval = setInterval(check, 60 * 1000)
 }
 
 export function stopUpdatePoller(): void {
