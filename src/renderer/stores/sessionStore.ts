@@ -109,8 +109,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     await Promise.all(
       allSessions.map(async (session) => {
-        const lastActive = session.lastActiveAt ?? session.createdAt
-        const withinOneDay = Date.now() - new Date(lastActive).getTime() < oneDayMs
+        const withinOneDay = session.lastActiveAt
+          ? Date.now() - new Date(session.lastActiveAt).getTime() < oneDayMs
+          : false
         if (withinOneDay) {
           active.push(session)
           return
