@@ -49,37 +49,6 @@ export async function createWorktree(
   return { path: wtPath, branch: branchName }
 }
 
-export async function createWorktreeFromBranch(
-  repoPath: string,
-  sessionName: string,
-  remoteBranch: string
-): Promise<WorktreeInfo> {
-  const g = simpleGit(repoPath)
-  const wtBase = worktreeDir(repoPath)
-  const wtPath = join(wtBase, sessionName)
-
-  await mkdir(wtBase, { recursive: true })
-
-  // Fetch the branch from origin
-  await g.raw(['fetch', 'origin', remoteBranch])
-
-  // Check if local branch already exists
-  let localExists = true
-  try {
-    await g.raw(['rev-parse', '--verify', remoteBranch])
-  } catch {
-    localExists = false
-  }
-
-  if (localExists) {
-    await g.raw(['worktree', 'add', wtPath, remoteBranch])
-  } else {
-    await g.raw(['worktree', 'add', '-b', remoteBranch, wtPath, `origin/${remoteBranch}`])
-  }
-
-  return { path: wtPath, branch: remoteBranch }
-}
-
 export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
   const g = simpleGit(repoPath)
   const result = await g.raw(['worktree', 'list', '--porcelain'])

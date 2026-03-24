@@ -7,7 +7,6 @@ import { useProjectStore } from './stores/projectStore'
 import { useSessionStore } from './stores/sessionStore'
 import { useNotificationStore } from './stores/notificationStore'
 import { useResizable } from './hooks/useResizable'
-import { ToastContainer } from './components/ui/ToastContainer'
 
 export default function App() {
   const { loadProjects, activeProjectId } = useProjectStore()
@@ -54,7 +53,6 @@ export default function App() {
         {/* Session workspace: toolbar + content (agent or git view) */}
         <SessionWorkspace />
       </div>
-      <ToastContainer />
     </div>
   )
 }

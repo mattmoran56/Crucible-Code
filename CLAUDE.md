@@ -76,8 +76,6 @@ Every interactive element in the app should use these — never raw `<button>`, 
 | `ListBox` / `ListItem` | Vertical selectable list | `role="listbox"/"option"`, roving tabindex (Arrow U/D) |
 | `Sidebar` / `SidebarSection` | Sidebar layout container | `<aside>` landmark, `<h2>` section headers |
 | `ResizeHandle` | Draggable divider between panels | `role="separator"`, focusable |
-| `ToggleGroup` | Segmented control (radio group) | `role="radiogroup"/"radio"`, inline style sizing |
-| `ToastContainer` | Toast notifications (mounted in App root) | Auto-dismiss, closeable |
 
 All base components are exported from `components/ui/index.ts`.
 
@@ -95,21 +93,6 @@ Built from base components. Each directory corresponds to a feature area:
 - **Always use base components** — Don't inline raw `<button>`, `<div onClick>`, or modal markup. Use `Button`, `IconButton`, `Dialog`, `ListBox`, etc.
 - **Keyboard navigation is mandatory** — Every interactive element must be reachable and operable via keyboard. The base components handle this.
 - **Focus-visible, not focus** — Use `focus-visible:ring-*` so mouse users don't see focus rings.
-
-### Error handling — Toasts
-
-All user-facing errors must be shown as toasts using `useToastStore`:
-
-```ts
-import { useToastStore } from '../../stores/toastStore'
-const { addToast } = useToastStore.getState()
-addToast('error', error.message)
-```
-
-- **Show raw errors** — This is a developer tool. Always show the actual error message (e.g. `err.message`), never sanitise or wrap in generic messages.
-- Toast types: `'error'` | `'success'` | `'info'`
-- Toasts auto-dismiss after 5 seconds and are closeable
-- `ToastContainer` is mounted once in `App.tsx` — never mount it elsewhere
 
 ## Theming
 

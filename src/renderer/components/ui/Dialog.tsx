@@ -35,7 +35,7 @@ export function Dialog({ open, onClose, title, children, width = '24rem' }: Dial
           if (e.key === 'Escape') onClose()
         }}
         className="relative bg-bg-secondary border border-border shadow-2xl"
-        style={{ width, padding: '16px 20px' }}
+        style={{ width, padding: '24px 28px' }}
       >
         <h2 id={titleId} className="text-sm font-semibold mb-4">
           {title}
