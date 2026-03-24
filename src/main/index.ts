@@ -16,12 +16,16 @@ async function createWindow() {
     minWidth: 800,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
+    backgroundColor: '#faf6f1',
+    show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
+
+  mainWindow.once('ready-to-show', () => mainWindow!.show())
 
   // Start the notification HTTP server before registering handlers
   await startNotificationServer(mainWindow)
