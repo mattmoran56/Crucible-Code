@@ -43,11 +43,27 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
       spawnTerminal(terminalSessionId, terminalName, cwd, 'review').then(
         (terminalId) => {
           if (sentCommandRef.current !== commandKey) {
-            // Wait briefly for claude to initialize, then send the review command
+            // Listen for Claude Code to be ready, then send the review command
+            const unsub = window.api.terminal.onData((tid, data) => {
+              if (tid !== terminalId || sentCommandRef.current === commandKey) return
+              // Claude Code shows ">" or the prompt character when ready
+              if (data.includes('>') || data.includes('$')) {
+                sentCommandRef.current = commandKey
+                unsub()
+                // Small delay to ensure prompt is fully rendered
+                setTimeout(() => {
+                  window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\r`)
+                }, 100)
+              }
+            })
+            // Fallback: if we don't detect readiness within 10s, send anyway
             setTimeout(() => {
-              window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\n`)
-              sentCommandRef.current = commandKey
-            }, 2000)
+              if (sentCommandRef.current !== commandKey) {
+                sentCommandRef.current = commandKey
+                unsub()
+                window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\r`)
+              }
+            }, 10000)
           }
         }
       )
