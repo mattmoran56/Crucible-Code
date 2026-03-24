@@ -1,6 +1,7 @@
 import React from 'react'
 import { useGitStore, WORKING_CHANGES_HASH } from '../../stores/gitStore'
 import { ListBox, ListItem } from '../ui/ListBox'
+import { Tooltip } from '../ui/Tooltip'
 
 interface Props {
   repoPath: string
@@ -70,10 +71,14 @@ export function CommitList({ repoPath }: Props) {
               {(unpushedSet.has(commit.hash) || newBranchSet.has(commit.hash)) && (
                 <div className="flex items-center gap-0.5 shrink-0 mt-px">
                   {unpushedSet.has(commit.hash) && (
-                    <span title="Not pushed to remote" className="text-text-muted text-[11px] leading-none">↑</span>
+                    <Tooltip content="Not pushed to remote">
+                      <span className="text-text-muted text-[11px] leading-none cursor-default">↑</span>
+                    </Tooltip>
                   )}
                   {newBranchSet.has(commit.hash) && (
-                    <span title="New commit (not on base branch)" className="text-accent text-[9px] leading-none">◆</span>
+                    <Tooltip content="New commit — not on base branch">
+                      <span className="text-accent text-[9px] leading-none cursor-default">◆</span>
+                    </Tooltip>
                   )}
                 </div>
               )}
