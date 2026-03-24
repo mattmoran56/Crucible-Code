@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { THEMES } from '../../../shared/themes'
 import { Button } from '../ui/Button'
@@ -7,12 +7,23 @@ import { IconButton } from '../ui/IconButton'
 export function SettingsPage() {
   const { theme, setTheme, closeSettings } = useSettingsStore()
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSettings()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [closeSettings])
+
+  const activeTheme = THEMES.find((t) => t.name === theme)
+
   return (
     <div className="h-full flex flex-col bg-bg">
       {/* Header */}
       <div
         className="titlebar-drag flex items-center h-11 bg-bg-tertiary border-b border-border"
       >
+        {/* Spacer for macOS traffic lights (close/minimize/maximize) */}
         <div className="w-[78px] shrink-0" />
         <IconButton
           label="Back"
@@ -118,10 +129,10 @@ export function SettingsPage() {
           {/* Color palette detail for active theme */}
           <div style={{ marginTop: 24 }}>
             <h2 className="text-xs font-medium text-text-muted uppercase tracking-wide" style={{ marginBottom: 10 }}>
-              Palette — {THEMES.find((t) => t.name === theme)?.label}
+              Palette — {activeTheme?.label}
             </h2>
             <div className="flex flex-wrap gap-2">
-              {Object.entries(THEMES.find((t) => t.name === theme)?.colors ?? {}).map(
+              {Object.entries(activeTheme?.colors ?? {}).map(
                 ([token, hex]) => (
                   <div
                     key={token}
