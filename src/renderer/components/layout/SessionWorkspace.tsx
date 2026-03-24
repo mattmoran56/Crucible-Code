@@ -5,6 +5,7 @@ import { ReviewTerminalPanel } from '../terminal/ReviewTerminalPanel'
 import { PRReviewPanel } from '../pullrequests/PRReviewPanel'
 import { IconButton, Tooltip, ResizeHandle } from '../ui'
 import { useSessionStore } from '../../stores/sessionStore'
+import { usePRStore } from '../../stores/prStore'
 import {
   useWorkspaceLayoutStore,
   type WorkspaceColumn,
@@ -94,8 +95,13 @@ export function SessionWorkspace() {
     useWorkspaceLayoutStore()
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
-  // PR number: explicit activePRNumber takes priority, fall back to session's associated PR
-  const effectivePRNumber = activePRNumber ?? activeSession?.prNumber ?? null
+  const { pullRequests } = usePRStore()
+  // Match session branch to a PR in the list
+  const sessionPR = activeSession
+    ? pullRequests.find((pr) => pr.headRefName === activeSession.branchName)
+    : null
+  // PR number: explicit activePRNumber takes priority, fall back to matched PR
+  const effectivePRNumber = activePRNumber ?? sessionPR?.number ?? null
   const prOnlyMode = activePRNumber != null && activeSessionId == null
 
   // Track previous values to distinguish reset vs incremental change
@@ -112,25 +118,11 @@ export function SessionWorkspace() {
       if (prOnlyMode) {
         resetLayout(['pr', 'review'], 'pr')
       } else if (activeSessionId) {
-        const tabs: WorkspaceTab[] =
-          effectivePRNumber != null
-            ? ['agent', 'git', 'pr', 'review']
-            : ['agent', 'git', 'review']
-        resetLayout(tabs, 'agent')
+        resetLayout(['agent', 'git', 'review'], 'agent')
       } else {
         resetLayout([])
       }
       initializedRef.current = true
-    } else if (prChanged && !prOnlyMode && activeSessionId) {
-      if (effectivePRNumber != null) {
-        addAvailableTab('pr')
-        // Activate the PR tab in whichever column has it
-        const cols = useWorkspaceLayoutStore.getState().columns
-        const colWithPR = cols.find((c) => c.tabs.includes('pr'))
-        if (colWithPR) setActiveTab(colWithPR.id, 'pr')
-      } else {
-        removeAvailableTab('pr')
-      }
     }
 
     prevSessionRef.current = activeSessionId

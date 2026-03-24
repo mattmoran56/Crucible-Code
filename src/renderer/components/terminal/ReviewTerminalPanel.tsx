@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
+import { usePRStore } from '../../stores/prStore'
 import { TerminalView } from './TerminalView'
 
 interface Props {
@@ -17,10 +18,14 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
   // Derive cwd and a stable key for the terminal
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const activeProject = projects.find((p) => p.id === activeProjectId)
+  const { pullRequests } = usePRStore()
   const cwd = activeSession?.worktreePath ?? activeProject?.repoPath
 
-  // PR number: explicit activePRNumber takes priority, fall back to session's associated PR
-  const effectivePRNumber = activePRNumber ?? activeSession?.prNumber ?? null
+  // Match session branch to a PR in the list
+  const sessionPR = activeSession
+    ? pullRequests.find((pr) => pr.headRefName === activeSession.branchName)
+    : null
+  const effectivePRNumber = activePRNumber ?? sessionPR?.number ?? null
 
   // Use session ID if available, otherwise a synthetic key for PR-only mode
   const terminalSessionId = activeSessionId ?? (effectivePRNumber != null ? `pr-review-${effectivePRNumber}` : null)
@@ -55,7 +60,9 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
       const state = useSessionStore.getState()
       const sid = state.activeSessionId
       const session = state.sessions.find((s) => s.id === sid)
-      const prNum = state.activePRNumber ?? session?.prNumber ?? null
+      const prs = usePRStore.getState().pullRequests
+      const matchedPR = session ? prs.find((pr) => pr.headRefName === session.branchName) : null
+      const prNum = state.activePRNumber ?? matchedPR?.number ?? null
       const key = sid ?? (prNum != null ? `pr-review-${prNum}` : null)
       if (key) {
         const existing = useTerminalStore.getState().getTerminal(key, 'review')
