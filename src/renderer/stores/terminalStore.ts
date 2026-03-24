@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-type TerminalMode = 'shell' | 'claude'
+type TerminalMode = 'shell' | 'claude' | 'review'
 
 interface TerminalInstance {
   terminalId: string

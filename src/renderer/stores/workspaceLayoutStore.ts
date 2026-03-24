@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type WorkspaceTab = 'agent' | 'git' | 'pr'
+export type WorkspaceTab = 'agent' | 'git' | 'pr' | 'review'
 
 export interface WorkspaceColumn {
   id: string

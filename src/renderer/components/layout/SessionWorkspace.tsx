@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { GitPanel } from '../git/GitPanel'
 import { TerminalPanel } from '../terminal/TerminalPanel'
+import { ReviewTerminalPanel } from '../terminal/ReviewTerminalPanel'
 import { PRReviewPanel } from '../pullrequests/PRReviewPanel'
-import { IconButton } from '../ui'
-import { ResizeHandle } from '../ui'
+import { IconButton, Tooltip, ResizeHandle } from '../ui'
 import { useSessionStore } from '../../stores/sessionStore'
 import {
   useWorkspaceLayoutStore,
@@ -53,17 +53,29 @@ const CloseIcon = () => (
   </svg>
 )
 
+const ReviewIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+)
+
 const TAB_ICONS: Record<WorkspaceTab, React.ReactNode> = {
   agent: <TerminalIcon />,
   git: <GitIcon />,
   pr: <PRIcon />,
+  review: <ReviewIcon />,
 }
 
 const TAB_LABELS: Record<WorkspaceTab, string> = {
   agent: 'Agent',
   git: 'Worktree',
   pr: 'PR',
+  review: 'Review',
 }
+
+/** Tabs that require an active PR to be enabled */
+const PR_REQUIRED_TABS: Set<WorkspaceTab> = new Set(['review'])
 
 /* ── Drag & Drop types ────────────────────────────────── */
 
@@ -95,10 +107,12 @@ export function SessionWorkspace() {
     if (!initializedRef.current || sessionChanged) {
       // Full reset
       if (prOnlyMode) {
-        resetLayout(['pr'], 'pr')
+        resetLayout(['pr', 'review'], 'pr')
       } else if (activeSessionId) {
         const tabs: WorkspaceTab[] =
-          activePRNumber != null ? ['agent', 'git', 'pr'] : ['agent', 'git']
+          activePRNumber != null
+            ? ['agent', 'git', 'pr', 'review']
+            : ['agent', 'git', 'review']
         resetLayout(tabs, 'agent')
       } else {
         resetLayout([])
@@ -219,6 +233,7 @@ export function SessionWorkspace() {
             canSplit={splitEnabled}
             onSplit={splitRight}
             prOnlyMode={prOnlyMode}
+            activePRNumber={activePRNumber}
             dragOverInfo={dragOverInfo}
             setDragOverInfo={setDragOverInfo}
           />
@@ -236,6 +251,7 @@ function ColumnPanel({
   canSplit,
   onSplit,
   prOnlyMode,
+  activePRNumber,
   dragOverInfo,
   setDragOverInfo,
 }: {
@@ -244,6 +260,7 @@ function ColumnPanel({
   canSplit: boolean
   onSplit: () => void
   prOnlyMode: boolean
+  activePRNumber: number | null
   dragOverInfo: { columnId: string; index: number } | null
   setDragOverInfo: (info: { columnId: string; index: number } | null) => void
 }) {
@@ -360,6 +377,8 @@ function ColumnPanel({
               <DraggableTab
                 tab={tab}
                 active={tab === column.activeTab}
+                disabled={PR_REQUIRED_TABS.has(tab) && activePRNumber == null}
+                disabledTooltip="Open a PR to use this tab"
                 columnId={column.id}
                 onClick={() => setActiveTab(column.id, tab)}
               />
@@ -407,41 +426,61 @@ function ColumnPanel({
 function DraggableTab({
   tab,
   active,
+  disabled,
+  disabledTooltip,
   columnId,
   onClick,
 }: {
   tab: WorkspaceTab
   active: boolean
+  disabled?: boolean
+  disabledTooltip?: string
   columnId: string
   onClick: () => void
 }) {
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
+      if (disabled) {
+        e.preventDefault()
+        return
+      }
       const data: DragData = { tab, sourceColumnId: columnId }
       e.dataTransfer.setData(DRAG_MIME, JSON.stringify(data))
       e.dataTransfer.effectAllowed = 'move'
     },
-    [tab, columnId]
+    [tab, columnId, disabled]
   )
 
-  return (
+  const button = (
     <button
       data-tab={tab}
-      draggable
+      draggable={!disabled}
       onDragStart={handleDragStart}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
       role="tab"
       aria-selected={active}
-      className={`flex items-center gap-1.5 text-xs transition-colors relative cursor-grab active:cursor-grabbing
+      aria-disabled={disabled}
+      className={`flex items-center gap-1.5 text-xs transition-colors relative
         focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset
-        ${active ? 'text-text' : 'text-text-muted hover:text-text'}`}
+        ${disabled
+          ? 'text-text-muted/40 cursor-not-allowed'
+          : active
+            ? 'text-text cursor-grab active:cursor-grabbing'
+            : 'text-text-muted hover:text-text cursor-grab active:cursor-grabbing'
+        }`}
       style={{ padding: '8px 10px' }}
     >
       {TAB_ICONS[tab]}
       {TAB_LABELS[tab]}
-      {active && <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />}
+      {active && !disabled && <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />}
     </button>
   )
+
+  if (disabled && disabledTooltip) {
+    return <Tooltip content={disabledTooltip} side="bottom">{button}</Tooltip>
+  }
+
+  return button
 }
 
 /* ── Tab Content ──────────────────────────────────────── */
@@ -462,6 +501,8 @@ function TabContent({
       return <GitPanel />
     case 'pr':
       return <PRReviewPanel />
+    case 'review':
+      return <ReviewTerminalPanel visible={visible} />
     default:
       return null
   }

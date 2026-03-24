@@ -50,7 +50,7 @@ const api = {
   },
 
   terminal: {
-    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude'): Promise<string> =>
+    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude' | 'review'): Promise<string> =>
       ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd, mode),
     write: (terminalId: string, data: string) =>
       ipcRenderer.invoke(IPC.TERMINAL_WRITE, terminalId, data),
