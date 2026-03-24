@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { INTERVENTION_PATTERNS } from '../../../shared/patterns'
+import { useNotificationStore } from '../../stores/notificationStore'
 
 interface UseTerminalOptions {
   terminalId: string | null
@@ -63,9 +64,12 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
 
     term.open(containerRef.current)
 
-    // Send keystrokes to the pty
+    // Send keystrokes to the pty and clear any pending notification
     term.onData((data) => {
       window.api.terminal.write(terminalId, data)
+      if (sessionId) {
+        useNotificationStore.getState().clearPending(sessionId)
+      }
     })
 
     // Track user-initiated scrolls only (wheel/keyboard), not programmatic ones
