@@ -26,6 +26,7 @@ interface SessionState {
   closePR: () => Promise<void>
   clearActiveContext: () => Promise<void>
   checkStaleness: (repoPath: string) => Promise<void>
+  markStale: (projectId: string, sessionId: string) => Promise<void>
   reactivateSession: (projectId: string, sessionId: string) => Promise<void>
 }
 
@@ -119,6 +120,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     await Promise.all(
       allSessions.map(async (session) => {
+        // Manually staled sessions stay stale
+        if (session.staleAt) {
+          stale.push(session)
+          return
+        }
         const withinOneDay = session.lastActiveAt
           ? Date.now() - new Date(session.lastActiveAt).getTime() < oneDayMs
           : false
@@ -128,20 +134,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         }
         const merged = await window.api.git.isMerged(session.worktreePath, session.baseBranch ?? 'main')
         if (merged) {
-          stale.push(session)
+          stale.push({ ...session, staleAt: session.staleAt ?? new Date().toISOString() })
         } else {
           active.push(session)
         }
       })
     )
 
+    stale.sort((a, b) => new Date(b.staleAt!).getTime() - new Date(a.staleAt!).getTime())
     set({ sessions: active, staleSessions: stale })
+  },
+
+  markStale: async (projectId: string, sessionId: string) => {
+    const session = get().sessions.find((s) => s.id === sessionId)
+    if (!session) return
+    const staled = { ...session, staleAt: new Date().toISOString() }
+    const sessions = get().sessions.filter((s) => s.id !== sessionId)
+    const staleSessions = [staled, ...get().staleSessions]
+    await window.api.session.save(projectId, [...sessions, ...staleSessions])
+    set({
+      sessions,
+      staleSessions,
+      activeSessionId:
+        get().activeSessionId === sessionId
+          ? (sessions[0]?.id ?? null)
+          : get().activeSessionId,
+    })
   },
 
   reactivateSession: async (projectId: string, sessionId: string) => {
     const session = get().staleSessions.find((s) => s.id === sessionId)
     if (!session) return
-    const reactivated = { ...session, lastActiveAt: new Date().toISOString() }
+    const reactivated = { ...session, lastActiveAt: new Date().toISOString(), staleAt: undefined }
     const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)
     const sessions = [...get().sessions, reactivated]
     await window.api.session.save(projectId, [...sessions, ...staleSessions])
