@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import type { Session, PullRequest } from '../../../shared/types'
 import { IconButton } from '../ui/IconButton'
+import { DropdownMenu } from '../ui/DropdownMenu'
 import { Dialog } from '../ui/Dialog'
 import { Button } from '../ui/Button'
 
@@ -10,24 +11,29 @@ interface Props {
   hasPendingNotification: boolean
   pr?: PullRequest
   onClick: () => void
+  onMarkStale: () => void
   onDelete: () => void
 }
 
-const TrashIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+const EllipsisIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="12" cy="5" r="2" />
+    <circle cx="12" cy="12" r="2" />
+    <circle cx="12" cy="19" r="2" />
   </svg>
 )
 
-export function SessionCard({ session, isActive, hasPendingNotification, pr, onClick, onDelete }: Props) {
+export function SessionCard({ session, isActive, hasPendingNotification, pr, onClick, onMarkStale, onDelete }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
 
   return (
     <>
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onClick}
-        className={`group w-full text-left text-xs transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick() }}
+        className={`group w-full text-left text-xs transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset cursor-default ${
           isActive
             ? 'bg-accent/15 text-accent'
             : 'text-text hover:bg-bg-tertiary'
@@ -54,19 +60,21 @@ export function SessionCard({ session, isActive, hasPendingNotification, pr, onC
           </div>
         )}
         <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100">
-          <IconButton
-            label={`Delete ${session.name}`}
-            variant="danger"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowConfirm(true)
-            }}
+          <DropdownMenu
+            items={[
+              { label: 'Mark as stale', onClick: onMarkStale },
+              { label: 'Delete', variant: 'danger', onClick: () => setShowConfirm(true) },
+            ]}
           >
-            <TrashIcon />
-          </IconButton>
+            <IconButton
+              label={`Actions for ${session.name}`}
+              size="sm"
+            >
+              <EllipsisIcon />
+            </IconButton>
+          </DropdownMenu>
         </div>
-      </button>
+      </div>
 
       <Dialog open={showConfirm} onClose={() => setShowConfirm(false)} title="Delete session?">
         <p className="text-xs text-text-muted mb-5">

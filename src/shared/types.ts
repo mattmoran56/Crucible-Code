@@ -14,6 +14,7 @@ export interface Session {
   lastActiveAt?: string
   prNumber?: number
   baseBranch?: string
+  staleAt?: string
 }
 
 export interface Commit {

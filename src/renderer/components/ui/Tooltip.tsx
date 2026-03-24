@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 interface TooltipProps {
   content: string
@@ -8,57 +9,56 @@ interface TooltipProps {
 }
 
 export function Tooltip({ content, children, side = 'top', className = '' }: TooltipProps) {
-  const isTop = side === 'top'
-  const isLeft = side === 'left'
+  const [visible, setVisible] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const ref = useRef<HTMLDivElement>(null)
 
-  if (isLeft) {
-    return (
-      <div className={`relative inline-flex group/tooltip ${className}`}>
-        {children}
-        <span
-          className={`
-            absolute right-full top-1/2 -translate-y-1/2 mr-2 z-50
-            px-2 py-1 rounded text-[10px] whitespace-nowrap pointer-events-none
-            bg-bg-tertiary border border-border text-text shadow-lg
-            opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-150
-          `}
-        >
-          {content}
-          <span
-            className={`
-              absolute left-full top-1/2 -translate-y-1/2 w-0 h-0
-              border-y-4 border-y-transparent border-l-4 border-l-bg-tertiary
-            `}
-          />
-        </span>
-      </div>
-    )
+  function show() {
+    if (!ref.current) return
+    const rect = ref.current.getBoundingClientRect()
+    if (side === 'left') {
+      setPos({ top: rect.top + rect.height / 2, left: rect.left - 8 })
+    } else if (side === 'top') {
+      setPos({ top: rect.top - 8, left: rect.left + rect.width / 2 })
+    } else {
+      setPos({ top: rect.bottom + 8, left: rect.left + rect.width / 2 })
+    }
+    setVisible(true)
   }
 
+  const transform =
+    side === 'left'
+      ? 'translate(-100%, -50%)'
+      : side === 'top'
+        ? 'translate(-50%, -100%)'
+        : 'translate(-50%, 0)'
+
   return (
-    <div className={`relative inline-flex group/tooltip ${className}`}>
+    <div
+      ref={ref}
+      className={`relative inline-flex ${className}`}
+      onMouseEnter={show}
+      onMouseLeave={() => setVisible(false)}
+    >
       {children}
-      <span
-        className={`
-          absolute left-1/2 -translate-x-1/2 z-50
-          px-2 py-1 rounded text-[10px] whitespace-nowrap pointer-events-none
-          bg-bg-tertiary border border-border text-text shadow-lg
-          opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-150
-          ${isTop ? 'bottom-full mb-2' : 'top-full mt-2'}
-        `}
-      >
-        {content}
-        <span
-          className={`
-            absolute left-1/2 -translate-x-1/2 w-0 h-0
-            border-x-4 border-x-transparent
-            ${isTop
-              ? 'top-full border-t-4 border-t-bg-tertiary'
-              : 'bottom-full border-b-4 border-b-bg-tertiary'
-            }
-          `}
-        />
-      </span>
+      {visible &&
+        createPortal(
+          <span
+            style={{
+              position: 'fixed',
+              top: pos.top,
+              left: pos.left,
+              transform,
+              zIndex: 9999,
+              pointerEvents: 'none',
+              padding: '5px 10px',
+            }}
+            className="rounded text-[10px] whitespace-nowrap bg-bg-tertiary border border-border text-text shadow-lg"
+          >
+            {content}
+          </span>,
+          document.body
+        )}
     </div>
   )
 }

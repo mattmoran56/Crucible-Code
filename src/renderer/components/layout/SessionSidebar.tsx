@@ -16,7 +16,7 @@ const PR_POLL_INTERVAL = 30_000
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, staleSessions, activeSessionId, activePRNumber, loadSessions, setActiveSession, removeSession, openPR, checkStaleness, reactivateSession } =
+  const { sessions, staleSessions, activeSessionId, activePRNumber, loadSessions, setActiveSession, removeSession, markStale, openPR, checkStaleness, reactivateSession } =
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, markSeen, clear: clearPRs } =
     usePRStore()
@@ -138,6 +138,7 @@ export function SessionSidebar() {
                   setActiveSession(session.id)
                   clearPending(session.id)
                 }}
+                onMarkStale={() => markStale(activeProject.id, session.id)}
                 onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
               />
             ))}
