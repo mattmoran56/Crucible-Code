@@ -5,6 +5,7 @@ interface UseResizableOptions {
   initialSize: number
   minSize?: number
   maxSize?: number
+  inverted?: boolean
 }
 
 export function useResizable({
@@ -12,6 +13,7 @@ export function useResizable({
   initialSize,
   minSize = 100,
   maxSize = 1200,
+  inverted = false,
 }: UseResizableOptions) {
   const [size, setSize] = useState(initialSize)
   const dragging = useRef(false)
@@ -35,7 +37,8 @@ export function useResizable({
       if (!dragging.current) return
       const current = direction === 'horizontal' ? e.clientX : e.clientY
       const delta = current - startPos.current
-      const newSize = Math.min(maxSize, Math.max(minSize, startSize.current + delta))
+      const effectiveDelta = inverted ? -delta : delta
+      const newSize = Math.min(maxSize, Math.max(minSize, startSize.current + effectiveDelta))
       setSize(newSize)
     }
 
@@ -52,7 +55,7 @@ export function useResizable({
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
     }
-  }, [direction, minSize, maxSize])
+  }, [direction, minSize, maxSize, inverted])
 
   return { size, onMouseDown }
 }

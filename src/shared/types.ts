@@ -61,6 +61,14 @@ export interface PRComment {
   createdAt: string
 }
 
+export interface Note {
+  id: string
+  title: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type PRReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
 export type PRMergeMethod = 'merge' | 'squash' | 'rebase'
 

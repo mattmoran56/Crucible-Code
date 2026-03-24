@@ -7,6 +7,7 @@ import { registerNotificationHandlers } from './notification.ipc'
 import { registerProjectHandlers } from './project.ipc'
 import { registerGithubHandlers } from './github.ipc'
 import { registerUpdateHandlers } from './update.ipc'
+import { registerNotesHandlers } from './notes.ipc'
 import {
   registerSessionMapping,
   removeSessionMapping,
@@ -20,6 +21,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerProjectHandlers(window)
   registerGithubHandlers()
   registerUpdateHandlers(window)
+  registerNotesHandlers()
 
   // Session mapping management for notification routing
   ipcMain.handle(

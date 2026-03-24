@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note } from '../shared/types'
 
 const api = {
   git: {
@@ -152,6 +152,15 @@ const api = {
       ipcRenderer.invoke(IPC.SESSION_LIST, projectId),
     save: (projectId: string, sessions: Session[]) =>
       ipcRenderer.invoke(IPC.SESSION_SAVE, projectId, sessions),
+  },
+
+  notes: {
+    list: (projectId: string): Promise<Note[]> =>
+      ipcRenderer.invoke(IPC.NOTES_LIST, projectId),
+    save: (projectId: string, notes: Note[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.NOTES_SAVE, projectId, notes),
+    delete: (projectId: string, noteId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.NOTES_DELETE, projectId, noteId),
   },
 
   update: {
