@@ -135,6 +135,47 @@ export async function restoreWorktreeBranch(worktreePath: string, branch: string
   await g.raw(['checkout', branch])
 }
 
+export async function getWorkingFileDiff(repoPath: string, filePath: string): Promise<string> {
+  const g = git(repoPath)
+  const staged = await g.diff(['--cached', '--', filePath])
+  const unstaged = await g.diff(['--', filePath])
+  return [staged, unstaged].filter(Boolean).join('\n')
+}
+
+export interface CommitStatuses {
+  unpushedHashes: string[]
+  newBranchHashes: string[]
+}
+
+export async function getCommitStatuses(repoPath: string): Promise<CommitStatuses> {
+  const g = git(repoPath)
+  const status = await g.status()
+  const branch = status.current ?? 'HEAD'
+
+  let unpushedHashes: string[] = []
+  try {
+    const result = await g.raw(['log', `origin/${branch}..HEAD`, '--format=%H'])
+    unpushedHashes = result.trim().split('\n').filter(Boolean)
+  } catch {
+    // No remote branch yet — all local commits are unpushed
+    try {
+      const result = await g.raw(['log', 'HEAD', '--format=%H'])
+      unpushedHashes = result.trim().split('\n').filter(Boolean)
+    } catch {}
+  }
+
+  let newBranchHashes: string[] = []
+  for (const base of ['main', 'master']) {
+    try {
+      const result = await g.raw(['log', `${base}..HEAD`, '--format=%H'])
+      newBranchHashes = result.trim().split('\n').filter(Boolean)
+      break
+    } catch {}
+  }
+
+  return { unpushedHashes, newBranchHashes }
+}
+
 export async function getWorkingDiff(repoPath: string): Promise<string> {
   const g = git(repoPath)
   // Show both staged and unstaged changes

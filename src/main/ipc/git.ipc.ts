@@ -22,6 +22,18 @@ export function registerGitHandlers() {
     }
   )
 
+  ipcMain.handle(IPC.GIT_WORKING_FILES, async (_e, repoPath: string) => {
+    return gitService.getWorkingChangedFiles(repoPath)
+  })
+
+  ipcMain.handle(IPC.GIT_WORKING_FILE_DIFF, async (_e, repoPath: string, filePath: string) => {
+    return gitService.getWorkingFileDiff(repoPath, filePath)
+  })
+
+  ipcMain.handle(IPC.GIT_COMMIT_STATUSES, async (_e, repoPath: string) => {
+    return gitService.getCommitStatuses(repoPath)
+  })
+
   ipcMain.handle(IPC.GIT_CHECKOUT, async (_e, repoPath: string, branch: string) => {
     return gitService.checkoutBranch(repoPath, branch)
   })

@@ -4,13 +4,14 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { CommitList } from './CommitList'
 import { ChangedFiles } from './ChangedFiles'
 import { DiffViewer } from './DiffViewer'
-import { IconButton } from '../ui/IconButton'
 import { ResizeHandle } from '../ui/ResizeHandle'
 import { useResizable } from '../../hooks/useResizable'
 
+const POLL_INTERVAL = 3_000
+
 export function GitPanel() {
   const { activeSessionId, sessions } = useSessionStore()
-  const { loadCommits, clear } = useGitStore()
+  const { loadCommits, loadWorkingFiles, loadCommitStatuses, clear } = useGitStore()
 
   const commitCol = useResizable({ direction: 'horizontal', initialSize: 288, minSize: 160, maxSize: 500 })
   const filesCol = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
@@ -18,11 +19,20 @@ export function GitPanel() {
   const activeSession = sessions.find((s) => s.id === activeSessionId)
 
   useEffect(() => {
-    if (activeSession) {
-      loadCommits(activeSession.worktreePath)
-    } else {
+    if (!activeSession) {
       clear()
+      return
     }
+
+    const refresh = () => {
+      loadCommits(activeSession.worktreePath)
+      loadWorkingFiles(activeSession.worktreePath)
+      loadCommitStatuses(activeSession.worktreePath)
+    }
+
+    refresh()
+    const id = setInterval(refresh, POLL_INTERVAL)
+    return () => clearInterval(id)
   }, [activeSession?.id])
 
   if (!activeSession) {
@@ -37,15 +47,8 @@ export function GitPanel() {
     <div className="flex-1 flex min-h-0">
       {/* Commit list */}
       <div style={{ width: commitCol.size }} className="flex-shrink-0 flex flex-col min-h-0">
-        <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted flex items-center justify-between">
+        <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted">
           <span>Commits</span>
-          <IconButton
-            label="Refresh commits"
-            onClick={() => loadCommits(activeSession.worktreePath)}
-            className="text-accent hover:text-accent-hover"
-          >
-            ↻
-          </IconButton>
         </div>
         <CommitList repoPath={activeSession.worktreePath} />
       </div>
