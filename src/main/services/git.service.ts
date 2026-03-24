@@ -135,6 +135,104 @@ export async function restoreWorktreeBranch(worktreePath: string, branch: string
   await g.raw(['checkout', branch])
 }
 
+export async function pushBranch(repoPath: string): Promise<void> {
+  const g = git(repoPath)
+  const status = await g.status()
+  const branch = status.current ?? 'HEAD'
+  await g.raw(['push', 'origin', branch, '--set-upstream'])
+}
+
+export async function getRemoteUrl(repoPath: string): Promise<string | null> {
+  try {
+    const g = git(repoPath)
+    const url = await g.remote(['get-url', 'origin'])
+    return url?.trim() ?? null
+  } catch {
+    return null
+  }
+}
+
+export function remoteUrlToGitHub(remoteUrl: string): string | null {
+  // https://github.com/owner/repo.git  or  git@github.com:owner/repo.git
+  const httpsMatch = remoteUrl.match(/https:\/\/github\.com\/(.+?)(?:\.git)?$/)
+  if (httpsMatch) return `https://github.com/${httpsMatch[1]}`
+  const sshMatch = remoteUrl.match(/git@github\.com:(.+?)(?:\.git)?$/)
+  if (sshMatch) return `https://github.com/${sshMatch[1]}`
+  return null
+}
+
+export async function listBranches(repoPath: string): Promise<string[]> {
+  const g = git(repoPath)
+  const result = await g.branch(['-a'])
+  return result.all
+    .map((b) => b.replace(/^remotes\/origin\//, '').trim())
+    .filter((b) => !b.startsWith('HEAD'))
+    .filter((v, i, arr) => arr.indexOf(v) === i) // dedupe
+    .sort()
+}
+
+export interface MergeCheckResult {
+  hasConflicts: boolean
+}
+
+export async function checkMerge(repoPath: string, branch: string): Promise<MergeCheckResult> {
+  const g = git(repoPath)
+  try {
+    const mergeBase = await g.raw(['merge-base', 'HEAD', branch])
+    const mergeTree = await g.raw(['merge-tree', mergeBase.trim(), 'HEAD', branch])
+    const hasConflicts = mergeTree.includes('<<<<<<<')
+    return { hasConflicts }
+  } catch {
+    return { hasConflicts: true }
+  }
+}
+
+export async function mergeBranch(repoPath: string, branch: string): Promise<void> {
+  const g = git(repoPath)
+  await g.merge([branch])
+}
+
+export async function getWorkingFileDiff(repoPath: string, filePath: string): Promise<string> {
+  const g = git(repoPath)
+  const staged = await g.diff(['--cached', '--', filePath])
+  const unstaged = await g.diff(['--', filePath])
+  return [staged, unstaged].filter(Boolean).join('\n')
+}
+
+export interface CommitStatuses {
+  unpushedHashes: string[]
+  newBranchHashes: string[]
+}
+
+export async function getCommitStatuses(repoPath: string): Promise<CommitStatuses> {
+  const g = git(repoPath)
+  const status = await g.status()
+  const branch = status.current ?? 'HEAD'
+
+  let unpushedHashes: string[] = []
+  try {
+    const result = await g.raw(['log', `origin/${branch}..HEAD`, '--format=%H'])
+    unpushedHashes = result.trim().split('\n').filter(Boolean)
+  } catch {
+    // No remote branch yet — all local commits are unpushed
+    try {
+      const result = await g.raw(['log', 'HEAD', '--format=%H'])
+      unpushedHashes = result.trim().split('\n').filter(Boolean)
+    } catch {}
+  }
+
+  let newBranchHashes: string[] = []
+  for (const base of ['main', 'master']) {
+    try {
+      const result = await g.raw(['log', `${base}..HEAD`, '--format=%H'])
+      newBranchHashes = result.trim().split('\n').filter(Boolean)
+      break
+    } catch {}
+  }
+
+  return { unpushedHashes, newBranchHashes }
+}
+
 export async function getWorkingDiff(repoPath: string): Promise<string> {
   const g = git(repoPath)
   // Show both staged and unstaged changes

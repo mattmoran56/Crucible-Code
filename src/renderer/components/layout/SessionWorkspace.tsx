@@ -52,7 +52,7 @@ export function SessionWorkspace() {
               active={activeWorkspaceTab === 'git'}
               onClick={() => setActiveWorkspaceTab('git')}
               icon={<GitIcon />}
-              label="Git"
+              label="Worktree"
             />
           </>
         )}

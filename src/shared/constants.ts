@@ -7,6 +7,14 @@ export const IPC = {
   GIT_FILE_DIFF: 'git:file-diff',
   GIT_CHECKOUT: 'git:checkout',
   GIT_RESTORE_WORKTREE: 'git:restore-worktree',
+  GIT_WORKING_FILES: 'git:working-files',
+  GIT_WORKING_FILE_DIFF: 'git:working-file-diff',
+  GIT_COMMIT_STATUSES: 'git:commit-statuses',
+  GIT_PUSH: 'git:push',
+  GIT_OPEN_PR: 'git:open-pr',
+  GIT_LIST_BRANCHES: 'git:list-branches',
+  GIT_MERGE_CHECK: 'git:merge-check',
+  GIT_MERGE: 'git:merge',
   GIT_IS_MERGED: 'git:is-merged',
 
   // Worktree

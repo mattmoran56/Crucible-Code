@@ -15,6 +15,22 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_CHECKOUT, repoPath, branch),
     restoreWorktree: (worktreePath: string, branch: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GIT_RESTORE_WORKTREE, worktreePath, branch),
+    workingFiles: (repoPath: string): Promise<FileDiff[]> =>
+      ipcRenderer.invoke(IPC.GIT_WORKING_FILES, repoPath),
+    workingFileDiff: (repoPath: string, filePath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.GIT_WORKING_FILE_DIFF, repoPath, filePath),
+    commitStatuses: (repoPath: string): Promise<{ unpushedHashes: string[]; newBranchHashes: string[] }> =>
+      ipcRenderer.invoke(IPC.GIT_COMMIT_STATUSES, repoPath),
+    push: (repoPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_PUSH, repoPath),
+    openPR: (repoPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_OPEN_PR, repoPath),
+    listBranches: (repoPath: string): Promise<string[]> =>
+      ipcRenderer.invoke(IPC.GIT_LIST_BRANCHES, repoPath),
+    mergeCheck: (repoPath: string, branch: string): Promise<{ hasConflicts: boolean }> =>
+      ipcRenderer.invoke(IPC.GIT_MERGE_CHECK, repoPath, branch),
+    merge: (repoPath: string, branch: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_MERGE, repoPath, branch),
     isMerged: (worktreePath: string, baseBranch: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.GIT_IS_MERGED, worktreePath, baseBranch),
   },
