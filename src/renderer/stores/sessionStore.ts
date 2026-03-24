@@ -24,6 +24,7 @@ interface SessionState {
   setActiveWorkspaceTab: (tab: WorkspaceTab) => void
   openPR: (repoPath: string, pr: PullRequest) => Promise<void>
   closePR: () => Promise<void>
+  clearActiveContext: () => Promise<void>
   checkStaleness: (repoPath: string) => Promise<void>
   reactivateSession: (projectId: string, sessionId: string) => Promise<void>
 }
@@ -171,5 +172,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   closePR: async () => {
     await restoreDetachedWorktree(get().detachedWorktree)
     set({ activePRNumber: null, detachedWorktree: null })
+  },
+
+  clearActiveContext: async () => {
+    await restoreDetachedWorktree(get().detachedWorktree)
+    set({ activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null })
   },
 }))

@@ -46,7 +46,7 @@ function extractFileDiff(fullDiff: string, filePath: string): string {
 }
 
 export function PRReviewPanel() {
-  const { activePRNumber, didStash, checkStaleness, closePR } = useSessionStore()
+  const { activePRNumber, didStash, checkStaleness, clearActiveContext } = useSessionStore()
   const { loadPRs } = usePRStore()
   const { projects, activeProjectId } = useProjectStore()
   const {
@@ -112,7 +112,7 @@ export function PRReviewPanel() {
   const handleMerge = async () => {
     await merge(activeProject.repoPath, prNumber, 'merge')
     setShowMergeConfirm(false)
-    closePR()
+    await clearActiveContext()
     loadPRs(activeProject.repoPath)
     checkStaleness(activeProject.repoPath)
   }
