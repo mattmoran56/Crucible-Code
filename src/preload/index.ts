@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus } from '../shared/types'
 
 const api = {
   git: {
@@ -152,6 +152,20 @@ const api = {
       ipcRenderer.invoke(IPC.SESSION_LIST, projectId),
     save: (projectId: string, sessions: Session[]) =>
       ipcRenderer.invoke(IPC.SESSION_SAVE, projectId, sessions),
+  },
+
+  update: {
+    onStatus: (callback: (status: UpdateStatus) => void) => {
+      const listener = (_e: any, status: UpdateStatus) => callback(status)
+      ipcRenderer.on(IPC.UPDATE_STATUS, listener)
+      return () => ipcRenderer.removeListener(IPC.UPDATE_STATUS, listener)
+    },
+    onLog: (callback: (line: string) => void) => {
+      const listener = (_e: any, line: string) => callback(line)
+      ipcRenderer.on(IPC.UPDATE_LOG, listener)
+      return () => ipcRenderer.removeListener(IPC.UPDATE_LOG, listener)
+    },
+    apply: () => ipcRenderer.invoke(IPC.UPDATE_APPLY),
   },
 }
 

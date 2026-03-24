@@ -1,7 +1,8 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useUpdateStore } from '../../stores/updateStore'
 import { TabBar, Tab } from '../ui/TabBar'
 import { IconButton } from '../ui/IconButton'
 import { Button } from '../ui/Button'
@@ -11,9 +12,34 @@ export function ProjectTabs() {
     useProjectStore()
   const { sessions } = useSessionStore()
   const { pendingSessionIds } = useNotificationStore()
+  const { status, log, setStatus, appendLog, reset } = useUpdateStore()
+
+  useEffect(() => {
+    const removeStatus = window.api.update.onStatus(setStatus)
+    const removeLog = window.api.update.onLog(appendLog)
+    return () => { removeStatus(); removeLog() }
+  }, [setStatus, appendLog])
 
   const getPendingCount = (projectId: string) =>
     sessions.filter((s) => s.projectId === projectId && pendingSessionIds.has(s.id)).length
+
+  const handleUpdateClick = () => {
+    if (status.state === 'error') {
+      reset()
+      return
+    }
+    window.api.update.apply()
+  }
+
+  const updateButtonVisible =
+    status.state === 'available' || status.state === 'updating' || status.state === 'error'
+
+  const updateButtonLabel = (() => {
+    if (status.state === 'available') return `Update Available (${status.commitCount})`
+    if (status.state === 'updating') return log.at(-1) ?? 'Updating...'
+    if (status.state === 'error') return 'Update failed — dismiss'
+    return ''
+  })()
 
   return (
     <div className="titlebar-drag flex h-11 items-center bg-bg-tertiary border-b border-border">
@@ -56,6 +82,24 @@ export function ProjectTabs() {
 
       {/* Spacer — draggable area fills the middle */}
       <div className="flex-1" />
+
+      {/* Update available — shown when new commits detected */}
+      {updateButtonVisible && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleUpdateClick}
+          disabled={status.state === 'updating'}
+          className={[
+            'titlebar-no-drag border',
+            status.state === 'error' ? 'border-danger text-danger' : 'border-warning text-warning',
+          ].join(' ')}
+          style={{ padding: '8px 16px', marginRight: '8px', maxWidth: '260px' }}
+          title={updateButtonLabel}
+        >
+          <span className="truncate">{updateButtonLabel}</span>
+        </Button>
+      )}
 
       {/* Add project — right aligned */}
       <Button

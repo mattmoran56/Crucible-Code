@@ -16,6 +16,8 @@ An IDE for agentic development. Manage multiple Claude Code sessions in parallel
 
 ## Getting Started
 
+### Dev mode
+
 ```bash
 npm install
 npm run dev
@@ -25,6 +27,22 @@ npm run dev
 2. Create a session from the sidebar — this creates a new branch and worktree.
 3. Use the terminal to run `claude` or any other commands in the isolated worktree.
 4. View commits and diffs in the git panel as your agent works.
+
+### Native install (recommended)
+
+The native install runs from its own bundled assets, so switching branches in the source repo won't break the running app.
+
+**Initial install:**
+
+```bash
+npm run dist
+cp -R dist-electron/mac-arm64/CodeCrucible.app /Applications/
+open /Applications/CodeCrucible.app
+```
+
+**Auto-update:**
+
+The installed app polls `origin/main` every 5 minutes. When new commits are available, an **Update Available** button appears in the title bar (left of "Add Project"). Click it to pull, rebuild, and relaunch automatically — no manual reinstall needed.
 
 ## Tech Stack
 

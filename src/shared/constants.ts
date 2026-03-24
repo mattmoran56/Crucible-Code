@@ -63,4 +63,9 @@ export const IPC = {
 
   // Worktree (remote branch)
   WORKTREE_CREATE_FROM_BRANCH: 'worktree:create-from-branch',
+
+  // Self-update
+  UPDATE_STATUS: 'update:status',
+  UPDATE_APPLY: 'update:apply',
+  UPDATE_LOG: 'update:log',
 } as const

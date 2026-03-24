@@ -4,7 +4,10 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    define: {
+      __REPO_PATH__: JSON.stringify(process.cwd()),
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()]

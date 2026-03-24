@@ -62,3 +62,9 @@ export interface PRComment {
 
 export type PRReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
 export type PRMergeMethod = 'merge' | 'squash' | 'rebase'
+
+export interface UpdateStatus {
+  state: 'idle' | 'available' | 'updating' | 'error'
+  commitCount?: number
+  error?: string
+}
