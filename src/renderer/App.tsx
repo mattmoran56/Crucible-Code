@@ -15,7 +15,7 @@ import { useSettingsStore } from './stores/settingsStore'
 import { LoadingScreen } from './components/LoadingScreen'
 
 export default function App() {
-  const { loadProjects, activeProjectId } = useProjectStore()
+  const { loadProjects } = useProjectStore()
   const { activeSessionId } = useSessionStore()
   const { addPending, clearPending } = useNotificationStore()
   const { isOpen: settingsOpen } = useSettingsStore()
@@ -44,11 +44,6 @@ export default function App() {
     })
     return remove
   }, [addPending])
-
-  // Report active context to main process for suppression logic
-  useEffect(() => {
-    window.api.focus.setActiveContext(activeProjectId, activeSessionId)
-  }, [activeProjectId, activeSessionId])
 
   // Auto-clear notification when user navigates to a session
   useEffect(() => {

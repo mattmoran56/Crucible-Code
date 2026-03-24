@@ -16,6 +16,10 @@ interface NotificationState {
   ) => (projectId: string) => number
 }
 
+function syncBadgeCount(pendingCount: number) {
+  window.api.notification.setBadge(pendingCount)
+}
+
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   pendingSessionIds: new Set(),
 
@@ -23,6 +27,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     set((state) => {
       const next = new Set(state.pendingSessionIds)
       next.add(sessionId)
+      syncBadgeCount(next.size)
       return { pendingSessionIds: next }
     })
   },
@@ -32,6 +37,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       if (!state.pendingSessionIds.has(sessionId)) return state
       const next = new Set(state.pendingSessionIds)
       next.delete(sessionId)
+      syncBadgeCount(next.size)
       return { pendingSessionIds: next }
     })
   },

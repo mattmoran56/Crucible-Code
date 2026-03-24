@@ -4,7 +4,6 @@ import { registerAllHandlers } from './ipc/register'
 import {
   startNotificationServer,
   stopNotificationServer,
-  setWindowFocused,
 } from './services/notification-server'
 
 let mainWindow: BrowserWindow | null = null
@@ -31,10 +30,6 @@ async function createWindow() {
   await startNotificationServer(mainWindow)
 
   registerAllHandlers(mainWindow)
-
-  // Track window focus for notification suppression
-  mainWindow.on('focus', () => setWindowFocused(true))
-  mainWindow.on('blur', () => setWindowFocused(false))
 
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
