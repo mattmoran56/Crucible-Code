@@ -12,6 +12,7 @@ import { useResizable } from './hooks/useResizable'
 import { ToastContainer } from './components/ui/ToastContainer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { useSettingsStore } from './stores/settingsStore'
+import { LoadingScreen } from './components/LoadingScreen'
 
 export default function App() {
   const { loadProjects, activeProjectId } = useProjectStore()
@@ -22,12 +23,18 @@ export default function App() {
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
   const rightPanel = useResizable({ direction: 'horizontal', initialSize: 300, minSize: 200, maxSize: 600, inverted: true })
   const [activeRightPanel, setActiveRightPanel] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [showLoader, setShowLoader] = useState(true)
 
   const toggleRightPanel = (panel: string) =>
     setActiveRightPanel((prev) => (prev === panel ? null : panel))
 
   useEffect(() => {
-    loadProjects()
+    loadProjects().finally(() => {
+      setLoading(false)
+      // Unmount after fade-out transition (500ms)
+      setTimeout(() => setShowLoader(false), 520)
+    })
   }, [loadProjects])
 
   // Listen for hook-driven notification events from the main process
@@ -52,6 +59,7 @@ export default function App() {
 
   return (
     <div className="h-full flex flex-col">
+      {showLoader && <LoadingScreen visible={!loading} />}
       {/* Settings overlay — main tree stays mounted but hidden */}
       {settingsOpen && <SettingsPage />}
 
