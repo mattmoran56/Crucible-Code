@@ -1,6 +1,7 @@
 import { create } from 'zustand'
+import type { ThemeName } from '../../shared/themes'
 
-export type ThemeName = 'dark' | 'light' | 'soft-light' | 'ultra-dark'
+export type { ThemeName }
 
 const THEME_STORAGE_KEY = 'codecrucible-theme'
 
