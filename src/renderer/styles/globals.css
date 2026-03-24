@@ -42,6 +42,21 @@
   --color-warning: #f59e0b;
 }
 
+/* --- Soft Light (cream/pastel) --- */
+[data-theme="soft-light"] {
+  --color-bg: #faf6f1;
+  --color-bg-secondary: #f0ebe4;
+  --color-bg-tertiary: #f5f0ea;
+  --color-border: #ddd5ca;
+  --color-text: #3d3229;
+  --color-text-muted: #8c7e72;
+  --color-accent: #7c6f9b;
+  --color-accent-hover: #6b5e8a;
+  --color-success: #6a9e6b;
+  --color-danger: #c46a6a;
+  --color-warning: #c4976a;
+}
+
 /* --- Ultra Dark --- */
 [data-theme="ultra-dark"] {
   --color-bg: #0d0d0d;

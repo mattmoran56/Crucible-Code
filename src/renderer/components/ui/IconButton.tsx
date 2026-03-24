@@ -5,6 +5,7 @@ interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> 
   label: string
   size?: 'sm' | 'md'
   variant?: 'ghost' | 'danger'
+  tooltipSide?: 'top' | 'bottom' | 'left'
 }
 
 const VARIANT_CLASSES: Record<string, string> = {
@@ -21,12 +22,13 @@ export function IconButton({
   label,
   size = 'sm',
   variant = 'ghost',
+  tooltipSide,
   className = '',
   children,
   ...rest
 }: IconButtonProps) {
   return (
-    <Tooltip content={label} className={className}>
+    <Tooltip content={label} side={tooltipSide} className={className}>
       <button
         aria-label={label}
         className={`inline-flex items-center justify-center rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]}`}
