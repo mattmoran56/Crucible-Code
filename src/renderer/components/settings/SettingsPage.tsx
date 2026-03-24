@@ -1,5 +1,6 @@
 import React from 'react'
 import { useSettingsStore, type ThemeName } from '../../stores/settingsStore'
+import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 
 const THEMES: { name: ThemeName; label: string; colors: Record<string, string> }[] = [
@@ -104,11 +105,12 @@ export function SettingsPage() {
             {THEMES.map((t) => {
               const isActive = theme === t.name
               return (
-                <button
+                <Button
                   key={t.name}
+                  variant="ghost"
                   onClick={() => setTheme(t.name)}
                   className={`
-                    rounded-lg border-2 transition-colors cursor-pointer text-left
+                    rounded-lg border-2 text-left
                     ${isActive ? 'border-accent' : 'border-border hover:border-text-muted'}
                   `}
                   style={{ width: 180, padding: 0, background: 'none' }}
@@ -174,7 +176,7 @@ export function SettingsPage() {
                       {t.label}
                     </span>
                   </div>
-                </button>
+                </Button>
               )
             })}
           </div>
