@@ -1,5 +1,20 @@
 export type ThemeName = 'dark' | 'light' | 'soft-light' | 'ultra-dark'
 
+export interface TerminalTheme {
+  background: string
+  foreground: string
+  cursor: string
+  selectionBackground: string
+  black: string
+  red: string
+  green: string
+  yellow: string
+  blue: string
+  magenta: string
+  cyan: string
+  white: string
+}
+
 export interface ThemeDefinition {
   name: ThemeName
   label: string
@@ -17,6 +32,7 @@ export interface ThemeDefinition {
     danger: string
     warning: string
   }
+  terminal: TerminalTheme
 }
 
 export const THEMES: ThemeDefinition[] = [
@@ -37,6 +53,20 @@ export const THEMES: ThemeDefinition[] = [
       danger: '#f7768e',
       warning: '#e0af68',
     },
+    terminal: {
+      background: '#1a1b26',
+      foreground: '#c0caf5',
+      cursor: '#c0caf5',
+      selectionBackground: '#33467c',
+      black: '#15161e',
+      red: '#f7768e',
+      green: '#9ece6a',
+      yellow: '#e0af68',
+      blue: '#7aa2f7',
+      magenta: '#bb9af7',
+      cyan: '#7dcfff',
+      white: '#a9b1d6',
+    },
   },
   {
     name: 'light',
@@ -54,6 +84,20 @@ export const THEMES: ThemeDefinition[] = [
       success: '#22c55e',
       danger: '#ef4444',
       warning: '#f59e0b',
+    },
+    terminal: {
+      background: '#f5f5f5',
+      foreground: '#1a1a2e',
+      cursor: '#3b82f6',
+      selectionBackground: '#3b82f630',
+      black: '#1a1a2e',
+      red: '#dc2626',
+      green: '#16a34a',
+      yellow: '#ca8a04',
+      blue: '#2563eb',
+      magenta: '#7c3aed',
+      cyan: '#0891b2',
+      white: '#6b7280',
     },
   },
   {
@@ -73,6 +117,20 @@ export const THEMES: ThemeDefinition[] = [
       danger: '#c46a6a',
       warning: '#c4976a',
     },
+    terminal: {
+      background: '#faf6f1',
+      foreground: '#3d3229',
+      cursor: '#7c6f9b',
+      selectionBackground: '#7c6f9b30',
+      black: '#3d3229',
+      red: '#c46a6a',
+      green: '#6a9e6b',
+      yellow: '#c4976a',
+      blue: '#6b7ba0',
+      magenta: '#9b7094',
+      cyan: '#4e9b8e',
+      white: '#8c7e72',
+    },
   },
   {
     name: 'ultra-dark',
@@ -90,6 +148,20 @@ export const THEMES: ThemeDefinition[] = [
       success: '#4ade80',
       danger: '#fb7185',
       warning: '#fbbf24',
+    },
+    terminal: {
+      background: '#0d0d0d',
+      foreground: '#d4d4d4',
+      cursor: '#6d9efd',
+      selectionBackground: '#3d3d3d',
+      black: '#0d0d0d',
+      red: '#fb7185',
+      green: '#4ade80',
+      yellow: '#fbbf24',
+      blue: '#6d9efd',
+      magenta: '#c084fc',
+      cyan: '#67e8f9',
+      white: '#d4d4d4',
     },
   },
 ]

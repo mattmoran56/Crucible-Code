@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { getNotificationServerPort } from './notification-server'
 
-export function writeClaudeHookSettings(worktreePath: string) {
+export function writeClaudeHookSettings(worktreePath: string, isDark = true) {
   const port = getNotificationServerPort()
   if (!port) return
 
@@ -12,6 +12,7 @@ export function writeClaudeHookSettings(worktreePath: string) {
   }
 
   const settings = {
+    theme: isDark ? 'dark' : 'light',
     hooks: {
       Notification: [
         {
