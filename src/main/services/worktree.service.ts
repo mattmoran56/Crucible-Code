@@ -1,6 +1,6 @@
 import simpleGit from 'simple-git'
 import { join, dirname, basename } from 'path'
-import { mkdir } from 'fs/promises'
+import { mkdir, access } from 'fs/promises'
 import type { WorktreeInfo } from '../../shared/types'
 
 function worktreeDir(repoPath: string): string {
@@ -44,7 +44,13 @@ export async function createWorktree(
     }
   }
 
-  await g.raw(['worktree', 'add', '-b', branchName, wtPath, base])
+  try {
+    await g.raw(['worktree', 'add', '-b', branchName, wtPath, base])
+  } catch (err) {
+    // If the worktree path exists the add succeeded — the error came from a
+    // post-checkout hook (e.g. git-lfs not installed). Ignore it.
+    await access(wtPath)
+  }
 
   return { path: wtPath, branch: branchName }
 }
@@ -71,10 +77,16 @@ export async function createWorktreeFromBranch(
     localExists = false
   }
 
-  if (localExists) {
-    await g.raw(['worktree', 'add', wtPath, remoteBranch])
-  } else {
-    await g.raw(['worktree', 'add', '-b', remoteBranch, wtPath, `origin/${remoteBranch}`])
+  try {
+    if (localExists) {
+      await g.raw(['worktree', 'add', wtPath, remoteBranch])
+    } else {
+      await g.raw(['worktree', 'add', '-b', remoteBranch, wtPath, `origin/${remoteBranch}`])
+    }
+  } catch (err) {
+    // If the worktree path exists the add succeeded — the error came from a
+    // post-checkout hook (e.g. git-lfs not installed). Ignore it.
+    await access(wtPath)
   }
 
   return { path: wtPath, branch: remoteBranch }
