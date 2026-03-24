@@ -12,6 +12,7 @@ export interface Session {
   projectId: string
   createdAt: string
   prNumber?: number
+  baseBranch?: string
 }
 
 export interface Commit {
@@ -39,6 +40,7 @@ export interface PullRequest {
   headRefName: string
   author: string
   updatedAt: string
+  isDraft: boolean
 }
 
 export interface PRFile {

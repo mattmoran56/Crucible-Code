@@ -31,6 +31,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_MERGE_CHECK, repoPath, branch),
     merge: (repoPath: string, branch: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GIT_MERGE, repoPath, branch),
+    isMerged: (worktreePath: string, baseBranch: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.GIT_IS_MERGED, worktreePath, baseBranch),
   },
 
   worktree: {

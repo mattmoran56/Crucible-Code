@@ -1,4 +1,5 @@
 import React from 'react'
+import { Tooltip } from './Tooltip'
 
 interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   label: string
@@ -25,12 +26,14 @@ export function IconButton({
   ...rest
 }: IconButtonProps) {
   return (
-    <button
-      aria-label={label}
-      className={`inline-flex items-center justify-center rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
-      {...rest}
-    >
-      {children}
-    </button>
+    <Tooltip content={label}>
+      <button
+        aria-label={label}
+        className={`inline-flex items-center justify-center rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
+        {...rest}
+      >
+        {children}
+      </button>
+    </Tooltip>
   )
 }
