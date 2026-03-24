@@ -43,12 +43,12 @@ export function StaleSessionCard({ session, isActive, onClick, onReactivate, onD
         style={{ padding: '8px 12px' }}
       >
         <div className="flex items-center gap-2">
-          <div className="font-medium truncate flex-1 pr-12">{session.name}</div>
+          <div className="font-medium truncate flex-1 pr-5">{session.name}</div>
         </div>
-        <div className="text-text-muted text-[10px] mt-1 truncate pr-12">
+        <div className="text-text-muted text-[10px] mt-1 truncate pr-5">
           {session.branchName}
         </div>
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100">
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100">
           <IconButton
             label={`Reactivate ${session.name}`}
             size="sm"
@@ -56,7 +56,6 @@ export function StaleSessionCard({ session, isActive, onClick, onReactivate, onD
               e.stopPropagation()
               onReactivate()
             }}
-            className="text-accent hover:text-accent-hover"
           >
             <ReactivateIcon />
           </IconButton>

@@ -53,18 +53,19 @@ export function SessionCard({ session, isActive, hasPendingNotification, pr, onC
             </span>
           </div>
         )}
-        <IconButton
-          label={`Delete ${session.name}`}
-          variant="danger"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation()
-            setShowConfirm(true)
-          }}
-          className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100"
-        >
-          <TrashIcon />
-        </IconButton>
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100">
+          <IconButton
+            label={`Delete ${session.name}`}
+            variant="danger"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowConfirm(true)
+            }}
+          >
+            <TrashIcon />
+          </IconButton>
+        </div>
       </button>
 
       <Dialog open={showConfirm} onClose={() => setShowConfirm(false)} title="Delete session?">

@@ -4,12 +4,13 @@ interface TooltipProps {
   content: string
   children: React.ReactNode
   side?: 'top' | 'bottom'
+  className?: string
 }
 
-export function Tooltip({ content, children, side = 'top' }: TooltipProps) {
+export function Tooltip({ content, children, side = 'top', className = '' }: TooltipProps) {
   const isTop = side === 'top'
   return (
-    <div className="relative inline-flex group/tooltip">
+    <div className={`relative inline-flex group/tooltip ${className}`}>
       {children}
       <span
         className={`

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePRReviewStore } from '../../stores/prReviewStore'
+import { usePRStore } from '../../stores/prStore'
 import { PRDiffViewer } from '../git/DiffViewer'
 import { ListBox, ListItem } from '../ui/ListBox'
 import { ResizeHandle } from '../ui/ResizeHandle'
@@ -45,7 +46,8 @@ function extractFileDiff(fullDiff: string, filePath: string): string {
 }
 
 export function PRReviewPanel() {
-  const { activePRNumber, didStash } = useSessionStore()
+  const { activePRNumber, didStash, checkStaleness, clearActiveContext } = useSessionStore()
+  const { loadPRs } = usePRStore()
   const { projects, activeProjectId } = useProjectStore()
   const {
     files, selectedFilePath, fullDiff, comments, loading, mergeable,
@@ -108,8 +110,11 @@ export function PRReviewPanel() {
   }
 
   const handleMerge = async () => {
-    await merge(activeProject.repoPath, prNumber, 'squash')
+    await merge(activeProject.repoPath, prNumber, 'merge')
     setShowMergeConfirm(false)
+    await clearActiveContext()
+    loadPRs(activeProject.repoPath)
+    checkStaleness(activeProject.repoPath)
   }
 
   return (
@@ -273,7 +278,7 @@ export function PRReviewPanel() {
         title="Merge Pull Request"
       >
         <p className="text-xs text-text-muted mb-5">
-          This will squash and merge PR #{prNumber} and delete the source branch.
+          This will create a merge commit for PR #{prNumber} and delete the source branch.
         </p>
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" size="sm" onClick={() => setShowMergeConfirm(false)}>
