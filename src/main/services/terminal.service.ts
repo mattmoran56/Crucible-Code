@@ -2,7 +2,7 @@ import * as pty from 'node-pty'
 import { BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
 
-export type TerminalMode = 'shell' | 'claude'
+export type TerminalMode = 'shell' | 'claude' | 'review'
 
 interface TerminalInstance {
   pty: pty.IPty
@@ -26,11 +26,16 @@ function spawnPty(
   let command: string
   let args: string[]
 
-  if (instance.mode === 'claude') {
+  if (instance.mode === 'claude' || instance.mode === 'review') {
     // Use the shell to run claude so PATH is resolved
     command = shell
     // First launch: plain `claude`. After exit/restart: `claude --resume`
-    args = ['-l', '-c', isResume ? 'claude --resume' : 'claude']
+    // Review mode always starts fresh (no --resume)
+    if (instance.mode === 'review') {
+      args = ['-l', '-c', 'claude']
+    } else {
+      args = ['-l', '-c', isResume ? 'claude --resume' : 'claude']
+    }
   } else {
     command = shell
     args = []

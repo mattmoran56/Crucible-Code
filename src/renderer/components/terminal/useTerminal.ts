@@ -28,10 +28,17 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
 
     const existing = terminalInstances.get(terminalId)
     if (existing) {
-      // Already created — if not yet attached to this container, attach
-      if (!existing.attached || containerRef.current.children.length === 0) {
-        existing.term.open(containerRef.current)
+      // Already created — move DOM element to new container if needed
+      if (containerRef.current.children.length === 0 && existing.term.element) {
+        containerRef.current.appendChild(existing.term.element)
         existing.attached = true
+        // Re-fit after reparenting
+        requestAnimationFrame(() => {
+          existing.fitAddon.fit()
+          const { cols, rows } = existing.term
+          window.api.terminal.resize(terminalId, cols, rows)
+          existing.term.scrollToBottom()
+        })
       }
       return
     }
