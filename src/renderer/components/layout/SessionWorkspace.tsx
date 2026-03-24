@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { GitPanel } from '../git/GitPanel'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { ReviewTerminalPanel } from '../terminal/ReviewTerminalPanel'
@@ -221,33 +222,89 @@ export function SessionWorkspace() {
 
   const splitEnabled = canSplit()
 
+  // Stable portal target elements — created once, never destroyed.
+  // Panels are portaled into these, then we move the targets between column content areas.
+  const panelTargets = useRef<Record<WorkspaceTab, HTMLDivElement> | null>(null)
+  if (!panelTargets.current) {
+    const allTabs: WorkspaceTab[] = ['agent', 'git', 'pr', 'review']
+    panelTargets.current = {} as Record<WorkspaceTab, HTMLDivElement>
+    for (const tab of allTabs) {
+      const div = document.createElement('div')
+      div.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;min-height:0'
+      div.dataset.panelTarget = tab
+      panelTargets.current[tab] = div
+    }
+  }
+
+  // Move portal targets into the correct column content areas on every layout change
+  useEffect(() => {
+    const targets = panelTargets.current!
+    const container = columnsRef.current
+    if (!container) return
+
+    // Hide all targets first
+    for (const tab of Object.keys(targets) as WorkspaceTab[]) {
+      targets[tab].style.visibility = 'hidden'
+      targets[tab].style.pointerEvents = 'none'
+      targets[tab].style.zIndex = '0'
+    }
+
+    // Attach to correct columns and show active tabs
+    for (const col of columns) {
+      const contentEl = container.querySelector(
+        `[data-column-id="${col.id}"] [data-column-content]`
+      ) as HTMLElement
+      if (!contentEl) continue
+
+      for (const tab of col.tabs) {
+        const target = targets[tab]
+        if (!target) continue
+        const isActive = tab === col.activeTab
+        target.style.visibility = isActive ? 'visible' : 'hidden'
+        target.style.pointerEvents = isActive ? 'auto' : 'none'
+        target.style.zIndex = isActive ? '1' : '0'
+        contentEl.appendChild(target)
+      }
+    }
+  }, [columns])
+
+  // Compute visibility for terminal panels
+  const agentVisible = columns.some((c) => c.activeTab === 'agent')
+  const reviewVisible = columns.some((c) => c.activeTab === 'review')
+
   if (columns.length === 0) {
     return <div className="flex-1 flex items-center justify-center text-text-muted text-sm">No session selected</div>
   }
 
   return (
-    <div className="flex-1 flex min-h-0" ref={columnsRef}>
-      {columns.map((col, i) => (
-        <React.Fragment key={col.id}>
-          {i > 0 && (
-            <ResizeHandle
-              direction="horizontal"
-              onMouseDown={(e) => onResizeStart(e, columns[i - 1].id, col.id)}
+    <>
+      <div className="flex-1 flex min-h-0" ref={columnsRef}>
+        {columns.map((col, i) => (
+          <React.Fragment key={col.id}>
+            {i > 0 && (
+              <ResizeHandle
+                direction="horizontal"
+                onMouseDown={(e) => onResizeStart(e, columns[i - 1].id, col.id)}
+              />
+            )}
+            <ColumnPanel
+              column={col}
+              canClose={columns.length > 1}
+              canSplit={splitEnabled}
+              onSplit={splitRight}
+              effectivePRNumber={effectivePRNumber}
+              dragOverInfo={dragOverInfo}
+              setDragOverInfo={setDragOverInfo}
             />
-          )}
-          <ColumnPanel
-            column={col}
-            canClose={columns.length > 1}
-            canSplit={splitEnabled}
-            onSplit={splitRight}
-            prOnlyMode={prOnlyMode}
-            effectivePRNumber={effectivePRNumber}
-            dragOverInfo={dragOverInfo}
-            setDragOverInfo={setDragOverInfo}
-          />
-        </React.Fragment>
-      ))}
-    </div>
+          </React.Fragment>
+        ))}
+      </div>
+      {/* Global panel mounting — panels never unmount, just get portaled between columns */}
+      {createPortal(<TerminalPanel mode="claude" visible={agentVisible} />, panelTargets.current.agent)}
+      {createPortal(<ReviewTerminalPanel visible={reviewVisible} />, panelTargets.current.review)}
+      {createPortal(<GitPanel />, panelTargets.current.git)}
+      {createPortal(<PRReviewPanel />, panelTargets.current.pr)}
+    </>
   )
 }
 
@@ -258,7 +315,6 @@ function ColumnPanel({
   canClose,
   canSplit,
   onSplit,
-  prOnlyMode,
   effectivePRNumber,
   dragOverInfo,
   setDragOverInfo,
@@ -267,7 +323,6 @@ function ColumnPanel({
   canClose: boolean
   canSplit: boolean
   onSplit: () => void
-  prOnlyMode: boolean
   effectivePRNumber: number | null
   dragOverInfo: { columnId: string; index: number } | null
   setDragOverInfo: (info: { columnId: string; index: number } | null) => void
@@ -409,22 +464,8 @@ function ColumnPanel({
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col min-h-0 relative">
-        {column.tabs.map((tab) => (
-          <div
-            key={tab}
-            className="absolute inset-0 flex flex-col min-h-0"
-            style={{
-              visibility: tab === column.activeTab ? 'visible' : 'hidden',
-              pointerEvents: tab === column.activeTab ? 'auto' : 'none',
-              zIndex: tab === column.activeTab ? 1 : 0,
-            }}
-          >
-            <TabContent tab={tab} visible={tab === column.activeTab} prOnlyMode={prOnlyMode} />
-          </div>
-        ))}
-      </div>
+      {/* Content — portal targets get moved here by SessionWorkspace */}
+      <div className="flex-1 flex flex-col min-h-0 relative" data-column-content />
     </div>
   )
 }
@@ -491,27 +532,3 @@ function DraggableTab({
   return button
 }
 
-/* ── Tab Content ──────────────────────────────────────── */
-
-function TabContent({
-  tab,
-  visible,
-  prOnlyMode,
-}: {
-  tab: WorkspaceTab
-  visible: boolean
-  prOnlyMode: boolean
-}) {
-  switch (tab) {
-    case 'agent':
-      return <TerminalPanel mode="claude" visible={visible} />
-    case 'git':
-      return <GitPanel />
-    case 'pr':
-      return <PRReviewPanel />
-    case 'review':
-      return <ReviewTerminalPanel visible={visible} />
-    default:
-      return null
-  }
-}
