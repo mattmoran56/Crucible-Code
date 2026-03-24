@@ -89,10 +89,13 @@ const DRAG_MIME = 'application/x-workspace-tab'
 /* ── Main component ───────────────────────────────────── */
 
 export function SessionWorkspace() {
-  const { activeSessionId, activePRNumber } = useSessionStore()
+  const { activeSessionId, activePRNumber, sessions } = useSessionStore()
   const { columns, resetLayout, splitRight, addAvailableTab, removeAvailableTab, setActiveTab, canSplit } =
     useWorkspaceLayoutStore()
 
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  // PR number: explicit activePRNumber takes priority, fall back to session's associated PR
+  const effectivePRNumber = activePRNumber ?? activeSession?.prNumber ?? null
   const prOnlyMode = activePRNumber != null && activeSessionId == null
 
   // Track previous values to distinguish reset vs incremental change
@@ -233,7 +236,7 @@ export function SessionWorkspace() {
             canSplit={splitEnabled}
             onSplit={splitRight}
             prOnlyMode={prOnlyMode}
-            activePRNumber={activePRNumber}
+            effectivePRNumber={effectivePRNumber}
             dragOverInfo={dragOverInfo}
             setDragOverInfo={setDragOverInfo}
           />
@@ -251,7 +254,7 @@ function ColumnPanel({
   canSplit,
   onSplit,
   prOnlyMode,
-  activePRNumber,
+  effectivePRNumber,
   dragOverInfo,
   setDragOverInfo,
 }: {
@@ -260,7 +263,7 @@ function ColumnPanel({
   canSplit: boolean
   onSplit: () => void
   prOnlyMode: boolean
-  activePRNumber: number | null
+  effectivePRNumber: number | null
   dragOverInfo: { columnId: string; index: number } | null
   setDragOverInfo: (info: { columnId: string; index: number } | null) => void
 }) {
@@ -377,7 +380,7 @@ function ColumnPanel({
               <DraggableTab
                 tab={tab}
                 active={tab === column.activeTab}
-                disabled={PR_REQUIRED_TABS.has(tab) && activePRNumber == null}
+                disabled={PR_REQUIRED_TABS.has(tab) && effectivePRNumber == null}
                 disabledTooltip="Open a PR to use this tab"
                 columnId={column.id}
                 onClick={() => setActiveTab(column.id, tab)}

@@ -18,16 +18,20 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const cwd = activeSession?.worktreePath ?? activeProject?.repoPath
+
+  // PR number: explicit activePRNumber takes priority, fall back to session's associated PR
+  const effectivePRNumber = activePRNumber ?? activeSession?.prNumber ?? null
+
   // Use session ID if available, otherwise a synthetic key for PR-only mode
-  const terminalSessionId = activeSessionId ?? (activePRNumber != null ? `pr-review-${activePRNumber}` : null)
-  const terminalName = activeSession?.name ?? `PR #${activePRNumber}`
+  const terminalSessionId = activeSessionId ?? (effectivePRNumber != null ? `pr-review-${effectivePRNumber}` : null)
+  const terminalName = activeSession?.name ?? `PR #${effectivePRNumber}`
 
   // Spawn a review terminal and send /review command
   useEffect(() => {
-    if (!cwd || !terminalSessionId || activePRNumber == null) return
+    if (!cwd || !terminalSessionId || effectivePRNumber == null) return
 
     const existing = getTerminal(terminalSessionId, 'review')
-    const commandKey = `${terminalSessionId}:${activePRNumber}`
+    const commandKey = `${terminalSessionId}:${effectivePRNumber}`
 
     if (!existing) {
       sentCommandRef.current = null
@@ -36,21 +40,22 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
           if (sentCommandRef.current !== commandKey) {
             // Wait briefly for claude to initialize, then send the review command
             setTimeout(() => {
-              window.api.terminal.write(terminalId, `/review ${activePRNumber}\n`)
+              window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\n`)
               sentCommandRef.current = commandKey
             }, 2000)
           }
         }
       )
     }
-  }, [terminalSessionId, activePRNumber, cwd, terminalName, getTerminal, spawnTerminal])
+  }, [terminalSessionId, effectivePRNumber, cwd, terminalName, getTerminal, spawnTerminal])
 
   // Kill the review terminal when PR changes or closes
   useEffect(() => {
     return () => {
       const state = useSessionStore.getState()
       const sid = state.activeSessionId
-      const prNum = state.activePRNumber
+      const session = state.sessions.find((s) => s.id === sid)
+      const prNum = state.activePRNumber ?? session?.prNumber ?? null
       const key = sid ?? (prNum != null ? `pr-review-${prNum}` : null)
       if (key) {
         const existing = useTerminalStore.getState().getTerminal(key, 'review')
@@ -59,9 +64,9 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
         }
       }
     }
-  }, [activePRNumber])
+  }, [effectivePRNumber])
 
-  if (activePRNumber == null) {
+  if (effectivePRNumber == null) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
         Open a PR to start a review
