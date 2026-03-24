@@ -15,6 +15,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_CHECKOUT, repoPath, branch),
     restoreWorktree: (worktreePath: string, branch: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GIT_RESTORE_WORKTREE, worktreePath, branch),
+    isMerged: (worktreePath: string, baseBranch: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.GIT_IS_MERGED, worktreePath, baseBranch),
   },
 
   worktree: {

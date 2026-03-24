@@ -29,4 +29,8 @@ export function registerGitHandlers() {
   ipcMain.handle(IPC.GIT_RESTORE_WORKTREE, async (_e, worktreePath: string, branch: string) => {
     return gitService.restoreWorktreeBranch(worktreePath, branch)
   })
+
+  ipcMain.handle(IPC.GIT_IS_MERGED, async (_e, worktreePath: string, baseBranch: string) => {
+    return gitService.isBranchMerged(worktreePath, baseBranch)
+  })
 }

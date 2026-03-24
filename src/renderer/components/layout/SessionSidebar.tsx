@@ -4,6 +4,7 @@ import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { SessionCard } from '../sessions/SessionCard'
+import { StaleSessionCard } from '../sessions/StaleSessionCard'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
 import { PRCard } from '../pullrequests/PRCard'
 import { Sidebar, SidebarSection } from '../ui/Sidebar'
@@ -15,13 +16,14 @@ const PR_POLL_INTERVAL = 30_000
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, activePRNumber, loadSessions, setActiveSession, removeSession, openPR } =
+  const { sessions, staleSessions, activeSessionId, activePRNumber, loadSessions, setActiveSession, removeSession, openPR, checkStaleness, reactivateSession } =
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, markSeen, clear: clearPRs } =
     usePRStore()
   const { pendingSessionIds, clearPending } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
+  const [staleCollapsed, setStaleCollapsed] = useState(true)
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
 
@@ -47,14 +49,21 @@ export function SessionSidebar() {
     maxSize: Math.round(sidebarHeight * 0.85),
   })
 
-  // Load sessions
+  // Load sessions then immediately check staleness (chained to avoid race condition)
   useEffect(() => {
-    if (activeProjectId) {
-      loadSessions(activeProjectId)
+    if (activeProjectId && activeProject) {
+      loadSessions(activeProjectId).then(() => checkStaleness(activeProject.repoPath))
     }
-  }, [activeProjectId, loadSessions])
+  }, [activeProjectId])
 
-  // Load and poll PRs
+  // Auto-expand stale sessions when there are some
+  useEffect(() => {
+    if (staleSessions.length > 0) {
+      setStaleCollapsed(false)
+    }
+  }, [staleSessions.length])
+
+  // Load and poll PRs + staleness
   useEffect(() => {
     if (!activeProject) {
       clearPRs()
@@ -66,6 +75,7 @@ export function SessionSidebar() {
 
     const interval = setInterval(() => {
       loadPRs(activeProject.repoPath)
+      checkStaleness(activeProject.repoPath)
     }, PR_POLL_INTERVAL)
 
     return () => clearInterval(interval)
@@ -140,6 +150,30 @@ export function SessionSidebar() {
         {!prCollapsed && (
           <ResizeHandle direction="vertical" onMouseDown={sessionsPanel.onMouseDown} />
         )}
+
+        {/* Stale Sessions section — collapsible, fixed max-height */}
+        <div className="flex-none" style={{ maxHeight: staleCollapsed ? undefined : 200, overflowY: staleCollapsed ? undefined : 'auto' }}>
+          <SidebarSection
+            title="Stale Sessions"
+            collapsible
+            collapsed={staleCollapsed}
+            onToggle={() => setStaleCollapsed((c) => !c)}
+          >
+            {staleSessions.map((session) => (
+              <StaleSessionCard
+                key={session.id}
+                session={session}
+                isActive={session.id === activeSessionId}
+                onClick={() => setActiveSession(session.id)}
+                onReactivate={() => reactivateSession(activeProject.id, session.id)}
+                onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
+              />
+            ))}
+            {staleSessions.length === 0 && (
+              <p className="text-text-muted text-xs text-center py-4">No stale sessions</p>
+            )}
+          </SidebarSection>
+        </div>
 
         {/* Pull Requests section — fills remaining space */}
         <div className={prCollapsed ? '' : 'flex-1 min-h-0'}>
