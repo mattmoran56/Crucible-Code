@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect } from 'react'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
@@ -9,16 +9,18 @@ interface Props {
   visible?: boolean
 }
 
+// Module-level set — survives across all renders and never resets
+const reviewsLaunched = new Set<string>()
+
 export function ReviewTerminalPanel({ visible = true }: Props) {
   const { activeSessionId, activePRNumber, sessions } = useSessionStore()
   const { projects, activeProjectId } = useProjectStore()
-  const { spawnTerminal, getTerminal, killTerminal, terminals } = useTerminalStore()
-  const sentCommandRef = useRef<string | null>(null)
+  const { spawnTerminal, getTerminal, terminals } = useTerminalStore()
+  const { pullRequests } = usePRStore()
 
   // Derive cwd and a stable key for the terminal
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const activeProject = projects.find((p) => p.id === activeProjectId)
-  const { pullRequests } = usePRStore()
   const cwd = activeSession?.worktreePath ?? activeProject?.repoPath
 
   // Match session branch to a PR in the list
@@ -30,64 +32,48 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
   // Use session ID if available, otherwise a synthetic key for PR-only mode
   const terminalSessionId = activeSessionId ?? (effectivePRNumber != null ? `pr-review-${effectivePRNumber}` : null)
   const terminalName = activeSession?.name ?? `PR #${effectivePRNumber}`
+  const commandKey = terminalSessionId && effectivePRNumber != null
+    ? `${terminalSessionId}:${effectivePRNumber}`
+    : null
 
-  // Spawn a review terminal and send /review command
+  // Spawn a review terminal and send /review command — only once per session+PR
   useEffect(() => {
-    if (!cwd || !terminalSessionId || effectivePRNumber == null) return
+    if (!cwd || !terminalSessionId || effectivePRNumber == null || !commandKey) return
+    if (reviewsLaunched.has(commandKey)) return
 
     const existing = getTerminal(terminalSessionId, 'review')
-    const commandKey = `${terminalSessionId}:${effectivePRNumber}`
+    if (existing) {
+      // Terminal already exists (e.g. from a previous render cycle), mark as launched
+      reviewsLaunched.add(commandKey)
+      return
+    }
 
-    if (!existing) {
-      sentCommandRef.current = null
-      spawnTerminal(terminalSessionId, terminalName, cwd, 'review').then(
-        (terminalId) => {
-          if (sentCommandRef.current !== commandKey) {
-            // Listen for Claude Code to be ready, then send the review command
-            const unsub = window.api.terminal.onData((tid, data) => {
-              if (tid !== terminalId || sentCommandRef.current === commandKey) return
-              // Claude Code shows ">" or the prompt character when ready
-              if (data.includes('>') || data.includes('$')) {
-                sentCommandRef.current = commandKey
-                unsub()
-                // Small delay to ensure prompt is fully rendered
-                setTimeout(() => {
-                  window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\r`)
-                }, 100)
-              }
-            })
-            // Fallback: if we don't detect readiness within 10s, send anyway
+    reviewsLaunched.add(commandKey)
+    spawnTerminal(terminalSessionId, terminalName, cwd, 'review').then(
+      (terminalId) => {
+        // Listen for Claude Code to be ready, then send the review command
+        let sent = false
+        const unsub = window.api.terminal.onData((tid, data) => {
+          if (tid !== terminalId || sent) return
+          if (data.includes('>') || data.includes('$')) {
+            sent = true
+            unsub()
             setTimeout(() => {
-              if (sentCommandRef.current !== commandKey) {
-                sentCommandRef.current = commandKey
-                unsub()
-                window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\r`)
-              }
-            }, 10000)
+              window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\r`)
+            }, 100)
           }
-        }
-      )
-    }
-  }, [terminalSessionId, effectivePRNumber, cwd, terminalName, getTerminal, spawnTerminal])
-
-  // Kill the review terminal when PR changes or closes
-  useEffect(() => {
-    return () => {
-      const state = useSessionStore.getState()
-      const sid = state.activeSessionId
-      const session = state.sessions.find((s) => s.id === sid)
-      const prs = usePRStore.getState().pullRequests
-      const matchedPR = session ? prs.find((pr) => pr.headRefName === session.branchName) : null
-      const prNum = state.activePRNumber ?? matchedPR?.number ?? null
-      const key = sid ?? (prNum != null ? `pr-review-${prNum}` : null)
-      if (key) {
-        const existing = useTerminalStore.getState().getTerminal(key, 'review')
-        if (existing) {
-          useTerminalStore.getState().killTerminal(key, 'review')
-        }
+        })
+        // Fallback: if we don't detect readiness within 10s, send anyway
+        setTimeout(() => {
+          if (!sent) {
+            sent = true
+            unsub()
+            window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\r`)
+          }
+        }, 10000)
       }
-    }
-  }, [effectivePRNumber])
+    )
+  }, [terminalSessionId, effectivePRNumber, cwd, terminalName, commandKey, getTerminal, spawnTerminal])
 
   if (effectivePRNumber == null) {
     return (
@@ -99,18 +85,25 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
 
   if (!terminalSessionId) return null
 
-  const instance = getTerminal(terminalSessionId, 'review')
-  if (!instance) return null
+  // Render all review terminals, toggle visibility (same pattern as TerminalPanel)
+  const allReviewInstances = Object.values(terminals).filter((t) => t.mode === 'review')
+
+  if (allReviewInstances.length === 0) return null
 
   return (
     <div className="flex-1 relative min-h-0">
-      <TerminalView
-        key={instance.terminalId}
-        terminalId={instance.terminalId}
-        sessionId={terminalSessionId}
-        sessionName={terminalName}
-        visible={visible}
-      />
+      {allReviewInstances.map((instance) => {
+        const isActive = instance.sessionId === terminalSessionId && visible
+        return (
+          <TerminalView
+            key={instance.terminalId}
+            terminalId={instance.terminalId}
+            sessionId={instance.sessionId}
+            sessionName={instance.sessionName}
+            visible={isActive}
+          />
+        )
+      })}
     </div>
   )
 }
