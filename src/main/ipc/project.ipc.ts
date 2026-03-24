@@ -31,6 +31,13 @@ export function registerProjectHandlers(window: BrowserWindow) {
     return projects
   })
 
+  ipcMain.handle(IPC.PROJECT_REORDER, async (_e, projectIds: string[]) => {
+    const projects = store.get('projects', [])
+    const reordered = projectIds.map((id) => projects.find((p) => p.id === id)!).filter(Boolean)
+    store.set('projects', reordered)
+    return reordered
+  })
+
   ipcMain.handle(IPC.PROJECT_SELECT_FOLDER, async () => {
     const result = await dialog.showOpenDialog(window, {
       properties: ['openDirectory'],
