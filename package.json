@@ -19,7 +19,7 @@
       "package.json"
     ],
     "directories": {
-      "output": "dist-electron"
+      "output": "/Applications"
     },
     "mac": {
       "category": "public.app-category.developer-tools",
