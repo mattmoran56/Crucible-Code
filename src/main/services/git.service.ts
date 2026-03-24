@@ -47,6 +47,94 @@ export async function getFileDiff(
   return patch
 }
 
+export interface CheckoutResult {
+  stashed: boolean
+  detachedWorktree?: string // worktree path that was detached to free the branch
+  error?: string
+}
+
+export async function checkoutBranch(
+  repoPath: string,
+  branch: string
+): Promise<CheckoutResult> {
+  const g = git(repoPath)
+
+  try {
+    await g.raw(['fetch', 'origin', branch])
+  } catch (err) {
+    return { stashed: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // Stash any uncommitted changes
+  const status = await g.status()
+  const dirty =
+    status.modified.length > 0 ||
+    status.not_added.length > 0 ||
+    status.created.length > 0 ||
+    status.deleted.length > 0 ||
+    status.staged.length > 0
+  let stashed = false
+
+  if (dirty) {
+    await g.raw([
+      'stash',
+      'push',
+      '-m',
+      `codecrucible: auto-stash before switching to ${branch}`,
+    ])
+    stashed = true
+  }
+
+  // Try simple checkout first
+  try {
+    await g.raw(['checkout', branch])
+    return { stashed }
+  } catch {
+    // May not exist locally, or is in a worktree
+  }
+
+  // Try creating from origin
+  try {
+    await g.raw(['checkout', '-b', branch, `origin/${branch}`])
+    return { stashed }
+  } catch {
+    // Branch exists locally — likely in a worktree
+  }
+
+  // Find which worktree has this branch and detach it
+  let detachedWorktree: string | undefined
+  try {
+    const wtOutput = await g.raw(['worktree', 'list', '--porcelain'])
+    let wtPath = ''
+    for (const line of wtOutput.split('\n')) {
+      if (line.startsWith('worktree ')) {
+        wtPath = line.slice('worktree '.length)
+      } else if (line.startsWith('branch refs/heads/') && line.slice('branch refs/heads/'.length) === branch) {
+        // This worktree has our branch — detach it
+        const wtGit = simpleGit(wtPath)
+        await wtGit.raw(['checkout', '--detach'])
+        detachedWorktree = wtPath
+        break
+      }
+    }
+  } catch (err) {
+    return { stashed, error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // Now the branch should be free — checkout
+  try {
+    await g.raw(['checkout', branch])
+    return { stashed, detachedWorktree }
+  } catch (err) {
+    return { stashed, detachedWorktree, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+export async function restoreWorktreeBranch(worktreePath: string, branch: string): Promise<void> {
+  const g = simpleGit(worktreePath)
+  await g.raw(['checkout', branch])
+}
+
 export async function getWorkingDiff(repoPath: string): Promise<string> {
   const g = git(repoPath)
   // Show both staged and unstaged changes

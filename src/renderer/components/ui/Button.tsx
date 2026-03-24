@@ -1,4 +1,5 @@
 import React from 'react'
+import { cn } from '../../lib/cn'
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'ghost' | 'danger'
@@ -12,9 +13,9 @@ const VARIANT_CLASSES: Record<string, string> = {
   danger: 'bg-danger text-white hover:bg-danger/80',
 }
 
-const SIZE_CLASSES: Record<string, string> = {
-  sm: 'px-3 py-1 text-xs',
-  md: 'px-4 py-2 text-xs',
+const SIZE_STYLES: Record<string, React.CSSProperties> = {
+  sm: { padding: '4px 10px', fontSize: '11px' },
+  md: { padding: '6px 16px', fontSize: '12px' },
 }
 
 export function Button({
@@ -23,6 +24,7 @@ export function Button({
   loading = false,
   disabled,
   className = '',
+  style,
   children,
   ...rest
 }: ButtonProps) {
@@ -31,7 +33,12 @@ export function Button({
       disabled={disabled || loading}
       aria-disabled={disabled || loading || undefined}
       aria-busy={loading || undefined}
-      className={`rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
+      className={cn(
+        'rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        VARIANT_CLASSES[variant],
+        className
+      )}
+      style={{ ...SIZE_STYLES[size], ...style }}
       {...rest}
     >
       {loading ? 'Loading...' : children}
