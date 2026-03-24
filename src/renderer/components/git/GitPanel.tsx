@@ -287,7 +287,7 @@ export function GitPanel() {
       </div>
 
       {/* Three-column layout */}
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex min-h-0 min-w-0">
         {/* Commit list */}
         <div style={{ width: commitCol.size }} className="flex-shrink-0 flex flex-col min-h-0">
           <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted">
@@ -307,7 +307,7 @@ export function GitPanel() {
         <ResizeHandle direction="horizontal" onMouseDown={filesCol.onMouseDown} />
 
         {/* Diff viewer */}
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           <DiffViewer />
         </div>
       </div>
