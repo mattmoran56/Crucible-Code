@@ -17,8 +17,14 @@ function nextColumnId(): string {
 interface WorkspaceLayoutState {
   columns: WorkspaceColumn[]
 
-  /** Reset to a single column with the given tabs */
-  resetLayout: (tabs: WorkspaceTab[], activeTab?: WorkspaceTab) => void
+  /** Saved layouts keyed by session/context ID */
+  savedLayouts: Record<string, WorkspaceColumn[]>
+
+  /** Reset to a single column with the given tabs, or restore saved layout */
+  resetLayout: (tabs: WorkspaceTab[], activeTab?: WorkspaceTab, contextId?: string) => void
+
+  /** Save current layout for a context ID */
+  saveLayout: (contextId: string) => void
 
   /** Split: pull a non-active tab from the first multi-tab column into a new column */
   splitRight: () => void
@@ -55,16 +61,51 @@ interface WorkspaceLayoutState {
 
 export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) => ({
   columns: [],
+  savedLayouts: {},
 
-  resetLayout: (tabs, activeTab) => {
+  resetLayout: (tabs, activeTab, contextId) => {
     if (tabs.length === 0) {
       set({ columns: [] })
       return
     }
+
+    // Try to restore a saved layout for this context
+    if (contextId) {
+      const saved = get().savedLayouts[contextId]
+      if (saved && saved.length > 0) {
+        // Validate saved layout: ensure all tabs in saved layout are in the available tabs,
+        // and add any new available tabs that weren't in the saved layout
+        const availableSet = new Set(tabs)
+        const savedTabs = new Set(saved.flatMap((c) => c.tabs))
+
+        // Check if saved layout is still compatible (all saved tabs still available)
+        const allValid = [...savedTabs].every((t) => availableSet.has(t))
+        if (allValid) {
+          // Add any new tabs that aren't in the saved layout to the first column
+          const missingTabs = tabs.filter((t) => !savedTabs.has(t))
+          const restored = saved.map((c, i) =>
+            i === 0 && missingTabs.length > 0
+              ? { ...c, tabs: [...c.tabs, ...missingTabs] }
+              : c
+          )
+          set({ columns: restored })
+          return
+        }
+      }
+    }
+
     set({
       columns: [
         { id: nextColumnId(), tabs, activeTab: activeTab ?? tabs[0], flex: 1 },
       ],
+    })
+  },
+
+  saveLayout: (contextId) => {
+    const { columns, savedLayouts } = get()
+    if (columns.length === 0) return
+    set({
+      savedLayouts: { ...savedLayouts, [contextId]: columns },
     })
   },
 

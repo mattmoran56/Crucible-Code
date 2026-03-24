@@ -91,7 +91,7 @@ const DRAG_MIME = 'application/x-workspace-tab'
 
 export function SessionWorkspace() {
   const { activeSessionId, activePRNumber, sessions } = useSessionStore()
-  const { columns, resetLayout, splitRight, addAvailableTab, removeAvailableTab, setActiveTab, canSplit } =
+  const { columns, resetLayout, saveLayout, splitRight, addAvailableTab, removeAvailableTab, setActiveTab, canSplit } =
     useWorkspaceLayoutStore()
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
@@ -110,15 +110,20 @@ export function SessionWorkspace() {
   const initializedRef = useRef(false)
 
   useEffect(() => {
+    const prevContextId = prevSessionRef.current ?? (prevPRRef.current != null ? `pr-${prevPRRef.current}` : null)
     const sessionChanged = activeSessionId !== prevSessionRef.current
-    const prChanged = activePRNumber !== prevPRRef.current
+
+    // Save current layout before switching away
+    if (prevContextId && (sessionChanged || !initializedRef.current)) {
+      saveLayout(prevContextId)
+    }
 
     if (!initializedRef.current || sessionChanged) {
-      // Full reset
+      const contextId = activeSessionId ?? (activePRNumber != null ? `pr-${activePRNumber}` : undefined)
       if (prOnlyMode) {
-        resetLayout(['pr', 'review'], 'pr')
+        resetLayout(['pr', 'review'], 'pr', contextId)
       } else if (activeSessionId) {
-        resetLayout(['agent', 'git', 'review'], 'agent')
+        resetLayout(['agent', 'git', 'review'], 'agent', activeSessionId)
       } else {
         resetLayout([])
       }
@@ -128,6 +133,14 @@ export function SessionWorkspace() {
     prevSessionRef.current = activeSessionId
     prevPRRef.current = effectivePRNumber
   }, [activeSessionId, effectivePRNumber, prOnlyMode])
+
+  // Auto-save layout whenever columns change
+  const currentContextId = activeSessionId ?? (activePRNumber != null ? `pr-${activePRNumber}` : null)
+  useEffect(() => {
+    if (currentContextId && columns.length > 0) {
+      saveLayout(currentContextId)
+    }
+  }, [columns, currentContextId])
 
   // Column resize state
   const columnsRef = useRef<HTMLDivElement>(null)
