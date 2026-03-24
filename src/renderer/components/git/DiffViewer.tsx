@@ -318,7 +318,7 @@ function InlineComment({ comment }: { comment: PRComment }) {
         <span>{formatTime(comment.createdAt)}</span>
       </div>
       <div
-        className="text-xs text-text prose prose-xs prose-invert max-w-none [&_p]:my-1 [&_code]:bg-bg-tertiary [&_code]:px-1 [&_code]:rounded [&_pre]:bg-bg-tertiary [&_pre]:p-2 [&_pre]:rounded [&_a]:text-accent"
+        className="markdown-body"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>

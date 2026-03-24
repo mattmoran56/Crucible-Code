@@ -5,6 +5,11 @@ function git(repoPath: string): SimpleGit {
   return simpleGit(repoPath)
 }
 
+/** Git instance with LFS hooks suppressed — use for checkout operations */
+function gitNoLFS(repoPath: string): SimpleGit {
+  return simpleGit(repoPath).env('GIT_LFS_SKIP_SMUDGE', '1')
+}
+
 export async function getStatus(repoPath: string) {
   const status = await git(repoPath).status()
   return status
@@ -58,6 +63,7 @@ export async function checkoutBranch(
   branch: string
 ): Promise<CheckoutResult> {
   const g = git(repoPath)
+  const gc = gitNoLFS(repoPath)
 
   try {
     await g.raw(['fetch', 'origin', branch])
@@ -87,7 +93,7 @@ export async function checkoutBranch(
 
   // Try simple checkout first
   try {
-    await g.raw(['checkout', branch])
+    await gc.raw(['checkout', branch])
     return { stashed }
   } catch {
     // May not exist locally, or is in a worktree
@@ -95,7 +101,7 @@ export async function checkoutBranch(
 
   // Try creating from origin
   try {
-    await g.raw(['checkout', '-b', branch, `origin/${branch}`])
+    await gc.raw(['checkout', '-b', branch, `origin/${branch}`])
     return { stashed }
   } catch {
     // Branch exists locally — likely in a worktree
@@ -111,7 +117,7 @@ export async function checkoutBranch(
         wtPath = line.slice('worktree '.length)
       } else if (line.startsWith('branch refs/heads/') && line.slice('branch refs/heads/'.length) === branch) {
         // This worktree has our branch — detach it
-        const wtGit = simpleGit(wtPath)
+        const wtGit = gitNoLFS(wtPath)
         await wtGit.raw(['checkout', '--detach'])
         detachedWorktree = wtPath
         break
@@ -123,7 +129,7 @@ export async function checkoutBranch(
 
   // Now the branch should be free — checkout
   try {
-    await g.raw(['checkout', branch])
+    await gc.raw(['checkout', branch])
     return { stashed, detachedWorktree }
   } catch (err) {
     return { stashed, detachedWorktree, error: err instanceof Error ? err.message : String(err) }
@@ -131,7 +137,7 @@ export async function checkoutBranch(
 }
 
 export async function restoreWorktreeBranch(worktreePath: string, branch: string): Promise<void> {
-  const g = simpleGit(worktreePath)
+  const g = gitNoLFS(worktreePath)
   await g.raw(['checkout', branch])
 }
 

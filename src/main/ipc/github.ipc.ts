@@ -69,4 +69,16 @@ export function registerGithubHandlers() {
       return githubService.mergePR(repoPath, prNumber, method)
     }
   )
+
+  ipcMain.handle(IPC.PR_DETAIL, async (_e, repoPath: string, prNumber: number) => {
+    return githubService.getPRDetail(repoPath, prNumber)
+  })
+
+  ipcMain.handle(IPC.PR_CONVERSATION, async (_e, repoPath: string, prNumber: number) => {
+    return githubService.getPRConversationComments(repoPath, prNumber)
+  })
+
+  ipcMain.handle(IPC.PR_CHECKS, async (_e, repoPath: string, prNumber: number) => {
+    return githubService.getPRChecks(repoPath, prNumber)
+  })
 }

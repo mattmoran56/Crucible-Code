@@ -60,6 +60,9 @@ export const IPC = {
   PR_REVIEW: 'pr:review',
   PR_MERGE: 'pr:merge',
   PR_MERGEABILITY: 'pr:mergeability',
+  PR_DETAIL: 'pr:detail',
+  PR_CONVERSATION: 'pr:conversation',
+  PR_CHECKS: 'pr:checks',
 
   // Worktree (remote branch)
   WORKTREE_CREATE_FROM_BRANCH: 'worktree:create-from-branch',

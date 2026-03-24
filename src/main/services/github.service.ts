@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod } from '../../shared/types'
+import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck } from '../../shared/types'
 
 const execFileAsync = promisify(execFile)
 
@@ -194,6 +194,94 @@ export async function getPRMergeability(
     return data
   } catch {
     return { mergeable: 'UNKNOWN' }
+  }
+}
+
+export async function getPRDetail(repoPath: string, prNumber: number): Promise<PRDetail> {
+  const { stdout } = await execFileAsync(
+    'gh',
+    ['pr', 'view', String(prNumber), '--json', 'body,author,title,createdAt,baseRefName,headRefName'],
+    { cwd: repoPath }
+  )
+  const data = JSON.parse(stdout) as {
+    body: string
+    author: { login: string }
+    title: string
+    createdAt: string
+    baseRefName: string
+    headRefName: string
+  }
+  return {
+    body: data.body,
+    author: data.author.login,
+    title: data.title,
+    createdAt: data.createdAt,
+    baseRefName: data.baseRefName,
+    headRefName: data.headRefName,
+  }
+}
+
+export async function getPRConversationComments(repoPath: string, prNumber: number): Promise<PRConversationComment[]> {
+  try {
+    const { stdout: repoInfo } = await execFileAsync(
+      'gh',
+      ['repo', 'view', '--json', 'owner,name'],
+      { cwd: repoPath }
+    )
+    const { owner, name } = JSON.parse(repoInfo) as { owner: { login: string }; name: string }
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['api', `repos/${owner.login}/${name}/issues/${prNumber}/comments`, '--paginate'],
+      { cwd: repoPath, maxBuffer: 5 * 1024 * 1024 }
+    )
+    const raw = JSON.parse(stdout) as Array<{
+      id: number
+      body: string
+      user: { login: string }
+      created_at: string
+      author_association: string
+    }>
+    return raw.map((c) => ({
+      id: c.id,
+      body: c.body,
+      author: c.user.login,
+      createdAt: c.created_at,
+      authorAssociation: c.author_association,
+    }))
+  } catch {
+    return []
+  }
+}
+
+export async function getPRChecks(repoPath: string, prNumber: number): Promise<PRCheck[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['pr', 'view', String(prNumber), '--json', 'statusCheckRollup'],
+      { cwd: repoPath }
+    )
+    const data = JSON.parse(stdout) as {
+      statusCheckRollup: Array<{
+        name: string
+        status: string
+        conclusion: string | null
+        startedAt: string | null
+        completedAt: string | null
+        detailsUrl: string | null
+        __typename: string
+      }>
+    }
+    if (!data.statusCheckRollup) return []
+    return data.statusCheckRollup.map((c) => ({
+      name: c.name || c.__typename,
+      status: (c.status?.toLowerCase() || 'pending') as PRCheck['status'],
+      conclusion: (c.conclusion?.toLowerCase() || null) as PRCheck['conclusion'],
+      startedAt: c.startedAt || null,
+      completedAt: c.completedAt || null,
+      detailsUrl: c.detailsUrl || null,
+    }))
+  } catch {
+    return []
   }
 }
 

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck } from '../shared/types'
 
 const api = {
   git: {
@@ -145,6 +145,12 @@ const api = {
       ipcRenderer.invoke(IPC.PR_MERGEABILITY, repoPath, prNumber),
     merge: (repoPath: string, prNumber: number, method: PRMergeMethod): Promise<void> =>
       ipcRenderer.invoke(IPC.PR_MERGE, repoPath, prNumber, method),
+    getDetail: (repoPath: string, prNumber: number): Promise<PRDetail> =>
+      ipcRenderer.invoke(IPC.PR_DETAIL, repoPath, prNumber),
+    getConversationComments: (repoPath: string, prNumber: number): Promise<PRConversationComment[]> =>
+      ipcRenderer.invoke(IPC.PR_CONVERSATION, repoPath, prNumber),
+    getChecks: (repoPath: string, prNumber: number): Promise<PRCheck[]> =>
+      ipcRenderer.invoke(IPC.PR_CHECKS, repoPath, prNumber),
   },
 
   session: {

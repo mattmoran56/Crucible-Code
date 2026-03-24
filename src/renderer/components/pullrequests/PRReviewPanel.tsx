@@ -4,6 +4,7 @@ import { useProjectStore } from '../../stores/projectStore'
 import { usePRReviewStore } from '../../stores/prReviewStore'
 import { usePRStore } from '../../stores/prStore'
 import { PRDiffViewer } from '../git/DiffViewer'
+import { PRConversationTab } from './PRConversationTab'
 import { ListBox, ListItem } from '../ui/ListBox'
 import { ResizeHandle } from '../ui/ResizeHandle'
 import { useResizable } from '../../hooks/useResizable'
@@ -51,8 +52,8 @@ export function PRReviewPanel() {
   const { projects, activeProjectId } = useProjectStore()
   const {
     files, selectedFilePath, fullDiff, comments, loading, mergeable,
-    reviewLoading, mergeLoading,
-    loadPR, selectFile, addComment, submitReview, merge, clear,
+    reviewLoading, mergeLoading, activeTab,
+    loadPR, selectFile, addComment, submitReview, merge, setActiveTab, clear,
   } = usePRReviewStore()
 
   const [showReviewDialog, setShowReviewDialog] = useState(false)
@@ -190,56 +191,74 @@ export function PRReviewPanel() {
         </div>
       )}
 
-      {/* File list + Diff viewer */}
-      <div className="flex-1 flex min-h-0">
-        {/* File list */}
-        <div style={{ width: filesCol.size }} className="flex-shrink-0 flex flex-col min-h-0 border-r border-border">
-          <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted">
-            Files
-          </div>
-          <ListBox
-            label="PR files"
-            className="flex-1 overflow-y-auto"
-            onSelect={(index) => selectFile(files[index].path)}
-          >
-            {files.map((file) => (
-              <ListItem
-                key={file.path}
-                selected={file.path === selectedFilePath}
-                onClick={() => selectFile(file.path)}
-                className="text-xs flex items-center gap-2"
-                style={{ padding: '6px 12px' }}
-              >
-                <span className={`font-mono font-bold ${STATUS_COLORS[file.status] || 'text-warning'}`}>
-                  {STATUS_LABELS[file.status] || 'M'}
-                </span>
-                <span className="truncate">{file.path}</span>
-                <span className="ml-auto flex gap-1 text-[10px]">
-                  {file.additions > 0 && <span className="text-success">+{file.additions}</span>}
-                  {file.deletions > 0 && <span className="text-danger">-{file.deletions}</span>}
-                </span>
-              </ListItem>
-            ))}
-          </ListBox>
-        </div>
-        <ResizeHandle direction="horizontal" onMouseDown={filesCol.onMouseDown} />
-
-        {/* Diff viewer */}
-        <div className="flex-1 flex flex-col min-h-0">
-          {selectedFilePath && fileDiff ? (
-            <PRDiffViewer
-              patch={fileDiff}
-              filePath={selectedFilePath}
-              comments={fileComments}
-              onAddComment={handleAddComment}
-            />
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
-              Select a file to review
-            </div>
-          )}
-        </div>
+      {/* Inner tab bar */}
+      <div className="flex items-center bg-bg-secondary border-b border-border" style={{ padding: '0 8px' }}>
+        <InnerTab
+          active={activeTab === 'conversation'}
+          onClick={() => setActiveTab('conversation')}
+          label="Conversation"
+        />
+        <InnerTab
+          active={activeTab === 'files'}
+          onClick={() => setActiveTab('files')}
+          label={`Files (${files.length})`}
+        />
       </div>
+
+      {/* Tab content */}
+      {activeTab === 'conversation' ? (
+        <PRConversationTab />
+      ) : (
+        <div className="flex-1 flex min-h-0">
+          {/* File list */}
+          <div style={{ width: filesCol.size }} className="flex-shrink-0 flex flex-col min-h-0 border-r border-border">
+            <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted">
+              Files
+            </div>
+            <ListBox
+              label="PR files"
+              className="flex-1 overflow-y-auto"
+              onSelect={(index) => selectFile(files[index].path)}
+            >
+              {files.map((file) => (
+                <ListItem
+                  key={file.path}
+                  selected={file.path === selectedFilePath}
+                  onClick={() => selectFile(file.path)}
+                  className="text-xs flex items-center gap-2"
+                  style={{ padding: '6px 12px' }}
+                >
+                  <span className={`font-mono font-bold ${STATUS_COLORS[file.status] || 'text-warning'}`}>
+                    {STATUS_LABELS[file.status] || 'M'}
+                  </span>
+                  <span className="truncate">{file.path}</span>
+                  <span className="ml-auto flex gap-1 text-[10px]">
+                    {file.additions > 0 && <span className="text-success">+{file.additions}</span>}
+                    {file.deletions > 0 && <span className="text-danger">-{file.deletions}</span>}
+                  </span>
+                </ListItem>
+              ))}
+            </ListBox>
+          </div>
+          <ResizeHandle direction="horizontal" onMouseDown={filesCol.onMouseDown} />
+
+          {/* Diff viewer */}
+          <div className="flex-1 flex flex-col min-h-0">
+            {selectedFilePath && fileDiff ? (
+              <PRDiffViewer
+                patch={fileDiff}
+                filePath={selectedFilePath}
+                comments={fileComments}
+                onAddComment={handleAddComment}
+              />
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
+                Select a file to review
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Review dialog */}
       <Dialog
@@ -295,5 +314,32 @@ export function PRReviewPanel() {
         </div>
       </Dialog>
     </div>
+  )
+}
+
+function InnerTab({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      role="tab"
+      aria-selected={active}
+      className={`text-xs transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
+        active ? 'text-text' : 'text-text-muted hover:text-text'
+      }`}
+      style={{ padding: '6px 10px' }}
+    >
+      {label}
+      {active && (
+        <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />
+      )}
+    </button>
   )
 }
