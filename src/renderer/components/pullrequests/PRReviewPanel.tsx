@@ -108,7 +108,7 @@ export function PRReviewPanel() {
   }
 
   const handleMerge = async () => {
-    await merge(activeProject.repoPath, prNumber, 'squash')
+    await merge(activeProject.repoPath, prNumber, 'merge')
     setShowMergeConfirm(false)
   }
 
@@ -273,7 +273,7 @@ export function PRReviewPanel() {
         title="Merge Pull Request"
       >
         <p className="text-xs text-text-muted mb-5">
-          This will squash and merge PR #{prNumber} and delete the source branch.
+          This will create a merge commit for PR #{prNumber} and delete the source branch.
         </p>
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" size="sm" onClick={() => setShowMergeConfirm(false)}>
