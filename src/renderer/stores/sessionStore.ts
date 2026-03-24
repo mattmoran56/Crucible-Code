@@ -11,6 +11,7 @@ interface DetachedWorktreeInfo {
 
 interface SessionState {
   sessions: Session[]
+  staleSessions: Session[]
   activeSessionId: string | null
   activePRNumber: number | null
   activeWorkspaceTab: WorkspaceTab
@@ -23,6 +24,8 @@ interface SessionState {
   setActiveWorkspaceTab: (tab: WorkspaceTab) => void
   openPR: (repoPath: string, pr: PullRequest) => Promise<void>
   closePR: () => Promise<void>
+  checkStaleness: (repoPath: string) => Promise<void>
+  reactivateSession: (projectId: string, sessionId: string) => Promise<void>
 }
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
@@ -37,6 +40,7 @@ async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
+  staleSessions: [],
   activeSessionId: null,
   activePRNumber: null,
   activeWorkspaceTab: 'agent' as WorkspaceTab,
@@ -60,6 +64,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       worktreePath: worktreeInfo.path,
       projectId,
       createdAt: new Date().toISOString(),
+      baseBranch,
     }
 
     const sessions = [...get().sessions, session]
@@ -69,7 +74,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   removeSession: async (projectId, repoPath, sessionId) => {
-    const session = get().sessions.find((s) => s.id === sessionId)
+    const allSessions = [...get().sessions, ...get().staleSessions]
+    const session = allSessions.find((s) => s.id === sessionId)
     if (session) {
       try {
         await window.api.worktree.remove(repoPath, session.worktreePath)
@@ -79,15 +85,46 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
 
     const sessions = get().sessions.filter((s) => s.id !== sessionId)
-    await window.api.session.save(projectId, sessions)
+    const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)
+    await window.api.session.save(projectId, [...sessions, ...staleSessions])
 
     set({
       sessions,
+      staleSessions,
       activeSessionId:
         get().activeSessionId === sessionId
           ? (sessions[0]?.id ?? null)
           : get().activeSessionId,
     })
+  },
+
+  checkStaleness: async (_repoPath: string) => {
+    const { sessions, staleSessions } = get()
+    const allSessions = [...sessions, ...staleSessions]
+    const active: Session[] = []
+    const stale: Session[] = []
+
+    await Promise.all(
+      allSessions.map(async (session) => {
+        const merged = await window.api.git.isMerged(session.worktreePath, session.baseBranch ?? 'main')
+        if (merged) {
+          stale.push(session)
+        } else {
+          active.push(session)
+        }
+      })
+    )
+
+    set({ sessions: active, staleSessions: stale })
+  },
+
+  reactivateSession: async (projectId: string, sessionId: string) => {
+    const session = get().staleSessions.find((s) => s.id === sessionId)
+    if (!session) return
+    const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)
+    const sessions = [...get().sessions, session]
+    await window.api.session.save(projectId, [...sessions, ...staleSessions])
+    set({ sessions, staleSessions })
   },
 
   setActiveSession: async (id: string) => {

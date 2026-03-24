@@ -12,6 +12,7 @@ export interface Session {
   projectId: string
   createdAt: string
   prNumber?: number
+  baseBranch?: string
 }
 
 export interface Commit {
