@@ -65,6 +65,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       worktreePath: worktreeInfo.path,
       projectId,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
       baseBranch,
     }
 
@@ -104,9 +105,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const allSessions = [...sessions, ...staleSessions]
     const active: Session[] = []
     const stale: Session[] = []
+    const oneDayMs = 24 * 60 * 60 * 1000
 
     await Promise.all(
       allSessions.map(async (session) => {
+        const lastActive = session.lastActiveAt ?? session.createdAt
+        const withinOneDay = Date.now() - new Date(lastActive).getTime() < oneDayMs
+        if (withinOneDay) {
+          active.push(session)
+          return
+        }
         const merged = await window.api.git.isMerged(session.worktreePath, session.baseBranch ?? 'main')
         if (merged) {
           stale.push(session)
@@ -122,8 +130,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   reactivateSession: async (projectId: string, sessionId: string) => {
     const session = get().staleSessions.find((s) => s.id === sessionId)
     if (!session) return
+    const reactivated = { ...session, lastActiveAt: new Date().toISOString() }
     const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)
-    const sessions = [...get().sessions, session]
+    const sessions = [...get().sessions, reactivated]
     await window.api.session.save(projectId, [...sessions, ...staleSessions])
     set({ sessions, staleSessions })
   },

@@ -11,6 +11,7 @@ export interface Session {
   worktreePath: string
   projectId: string
   createdAt: string
+  lastActiveAt?: string
   prNumber?: number
   baseBranch?: string
 }
