@@ -1,11 +1,20 @@
 import React, { useEffect } from 'react'
 import { useSettingsStore } from '../../stores/settingsStore'
-import { THEMES } from '../../../shared/themes'
+import { THEMES, type ThemeName } from '../../../shared/themes'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
+import { ToggleGroup } from '../ui/ToggleGroup'
+
+const LIGHT_THEMES = THEMES.filter((t) => !t.isDark)
+const DARK_THEMES = THEMES.filter((t) => t.isDark)
 
 export function SettingsPage() {
-  const { theme, setTheme, closeSettings } = useSettingsStore()
+  const {
+    theme, setTheme, closeSettings,
+    matchSystem, setMatchSystem,
+    preferredLight, setPreferredLight,
+    preferredDark, setPreferredDark,
+  } = useSettingsStore()
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -46,6 +55,90 @@ export function SettingsPage() {
             Choose a theme for the interface.
           </p>
 
+          {/* Match system toggle */}
+          <div
+            className="flex items-center justify-between border border-border rounded-md"
+            style={{ padding: '10px 14px', marginBottom: 20 }}
+          >
+            <div>
+              <p className="text-xs font-medium text-text">Match System</p>
+              <p className="text-[11px] text-text-muted">
+                Automatically switch between light and dark with your OS
+              </p>
+            </div>
+            <ToggleGroup
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'on', label: 'On' },
+              ]}
+              value={matchSystem ? 'on' : 'off'}
+              onChange={(v) => setMatchSystem(v === 'on')}
+            />
+          </div>
+
+          {/* Preferred light/dark selectors — shown when match system is on */}
+          {matchSystem && (
+            <div className="flex gap-4" style={{ marginBottom: 20 }}>
+              <div className="flex-1 border border-border rounded-md" style={{ padding: '10px 14px' }}>
+                <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide" style={{ marginBottom: 8 }}>
+                  Light theme
+                </p>
+                <div className="flex gap-2">
+                  {LIGHT_THEMES.map((t) => (
+                    <Button
+                      key={t.name}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPreferredLight(t.name)}
+                      className={`border ${preferredLight === t.name ? 'border-accent text-text' : 'border-border'}`}
+                      style={{ padding: '4px 10px' }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span
+                          style={{
+                            width: 10, height: 10, borderRadius: 2,
+                            background: t.colors.bg,
+                            border: `1px solid ${t.colors.border}`,
+                          }}
+                        />
+                        {t.label}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1 border border-border rounded-md" style={{ padding: '10px 14px' }}>
+                <p className="text-[11px] font-medium text-text-muted uppercase tracking-wide" style={{ marginBottom: 8 }}>
+                  Dark theme
+                </p>
+                <div className="flex gap-2">
+                  {DARK_THEMES.map((t) => (
+                    <Button
+                      key={t.name}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPreferredDark(t.name)}
+                      className={`border ${preferredDark === t.name ? 'border-accent text-text' : 'border-border'}`}
+                      style={{ padding: '4px 10px' }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span
+                          style={{
+                            width: 10, height: 10, borderRadius: 2,
+                            background: t.colors.bg,
+                            border: `1px solid ${t.colors.border}`,
+                          }}
+                        />
+                        {t.label}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Theme cards */}
           <div className="flex gap-4 flex-wrap">
             {THEMES.map((t) => {
               const isActive = theme === t.name
