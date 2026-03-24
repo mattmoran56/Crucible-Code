@@ -10,6 +10,11 @@ export const IPC = {
   GIT_WORKING_FILES: 'git:working-files',
   GIT_WORKING_FILE_DIFF: 'git:working-file-diff',
   GIT_COMMIT_STATUSES: 'git:commit-statuses',
+  GIT_PUSH: 'git:push',
+  GIT_OPEN_PR: 'git:open-pr',
+  GIT_LIST_BRANCHES: 'git:list-branches',
+  GIT_MERGE_CHECK: 'git:merge-check',
+  GIT_MERGE: 'git:merge',
 
   // Worktree
   WORKTREE_CREATE: 'worktree:create',
