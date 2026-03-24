@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePRReviewStore } from '../../stores/prReviewStore'
+import { usePRStore } from '../../stores/prStore'
 import { PRDiffViewer } from '../git/DiffViewer'
 import { ListBox, ListItem } from '../ui/ListBox'
 import { ResizeHandle } from '../ui/ResizeHandle'
@@ -45,7 +46,8 @@ function extractFileDiff(fullDiff: string, filePath: string): string {
 }
 
 export function PRReviewPanel() {
-  const { activePRNumber, didStash } = useSessionStore()
+  const { activePRNumber, didStash, checkStaleness, closePR } = useSessionStore()
+  const { loadPRs } = usePRStore()
   const { projects, activeProjectId } = useProjectStore()
   const {
     files, selectedFilePath, fullDiff, comments, loading, mergeable,
@@ -110,6 +112,9 @@ export function PRReviewPanel() {
   const handleMerge = async () => {
     await merge(activeProject.repoPath, prNumber, 'merge')
     setShowMergeConfirm(false)
+    closePR()
+    loadPRs(activeProject.repoPath)
+    checkStaleness(activeProject.repoPath)
   }
 
   return (
