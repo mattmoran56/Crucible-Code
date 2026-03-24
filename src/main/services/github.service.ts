@@ -14,7 +14,7 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         '--state',
         'open',
         '--json',
-        'number,title,headRefName,author,updatedAt',
+        'number,title,headRefName,author,updatedAt,isDraft',
         '--limit',
         '50',
       ],
@@ -27,6 +27,7 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
       headRefName: string
       author: { login: string }
       updatedAt: string
+      isDraft: boolean
     }>
 
     return raw.map((pr) => ({
@@ -35,6 +36,7 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
       headRefName: pr.headRefName,
       author: pr.author.login,
       updatedAt: pr.updatedAt,
+      isDraft: pr.isDraft,
     }))
   } catch {
     return []

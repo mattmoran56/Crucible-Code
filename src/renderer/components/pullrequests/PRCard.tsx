@@ -18,6 +18,9 @@ export function PRCard({ pr, isNew, isActive, onClick }: Props) {
       style={{ padding: '8px 12px' }}
     >
       <div className="flex items-center gap-1.5">
+        <span
+          className={`shrink-0 w-1.5 h-1.5 rounded-full ${pr.isDraft ? 'bg-text-muted' : 'bg-success'}`}
+        />
         {isNew && (
           <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-accent" />
         )}
@@ -27,6 +30,9 @@ export function PRCard({ pr, isNew, isActive, onClick }: Props) {
       </div>
       <div className="text-text-muted text-[10px] mt-1 truncate">
         {pr.headRefName}
+      </div>
+      <div className="text-text-muted text-[10px] mt-0.5 truncate">
+        {pr.author}
       </div>
     </button>
   )
