@@ -7,6 +7,7 @@ interface ProjectState {
   loadProjects: () => Promise<void>
   addProject: () => Promise<void>
   removeProject: (id: string) => Promise<void>
+  reorderProjects: (projectIds: string[]) => Promise<void>
   setActiveProject: (id: string) => void
 }
 
@@ -46,6 +47,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         ? (projects[0]?.id ?? null)
         : state.activeProjectId,
     })
+  },
+
+  reorderProjects: async (projectIds: string[]) => {
+    const projects = await window.api.project.reorder(projectIds)
+    set({ projects })
   },
 
   setActiveProject: (id: string) => {

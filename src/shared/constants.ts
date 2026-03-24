@@ -43,6 +43,7 @@ export const IPC = {
   PROJECT_LIST: 'project:list',
   PROJECT_ADD: 'project:add',
   PROJECT_REMOVE: 'project:remove',
+  PROJECT_REORDER: 'project:reorder',
   PROJECT_SELECT_FOLDER: 'project:select-folder',
 
   // Sessions

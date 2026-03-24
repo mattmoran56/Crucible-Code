@@ -1,20 +1,24 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useUpdateStore } from '../../stores/updateStore'
-import { TabBar, Tab } from '../ui/TabBar'
-import { IconButton } from '../ui/IconButton'
 import { Button } from '../ui/Button'
+import { Dialog } from '../ui/Dialog'
 import { useSettingsStore } from '../../stores/settingsStore'
+import type { Project } from '../../../../shared/types'
 
 export function ProjectTabs() {
-  const { projects, activeProjectId, setActiveProject, addProject, removeProject } =
+  const { projects, activeProjectId, setActiveProject, addProject, removeProject, reorderProjects } =
     useProjectStore()
   const { sessions } = useSessionStore()
   const { pendingSessionIds } = useNotificationStore()
   const { status, log, setStatus, appendLog, reset } = useUpdateStore()
   const { openSettings } = useSettingsStore()
+
+  const [projectToClose, setProjectToClose] = useState<Project | null>(null)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
 
   useEffect(() => {
     const removeStatus = window.api.update.onStatus(setStatus)
@@ -43,49 +47,121 @@ export function ProjectTabs() {
     return ''
   })()
 
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDragIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setOverIndex(index)
+  }
+
+  const handleDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (dragIndex === null || dragIndex === index) {
+      setDragIndex(null)
+      setOverIndex(null)
+      return
+    }
+    const reordered = [...projects]
+    const [moved] = reordered.splice(dragIndex, 1)
+    reordered.splice(index, 0, moved)
+    reorderProjects(reordered.map((p) => p.id))
+    setDragIndex(null)
+    setOverIndex(null)
+  }
+
+  const handleDragEnd = () => {
+    setDragIndex(null)
+    setOverIndex(null)
+  }
+
   return (
     <div className="titlebar-drag flex h-11 items-center bg-bg-tertiary border-b border-border">
-      {/* Reserve space for macOS traffic lights (close/minimize/maximize) */}
+      {/* Reserve space for macOS traffic lights */}
       <div className="w-[78px] shrink-0" />
 
-      {/* Tabs — left aligned, uniform width */}
-      <TabBar label="Projects" className="gap-px min-w-0">
-        {projects.map((project) => (
-          <Tab
-            key={project.id}
-            active={project.id === activeProjectId}
-            onClick={() => setActiveProject(project.id)}
-            className="titlebar-no-drag group w-44 px-5"
-          >
-            <span className="truncate">{project.name}</span>
-            {(() => {
-              const count = getPendingCount(project.id)
-              return count > 0 ? (
-                <span className="shrink-0 min-w-[16px] h-4 px-1 ml-2 rounded-full bg-warning text-bg text-[10px] font-bold flex items-center justify-center leading-none">
-                  {count}
-                </span>
-              ) : null
-            })()}
-            <IconButton
-              label={`Close ${project.name}`}
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                removeProject(project.id)
-              }}
-              className="opacity-0 group-hover:opacity-100 hover:!text-danger absolute right-2"
+      {/* Tab list */}
+      <div
+        role="tablist"
+        aria-label="Projects"
+        aria-orientation="horizontal"
+        className="flex items-center h-full gap-px min-w-0"
+      >
+        {projects.map((project, index) => {
+          const count = getPendingCount(project.id)
+          const isActive = project.id === activeProjectId
+          const isDraggingOver = overIndex === index && dragIndex !== null && dragIndex !== index
+          const isDragging = dragIndex === index
+
+          return (
+            <button
+              key={project.id}
+              role="tab"
+              aria-selected={isActive}
+              draggable
+              onDragStart={(e) => handleDragStart(e, index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDrop={(e) => handleDrop(e, index)}
+              onDragEnd={handleDragEnd}
+              onClick={() => setActiveProject(project.id)}
+              className={[
+                'titlebar-no-drag group relative flex items-center h-full w-44 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset cursor-grab active:cursor-grabbing',
+                isActive ? 'bg-bg text-text' : 'text-text-muted hover:text-text hover:bg-bg-secondary',
+                isDragging ? 'opacity-50' : '',
+                isDraggingOver ? 'ring-l-2 border-l-2 border-accent' : '',
+              ].join(' ')}
+              style={{ paddingLeft: 16, paddingRight: 32 }}
             >
-              <span className="text-[10px]">×</span>
-            </IconButton>
-          </Tab>
-        ))}
-      </TabBar>
+              <span className="truncate min-w-0">{project.name}</span>
+
+              {/* Right slot: badge or X, share same position */}
+              <span className="absolute right-2 flex items-center justify-center w-4 h-4">
+                {count > 0 ? (
+                  <>
+                    {/* Badge — hidden on hover */}
+                    <span className="group-hover:hidden min-w-[16px] h-4 px-1 rounded-full bg-warning text-bg text-[10px] font-bold flex items-center justify-center leading-none">
+                      {count}
+                    </span>
+                    {/* X — shown on hover */}
+                    <span
+                      role="button"
+                      aria-label={`Close ${project.name}`}
+                      tabIndex={-1}
+                      onClick={(e) => { e.stopPropagation(); setProjectToClose(project) }}
+                      className="hidden group-hover:flex items-center justify-center w-4 h-4 text-[12px] hover:text-danger cursor-pointer"
+                    >
+                      ×
+                    </span>
+                  </>
+                ) : (
+                  /* X — shown on hover only */
+                  <span
+                    role="button"
+                    aria-label={`Close ${project.name}`}
+                    tabIndex={-1}
+                    onClick={(e) => { e.stopPropagation(); setProjectToClose(project) }}
+                    className="opacity-0 group-hover:opacity-100 flex items-center justify-center w-4 h-4 text-[12px] hover:text-danger cursor-pointer"
+                  >
+                    ×
+                  </span>
+                )}
+              </span>
+
+              {isActive && (
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />
+              )}
+            </button>
+          )
+        })}
+      </div>
 
       {/* Spacer — draggable area fills the middle */}
       <div className="flex-1" />
 
-      {/* Update available — shown when new commits detected */}
+      {/* Update available */}
       {updateButtonVisible && (
         <Button
           variant="ghost"
@@ -103,7 +179,7 @@ export function ProjectTabs() {
         </Button>
       )}
 
-      {/* Add project + Settings — right aligned */}
+      {/* Add project + Settings */}
       <Button
         variant="ghost"
         size="sm"
@@ -127,6 +203,32 @@ export function ProjectTabs() {
           <circle cx="12" cy="12" r="3" />
         </svg>
       </Button>
+
+      {/* Close project confirm dialog */}
+      <Dialog
+        open={!!projectToClose}
+        onClose={() => setProjectToClose(null)}
+        title="Close project"
+      >
+        <p className="text-sm text-text-muted mb-4">
+          Remove <span className="text-text font-medium">{projectToClose?.name}</span> from CodeCrucible?
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setProjectToClose(null)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              if (projectToClose) removeProject(projectToClose.id)
+              setProjectToClose(null)
+            }}
+          >
+            Remove
+          </Button>
+        </div>
+      </Dialog>
     </div>
   )
 }

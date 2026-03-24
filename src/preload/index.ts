@@ -108,6 +108,8 @@ const api = {
     add: (project: Project): Promise<Project[]> => ipcRenderer.invoke(IPC.PROJECT_ADD, project),
     remove: (projectId: string): Promise<Project[]> =>
       ipcRenderer.invoke(IPC.PROJECT_REMOVE, projectId),
+    reorder: (projectIds: string[]): Promise<Project[]> =>
+      ipcRenderer.invoke(IPC.PROJECT_REORDER, projectIds),
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.PROJECT_SELECT_FOLDER),
   },
 
