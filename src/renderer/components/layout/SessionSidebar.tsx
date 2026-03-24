@@ -133,6 +133,7 @@ export function SessionSidebar() {
                 session={session}
                 isActive={session.id === activeSessionId}
                 hasPendingNotification={pendingSessionIds.has(session.id)}
+                pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
                 onClick={() => {
                   setActiveSession(session.id)
                   clearPending(session.id)

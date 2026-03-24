@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import type { Session } from '../../../shared/types'
+import type { Session, PullRequest } from '../../../shared/types'
 import { IconButton } from '../ui/IconButton'
 import { Dialog } from '../ui/Dialog'
 import { Button } from '../ui/Button'
@@ -8,6 +8,7 @@ interface Props {
   session: Session
   isActive: boolean
   hasPendingNotification: boolean
+  pr?: PullRequest
   onClick: () => void
   onDelete: () => void
 }
@@ -19,7 +20,7 @@ const TrashIcon = () => (
   </svg>
 )
 
-export function SessionCard({ session, isActive, hasPendingNotification, onClick, onDelete }: Props) {
+export function SessionCard({ session, isActive, hasPendingNotification, pr, onClick, onDelete }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
 
   return (
@@ -42,6 +43,16 @@ export function SessionCard({ session, isActive, hasPendingNotification, onClick
         <div className="text-text-muted text-[10px] mt-1 truncate pr-5">
           {session.branchName}
         </div>
+        {pr && (
+          <div className="flex items-center gap-1 mt-0.5 pr-5">
+            <span
+              className={`shrink-0 w-1.5 h-1.5 rounded-full ${pr.isDraft ? 'bg-text-muted' : 'bg-success'}`}
+            />
+            <span className="text-text-muted text-[10px] truncate">
+              #{pr.number} {pr.title}
+            </span>
+          </div>
+        )}
         <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100">
           <IconButton
             label={`Delete ${session.name}`}

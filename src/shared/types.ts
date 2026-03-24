@@ -40,6 +40,7 @@ export interface PullRequest {
   headRefName: string
   author: string
   updatedAt: string
+  isDraft: boolean
 }
 
 export interface PRFile {
