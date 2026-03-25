@@ -7,10 +7,10 @@ import type { TerminalMode } from '../services/terminal.service'
 export function registerTerminalHandlers(window: BrowserWindow) {
   ipcMain.handle(
     IPC.TERMINAL_SPAWN,
-    async (_e, sessionId: string, cwd: string, mode?: TerminalMode, isDark?: boolean) => {
+    async (_e, sessionId: string, cwd: string, mode?: TerminalMode, claudeTheme?: string) => {
       // Write Claude Code hook settings so notifications route to our server
-      writeClaudeHookSettings(cwd, isDark ?? true)
-      return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell', isDark ?? true)
+      writeClaudeHookSettings(cwd, claudeTheme ?? 'dark')
+      return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell', claudeTheme ?? 'dark')
     }
   )
 

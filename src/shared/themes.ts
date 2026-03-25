@@ -1,4 +1,5 @@
 export type ThemeName = 'dark' | 'light' | 'soft-light' | 'ultra-dark'
+export type ClaudeTheme = 'dark' | 'light'
 
 export interface TerminalTheme {
   background: string
@@ -19,6 +20,7 @@ export interface ThemeDefinition {
   name: ThemeName
   label: string
   isDark: boolean
+  claudeTheme: ClaudeTheme
   colors: {
     bg: string
     'bg-secondary': string
@@ -40,6 +42,7 @@ export const THEMES: ThemeDefinition[] = [
     name: 'dark',
     label: 'Tokyo Night',
     isDark: true,
+    claudeTheme: 'dark',
     colors: {
       bg: '#1a1b26',
       'bg-secondary': '#24283b',
@@ -72,6 +75,7 @@ export const THEMES: ThemeDefinition[] = [
     name: 'light',
     label: 'Light',
     isDark: false,
+    claudeTheme: 'light',
     colors: {
       bg: '#f5f5f5',
       'bg-secondary': '#e8e8e8',
@@ -104,6 +108,7 @@ export const THEMES: ThemeDefinition[] = [
     name: 'soft-light',
     label: 'Soft Light',
     isDark: false,
+    claudeTheme: 'light',
     colors: {
       bg: '#faf6f1',
       'bg-secondary': '#f0ebe4',
@@ -136,6 +141,7 @@ export const THEMES: ThemeDefinition[] = [
     name: 'ultra-dark',
     label: 'Ultra Dark',
     isDark: true,
+    claudeTheme: 'dark',
     colors: {
       bg: '#0d0d0d',
       'bg-secondary': '#141414',
