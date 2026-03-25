@@ -17,7 +17,7 @@ export async function startUpdatePoller(
 
   const check = async () => {
     try {
-      const g = simpleGit(__REPO_PATH__).env('GIT_TERMINAL_PROMPT', '0')
+      const g = simpleGit(__REPO_PATH__)
       await g.fetch(['origin', '--quiet'])
       const result = await g.raw(['rev-list', '--count', `${__BUILT_COMMIT__}..origin/main`])
       const count = parseInt(result.trim(), 10)
@@ -50,7 +50,7 @@ export async function applyUpdate(
     onStatus({ state: 'updating' })
     onLog('Pulling latest commits...')
 
-    const g = simpleGit(__REPO_PATH__).env('GIT_TERMINAL_PROMPT', '0')
+    const g = simpleGit(__REPO_PATH__)
     await g.pull('origin', 'main')
     onLog('git pull done')
 

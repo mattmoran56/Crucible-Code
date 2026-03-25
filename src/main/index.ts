@@ -1,10 +1,16 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
+import fixPath from 'fix-path'
 import { registerAllHandlers } from './ipc/register'
 import {
   startNotificationServer,
   stopNotificationServer,
 } from './services/notification-server'
+
+// When launched from Finder/Dock, process.env.PATH is the minimal macOS default
+// and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
+// git, gh, and credential helpers resolve correctly.
+fixPath()
 
 let mainWindow: BrowserWindow | null = null
 
