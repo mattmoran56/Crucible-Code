@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import simpleGit, { SimpleGit } from 'simple-git'
 import type { Commit, FileDiff } from '../../shared/types'
 
@@ -30,7 +32,15 @@ export async function getLog(repoPath: string, maxCount = 50): Promise<Commit[]>
 
 export async function getDiff(repoPath: string, commitHash: string): Promise<FileDiff[]> {
   const g = git(repoPath)
-  const diff = await g.diffSummary([`${commitHash}~1`, commitHash])
+  // Check if commit has a parent; root commits need special handling
+  let parentRef = `${commitHash}~1`
+  try {
+    await g.raw(['rev-parse', '--verify', parentRef])
+  } catch {
+    // Root commit: diff against the git empty tree
+    parentRef = '4b825dc642cb6eb9a060e54bf899d69f82cf7202'
+  }
+  const diff = await g.diffSummary([parentRef, commitHash])
   return diff.files.map((f) => ({
     filePath: f.file,
     status: f.binary
@@ -51,8 +61,18 @@ export async function getFileDiff(
   filePath: string
 ): Promise<string> {
   const g = git(repoPath)
-  const patch = await g.diff([`${commitHash}~1`, commitHash, '--', filePath])
-  return patch
+  // Check if commit has a parent; root commits need special handling
+  let hasParent = true
+  try {
+    await g.raw(['rev-parse', '--verify', `${commitHash}~1`])
+  } catch {
+    hasParent = false
+  }
+  if (hasParent) {
+    return g.diff([`${commitHash}~1`, commitHash, '--', filePath])
+  }
+  // Root commit: diff against empty tree
+  return g.diff(['4b825dc642cb6eb9a060e54bf899d69f82cf7202', commitHash, '--', filePath])
 }
 
 export interface CheckoutResult {
@@ -205,7 +225,21 @@ export async function getWorkingFileDiff(repoPath: string, filePath: string): Pr
   const g = git(repoPath)
   const staged = await g.diff(['--cached', '--', filePath])
   const unstaged = await g.diff(['--', filePath])
-  return [staged, unstaged].filter(Boolean).join('\n')
+  const patch = [staged, unstaged].filter(Boolean).join('\n')
+  if (patch) return patch
+
+  // Untracked file: git diff won't show anything, so build a synthetic diff
+  try {
+    const content = await readFile(join(repoPath, filePath), 'utf-8')
+    const lines = content.split('\n')
+    // Remove trailing empty line from final newline
+    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+    const lineCount = lines.length
+    const body = lines.map((l) => `+${l}`).join('\n')
+    return `--- /dev/null\n+++ b/${filePath}\n@@ -0,0 +1,${lineCount} @@\n${body}\n`
+  } catch {
+    return ''
+  }
 }
 
 export interface CommitStatuses {
