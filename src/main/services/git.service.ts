@@ -2,7 +2,7 @@ import simpleGit, { SimpleGit } from 'simple-git'
 import type { Commit, FileDiff } from '../../shared/types'
 
 function git(repoPath: string): SimpleGit {
-  return simpleGit(repoPath)
+  return simpleGit(repoPath).env('GIT_TERMINAL_PROMPT', '0')
 }
 
 /** Git instance with LFS hooks suppressed — use for checkout operations */
