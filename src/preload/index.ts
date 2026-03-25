@@ -117,8 +117,10 @@ const api = {
       ipcRenderer.invoke(IPC.PR_SEEN_GET, projectId),
     markPRSeen: (projectId: string, prNumber: number): Promise<void> =>
       ipcRenderer.invoke(IPC.PR_SEEN_SET, projectId, prNumber),
-    getDiff: (repoPath: string, prNumber: number): Promise<string> =>
+    getDiff: (repoPath: string, prNumber: number): Promise<string | null> =>
       ipcRenderer.invoke(IPC.PR_DIFF, repoPath, prNumber),
+    getFilePatch: (repoPath: string, prNumber: number, filePath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.PR_FILE_PATCH, repoPath, prNumber, filePath),
     getFiles: (repoPath: string, prNumber: number): Promise<PRFile[]> =>
       ipcRenderer.invoke(IPC.PR_FILES, repoPath, prNumber),
     getComments: (repoPath: string, prNumber: number): Promise<PRComment[]> =>

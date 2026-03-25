@@ -43,29 +43,74 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
   }
 }
 
-export async function getPRDiff(repoPath: string, prNumber: number): Promise<string> {
-  const { stdout } = await execFileAsync('gh', ['pr', 'diff', String(prNumber)], {
-    cwd: repoPath,
-    maxBuffer: 10 * 1024 * 1024,
-  })
-  return stdout
+export async function getPRDiff(repoPath: string, prNumber: number): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync('gh', ['pr', 'diff', String(prNumber)], {
+      cwd: repoPath,
+      maxBuffer: 10 * 1024 * 1024,
+    })
+    return stdout
+  } catch (err) {
+    // GitHub returns HTTP 406 when the diff exceeds 300 files
+    if (err instanceof Error && err.message.includes('too_large')) {
+      return null
+    }
+    throw err
+  }
+}
+
+export async function getPRFilePatch(repoPath: string, prNumber: number, filePath: string): Promise<string> {
+  const { stdout: repoInfo } = await execFileAsync(
+    'gh',
+    ['repo', 'view', '--json', 'owner,name'],
+    { cwd: repoPath }
+  )
+  const { owner, name } = JSON.parse(repoInfo) as { owner: { login: string }; name: string }
+
+  // Fetch the specific file from the PR files API
+  // The API paginates at 30 files per page, so we need to paginate to find the file
+  const { stdout } = await execFileAsync(
+    'gh',
+    ['api', `repos/${owner.login}/${name}/pulls/${prNumber}/files`, '--paginate', '-q', `.[] | select(.filename == "${filePath}") | .patch`],
+    { cwd: repoPath, maxBuffer: 10 * 1024 * 1024 }
+  )
+  return stdout.trim()
 }
 
 export async function getPRFiles(repoPath: string, prNumber: number): Promise<PRFile[]> {
-  const { stdout } = await execFileAsync(
+  const { stdout: repoInfo } = await execFileAsync(
     'gh',
-    ['pr', 'view', String(prNumber), '--json', 'files'],
+    ['repo', 'view', '--json', 'owner,name'],
     { cwd: repoPath }
   )
-  const data = JSON.parse(stdout) as {
-    files: Array<{ path: string; additions: number; deletions: number }>
-  }
-  return data.files.map((f) => ({
-    path: f.path,
-    additions: f.additions,
-    deletions: f.deletions,
-    status: f.additions > 0 && f.deletions > 0 ? 'modified' : f.deletions > 0 ? 'deleted' : 'added',
-  }))
+  const { owner, name } = JSON.parse(repoInfo) as { owner: { login: string }; name: string }
+
+  // Use the REST API with pagination — gh pr view --json files caps at 100
+  const { stdout } = await execFileAsync(
+    'gh',
+    ['api', `repos/${owner.login}/${name}/pulls/${prNumber}/files`, '--paginate', '-q', '.[] | {filename, additions, deletions, status}'],
+    { cwd: repoPath, maxBuffer: 10 * 1024 * 1024 }
+  )
+
+  // jq outputs one JSON object per line
+  const files = stdout.trim().split('\n').filter(Boolean).map((line) => {
+    const f = JSON.parse(line) as { filename: string; additions: number; deletions: number; status: string }
+    const statusMap: Record<string, string> = {
+      added: 'added',
+      removed: 'deleted',
+      modified: 'modified',
+      renamed: 'modified',
+      changed: 'modified',
+      copied: 'added',
+    }
+    return {
+      path: f.filename,
+      additions: f.additions,
+      deletions: f.deletions,
+      status: statusMap[f.status] || 'modified',
+    }
+  })
+  return files
 }
 
 export async function getPRComments(repoPath: string, prNumber: number): Promise<PRComment[]> {

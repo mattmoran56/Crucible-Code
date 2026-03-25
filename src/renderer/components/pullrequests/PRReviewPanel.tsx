@@ -51,9 +51,9 @@ export function PRReviewPanel() {
   const { loadPRs } = usePRStore()
   const { projects, activeProjectId } = useProjectStore()
   const {
-    files, selectedFilePath, fullDiff, comments, loading, mergeable,
+    files, selectedFilePath, fullDiff, fileDiffCache, fileDiffLoading, comments, loading, mergeable,
     reviewLoading, mergeLoading, activeTab,
-    loadPR, selectFile, addComment, submitReview, merge, setActiveTab, clear,
+    loadPR, selectFile, loadFileDiff, addComment, submitReview, merge, setActiveTab, clear,
   } = usePRReviewStore()
 
   const [showReviewDialog, setShowReviewDialog] = useState(false)
@@ -75,6 +75,13 @@ export function PRReviewPanel() {
     }
   }, [prNumber, activeProject?.id])
 
+  // For large PRs where fullDiff is null, load file diffs on demand
+  useEffect(() => {
+    if (selectedFilePath && fullDiff === null && !loading && prNumber && activeProject) {
+      loadFileDiff(activeProject.repoPath, prNumber, selectedFilePath)
+    }
+  }, [selectedFilePath, fullDiff, loading, prNumber, activeProject?.id])
+
   if (!prNumber || !activeProject) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
@@ -91,9 +98,13 @@ export function PRReviewPanel() {
     )
   }
 
-  const fileDiff = selectedFilePath && fullDiff
-    ? extractFileDiff(fullDiff, selectedFilePath)
+  // Use full diff when available, otherwise use per-file cache
+  const fileDiff = selectedFilePath
+    ? fullDiff
+      ? extractFileDiff(fullDiff, selectedFilePath)
+      : fileDiffCache[selectedFilePath] || ''
     : ''
+  const isFileDiffLoading = fileDiffLoading === selectedFilePath
 
   const fileComments = selectedFilePath
     ? comments.filter((c) => c.path === selectedFilePath)
@@ -244,7 +255,11 @@ export function PRReviewPanel() {
 
           {/* Diff viewer */}
           <div className="flex-1 flex flex-col min-h-0">
-            {selectedFilePath && fileDiff ? (
+            {isFileDiffLoading ? (
+              <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
+                Loading diff...
+              </div>
+            ) : selectedFilePath && fileDiff ? (
               <PRDiffViewer
                 patch={fileDiff}
                 filePath={selectedFilePath}
