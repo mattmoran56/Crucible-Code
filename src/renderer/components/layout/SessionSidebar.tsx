@@ -6,9 +6,11 @@ import { useNotificationStore } from '../../stores/notificationStore'
 import { SessionCard } from '../sessions/SessionCard'
 import { StaleSessionCard } from '../sessions/StaleSessionCard'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
+import { ImportWorktreeDialog } from '../sessions/ImportWorktreeDialog'
 import { PRCard } from '../pullrequests/PRCard'
 import { Sidebar, SidebarSection } from '../ui/Sidebar'
 import { IconButton } from '../ui/IconButton'
+import { DropdownMenu } from '../ui/DropdownMenu'
 import { ResizeHandle } from '../ui/ResizeHandle'
 import { useResizable } from '../../hooks/useResizable'
 
@@ -22,6 +24,7 @@ export function SessionSidebar() {
     usePRStore()
   const { pendingSessionIds, clearPending } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
   const [staleCollapsed, setStaleCollapsed] = useState(true)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -136,13 +139,27 @@ export function SessionSidebar() {
           <SidebarSection
             title="Sessions"
             action={
-              <IconButton
-                label="New session"
-                onClick={() => setShowCreate(true)}
-                className="text-accent hover:text-accent-hover text-sm"
-              >
-                +
-              </IconButton>
+              <div className="flex items-center gap-1">
+                <IconButton
+                  label="New session"
+                  onClick={() => setShowCreate(true)}
+                  className="text-accent hover:text-accent-hover text-sm"
+                >
+                  +
+                </IconButton>
+                <DropdownMenu
+                  items={[
+                    { label: 'Import existing worktree', onClick: () => setShowImport(true) },
+                  ]}
+                >
+                  <IconButton
+                    label="Session options"
+                    className="text-text-muted hover:text-text text-sm"
+                  >
+                    ⋮
+                  </IconButton>
+                </DropdownMenu>
+              </div>
             }
           >
             {sessions.map((session) => (
@@ -240,6 +257,12 @@ export function SessionSidebar() {
         open={showCreate}
         project={activeProject}
         onClose={() => setShowCreate(false)}
+      />
+
+      <ImportWorktreeDialog
+        open={showImport}
+        project={activeProject}
+        onClose={() => setShowImport(false)}
       />
     </Sidebar>
   )
