@@ -1,6 +1,29 @@
 import { create } from 'zustand'
 
-export type WorkspaceTab = 'agent' | 'git' | 'pr' | 'review'
+export type CoreTab = 'agent' | 'git' | 'pr' | 'review'
+export type WorkspaceTab = CoreTab | `agent:${string}` | `terminal:${string}`
+
+/** Check if a tab is a dynamic (closable) instance */
+export function isDynamicTab(tab: WorkspaceTab): boolean {
+  return tab.startsWith('agent:') || tab.startsWith('terminal:')
+}
+
+/** Get the base type of a tab ('agent', 'git', 'terminal', etc.) */
+export function getTabBaseType(tab: WorkspaceTab): string {
+  const idx = tab.indexOf(':')
+  return idx === -1 ? tab : tab.slice(0, idx)
+}
+
+/** Get display label for a tab */
+export function getTabLabel(tab: WorkspaceTab): string {
+  if (tab === 'agent') return 'Agent'
+  if (tab === 'git') return 'Worktree'
+  if (tab === 'pr') return 'PR'
+  if (tab === 'review') return 'Review'
+  if (tab.startsWith('agent:')) return `Agent ${tab.split(':')[1]}`
+  if (tab.startsWith('terminal:')) return `Terminal ${tab.split(':')[1]}`
+  return tab
+}
 
 export interface WorkspaceColumn {
   id: string
@@ -13,6 +36,9 @@ let columnIdCounter = 0
 function nextColumnId(): string {
   return `col-${++columnIdCounter}`
 }
+
+let dynamicAgentCounter = 1
+let dynamicTerminalCounter = 0
 
 interface WorkspaceLayoutState {
   columns: WorkspaceColumn[]
@@ -57,6 +83,15 @@ interface WorkspaceLayoutState {
 
   /** Whether a split is possible (any column has >1 tab) */
   canSplit: () => boolean
+
+  /** Add a dynamic agent or terminal tab to a column, returns the new tab ID */
+  addDynamicTab: (columnId: string, type: 'agent' | 'terminal') => WorkspaceTab
+
+  /** Remove a dynamic tab from all columns (and clean up empty columns) */
+  removeDynamicTab: (tab: WorkspaceTab) => void
+
+  /** Get all dynamic tabs currently in the layout */
+  getDynamicTabs: () => WorkspaceTab[]
 }
 
 export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) => ({
@@ -73,13 +108,14 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) =
     if (contextId) {
       const saved = get().savedLayouts[contextId]
       if (saved && saved.length > 0) {
-        // Validate saved layout: ensure all tabs in saved layout are in the available tabs,
-        // and add any new available tabs that weren't in the saved layout
+        // Validate saved layout: ensure all core tabs in saved layout are in the available tabs,
+        // and add any new available tabs that weren't in the saved layout.
+        // Dynamic tabs are always considered valid (they'll re-spawn their terminals).
         const availableSet = new Set(tabs)
         const savedTabs = new Set(saved.flatMap((c) => c.tabs))
 
-        // Check if saved layout is still compatible (all saved tabs still available)
-        const allValid = [...savedTabs].every((t) => availableSet.has(t))
+        // Check if saved layout is still compatible (all saved core tabs still available)
+        const allValid = [...savedTabs].every((t) => availableSet.has(t) || isDynamicTab(t))
         if (allValid) {
           // Add any new tabs that aren't in the saved layout to the first column
           const missingTabs = tabs.filter((t) => !savedTabs.has(t))
@@ -246,5 +282,41 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) =
 
   canSplit: () => {
     return get().columns.some((c) => c.tabs.length > 1)
+  },
+
+  addDynamicTab: (columnId, type) => {
+    let tabId: WorkspaceTab
+    if (type === 'agent') {
+      tabId = `agent:${++dynamicAgentCounter}` as WorkspaceTab
+    } else {
+      tabId = `terminal:${++dynamicTerminalCounter}` as WorkspaceTab
+    }
+
+    set({
+      columns: get().columns.map((c) =>
+        c.id === columnId
+          ? { ...c, tabs: [...c.tabs, tabId], activeTab: tabId }
+          : c
+      ),
+    })
+
+    return tabId
+  },
+
+  removeDynamicTab: (tab) => {
+    let newColumns = get().columns.map((c) => {
+      const tabs = c.tabs.filter((t) => t !== tab)
+      return {
+        ...c,
+        tabs,
+        activeTab: tabs.includes(c.activeTab) ? c.activeTab : tabs[0],
+      }
+    })
+    newColumns = newColumns.filter((c) => c.tabs.length > 0)
+    set({ columns: newColumns })
+  },
+
+  getDynamicTabs: () => {
+    return get().columns.flatMap((c) => c.tabs.filter(isDynamicTab))
   },
 }))

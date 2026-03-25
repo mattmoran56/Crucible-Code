@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import { THEMES, type ThemeName } from '../../shared/themes'
+import { THEMES, type ThemeName, type ClaudeTheme } from '../../shared/themes'
 
-export type { ThemeName }
+export type { ThemeName, ClaudeTheme }
 
 const STORAGE_KEY = 'codecrucible-settings'
 
@@ -10,6 +10,11 @@ interface PersistedSettings {
   matchSystem: boolean
   preferredLight: ThemeName
   preferredDark: ThemeName
+  claudeTheme: ClaudeTheme
+}
+
+function getDefaultClaudeTheme(theme: ThemeName): ClaudeTheme {
+  return THEMES.find((t) => t.name === theme)?.claudeTheme ?? 'dark'
 }
 
 function loadSettings(): PersistedSettings {
@@ -17,7 +22,7 @@ function loadSettings(): PersistedSettings {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return JSON.parse(raw)
   } catch { /* ignore */ }
-  return { theme: 'dark', matchSystem: false, preferredLight: 'light', preferredDark: 'dark' }
+  return { theme: 'dark', matchSystem: false, preferredLight: 'light', preferredDark: 'dark', claudeTheme: 'dark' }
 }
 
 function saveSettings(s: PersistedSettings) {
@@ -40,12 +45,14 @@ interface SettingsState {
   matchSystem: boolean
   preferredLight: ThemeName
   preferredDark: ThemeName
+  claudeTheme: ClaudeTheme
   openSettings: () => void
   closeSettings: () => void
   setTheme: (theme: ThemeName) => void
   setMatchSystem: (enabled: boolean) => void
   setPreferredLight: (theme: ThemeName) => void
   setPreferredDark: (theme: ThemeName) => void
+  setClaudeTheme: (claudeTheme: ClaudeTheme) => void
 }
 
 const initial = loadSettings()
@@ -54,30 +61,44 @@ const initialTheme = initial.matchSystem
   : initial.theme
 applyTheme(initialTheme)
 
+function persist(get: () => SettingsState, overrides: Partial<PersistedSettings> = {}) {
+  const s = get()
+  saveSettings({
+    theme: s.theme,
+    matchSystem: s.matchSystem,
+    preferredLight: s.preferredLight,
+    preferredDark: s.preferredDark,
+    claudeTheme: s.claudeTheme,
+    ...overrides,
+  })
+}
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   isOpen: false,
   theme: initialTheme,
   matchSystem: initial.matchSystem,
   preferredLight: initial.preferredLight,
   preferredDark: initial.preferredDark,
+  claudeTheme: initial.claudeTheme ?? getDefaultClaudeTheme(initialTheme),
   openSettings: () => set({ isOpen: true }),
   closeSettings: () => set({ isOpen: false }),
   setTheme: (theme) => {
     applyTheme(theme)
-    set({ theme, matchSystem: false })
-    const s = get()
-    saveSettings({ theme, matchSystem: false, preferredLight: s.preferredLight, preferredDark: s.preferredDark })
+    const claudeTheme = getDefaultClaudeTheme(theme)
+    set({ theme, matchSystem: false, claudeTheme })
+    persist(get, { theme, matchSystem: false, claudeTheme })
   },
   setMatchSystem: (enabled) => {
     const s = get()
     if (enabled) {
       const resolved = getSystemTheme(s.preferredLight, s.preferredDark)
       applyTheme(resolved)
-      set({ matchSystem: true, theme: resolved })
-      saveSettings({ theme: resolved, matchSystem: true, preferredLight: s.preferredLight, preferredDark: s.preferredDark })
+      const claudeTheme = getDefaultClaudeTheme(resolved)
+      set({ matchSystem: true, theme: resolved, claudeTheme })
+      persist(get, { theme: resolved, matchSystem: true, claudeTheme })
     } else {
       set({ matchSystem: false })
-      saveSettings({ theme: s.theme, matchSystem: false, preferredLight: s.preferredLight, preferredDark: s.preferredDark })
+      persist(get, { matchSystem: false })
     }
   },
   setPreferredLight: (theme) => {
@@ -86,10 +107,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (s.matchSystem) {
       const resolved = getSystemTheme(theme, s.preferredDark)
       applyTheme(resolved)
-      set({ theme: resolved })
-      saveSettings({ theme: resolved, matchSystem: true, preferredLight: theme, preferredDark: s.preferredDark })
+      const claudeTheme = getDefaultClaudeTheme(resolved)
+      set({ theme: resolved, claudeTheme })
+      persist(get, { theme: resolved, matchSystem: true, preferredLight: theme, claudeTheme })
     } else {
-      saveSettings({ theme: s.theme, matchSystem: false, preferredLight: theme, preferredDark: s.preferredDark })
+      persist(get, { preferredLight: theme })
     }
   },
   setPreferredDark: (theme) => {
@@ -98,11 +120,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (s.matchSystem) {
       const resolved = getSystemTheme(s.preferredLight, theme)
       applyTheme(resolved)
-      set({ theme: resolved })
-      saveSettings({ theme: resolved, matchSystem: true, preferredLight: s.preferredLight, preferredDark: theme })
+      const claudeTheme = getDefaultClaudeTheme(resolved)
+      set({ theme: resolved, claudeTheme })
+      persist(get, { theme: resolved, matchSystem: true, preferredDark: theme, claudeTheme })
     } else {
-      saveSettings({ theme: s.theme, matchSystem: false, preferredLight: s.preferredLight, preferredDark: theme })
+      persist(get, { preferredDark: theme })
     }
+  },
+  setClaudeTheme: (claudeTheme) => {
+    set({ claudeTheme })
+    persist(get, { claudeTheme })
   },
 }))
 
@@ -113,7 +140,8 @@ mq.addEventListener('change', () => {
   if (s.matchSystem) {
     const resolved = getSystemTheme(s.preferredLight, s.preferredDark)
     applyTheme(resolved)
-    useSettingsStore.setState({ theme: resolved })
-    saveSettings({ theme: resolved, matchSystem: true, preferredLight: s.preferredLight, preferredDark: s.preferredDark })
+    const claudeTheme = getDefaultClaudeTheme(resolved)
+    useSettingsStore.setState({ theme: resolved, claudeTheme })
+    saveSettings({ theme: resolved, matchSystem: true, preferredLight: s.preferredLight, preferredDark: s.preferredDark, claudeTheme })
   }
 })

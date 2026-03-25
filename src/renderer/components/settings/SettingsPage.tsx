@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import { useSettingsStore } from '../../stores/settingsStore'
-import { THEMES, type ThemeName } from '../../../shared/themes'
+import { THEMES, type ThemeName, type ClaudeTheme } from '../../../shared/themes'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { ToggleGroup } from '../ui/ToggleGroup'
@@ -14,6 +14,7 @@ export function SettingsPage() {
     matchSystem, setMatchSystem,
     preferredLight, setPreferredLight,
     preferredDark, setPreferredDark,
+    claudeTheme, setClaudeTheme,
   } = useSettingsStore()
 
   useEffect(() => {
@@ -217,6 +218,27 @@ export function SettingsPage() {
                 </Button>
               )
             })}
+          </div>
+
+          {/* Claude Code theme */}
+          <div
+            className="flex items-center justify-between border border-border rounded-md"
+            style={{ padding: '10px 14px', marginTop: 24 }}
+          >
+            <div>
+              <p className="text-xs font-medium text-text">Claude Code Theme</p>
+              <p className="text-[11px] text-text-muted">
+                Theme used for Claude Code sessions
+              </p>
+            </div>
+            <ToggleGroup
+              options={[
+                { value: 'light', label: 'Light' },
+                { value: 'dark', label: 'Dark' },
+              ]}
+              value={claudeTheme}
+              onChange={(v) => setClaudeTheme(v as ClaudeTheme)}
+            />
           </div>
 
           {/* Color palette detail for active theme */}

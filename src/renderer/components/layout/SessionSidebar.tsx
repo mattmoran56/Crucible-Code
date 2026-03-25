@@ -22,7 +22,7 @@ export function SessionSidebar() {
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, markSeen, clear: clearPRs } =
     usePRStore()
-  const { pendingSessionIds, clearPending } = useNotificationStore()
+  const { pendingSessionIds, clearPending, registerSessions } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
@@ -101,7 +101,9 @@ export function SessionSidebar() {
         session.worktreePath
       )
     }
-  }, [sessions])
+    // Also register with the notification store for cross-project badge counts
+    registerSessions(sessions)
+  }, [sessions, registerSessions])
 
   if (!activeProject) {
     return (

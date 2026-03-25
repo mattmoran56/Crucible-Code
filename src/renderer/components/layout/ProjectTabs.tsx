@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react'
 import { useProjectStore } from '../../stores/projectStore'
-import { useSessionStore } from '../../stores/sessionStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useUpdateStore } from '../../stores/updateStore'
 import { Button } from '../ui/Button'
@@ -11,8 +10,7 @@ import type { Project } from '../../../../shared/types'
 export function ProjectTabs() {
   const { projects, activeProjectId, setActiveProject, addProject, removeProject, reorderProjects } =
     useProjectStore()
-  const { sessions } = useSessionStore()
-  const { pendingSessionIds } = useNotificationStore()
+  const { getPendingCountForProject } = useNotificationStore()
   const { status, log, setStatus, appendLog, reset } = useUpdateStore()
   const { openSettings } = useSettingsStore()
 
@@ -26,8 +24,7 @@ export function ProjectTabs() {
     return () => { removeStatus(); removeLog() }
   }, [setStatus, appendLog])
 
-  const getPendingCount = (projectId: string) =>
-    sessions.filter((s) => s.projectId === projectId && pendingSessionIds.has(s.id)).length
+  const getPendingCount = getPendingCountForProject
 
   const handleUpdateClick = () => {
     if (status.state === 'error') {
