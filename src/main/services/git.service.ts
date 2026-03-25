@@ -68,12 +68,6 @@ export async function checkoutBranch(
   const g = git(repoPath)
   const gc = gitNoLFS(repoPath)
 
-  try {
-    await g.raw(['fetch', 'origin', branch])
-  } catch (err) {
-    return { stashed: false, error: err instanceof Error ? err.message : String(err) }
-  }
-
   // Stash any uncommitted changes
   const status = await g.status()
   const dirty =
@@ -94,7 +88,7 @@ export async function checkoutBranch(
     stashed = true
   }
 
-  // Try simple checkout first
+  // Try local checkout first — fastest path for worktree branches
   try {
     await gc.raw(['-c', 'core.hooksPath=/dev/null', 'checkout', branch])
     return { stashed }
@@ -102,7 +96,13 @@ export async function checkoutBranch(
     // May not exist locally, or is in a worktree
   }
 
-  // Try creating from origin
+  // Fetch from remote, then try creating a local tracking branch
+  try {
+    await g.raw(['fetch', 'origin', branch])
+  } catch {
+    // Branch may only exist locally (e.g. in a worktree) — continue
+  }
+
   try {
     await gc.raw(['-c', 'core.hooksPath=/dev/null', 'checkout', '-b', branch, `origin/${branch}`])
     return { stashed }

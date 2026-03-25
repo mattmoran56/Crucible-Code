@@ -18,7 +18,7 @@ const PR_POLL_INTERVAL = 30_000
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, staleSessions, activeSessionId, activePRNumber, loadSessions, setActiveSession, removeSession, markStale, openPR, checkStaleness, reactivateSession } =
+  const { sessions, staleSessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, markStale, openPR, openAsMainBranch, checkStaleness, reactivateSession } =
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, markSeen, clear: clearPRs } =
     usePRStore()
@@ -167,12 +167,14 @@ export function SessionSidebar() {
                 key={session.id}
                 session={session}
                 isActive={session.id === activeSessionId}
+                isOpenedAsMain={session.id === openedAsMainBranch}
                 hasPendingNotification={pendingSessionIds.has(session.id)}
                 pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
                 onClick={() => {
-                  setActiveSession(session.id)
+                  setActiveSession(session.id, activeProject.repoPath)
                   clearPending(session.id)
                 }}
+                onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
                 onMarkStale={() => markStale(activeProject.id, session.id)}
                 onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
               />
@@ -201,7 +203,7 @@ export function SessionSidebar() {
                 key={session.id}
                 session={session}
                 isActive={session.id === activeSessionId}
-                onClick={() => setActiveSession(session.id)}
+                onClick={() => setActiveSession(session.id, activeProject.repoPath)}
                 onReactivate={() => reactivateSession(activeProject.id, session.id)}
                 onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
               />

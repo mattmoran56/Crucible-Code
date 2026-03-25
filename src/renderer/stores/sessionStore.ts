@@ -17,13 +17,17 @@ interface SessionState {
   activeWorkspaceTab: WorkspaceTab
   didStash: boolean
   detachedWorktree: DetachedWorktreeInfo | null
+  openedAsMainBranch: string | null
+  previousMainBranch: string | null
   loadSessions: (projectId: string) => Promise<void>
   createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string) => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
-  setActiveSession: (id: string) => Promise<void>
+  setActiveSession: (id: string, repoPath?: string) => Promise<void>
   setActiveWorkspaceTab: (tab: WorkspaceTab) => void
   openPR: (repoPath: string, pr: PullRequest) => Promise<void>
   closePR: () => Promise<void>
+  openAsMainBranch: (repoPath: string, sessionId: string) => Promise<void>
+  returnToWorktree: (repoPath: string) => Promise<void>
   clearActiveContext: () => Promise<void>
   checkStaleness: (repoPath: string) => Promise<void>
   markStale: (projectId: string, sessionId: string) => Promise<void>
@@ -49,6 +53,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeWorkspaceTab: 'agent' as WorkspaceTab,
   didStash: false,
   detachedWorktree: null,
+  openedAsMainBranch: null,
+  previousMainBranch: null,
 
   loadSessions: async (projectId: string) => {
     const sessions = await window.api.session.list(projectId)
@@ -194,9 +200,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
   },
 
-  setActiveSession: async (id: string) => {
-    await restoreDetachedWorktree(get().detachedWorktree)
-    set({ activeSessionId: id, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null })
+  setActiveSession: async (id: string, repoPath?: string) => {
+    const { detachedWorktree, openedAsMainBranch, previousMainBranch } = get()
+    // If switching away from "opened as main branch", free the branch first
+    if (openedAsMainBranch && previousMainBranch && repoPath) {
+      try {
+        await window.api.git.checkout(repoPath, previousMainBranch)
+      } catch {
+        // Best effort — don't block session switch
+      }
+    }
+    // Now restore the worktree (branch is free)
+    await restoreDetachedWorktree(detachedWorktree)
+    set({ activeSessionId: id, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null, openedAsMainBranch: null, previousMainBranch: null })
   },
 
   setActiveWorkspaceTab: (tab: WorkspaceTab) => {
@@ -240,8 +256,65 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ activePRNumber: null, detachedWorktree: null })
   },
 
+  openAsMainBranch: async (repoPath, sessionId) => {
+    const { addToast } = useToastStore.getState()
+
+    // Restore any previously detached worktree first
+    await restoreDetachedWorktree(get().detachedWorktree)
+
+    const session = get().sessions.find((s) => s.id === sessionId)
+    if (!session) return
+
+    try {
+      // Remember what branch main repo is on so we can restore later
+      const status = await window.api.git.status(repoPath)
+      const previousBranch = status.current ?? null
+
+      const { stashed, detachedWorktree, error } = await window.api.git.checkout(repoPath, session.branchName)
+      if (error) {
+        addToast('error', error)
+      }
+      set({
+        activeSessionId: sessionId,
+        activePRNumber: null,
+        openedAsMainBranch: sessionId,
+        previousMainBranch: previousBranch,
+        didStash: stashed,
+        detachedWorktree: detachedWorktree
+          ? { worktreePath: detachedWorktree, branch: session.branchName }
+          : null,
+      })
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+    }
+  },
+
+  returnToWorktree: async (repoPath) => {
+    const { addToast } = useToastStore.getState()
+    const { detachedWorktree, previousMainBranch } = get()
+
+    // Put main repo back on its original branch FIRST to free the session branch
+    if (previousMainBranch) {
+      try {
+        await window.api.git.checkout(repoPath, previousMainBranch)
+      } catch (err) {
+        addToast('error', `Failed to restore main branch: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    // Now the session branch is free — restore it on the worktree
+    await restoreDetachedWorktree(detachedWorktree)
+
+    set({
+      openedAsMainBranch: null,
+      previousMainBranch: null,
+      detachedWorktree: null,
+      didStash: false,
+    })
+  },
+
   clearActiveContext: async () => {
     await restoreDetachedWorktree(get().detachedWorktree)
-    set({ activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null })
+    set({ activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null, openedAsMainBranch: null, previousMainBranch: null })
   },
 }))

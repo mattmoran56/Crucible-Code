@@ -6,7 +6,9 @@ import { ReviewTerminalPanel } from '../terminal/ReviewTerminalPanel'
 import { PRReviewPanel } from '../pullrequests/PRReviewPanel'
 import { IconButton, Tooltip, ResizeHandle } from '../ui'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
+import { Button } from '../ui'
 import {
   useWorkspaceLayoutStore,
   type WorkspaceColumn,
@@ -91,7 +93,9 @@ const DRAG_MIME = 'application/x-workspace-tab'
 /* ── Main component ───────────────────────────────────── */
 
 export function SessionWorkspace() {
-  const { activeSessionId, activePRNumber, sessions } = useSessionStore()
+  const { activeSessionId, activePRNumber, sessions, openedAsMainBranch, didStash, returnToWorktree } = useSessionStore()
+  const { projects, activeProjectId } = useProjectStore()
+  const activeProject = projects.find((p) => p.id === activeProjectId)
   const { columns, resetLayout, saveLayout, splitRight, addAvailableTab, removeAvailableTab, setActiveTab, canSplit } =
     useWorkspaceLayoutStore()
 
@@ -271,6 +275,42 @@ export function SessionWorkspace() {
   // Compute visibility for terminal panels
   const agentVisible = columns.some((c) => c.activeTab === 'agent')
   const reviewVisible = columns.some((c) => c.activeTab === 'review')
+
+  const isPausedForMain = openedAsMainBranch != null && openedAsMainBranch === activeSessionId
+
+  if (isPausedForMain) {
+    const pausedSession = sessions.find((s) => s.id === openedAsMainBranch)
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-center" style={{ maxWidth: 360 }}>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
+            <circle cx="18" cy="18" r="3" />
+            <circle cx="6" cy="6" r="3" />
+            <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+            <line x1="6" y1="9" x2="6" y2="21" />
+          </svg>
+          <div>
+            <h2 className="text-text text-sm font-medium mb-1">Session opened as main branch</h2>
+            <p className="text-text-muted text-xs leading-relaxed">
+              <strong className="text-text">{pausedSession?.branchName}</strong> is checked out in the main repository. The worktree is paused.
+            </p>
+            {didStash && (
+              <p className="text-warning text-xs mt-2">
+                Uncommitted changes were stashed before switching.
+              </p>
+            )}
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => activeProject && returnToWorktree(activeProject.repoPath)}
+          >
+            Return to worktree
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   if (columns.length === 0) {
     return <div className="flex-1 flex items-center justify-center text-text-muted text-sm">No session selected</div>
