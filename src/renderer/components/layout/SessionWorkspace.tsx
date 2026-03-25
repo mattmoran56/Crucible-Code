@@ -1,16 +1,22 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { GitPanel } from '../git/GitPanel'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { ReviewTerminalPanel } from '../terminal/ReviewTerminalPanel'
+import { DynamicTerminalPanel } from '../terminal/DynamicTerminalPanel'
 import { PRReviewPanel } from '../pullrequests/PRReviewPanel'
 import { IconButton, Tooltip, ResizeHandle } from '../ui'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useTerminalStore } from '../../stores/terminalStore'
 import { usePRStore } from '../../stores/prStore'
 import {
   useWorkspaceLayoutStore,
+  isDynamicTab,
+  getTabBaseType,
+  getTabLabel,
   type WorkspaceColumn,
   type WorkspaceTab,
+  type CoreTab,
 } from '../../stores/workspaceLayoutStore'
 
 /* ── Icons ────────────────────────────────────────────── */
@@ -62,18 +68,31 @@ const ReviewIcon = () => (
   </svg>
 )
 
-const TAB_ICONS: Record<WorkspaceTab, React.ReactNode> = {
-  agent: <TerminalIcon />,
-  git: <GitIcon />,
-  pr: <PRIcon />,
-  review: <ReviewIcon />,
-}
+const PlusIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+)
 
-const TAB_LABELS: Record<WorkspaceTab, string> = {
-  agent: 'Agent',
-  git: 'Worktree',
-  pr: 'PR',
-  review: 'Review',
+const ShellIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <polyline points="7 15 10 12 7 9" />
+    <line x1="13" y1="15" x2="17" y2="15" />
+  </svg>
+)
+
+/** Get the icon for a tab */
+function getTabIcon(tab: WorkspaceTab): React.ReactNode {
+  if (tab === 'agent') return <TerminalIcon />
+  if (tab === 'git') return <GitIcon />
+  if (tab === 'pr') return <PRIcon />
+  if (tab === 'review') return <ReviewIcon />
+  const base = getTabBaseType(tab)
+  if (base === 'agent') return <TerminalIcon />
+  if (base === 'terminal') return <ShellIcon />
+  return <TerminalIcon />
 }
 
 /** Tabs that require an active PR to be enabled */
@@ -92,8 +111,9 @@ const DRAG_MIME = 'application/x-workspace-tab'
 
 export function SessionWorkspace() {
   const { activeSessionId, activePRNumber, sessions } = useSessionStore()
-  const { columns, resetLayout, saveLayout, splitRight, addAvailableTab, removeAvailableTab, setActiveTab, canSplit } =
+  const { columns, resetLayout, saveLayout, splitRight, addAvailableTab, removeAvailableTab, setActiveTab, canSplit, addDynamicTab, removeDynamicTab, getDynamicTabs } =
     useWorkspaceLayoutStore()
+  const { killDynamicTerminalAll } = useTerminalStore()
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const { pullRequests } = usePRStore()
@@ -222,31 +242,92 @@ export function SessionWorkspace() {
 
   const splitEnabled = canSplit()
 
-  // Stable portal target elements — created once, never destroyed.
-  // Panels are portaled into these, then we move the targets between column content areas.
-  const panelTargets = useRef<Record<WorkspaceTab, HTMLDivElement> | null>(null)
-  if (!panelTargets.current) {
-    const allTabs: WorkspaceTab[] = ['agent', 'git', 'pr', 'review']
-    panelTargets.current = {} as Record<WorkspaceTab, HTMLDivElement>
-    for (const tab of allTabs) {
+  // Handle adding a dynamic tab
+  const handleAddDynamicTab = useCallback(
+    (columnId: string, type: 'agent' | 'terminal') => {
+      addDynamicTab(columnId, type)
+    },
+    [addDynamicTab]
+  )
+
+  // Handle closing a dynamic tab (kill terminal + remove from layout)
+  const handleCloseDynamicTab = useCallback(
+    (tab: WorkspaceTab) => {
+      killDynamicTerminalAll(tab)
+      removeDynamicTab(tab)
+    },
+    [killDynamicTerminalAll, removeDynamicTab]
+  )
+
+  // Stable portal target elements for core tabs — created once, never destroyed.
+  const corePanelTargets = useRef<Record<CoreTab, HTMLDivElement> | null>(null)
+  if (!corePanelTargets.current) {
+    const allCoreTabs: CoreTab[] = ['agent', 'git', 'pr', 'review']
+    corePanelTargets.current = {} as Record<CoreTab, HTMLDivElement>
+    for (const tab of allCoreTabs) {
       const div = document.createElement('div')
       div.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;min-height:0'
       div.dataset.panelTarget = tab
-      panelTargets.current[tab] = div
+      corePanelTargets.current[tab] = div
     }
   }
 
+  // Dynamic portal targets — created/cleaned up as dynamic tabs appear/disappear
+  const dynamicPanelTargets = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  // Compute all dynamic tabs currently in the layout
+  const allDynamicTabs = useMemo(() => {
+    const tabs = new Set<string>()
+    for (const col of columns) {
+      for (const tab of col.tabs) {
+        if (isDynamicTab(tab)) tabs.add(tab)
+      }
+    }
+    return tabs
+  }, [columns])
+
+  // Create/cleanup dynamic portal targets when dynamic tabs change
+  useEffect(() => {
+    const targets = dynamicPanelTargets.current
+
+    // Create targets for new dynamic tabs
+    for (const tab of allDynamicTabs) {
+      if (!targets.has(tab)) {
+        const div = document.createElement('div')
+        div.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;min-height:0'
+        div.dataset.panelTarget = tab
+        targets.set(tab, div)
+      }
+    }
+
+    // Remove targets for tabs no longer in layout
+    for (const [tab, div] of targets) {
+      if (!allDynamicTabs.has(tab)) {
+        div.remove()
+        targets.delete(tab)
+      }
+    }
+  }, [allDynamicTabs])
+
   // Move portal targets into the correct column content areas on every layout change
   useEffect(() => {
-    const targets = panelTargets.current!
+    const coreTargets = corePanelTargets.current!
+    const dynTargets = dynamicPanelTargets.current
     const container = columnsRef.current
     if (!container) return
 
-    // Hide all targets first
-    for (const tab of Object.keys(targets) as WorkspaceTab[]) {
-      targets[tab].style.visibility = 'hidden'
-      targets[tab].style.pointerEvents = 'none'
-      targets[tab].style.zIndex = '0'
+    // Hide all core targets first
+    for (const tab of Object.keys(coreTargets) as CoreTab[]) {
+      coreTargets[tab].style.visibility = 'hidden'
+      coreTargets[tab].style.pointerEvents = 'none'
+      coreTargets[tab].style.zIndex = '0'
+    }
+
+    // Hide all dynamic targets
+    for (const [, div] of dynTargets) {
+      div.style.visibility = 'hidden'
+      div.style.pointerEvents = 'none'
+      div.style.zIndex = '0'
     }
 
     // Attach to correct columns and show active tabs
@@ -257,7 +338,7 @@ export function SessionWorkspace() {
       if (!contentEl) continue
 
       for (const tab of col.tabs) {
-        const target = targets[tab]
+        const target = isDynamicTab(tab) ? dynTargets.get(tab) : coreTargets[tab as CoreTab]
         if (!target) continue
         const isActive = tab === col.activeTab
         target.style.visibility = isActive ? 'visible' : 'hidden'
@@ -295,15 +376,27 @@ export function SessionWorkspace() {
               effectivePRNumber={effectivePRNumber}
               dragOverInfo={dragOverInfo}
               setDragOverInfo={setDragOverInfo}
+              onAddDynamicTab={handleAddDynamicTab}
+              onCloseDynamicTab={handleCloseDynamicTab}
             />
           </React.Fragment>
         ))}
       </div>
-      {/* Global panel mounting — panels never unmount, just get portaled between columns */}
-      {createPortal(<TerminalPanel mode="claude" visible={agentVisible} />, panelTargets.current.agent)}
-      {createPortal(<ReviewTerminalPanel visible={reviewVisible} />, panelTargets.current.review)}
-      {createPortal(<GitPanel />, panelTargets.current.git)}
-      {createPortal(<PRReviewPanel />, panelTargets.current.pr)}
+      {/* Core panel mounting — panels never unmount, just get portaled between columns */}
+      {createPortal(<TerminalPanel mode="claude" visible={agentVisible} />, corePanelTargets.current.agent)}
+      {createPortal(<ReviewTerminalPanel visible={reviewVisible} />, corePanelTargets.current.review)}
+      {createPortal(<GitPanel />, corePanelTargets.current.git)}
+      {createPortal(<PRReviewPanel />, corePanelTargets.current.pr)}
+      {/* Dynamic panel mounting */}
+      {[...allDynamicTabs].map((tab) => {
+        const target = dynamicPanelTargets.current.get(tab)
+        if (!target) return null
+        const isVisible = columns.some((c) => c.activeTab === tab)
+        return createPortal(
+          <DynamicTerminalPanel key={tab} tabId={tab as WorkspaceTab} visible={isVisible} />,
+          target
+        )
+      })}
     </>
   )
 }
@@ -318,6 +411,8 @@ function ColumnPanel({
   effectivePRNumber,
   dragOverInfo,
   setDragOverInfo,
+  onAddDynamicTab,
+  onCloseDynamicTab,
 }: {
   column: WorkspaceColumn
   canClose: boolean
@@ -326,6 +421,8 @@ function ColumnPanel({
   effectivePRNumber: number | null
   dragOverInfo: { columnId: string; index: number } | null
   setDragOverInfo: (info: { columnId: string; index: number } | null) => void
+  onAddDynamicTab: (columnId: string, type: 'agent' | 'terminal') => void
+  onCloseDynamicTab: (tab: WorkspaceTab) => void
 }) {
   const { setActiveTab, closeColumn, moveTab, reorderTab } = useWorkspaceLayoutStore()
   const tabBarRef = useRef<HTMLDivElement>(null)
@@ -443,7 +540,9 @@ function ColumnPanel({
                 disabled={PR_REQUIRED_TABS.has(tab) && effectivePRNumber == null}
                 disabledTooltip="Open a PR to use this tab"
                 columnId={column.id}
+                closable={isDynamicTab(tab)}
                 onClick={() => setActiveTab(column.id, tab)}
+                onClose={() => onCloseDynamicTab(tab)}
               />
             </React.Fragment>
           ))}
@@ -453,6 +552,10 @@ function ColumnPanel({
           )}
         </div>
         <div className="flex items-center flex-shrink-0 gap-0.5" style={{ marginLeft: '4px' }}>
+          <AddTabMenu
+            columnId={column.id}
+            onAdd={onAddDynamicTab}
+          />
           <IconButton label="Split editor" size="sm" onClick={onSplit} disabled={!canSplit}>
             <SplitIcon />
           </IconButton>
@@ -470,6 +573,67 @@ function ColumnPanel({
   )
 }
 
+/* ── Add Tab Menu ─────────────────────────────────────── */
+
+function AddTabMenu({
+  columnId,
+  onAdd,
+}: {
+  columnId: string
+  onAdd: (columnId: string, type: 'agent' | 'terminal') => void
+}) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={menuRef} className="relative">
+      <IconButton label="Add tab" size="sm" onClick={() => setOpen(!open)}>
+        <PlusIcon />
+      </IconButton>
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-1 bg-bg-secondary border border-border rounded shadow-lg py-1 min-w-[150px]"
+          style={{ zIndex: 50 }}
+        >
+          <button
+            className="flex items-center gap-2 w-full text-left text-xs text-text hover:bg-bg-tertiary transition-colors"
+            style={{ padding: '6px 10px' }}
+            onClick={() => {
+              onAdd(columnId, 'agent')
+              setOpen(false)
+            }}
+          >
+            <TerminalIcon />
+            New Agent
+          </button>
+          <button
+            className="flex items-center gap-2 w-full text-left text-xs text-text hover:bg-bg-tertiary transition-colors"
+            style={{ padding: '6px 10px' }}
+            onClick={() => {
+              onAdd(columnId, 'terminal')
+              setOpen(false)
+            }}
+          >
+            <ShellIcon />
+            New Terminal
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── Draggable Tab ────────────────────────────────────── */
 
 function DraggableTab({
@@ -478,14 +642,18 @@ function DraggableTab({
   disabled,
   disabledTooltip,
   columnId,
+  closable,
   onClick,
+  onClose,
 }: {
   tab: WorkspaceTab
   active: boolean
   disabled?: boolean
   disabledTooltip?: string
   columnId: string
+  closable?: boolean
   onClick: () => void
+  onClose?: () => void
 }) {
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
@@ -500,6 +668,14 @@ function DraggableTab({
     [tab, columnId, disabled]
   )
 
+  const handleClose = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      onClose?.()
+    },
+    [onClose]
+  )
+
   const button = (
     <button
       data-tab={tab}
@@ -509,7 +685,7 @@ function DraggableTab({
       role="tab"
       aria-selected={active}
       aria-disabled={disabled}
-      className={`flex items-center gap-1.5 text-xs transition-colors relative
+      className={`flex items-center gap-1.5 text-xs transition-colors relative group
         focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset
         ${disabled
           ? 'text-text-muted/40 cursor-not-allowed'
@@ -519,8 +695,19 @@ function DraggableTab({
         }`}
       style={{ padding: '8px 10px' }}
     >
-      {TAB_ICONS[tab]}
-      {TAB_LABELS[tab]}
+      {getTabIcon(tab)}
+      {getTabLabel(tab)}
+      {closable && (
+        <span
+          onClick={handleClose}
+          className="ml-0.5 opacity-0 group-hover:opacity-100 hover:text-danger transition-opacity rounded"
+          role="button"
+          aria-label={`Close ${getTabLabel(tab)}`}
+          tabIndex={-1}
+        >
+          <CloseIcon />
+        </span>
+      )}
       {active && !disabled && <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />}
     </button>
   )
@@ -531,4 +718,3 @@ function DraggableTab({
 
   return button
 }
-
