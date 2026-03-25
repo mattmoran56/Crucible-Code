@@ -36,6 +36,10 @@ export function registerGithubHandlers() {
     return githubService.getPRDiff(repoPath, prNumber)
   })
 
+  ipcMain.handle(IPC.PR_FILE_PATCH, async (_e, repoPath: string, prNumber: number, filePath: string) => {
+    return githubService.getPRFilePatch(repoPath, prNumber, filePath)
+  })
+
   ipcMain.handle(IPC.PR_FILES, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRFiles(repoPath, prNumber)
   })

@@ -15,9 +15,9 @@ import { useSettingsStore } from './stores/settingsStore'
 import { LoadingScreen } from './components/LoadingScreen'
 
 export default function App() {
-  const { loadProjects } = useProjectStore()
+  const { loadProjects, projects } = useProjectStore()
   const { activeSessionId } = useSessionStore()
-  const { addPending, clearPending } = useNotificationStore()
+  const { addPending, clearPending, registerSessions } = useNotificationStore()
   const { isOpen: settingsOpen } = useSettingsStore()
 
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
@@ -36,6 +36,21 @@ export default function App() {
       setTimeout(() => setShowLoader(false), 520)
     })
   }, [loadProjects])
+
+  // Register sessions from all projects with the notification store for cross-project badges
+  useEffect(() => {
+    if (projects.length === 0) return
+    Promise.all(
+      projects.map((p) => window.api.session.list(p.id))
+    ).then((allSessionArrays) => {
+      const allSessions = allSessionArrays.flat()
+      registerSessions(allSessions)
+      // Also register with main process for hook-based notification routing
+      for (const s of allSessions) {
+        window.api.notification.registerSession(s.id, s.name, s.projectId, s.worktreePath)
+      }
+    })
+  }, [projects, registerSessions])
 
   // Listen for hook-driven notification events from the main process
   useEffect(() => {

@@ -7,6 +7,8 @@ interface PRReviewState {
   files: PRFile[]
   selectedFilePath: string | null
   fullDiff: string | null
+  fileDiffCache: Record<string, string>
+  fileDiffLoading: string | null
   comments: PRComment[]
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
   loading: boolean
@@ -44,6 +46,7 @@ interface PRReviewState {
   selectCommit: (repoPath: string, hash: string | null) => Promise<void>
   nextCommit: (repoPath: string) => Promise<void>
   prevCommit: (repoPath: string) => Promise<void>
+  loadFileDiff: (repoPath: string, prNumber: number, filePath: string) => Promise<void>
   addComment: (repoPath: string, prNumber: number, body: string, path: string, startLine: number, endLine: number, side: 'LEFT' | 'RIGHT') => Promise<void>
   submitReview: (repoPath: string, prNumber: number, event: PRReviewEvent, body?: string) => Promise<void>
   merge: (repoPath: string, prNumber: number, method: PRMergeMethod) => Promise<void>
@@ -61,6 +64,8 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
   files: [],
   selectedFilePath: null,
   fullDiff: null,
+  fileDiffCache: {},
+  fileDiffLoading: null,
   comments: [],
   mergeable: 'UNKNOWN',
   loading: false,
@@ -81,8 +86,8 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
 
   loadPR: async (repoPath, prNumber, projectId) => {
     set({
-      loading: true, prNumber, files: [], fullDiff: null, comments: [],
-      mergeable: 'UNKNOWN', selectedFilePath: null,
+      loading: true, prNumber, files: [], fullDiff: null, fileDiffCache: {}, fileDiffLoading: null,
+      comments: [], mergeable: 'UNKNOWN', selectedFilePath: null,
       detail: null, conversationComments: [], checks: [], activeTab: 'conversation',
     })
     try {
@@ -164,7 +169,6 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
   selectCommit: async (repoPath, hash) => {
     if (hash === null) {
       set({ selectedCommitHash: null, commitDiff: null, selectedFilePath: null })
-      // Re-select first file from full PR files
       const { files } = get()
       if (files.length > 0) set({ selectedFilePath: files[0].path })
       return
@@ -197,8 +201,27 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
     if (idx > 0) {
       await get().selectCommit(repoPath, commits[idx - 1].hash)
     } else if (idx === 0) {
-      // Go back to "all changes"
       await get().selectCommit(repoPath, null)
+    }
+  },
+
+  loadFileDiff: async (repoPath, prNumber, filePath) => {
+    const { fileDiffCache } = get()
+    if (fileDiffCache[filePath]) return
+    set({ fileDiffLoading: filePath })
+    try {
+      const patch = await window.api.github.getFilePatch(repoPath, prNumber, filePath)
+      set({
+        fileDiffCache: { ...get().fileDiffCache, [filePath]: patch },
+        fileDiffLoading: get().selectedFilePath === filePath ? null : get().fileDiffLoading,
+      })
+    } catch (err) {
+      const { addToast } = useToastStore.getState()
+      addToast('error', err instanceof Error ? err.message : String(err))
+    } finally {
+      if (get().fileDiffLoading === filePath) {
+        set({ fileDiffLoading: null })
+      }
     }
   },
 
@@ -284,6 +307,8 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
       files: [],
       selectedFilePath: null,
       fullDiff: null,
+      fileDiffCache: {},
+      fileDiffLoading: null,
       comments: [],
       mergeable: 'UNKNOWN',
       loading: false,

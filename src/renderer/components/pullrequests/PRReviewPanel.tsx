@@ -41,13 +41,13 @@ export function PRReviewPanel() {
   const { loadPRs } = usePRStore()
   const { projects, activeProjectId } = useProjectStore()
   const {
-    files, selectedFilePath, fullDiff, comments, loading, mergeable,
+    files, selectedFilePath, fullDiff, fileDiffCache, fileDiffLoading, comments, loading, mergeable,
     reviewLoading, mergeLoading, activeTab, viewedFiles,
     commits, selectedCommitHash, commitDiff, viewMode,
     reviewThreads, commentFilter,
     loadPR, selectFile, selectNextFile, selectPrevFile, setViewMode, toggleFileViewed,
     selectCommit, nextCommit, prevCommit, setCommentFilter,
-    addComment, submitReview, merge, setActiveTab, clear,
+    loadFileDiff, addComment, submitReview, merge, setActiveTab, clear,
   } = usePRReviewStore()
 
   const [showReviewDialog, setShowReviewDialog] = useState(false)
@@ -124,6 +124,13 @@ export function PRReviewPanel() {
     return displayFiles.filter((f) => unresolvedFiles.has(f.path))
   }, [displayFiles, commentFilter, unresolvedFiles])
 
+  // For large PRs where fullDiff is null, load file diffs on demand
+  useEffect(() => {
+    if (selectedFilePath && fullDiff === null && !loading && prNumber && activeProject) {
+      loadFileDiff(activeProject.repoPath, prNumber, selectedFilePath)
+    }
+  }, [selectedFilePath, fullDiff, loading, prNumber, activeProject?.id])
+
   if (!prNumber || !activeProject) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
@@ -140,9 +147,13 @@ export function PRReviewPanel() {
     )
   }
 
-  const fileDiff = selectedFilePath && activeDiff
-    ? extractFileDiff(activeDiff, selectedFilePath)
+  // Use commit diff when selected, full PR diff when available, otherwise per-file cache
+  const fileDiff = selectedFilePath
+    ? activeDiff
+      ? extractFileDiff(activeDiff, selectedFilePath)
+      : fileDiffCache[selectedFilePath] || ''
     : ''
+  const isFileDiffLoading = fileDiffLoading === selectedFilePath
 
   const fileComments = selectedFilePath
     ? comments.filter((c) => c.path === selectedFilePath)
@@ -433,7 +444,11 @@ export function PRReviewPanel() {
                       <span className="text-text truncate ml-1">{selectedFilePath}</span>
                     </div>
                   )}
-                  {selectedFilePath && fileDiff ? (
+                  {isFileDiffLoading ? (
+                    <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
+                      Loading diff...
+                    </div>
+                  ) : selectedFilePath && fileDiff ? (
                     <PRDiffViewer
                       patch={fileDiff}
                       filePath={selectedFilePath}
