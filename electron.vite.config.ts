@@ -7,7 +7,7 @@ const builtCommit = execSync('git rev-parse HEAD').toString().trim()
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ['fix-path'] })],
     define: {
       __REPO_PATH__: JSON.stringify(process.cwd()),
       __BUILT_COMMIT__: JSON.stringify(builtCommit),

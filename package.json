@@ -16,7 +16,8 @@
     "asar": false,
     "files": [
       "out/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*"
     ],
     "directories": {
       "output": "/Applications"
