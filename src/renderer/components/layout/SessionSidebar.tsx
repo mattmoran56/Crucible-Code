@@ -24,6 +24,7 @@ export function SessionSidebar() {
   const [showCreate, setShowCreate] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
   const [staleCollapsed, setStaleCollapsed] = useState(true)
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
 
@@ -73,12 +74,18 @@ export function SessionSidebar() {
     loadPRs(activeProject.repoPath)
     loadSeenPRs(activeProject.id)
 
-    const interval = setInterval(() => {
-      loadPRs(activeProject.repoPath)
-      checkStaleness(activeProject.repoPath)
-    }, PR_POLL_INTERVAL)
+    const startPolling = () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = setInterval(() => {
+        loadPRs(activeProject.repoPath)
+        checkStaleness(activeProject.repoPath)
+      }, PR_POLL_INTERVAL)
+    }
+    startPolling()
 
-    return () => clearInterval(interval)
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+    }
   }, [activeProject?.id])
 
   // Register all sessions with the main process for notification routing
@@ -104,6 +111,17 @@ export function SessionSidebar() {
   }
 
   const newPRCount = pullRequests.filter((pr) => !seenPRs.includes(pr.number)).length
+
+  const handleRefreshPRs = () => {
+    if (!activeProject) return
+    loadPRs(activeProject.repoPath)
+    // Reset polling so next tick is a full interval from now
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+    pollIntervalRef.current = setInterval(() => {
+      loadPRs(activeProject.repoPath)
+      checkStaleness(activeProject.repoPath)
+    }, PR_POLL_INTERVAL)
+  }
 
   const handlePRClick = async (pr: (typeof pullRequests)[0]) => {
     markSeen(activeProject.id, pr.number)
@@ -185,6 +203,19 @@ export function SessionSidebar() {
             collapsed={prCollapsed}
             onToggle={() => setPRCollapsed((c) => !c)}
             badge={newPRCount}
+            action={
+              <IconButton
+                aria-label="Refresh pull requests"
+                size="sm"
+                onClick={handleRefreshPRs}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+              </IconButton>
+            }
           >
             {prsLoading && pullRequests.length === 0 ? (
               <p className="text-text-muted text-xs text-center py-4">Loading...</p>
