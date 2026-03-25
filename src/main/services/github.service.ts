@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck } from '../../shared/types'
+import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread } from '../../shared/types'
 
 const execFileAsync = promisify(execFile)
 
@@ -340,4 +340,84 @@ export async function mergePR(
     ['pr', 'merge', String(prNumber), `--${method}`, '--delete-branch'],
     { cwd: repoPath }
   )
+}
+
+export async function getPRCommits(repoPath: string, prNumber: number): Promise<Commit[]> {
+  const { stdout } = await execFileAsync(
+    'gh',
+    ['pr', 'view', String(prNumber), '--json', 'commits'],
+    { cwd: repoPath }
+  )
+  const data = JSON.parse(stdout) as {
+    commits: Array<{
+      oid: string
+      messageHeadline: string
+      authors: Array<{ login?: string; name: string }>
+      committedDate: string
+    }>
+  }
+  return data.commits.map((c) => ({
+    hash: c.oid,
+    message: c.messageHeadline,
+    author: c.authors[0]?.login || c.authors[0]?.name || 'unknown',
+    date: c.committedDate,
+  }))
+}
+
+export async function getCommitDiff(repoPath: string, commitHash: string): Promise<string> {
+  const { stdout } = await execFileAsync(
+    'git',
+    ['diff', `${commitHash}~1..${commitHash}`],
+    { cwd: repoPath, maxBuffer: 10 * 1024 * 1024 }
+  )
+  return stdout
+}
+
+export async function getPRReviewThreads(repoPath: string, prNumber: number): Promise<PRReviewThread[]> {
+  try {
+    const { stdout: repoInfo } = await execFileAsync(
+      'gh',
+      ['repo', 'view', '--json', 'owner,name'],
+      { cwd: repoPath }
+    )
+    const { owner, name } = JSON.parse(repoInfo) as { owner: { login: string }; name: string }
+
+    const query = `query {
+      repository(owner: "${owner.login}", name: "${name}") {
+        pullRequest(number: ${prNumber}) {
+          reviewThreads(first: 100) {
+            nodes {
+              isResolved
+              path
+              line
+            }
+          }
+        }
+      }
+    }`
+
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['api', 'graphql', '-f', `query=${query}`],
+      { cwd: repoPath, maxBuffer: 5 * 1024 * 1024 }
+    )
+    const data = JSON.parse(stdout) as {
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              nodes: Array<{ isResolved: boolean; path: string; line: number | null }>
+            }
+          }
+        }
+      }
+    }
+    return data.data.repository.pullRequest.reviewThreads.nodes.map((t) => ({
+      path: t.path,
+      line: t.line,
+      isResolved: t.isResolved,
+    }))
+  } catch {
+    return []
+  }
 }

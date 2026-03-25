@@ -1,28 +1,18 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePRReviewStore } from '../../stores/prReviewStore'
 import { usePRStore } from '../../stores/prStore'
 import { PRDiffViewer } from '../git/DiffViewer'
 import { PRConversationTab } from './PRConversationTab'
-import { ListBox, ListItem } from '../ui/ListBox'
+import { PRScrollableDiffView } from './PRScrollableDiffView'
+import { FileTree } from './FileTree'
 import { ResizeHandle } from '../ui/ResizeHandle'
 import { useResizable } from '../../hooks/useResizable'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
-import type { PRReviewEvent } from '../../../shared/types'
-
-const STATUS_COLORS: Record<string, string> = {
-  added: 'text-success',
-  modified: 'text-warning',
-  deleted: 'text-danger',
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-}
+import { ToggleGroup } from '../ui/ToggleGroup'
+import type { PRReviewEvent, PRFile } from '../../../shared/types'
 
 /** Extract the diff for a single file from the full PR diff */
 function extractFileDiff(fullDiff: string, filePath: string): string {
@@ -52,14 +42,19 @@ export function PRReviewPanel() {
   const { projects, activeProjectId } = useProjectStore()
   const {
     files, selectedFilePath, fullDiff, fileDiffCache, fileDiffLoading, comments, loading, mergeable,
-    reviewLoading, mergeLoading, activeTab,
-    loadPR, selectFile, loadFileDiff, addComment, submitReview, merge, setActiveTab, clear,
+    reviewLoading, mergeLoading, activeTab, viewedFiles,
+    commits, selectedCommitHash, commitDiff, viewMode,
+    reviewThreads, commentFilter,
+    loadPR, selectFile, selectNextFile, selectPrevFile, setViewMode, toggleFileViewed,
+    selectCommit, nextCommit, prevCommit, setCommentFilter,
+    loadFileDiff, addComment, submitReview, merge, setActiveTab, clear,
   } = usePRReviewStore()
 
   const [showReviewDialog, setShowReviewDialog] = useState(false)
   const [reviewEvent, setReviewEvent] = useState<PRReviewEvent>('APPROVE')
   const [reviewBody, setReviewBody] = useState('')
   const [showMergeConfirm, setShowMergeConfirm] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const prNumber = activePRNumber
@@ -69,11 +64,65 @@ export function PRReviewPanel() {
   // Load PR data when active PR changes
   useEffect(() => {
     if (prNumber && activeProject) {
-      loadPR(activeProject.repoPath, prNumber)
+      loadPR(activeProject.repoPath, prNumber, activeProject.id)
     } else {
       clear()
     }
   }, [prNumber, activeProject?.id])
+
+  // Keyboard shortcuts: [ / ] for file nav, < / > for commit nav
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (e.key === '[') {
+        e.preventDefault()
+        selectPrevFile()
+      } else if (e.key === ']') {
+        e.preventDefault()
+        selectNextFile()
+      } else if (e.key === '<' || (e.key === ',' && e.shiftKey)) {
+        e.preventDefault()
+        prevCommit(activeProject?.repoPath || '')
+      } else if (e.key === '>' || (e.key === '.' && e.shiftKey)) {
+        e.preventDefault()
+        nextCommit(activeProject?.repoPath || '')
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [activeProject?.repoPath, selectPrevFile, selectNextFile, prevCommit, nextCommit])
+
+  // Use commit-specific diff when a commit is selected, otherwise full PR diff
+  const activeDiff = selectedCommitHash ? commitDiff : fullDiff
+
+  // Parse files from commit diff when a commit is selected
+  const displayFiles = useMemo(() => {
+    if (!selectedCommitHash || !commitDiff) return files
+    const fileSet = new Set<string>()
+    for (const line of commitDiff.split('\n')) {
+      if (line.startsWith('diff --git')) {
+        const match = line.match(/b\/(.+)$/)
+        if (match) fileSet.add(match[1])
+      }
+    }
+    return files.filter((f) => fileSet.has(f.path))
+  }, [selectedCommitHash, commitDiff, files])
+
+  // Compute files with unresolved comments
+  const unresolvedFiles = useMemo(() => {
+    const set = new Set<string>()
+    for (const t of reviewThreads) {
+      if (!t.isResolved) set.add(t.path)
+    }
+    return set
+  }, [reviewThreads])
+
+  // Apply comment filter to display files
+  const filteredDisplayFiles = useMemo(() => {
+    if (commentFilter === 'all') return displayFiles
+    return displayFiles.filter((f) => unresolvedFiles.has(f.path))
+  }, [displayFiles, commentFilter, unresolvedFiles])
 
   // For large PRs where fullDiff is null, load file diffs on demand
   useEffect(() => {
@@ -98,10 +147,10 @@ export function PRReviewPanel() {
     )
   }
 
-  // Use full diff when available, otherwise use per-file cache
+  // Use commit diff when selected, full PR diff when available, otherwise per-file cache
   const fileDiff = selectedFilePath
-    ? fullDiff
-      ? extractFileDiff(fullDiff, selectedFilePath)
+    ? activeDiff
+      ? extractFileDiff(activeDiff, selectedFilePath)
       : fileDiffCache[selectedFilePath] || ''
     : ''
   const isFileDiffLoading = fileDiffLoading === selectedFilePath
@@ -109,6 +158,10 @@ export function PRReviewPanel() {
   const fileComments = selectedFilePath
     ? comments.filter((c) => c.path === selectedFilePath)
     : []
+
+  const commitIndex = selectedCommitHash
+    ? commits.findIndex((c) => c.hash === selectedCommitHash)
+    : -1
 
   const handleAddComment = async (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => {
     if (!selectedFilePath) return
@@ -220,57 +273,196 @@ export function PRReviewPanel() {
       {activeTab === 'conversation' ? (
         <PRConversationTab />
       ) : (
-        <div className="flex-1 flex min-h-0">
-          {/* File list */}
-          <div style={{ width: filesCol.size }} className="flex-shrink-0 flex flex-col min-h-0 border-r border-border">
-            <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted">
-              Files
-            </div>
-            <ListBox
-              label="PR files"
-              className="flex-1 overflow-y-auto"
-              onSelect={(index) => selectFile(files[index].path)}
-            >
-              {files.map((file) => (
-                <ListItem
-                  key={file.path}
-                  selected={file.path === selectedFilePath}
-                  onClick={() => selectFile(file.path)}
-                  className="text-xs flex items-center gap-2"
-                  style={{ padding: '6px 12px' }}
-                >
-                  <span className={`font-mono font-bold ${STATUS_COLORS[file.status] || 'text-warning'}`}>
-                    {STATUS_LABELS[file.status] || 'M'}
-                  </span>
-                  <span className="truncate">{file.path}</span>
-                  <span className="ml-auto flex gap-1 text-[10px]">
-                    {file.additions > 0 && <span className="text-success">+{file.additions}</span>}
-                    {file.deletions > 0 && <span className="text-danger">-{file.deletions}</span>}
-                  </span>
-                </ListItem>
-              ))}
-            </ListBox>
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Stats bar + view mode toggle */}
+          <div className="flex items-center gap-4 bg-bg-secondary border-b border-border" style={{ padding: '4px 12px' }}>
+            <DiffStatsBar files={displayFiles} viewedCount={viewedFiles.size} />
+            <ToggleGroup
+              options={[
+                { value: 'single' as const, label: 'File' },
+                { value: 'scroll' as const, label: 'Scroll' },
+              ]}
+              value={viewMode}
+              onChange={setViewMode}
+              className="ml-auto"
+            />
           </div>
-          <ResizeHandle direction="horizontal" onMouseDown={filesCol.onMouseDown} />
-
-          {/* Diff viewer */}
-          <div className="flex-1 flex flex-col min-h-0">
-            {isFileDiffLoading ? (
-              <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
-                Loading diff...
-              </div>
-            ) : selectedFilePath && fileDiff ? (
-              <PRDiffViewer
-                patch={fileDiff}
-                filePath={selectedFilePath}
-                comments={fileComments}
-                onAddComment={handleAddComment}
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
-                Select a file to review
+          {/* Commit selector */}
+          {commits.length > 0 && (
+            <div
+              className="flex items-center gap-2 bg-bg-secondary border-b border-border text-xs"
+              style={{ padding: '4px 12px' }}
+            >
+              <select
+                className="bg-bg text-text text-xs border border-border rounded focus:outline-none focus:border-accent cursor-pointer"
+                style={{ padding: '2px 6px', maxWidth: 300 }}
+                value={selectedCommitHash || ''}
+                onChange={(e) => selectCommit(activeProject.repoPath, e.target.value || null)}
+              >
+                <option value="">All changes</option>
+                {commits.map((c, i) => (
+                  <option key={c.hash} value={c.hash}>
+                    {i + 1}. {c.hash.slice(0, 7)} — {c.message.length > 50 ? c.message.slice(0, 50) + '…' : c.message}
+                  </option>
+                ))}
+              </select>
+              {selectedCommitHash && (
+                <div className="flex items-center gap-1 text-text-muted">
+                  <button
+                    className="hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                    style={{ padding: '2px 4px' }}
+                    onClick={() => prevCommit(activeProject.repoPath)}
+                    disabled={commitIndex === 0}
+                    aria-label="Previous commit"
+                  >
+                    ←
+                  </button>
+                  <span>Commit {commitIndex + 1} of {commits.length}</span>
+                  <button
+                    className="hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                    style={{ padding: '2px 4px' }}
+                    onClick={() => nextCommit(activeProject.repoPath)}
+                    disabled={commitIndex === commits.length - 1}
+                    aria-label="Next commit"
+                  >
+                    →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex-1 flex min-h-0">
+            {/* File list sidebar — shown in both modes, collapsible */}
+            {!sidebarCollapsed && (
+              <>
+                <div style={{ width: filesCol.size }} className="flex-shrink-0 flex flex-col min-h-0 border-r border-border">
+                  <div className="flex items-center justify-between bg-bg-tertiary border-b border-border text-xs text-text-muted" style={{ padding: '6px 12px' }}>
+                    <div className="flex items-center gap-2">
+                      <span>Files</span>
+                      {unresolvedFiles.size > 0 && (
+                        <button
+                          className={`flex items-center gap-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                            commentFilter === 'unresolved' ? 'text-danger' : 'text-text-muted hover:text-text'
+                          }`}
+                          style={{ padding: '1px 4px', fontSize: '10px' }}
+                          onClick={() => setCommentFilter(commentFilter === 'all' ? 'unresolved' : 'all')}
+                          title={commentFilter === 'all' ? 'Show only files with unresolved comments' : 'Show all files'}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-danger" />
+                          {unresolvedFiles.size}
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>{viewedFiles.size}/{filteredDisplayFiles.length} viewed</span>
+                      <button
+                        className="text-text-muted hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                        onClick={() => setSidebarCollapsed(true)}
+                        aria-label="Collapse file list"
+                        title="Collapse file list"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M9.5 3L4.5 8l5 5V3z"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <FileTree
+                    files={filteredDisplayFiles}
+                    selectedFilePath={selectedFilePath}
+                    viewedFiles={viewedFiles}
+                    unresolvedFiles={unresolvedFiles}
+                    onSelectFile={selectFile}
+                    onToggleViewed={(path) => {
+                      if (activeProject && prNumber) {
+                        toggleFileViewed(activeProject.id, prNumber, path)
+                      }
+                    }}
+                  />
+                </div>
+                <ResizeHandle direction="horizontal" onMouseDown={filesCol.onMouseDown} />
+              </>
+            )}
+            {sidebarCollapsed && (
+              <div className="flex-shrink-0 flex flex-col items-center border-r border-border bg-bg-secondary" style={{ padding: '6px 4px' }}>
+                <button
+                  className="text-text-muted hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                  onClick={() => setSidebarCollapsed(false)}
+                  aria-label="Expand file list"
+                  title="Expand file list"
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M6.5 3L11.5 8l-5 5V3z"/>
+                  </svg>
+                </button>
               </div>
             )}
+
+            {/* Main content area */}
+            <div className="flex-1 flex flex-col min-h-0">
+              {viewMode === 'scroll' ? (
+                <PRScrollableDiffView
+                  files={filteredDisplayFiles}
+                  fullDiff={activeDiff || ''}
+                  comments={comments}
+                  viewedFiles={viewedFiles}
+                  onToggleViewed={(path) => {
+                    if (activeProject && prNumber) {
+                      toggleFileViewed(activeProject.id, prNumber, path)
+                    }
+                  }}
+                  onAddComment={async (path, startLine, endLine, side, body) => {
+                    await addComment(activeProject.repoPath, prNumber, body, path, startLine, endLine, side)
+                  }}
+                />
+              ) : (
+                <>
+                  {selectedFilePath && (
+                    <div
+                      className="flex items-center gap-2 bg-bg-tertiary border-b border-border text-xs"
+                      style={{ padding: '4px 12px' }}
+                    >
+                      <button
+                        className="text-text-muted hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                        style={{ padding: '2px 4px' }}
+                        onClick={selectPrevFile}
+                        aria-label="Previous file"
+                      >
+                        ←
+                      </button>
+                      <span className="text-text-muted">
+                        {filteredDisplayFiles.findIndex((f) => f.path === selectedFilePath) + 1} of {filteredDisplayFiles.length}
+                      </span>
+                      <button
+                        className="text-text-muted hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                        style={{ padding: '2px 4px' }}
+                        onClick={selectNextFile}
+                        aria-label="Next file"
+                      >
+                        →
+                      </button>
+                      <span className="text-text truncate ml-1">{selectedFilePath}</span>
+                    </div>
+                  )}
+                  {isFileDiffLoading ? (
+                    <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
+                      Loading diff...
+                    </div>
+                  ) : selectedFilePath && fileDiff ? (
+                    <PRDiffViewer
+                      patch={fileDiff}
+                      filePath={selectedFilePath}
+                      comments={fileComments}
+                      onAddComment={handleAddComment}
+                    />
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
+                      Select a file to review
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -328,6 +520,33 @@ export function PRReviewPanel() {
           </Button>
         </div>
       </Dialog>
+    </div>
+  )
+}
+
+function DiffStatsBar({ files, viewedCount }: { files: PRFile[]; viewedCount: number }) {
+  const totalAdded = files.reduce((s, f) => s + f.additions, 0)
+  const totalDeleted = files.reduce((s, f) => s + f.deletions, 0)
+  const total = totalAdded + totalDeleted
+  const addedPct = total > 0 ? (totalAdded / total) * 100 : 50
+
+  const addedFiles = files.filter((f) => f.status === 'added').length
+  const modifiedFiles = files.filter((f) => f.status === 'modified').length
+  const deletedFiles = files.filter((f) => f.status === 'deleted').length
+
+  return (
+    <div className="flex items-center gap-3 text-[10px] text-text-muted">
+      <div className="flex items-center gap-1.5">
+        {addedFiles > 0 && <span className="text-success">{addedFiles} added</span>}
+        {modifiedFiles > 0 && <span className="text-warning">{modifiedFiles} modified</span>}
+        {deletedFiles > 0 && <span className="text-danger">{deletedFiles} deleted</span>}
+      </div>
+      <div className="h-[6px] rounded-full overflow-hidden bg-bg-tertiary" style={{ width: 120 }}>
+        <div className="h-full bg-success" style={{ width: `${addedPct}%` }} />
+      </div>
+      <span className="text-success">+{totalAdded}</span>
+      <span className="text-danger">-{totalDeleted}</span>
+      <span>{viewedCount}/{files.length} reviewed</span>
     </div>
   )
 }
