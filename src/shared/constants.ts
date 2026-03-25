@@ -53,6 +53,7 @@ export const IPC = {
   PR_SEEN_GET: 'pr:seen:get',
   PR_SEEN_SET: 'pr:seen:set',
   PR_DIFF: 'pr:diff',
+  PR_FILE_PATCH: 'pr:file-patch',
   PR_FILES: 'pr:files',
   PR_COMMENTS: 'pr:comments',
   PR_COMMENT_CREATE: 'pr:comment:create',
