@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, PullRequest } from '../../shared/types'
+import type { Session, PullRequest, WorktreeInfo } from '../../shared/types'
 import { useToastStore } from './toastStore'
 
 type WorkspaceTab = 'agent' | 'git' | 'pr'
@@ -28,6 +28,7 @@ interface SessionState {
   checkStaleness: (repoPath: string) => Promise<void>
   markStale: (projectId: string, sessionId: string) => Promise<void>
   reactivateSession: (projectId: string, sessionId: string) => Promise<void>
+  importWorktree: (projectId: string, worktree: WorktreeInfo) => Promise<void>
 }
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
@@ -170,6 +171,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const sessions = [...get().sessions, reactivated]
     await window.api.session.save(projectId, [...sessions, ...staleSessions])
     set({ sessions, staleSessions })
+  },
+
+  importWorktree: async (projectId, worktree) => {
+    // Derive session name from the worktree directory name
+    const segments = worktree.path.split('/')
+    const name = segments[segments.length - 1] || worktree.branch
+
+    const session: Session = {
+      id: crypto.randomUUID(),
+      name,
+      branchName: worktree.branch,
+      worktreePath: worktree.path,
+      projectId,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    }
+
+    const sessions = [...get().sessions, session]
+    await window.api.session.save(projectId, sessions)
+    await restoreDetachedWorktree(get().detachedWorktree)
+    set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
   },
 
   setActiveSession: async (id: string) => {
