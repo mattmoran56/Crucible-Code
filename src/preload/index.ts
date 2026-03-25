@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread } from '../shared/types'
 
 const api = {
   git: {
@@ -150,6 +150,16 @@ const api = {
       ipcRenderer.invoke(IPC.PR_CONVERSATION, repoPath, prNumber),
     getChecks: (repoPath: string, prNumber: number): Promise<PRCheck[]> =>
       ipcRenderer.invoke(IPC.PR_CHECKS, repoPath, prNumber),
+    getViewedFiles: (projectId: string, prNumber: number): Promise<string[]> =>
+      ipcRenderer.invoke(IPC.PR_VIEWED_GET, projectId, prNumber),
+    setViewedFiles: (projectId: string, prNumber: number, files: string[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_VIEWED_SET, projectId, prNumber, files),
+    getCommits: (repoPath: string, prNumber: number): Promise<Commit[]> =>
+      ipcRenderer.invoke(IPC.PR_COMMITS, repoPath, prNumber),
+    getCommitDiff: (repoPath: string, commitHash: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.PR_COMMIT_DIFF, repoPath, commitHash),
+    getReviewThreads: (repoPath: string, prNumber: number): Promise<PRReviewThread[]> =>
+      ipcRenderer.invoke(IPC.PR_REVIEW_THREADS, repoPath, prNumber),
   },
 
   session: {

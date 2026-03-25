@@ -6,10 +6,12 @@ import * as githubService from '../services/github.service'
 
 const store = new Store<{
   seenPRs: Record<string, number[]>
+  viewedFiles: Record<string, string[]>
 }>({
   name: 'github',
   defaults: {
     seenPRs: {},
+    viewedFiles: {},
   },
 })
 
@@ -80,5 +82,25 @@ export function registerGithubHandlers() {
 
   ipcMain.handle(IPC.PR_CHECKS, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRChecks(repoPath, prNumber)
+  })
+
+  ipcMain.handle(IPC.PR_VIEWED_GET, async (_e, projectId: string, prNumber: number) => {
+    return store.get(`viewedFiles.${projectId}.${prNumber}`, [])
+  })
+
+  ipcMain.handle(IPC.PR_VIEWED_SET, async (_e, projectId: string, prNumber: number, files: string[]) => {
+    store.set(`viewedFiles.${projectId}.${prNumber}`, files)
+  })
+
+  ipcMain.handle(IPC.PR_COMMITS, async (_e, repoPath: string, prNumber: number) => {
+    return githubService.getPRCommits(repoPath, prNumber)
+  })
+
+  ipcMain.handle(IPC.PR_COMMIT_DIFF, async (_e, repoPath: string, commitHash: string) => {
+    return githubService.getCommitDiff(repoPath, commitHash)
+  })
+
+  ipcMain.handle(IPC.PR_REVIEW_THREADS, async (_e, repoPath: string, prNumber: number) => {
+    return githubService.getPRReviewThreads(repoPath, prNumber)
   })
 }

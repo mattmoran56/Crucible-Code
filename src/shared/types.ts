@@ -96,6 +96,12 @@ export interface PRCheck {
   detailsUrl: string | null
 }
 
+export interface PRReviewThread {
+  path: string
+  line: number | null
+  isResolved: boolean
+}
+
 export type PRReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'
 export type PRMergeMethod = 'merge' | 'squash' | 'rebase'
 
