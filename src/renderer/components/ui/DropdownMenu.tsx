@@ -18,12 +18,29 @@ export function DropdownMenu({ items, children }: DropdownMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ top: 0, left: 0 })
 
+  // Reposition after first render so we can measure the menu
   useEffect(() => {
     if (!open) return
 
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect()
-      setPos({ top: rect.bottom + 2, left: rect.right })
+      // Initial position: right-aligned below the trigger
+      let top = rect.bottom + 2
+      let left = rect.right
+
+      // Clamp to viewport once menu is measured
+      if (menuRef.current) {
+        const menuRect = menuRef.current.getBoundingClientRect()
+        const vw = window.innerWidth
+        const vh = window.innerHeight
+        // The menu is translated -100% so its right edge sits at `left`
+        const menuLeft = left - menuRect.width
+        if (menuLeft < 4) left = menuRect.width + 4
+        if (left > vw - 4) left = vw - 4
+        if (top + menuRect.height > vh - 4) top = rect.top - menuRect.height - 2
+      }
+
+      setPos({ top, left })
     }
 
     function handleClick(e: MouseEvent) {
@@ -60,14 +77,14 @@ export function DropdownMenu({ items, children }: DropdownMenuProps) {
         <div
           ref={menuRef}
           role="menu"
-          style={{ position: 'fixed', top: pos.top, left: pos.left, transform: 'translateX(-100%)', zIndex: 9998, minWidth: 160, padding: '6px 4px' }}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, transform: 'translateX(-100%)', zIndex: 9998, padding: '6px 4px' }}
           className="rounded border border-border bg-bg-secondary shadow-lg"
         >
           {items.map((item) => (
             <button
               key={item.label}
               role="menuitem"
-              style={{ padding: '6px 10px' }}
+              style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}
               className={`w-full text-left text-xs rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
                 item.variant === 'danger'
                   ? 'text-danger hover:bg-danger/10'

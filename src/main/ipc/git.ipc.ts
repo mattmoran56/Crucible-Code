@@ -4,7 +4,14 @@ import * as gitService from '../services/git.service'
 
 export function registerGitHandlers() {
   ipcMain.handle(IPC.GIT_STATUS, async (_e, repoPath: string) => {
-    return gitService.getStatus(repoPath)
+    const status = await gitService.getStatus(repoPath)
+    // Return a plain object — raw StatusResult is not structured-cloneable
+    return {
+      current: status.current,
+      tracking: status.tracking,
+      ahead: status.ahead,
+      behind: status.behind,
+    }
   })
 
   ipcMain.handle(IPC.GIT_LOG, async (_e, repoPath: string, maxCount?: number) => {
