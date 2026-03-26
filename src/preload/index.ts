@@ -74,12 +74,12 @@ const api = {
     show: (title: string, body: string) =>
       ipcRenderer.invoke(IPC.NOTIFICATION_SHOW, title, body),
     getPort: (): Promise<number | null> => ipcRenderer.invoke(IPC.NOTIFICATION_GET_PORT),
-    triggerForSession: (sessionId: string, sessionName: string) =>
-      ipcRenderer.invoke(IPC.NOTIFICATION_HOOK_EVENT, sessionId, sessionName),
-    onHookEvent: (callback: (sessionId: string) => void) => {
-      const listener = (_e: any, sessionId: string) => callback(sessionId)
-      ipcRenderer.on(IPC.NOTIFICATION_HOOK_EVENT, listener)
-      return () => ipcRenderer.removeListener(IPC.NOTIFICATION_HOOK_EVENT, listener)
+    triggerForSession: (sessionId: string, sessionName: string, hookType?: string) =>
+      ipcRenderer.invoke(IPC.NOTIFICATION_HOOK_EVENT, sessionId, sessionName, hookType),
+    onSessionStatus: (callback: (sessionId: string, hookType: string) => void) => {
+      const listener = (_e: any, sessionId: string, hookType: string) => callback(sessionId, hookType)
+      ipcRenderer.on(IPC.NOTIFICATION_SESSION_STATUS, listener)
+      return () => ipcRenderer.removeListener(IPC.NOTIFICATION_SESSION_STATUS, listener)
     },
     registerSession: (
       sessionId: string,

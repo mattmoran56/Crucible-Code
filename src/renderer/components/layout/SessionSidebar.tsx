@@ -22,7 +22,7 @@ export function SessionSidebar() {
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, markSeen, clear: clearPRs } =
     usePRStore()
-  const { pendingSessionIds, clearPending, registerSessions } = useNotificationStore()
+  const { sessionStatuses, clearStatus, registerSessions } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
@@ -170,11 +170,11 @@ export function SessionSidebar() {
                 session={session}
                 isActive={session.id === activeSessionId}
                 isOpenedAsMain={session.id === openedAsMainBranch}
-                hasPendingNotification={pendingSessionIds.has(session.id)}
+                status={sessionStatuses.get(session.id) ?? null}
                 pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
                 onClick={() => {
                   setActiveSession(session.id, activeProject.repoPath)
-                  clearPending(session.id)
+                  clearStatus(session.id)
                 }}
                 onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
                 onMarkStale={() => markStale(activeProject.id, session.id)}

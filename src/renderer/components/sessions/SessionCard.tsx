@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import type { Session, PullRequest } from '../../../shared/types'
+import type { Session, PullRequest, SessionStatus } from '../../../shared/types'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu } from '../ui/DropdownMenu'
 import { Dialog } from '../ui/Dialog'
@@ -9,7 +9,7 @@ interface Props {
   session: Session
   isActive: boolean
   isOpenedAsMain: boolean
-  hasPendingNotification: boolean
+  status: SessionStatus | null
   pr?: PullRequest
   onClick: () => void
   onOpenAsMainBranch: () => void
@@ -25,7 +25,29 @@ const EllipsisIcon = () => (
   </svg>
 )
 
-export function SessionCard({ session, isActive, isOpenedAsMain, hasPendingNotification, pr, onClick, onOpenAsMainBranch, onMarkStale, onDelete }: Props) {
+function StatusIndicator({ status }: { status: SessionStatus | null }) {
+  if (!status) return null
+
+  switch (status) {
+    case 'running':
+      return (
+        <svg className="shrink-0 w-3 h-3 text-accent animate-spin" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+          <path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      )
+    case 'attention':
+      return <span className="shrink-0 w-2 h-2 rounded-full bg-warning" />
+    case 'completed':
+      return (
+        <svg className="shrink-0 w-3 h-3 text-success" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="3.5 8.5 6.5 11.5 12.5 4.5" />
+        </svg>
+      )
+  }
+}
+
+export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onMarkStale, onDelete }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
 
   return (
@@ -44,9 +66,7 @@ export function SessionCard({ session, isActive, isOpenedAsMain, hasPendingNotif
       >
         <div className="flex items-center gap-2">
           <div className="font-medium truncate flex-1 pr-5">{session.name}</div>
-          {hasPendingNotification && (
-            <span className="shrink-0 w-2 h-2 rounded-full bg-warning" />
-          )}
+          <StatusIndicator status={status} />
         </div>
         <div className="text-text-muted text-[10px] mt-1 truncate pr-5">
           {session.branchName}

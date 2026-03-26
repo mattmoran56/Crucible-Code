@@ -1,11 +1,12 @@
 import { ipcMain } from 'electron'
 import { IPC } from '../../shared/constants'
+import type { HookType } from '../../shared/types'
 import { showNotification } from '../services/notification.service'
 import {
   getNotificationServerPort,
   registerSessionMapping,
   removeSessionMapping,
-  handleNotificationForSession,
+  handleHookEvent,
   setBadgeCount,
 } from '../services/notification-server'
 
@@ -22,11 +23,11 @@ export function registerNotificationHandlers() {
     setBadgeCount(count)
   })
 
-  // Called by the renderer when a pattern-match notification fires (fallback path)
+  // Called by the renderer as a fallback trigger path
   ipcMain.handle(
     IPC.NOTIFICATION_HOOK_EVENT,
-    async (_e, sessionId: string, sessionName: string) => {
-      handleNotificationForSession(sessionId, sessionName)
+    async (_e, sessionId: string, sessionName: string, hookType?: string) => {
+      handleHookEvent(sessionId, sessionName, (hookType || 'notification') as HookType)
     }
   )
 }

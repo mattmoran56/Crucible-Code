@@ -1,49 +1,80 @@
 import { create } from 'zustand'
+import type { SessionStatus, HookType } from '../../shared/types'
 
 interface NotificationState {
-  /** Set of session IDs that have pending attention notifications */
-  pendingSessionIds: Set<string>
+  /** Map of sessionId → current status (undefined = idle/no indicator) */
+  sessionStatuses: Map<string, SessionStatus>
 
   /** Map of sessionId → projectId (covers all projects, not just active) */
   sessionProjectMap: Map<string, string>
 
-  /** Add a session to the pending set */
-  addPending: (sessionId: string) => void
+  /** Process a hook event and apply state transitions */
+  handleHookEvent: (sessionId: string, hookType: HookType) => void
 
-  /** Clear a session's pending notification (e.g. when user clicks on it) */
-  clearPending: (sessionId: string) => void
+  /** Clear status for a session (e.g. when user clicks on it) */
+  clearStatus: (sessionId: string) => void
 
   /** Register sessions so we can map sessionId → projectId across all projects */
   registerSessions: (sessions: Array<{ id: string; projectId: string }>) => void
 
-  /** Get count of pending notifications for a given project */
-  getPendingCountForProject: (projectId: string) => number
+  /** Get count of sessions needing user action for a given project (attention + completed) */
+  getNotificationCountForProject: (projectId: string) => number
 }
 
-function syncBadgeCount(pendingCount: number) {
-  window.api.notification.setBadge(pendingCount)
+function getNotificationCount(statuses: Map<string, SessionStatus>, projectMap: Map<string, string>, projectId?: string): number {
+  let count = 0
+  for (const [sessionId, status] of statuses) {
+    if (status === 'attention' || status === 'completed') {
+      if (!projectId || projectMap.get(sessionId) === projectId) count++
+    }
+  }
+  return count
+}
+
+function syncBadgeCount(statuses: Map<string, SessionStatus>, projectMap: Map<string, string>) {
+  const count = getNotificationCount(statuses, projectMap)
+  window.api.notification.setBadge(count)
 }
 
 export const useNotificationStore = create<NotificationState>((set, get) => ({
-  pendingSessionIds: new Set(),
+  sessionStatuses: new Map(),
   sessionProjectMap: new Map(),
 
-  addPending: (sessionId: string) => {
+  handleHookEvent: (sessionId: string, hookType: HookType) => {
     set((state) => {
-      const next = new Set(state.pendingSessionIds)
-      next.add(sessionId)
-      syncBadgeCount(next.size)
-      return { pendingSessionIds: next }
+      const current = state.sessionStatuses.get(sessionId)
+
+      let next: SessionStatus
+      switch (hookType) {
+        case 'prompt':
+          // Short-circuit: if already running, no state change needed
+          if (current === 'running') return state
+          next = 'running'
+          break
+        case 'notification':
+          next = 'attention'
+          break
+        case 'stop':
+          // Attention is NOT overridden by stop — user action still needed
+          if (current === 'attention') return state
+          next = 'completed'
+          break
+      }
+
+      const nextStatuses = new Map(state.sessionStatuses)
+      nextStatuses.set(sessionId, next)
+      syncBadgeCount(nextStatuses, state.sessionProjectMap)
+      return { sessionStatuses: nextStatuses }
     })
   },
 
-  clearPending: (sessionId: string) => {
+  clearStatus: (sessionId: string) => {
     set((state) => {
-      if (!state.pendingSessionIds.has(sessionId)) return state
-      const next = new Set(state.pendingSessionIds)
+      if (!state.sessionStatuses.has(sessionId)) return state
+      const next = new Map(state.sessionStatuses)
       next.delete(sessionId)
-      syncBadgeCount(next.size)
-      return { pendingSessionIds: next }
+      syncBadgeCount(next, state.sessionProjectMap)
+      return { sessionStatuses: next }
     })
   },
 
@@ -57,12 +88,8 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     })
   },
 
-  getPendingCountForProject: (projectId: string): number => {
-    const { pendingSessionIds, sessionProjectMap } = get()
-    let count = 0
-    for (const sessionId of pendingSessionIds) {
-      if (sessionProjectMap.get(sessionId) === projectId) count++
-    }
-    return count
+  getNotificationCountForProject: (projectId: string): number => {
+    const { sessionStatuses, sessionProjectMap } = get()
+    return getNotificationCount(sessionStatuses, sessionProjectMap, projectId)
   },
 }))

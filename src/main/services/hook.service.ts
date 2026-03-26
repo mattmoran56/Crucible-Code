@@ -16,32 +16,18 @@ export function writeClaudeHookSettings(worktreePath: string, claudeTheme = 'dar
     mkdirSync(claudeDir, { recursive: true })
   }
 
+  const makeHook = (type: string) => ({
+    type: 'command' as const,
+    command: `curl -s -X POST "http://127.0.0.1:${port}/hook?type=${type}" -H 'Content-Type: application/json' -d "$(cat)" > /dev/null 2>&1 || true`,
+    timeout: 5,
+  })
+
   const settings = {
     hooks: {
-      Notification: [
-        {
-          matcher: '',
-          hooks: [
-            {
-              type: 'command',
-              command: `curl -s -X POST http://127.0.0.1:${port}/notification -H 'Content-Type: application/json' -d "$(cat)" > /dev/null 2>&1 || true`,
-              timeout: 5,
-            },
-          ],
-        },
-      ],
-      Stop: [
-        {
-          matcher: '',
-          hooks: [
-            {
-              type: 'command',
-              command: `curl -s -X POST http://127.0.0.1:${port}/notification -H 'Content-Type: application/json' -d "$(cat)" > /dev/null 2>&1 || true`,
-              timeout: 5,
-            },
-          ],
-        },
-      ],
+      UserPromptSubmit: [{ matcher: '', hooks: [makeHook('prompt')] }],
+      Notification: [{ matcher: '', hooks: [makeHook('notification')] }],
+      Stop: [{ matcher: '', hooks: [makeHook('stop')] }],
+      // SubagentStop deliberately NOT configured — we only want main agent completion
     },
   }
 

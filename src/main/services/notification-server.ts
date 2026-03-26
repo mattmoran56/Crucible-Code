@@ -1,6 +1,8 @@
 import http from 'node:http'
+import { URL } from 'node:url'
 import { app, BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
+import type { HookType } from '../../shared/types'
 import { showNotification } from './notification.service'
 
 interface SessionMapping {
@@ -53,14 +55,23 @@ function findSessionByWorktreePath(cwd: string): SessionMapping | undefined {
   return undefined
 }
 
-export function handleNotificationForSession(sessionId: string, sessionName: string) {
+export function handleHookEvent(sessionId: string, sessionName: string, hookType: HookType) {
   if (!mainWindow) return
 
-  // Always send the in-app indicator to the renderer
-  mainWindow.webContents.send(IPC.NOTIFICATION_HOOK_EVENT, sessionId)
+  // Send typed status event to the renderer
+  mainWindow.webContents.send(IPC.NOTIFICATION_SESSION_STATUS, sessionId, hookType)
 
-  // Always show OS notification regardless of which session/project is active
-  showNotification('Crucible Code', `Session "${sessionName}" needs your attention`)
+  // OS notifications only for attention and completed — not for running
+  if (hookType === 'notification') {
+    showNotification('Crucible Code', `Session "${sessionName}" needs your attention`)
+  } else if (hookType === 'stop') {
+    showNotification('Crucible Code', `Session "${sessionName}" is done`)
+  }
+}
+
+// Keep legacy handler for fallback path (triggerForSession from renderer)
+export function handleNotificationForSession(sessionId: string, sessionName: string) {
+  handleHookEvent(sessionId, sessionName, 'notification')
 }
 
 export function startNotificationServer(window: BrowserWindow): Promise<number> {
@@ -68,7 +79,8 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
 
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
-      if (req.method === 'POST' && req.url === '/notification') {
+      // New typed endpoint: POST /hook?type=prompt|notification|stop
+      if (req.method === 'POST' && req.url?.startsWith('/hook')) {
         let body = ''
         req.on('data', (chunk: Buffer) => {
           body += chunk.toString()
@@ -80,7 +92,32 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
             const session = findSessionByWorktreePath(cwd)
 
             if (session) {
-              handleNotificationForSession(session.sessionId, session.sessionName)
+              const url = new URL(req.url!, `http://127.0.0.1`)
+              const hookType = (url.searchParams.get('type') || 'notification') as HookType
+              handleHookEvent(session.sessionId, session.sessionName, hookType)
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true }))
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'invalid json' }))
+          }
+        })
+      } else if (req.method === 'POST' && req.url === '/notification') {
+        // Legacy endpoint — treat as notification type
+        let body = ''
+        req.on('data', (chunk: Buffer) => {
+          body += chunk.toString()
+        })
+        req.on('end', () => {
+          try {
+            const data = JSON.parse(body)
+            const cwd = data.cwd || ''
+            const session = findSessionByWorktreePath(cwd)
+
+            if (session) {
+              handleHookEvent(session.sessionId, session.sessionName, 'notification')
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json' })

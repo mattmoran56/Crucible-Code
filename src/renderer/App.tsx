@@ -17,7 +17,7 @@ import { LoadingScreen } from './components/LoadingScreen'
 export default function App() {
   const { loadProjects, projects } = useProjectStore()
   const { activeSessionId } = useSessionStore()
-  const { addPending, clearPending, registerSessions } = useNotificationStore()
+  const { handleHookEvent, registerSessions } = useNotificationStore()
   const { isOpen: settingsOpen } = useSettingsStore()
 
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
@@ -52,20 +52,25 @@ export default function App() {
     })
   }, [projects, registerSessions])
 
-  // Listen for hook-driven notification events from the main process
+  // Listen for hook-driven session status events from the main process
   useEffect(() => {
-    const remove = window.api.notification.onHookEvent((sessionId: string) => {
-      addPending(sessionId)
+    const remove = window.api.notification.onSessionStatus((sessionId: string, hookType: string) => {
+      handleHookEvent(sessionId, hookType as import('../../shared/types').HookType)
     })
     return remove
-  }, [addPending])
+  }, [handleHookEvent])
 
-  // Auto-clear notification when user navigates to a session
+  // Auto-clear attention/completed when user navigates to a session (keep running visible)
+  // Only fires on session switch — not reactively when hook events arrive
   useEffect(() => {
     if (activeSessionId) {
-      clearPending(activeSessionId)
+      const { sessionStatuses: statuses, clearStatus: clear } = useNotificationStore.getState()
+      const status = statuses.get(activeSessionId)
+      if (status === 'attention' || status === 'completed') {
+        clear(activeSessionId)
+      }
     }
-  }, [activeSessionId, clearPending])
+  }, [activeSessionId])
 
   return (
     <div className="h-full flex flex-col">
