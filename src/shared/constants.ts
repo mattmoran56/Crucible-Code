@@ -82,4 +82,10 @@ export const IPC = {
   NOTES_LIST: 'notes:list',
   NOTES_SAVE: 'notes:save',
   NOTES_DELETE: 'notes:delete',
+
+  // Usage
+  USAGE_GET_SESSION: 'usage:get-session',
+  USAGE_GET_STATS: 'usage:get-stats',
+  USAGE_GET_SUBSCRIPTION: 'usage:get-subscription',
+  USAGE_SESSION_UPDATE: 'usage:session-update',
 } as const

@@ -113,3 +113,44 @@ export interface UpdateStatus {
   commitCount?: number
   error?: string
 }
+
+// Usage tracking
+
+export interface RateLimitWindow {
+  usedPercentage: number // 0-100
+  resetsAt: number // unix epoch seconds
+}
+
+export interface SessionUsage {
+  sessionId: string
+  rateLimits?: {
+    fiveHour?: RateLimitWindow
+    sevenDay?: RateLimitWindow
+  }
+  cost: {
+    totalCostUsd: number
+    totalDurationMs: number
+    totalApiDurationMs: number
+    totalLinesAdded: number
+    totalLinesRemoved: number
+  }
+  updatedAt: number
+}
+
+export interface DailyActivity {
+  date: string
+  messageCount: number
+  sessionCount: number
+  toolCallCount: number
+}
+
+export interface UsageStats {
+  dailyActivity: DailyActivity[]
+  totalSessions: number
+  totalMessages: number
+}
+
+export interface SubscriptionInfo {
+  subscriptionType: string | null
+  rateLimitTier: string | null
+}
