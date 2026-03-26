@@ -4,6 +4,9 @@ export interface Project {
   repoPath: string
 }
 
+export type SessionStatus = 'running' | 'attention' | 'completed'
+export type HookType = 'prompt' | 'notification' | 'stop'
+
 export interface Session {
   id: string
   name: string

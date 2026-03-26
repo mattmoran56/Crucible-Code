@@ -10,7 +10,7 @@ import type { Project } from '../../../../shared/types'
 export function ProjectTabs() {
   const { projects, activeProjectId, setActiveProject, addProject, removeProject, reorderProjects } =
     useProjectStore()
-  const { getPendingCountForProject } = useNotificationStore()
+  const { getNotificationCountForProject } = useNotificationStore()
   const { status, log, setStatus, appendLog, reset } = useUpdateStore()
   const { openSettings } = useSettingsStore()
 
@@ -24,7 +24,7 @@ export function ProjectTabs() {
     return () => { removeStatus(); removeLog() }
   }, [setStatus, appendLog])
 
-  const getPendingCount = getPendingCountForProject
+  const getPendingCount = getNotificationCountForProject
 
   const handleUpdateClick = () => {
     if (status.state === 'error') {

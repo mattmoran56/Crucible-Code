@@ -33,6 +33,7 @@ export const IPC = {
   // Notifications
   NOTIFICATION_SHOW: 'notification:show',
   NOTIFICATION_HOOK_EVENT: 'notification:hook-event',
+  NOTIFICATION_SESSION_STATUS: 'notification:session-status',
   NOTIFICATION_CLEAR: 'notification:clear',
   NOTIFICATION_GET_PORT: 'notification:get-port',
   NOTIFICATION_SET_BADGE: 'notification:set-badge',

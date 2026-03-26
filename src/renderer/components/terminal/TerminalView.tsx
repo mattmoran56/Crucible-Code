@@ -11,11 +11,14 @@ interface Props {
 
 export function TerminalView({ terminalId, sessionId, sessionName, visible }: Props) {
   const { containerRef } = useTerminal({ terminalId, sessionId, sessionName, visible })
-  const clearPending = useNotificationStore((s) => s.clearPending)
+  const clearStatus = useNotificationStore((s) => s.clearStatus)
+  const sessionStatuses = useNotificationStore((s) => s.sessionStatuses)
 
   const handleInteraction = useCallback(() => {
-    clearPending(sessionId)
-  }, [clearPending, sessionId])
+    if (sessionStatuses.get(sessionId) === 'attention') {
+      clearStatus(sessionId)
+    }
+  }, [clearStatus, sessionId, sessionStatuses])
 
   return (
     <div

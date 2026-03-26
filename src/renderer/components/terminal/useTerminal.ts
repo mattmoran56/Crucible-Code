@@ -75,11 +75,15 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
 
     term.open(containerRef.current)
 
-    // Send keystrokes to the pty and clear any pending notification
+    // Send keystrokes to the pty and clear attention status (user is interacting)
     term.onData((data) => {
       window.api.terminal.write(terminalId, data)
       if (sessionId) {
-        useNotificationStore.getState().clearPending(sessionId)
+        const store = useNotificationStore.getState()
+        const status = store.sessionStatuses.get(sessionId)
+        if (status === 'attention') {
+          store.clearStatus(sessionId)
+        }
       }
     })
 
