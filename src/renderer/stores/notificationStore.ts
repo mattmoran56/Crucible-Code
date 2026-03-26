@@ -70,9 +70,21 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   clearStatus: (sessionId: string) => {
     set((state) => {
-      if (!state.sessionStatuses.has(sessionId)) return state
+      const current = state.sessionStatuses.get(sessionId)
+      if (!current) return state
+
       const next = new Map(state.sessionStatuses)
-      next.delete(sessionId)
+
+      if (current === 'attention') {
+        // Process is still running — restore spinner
+        next.set(sessionId, 'running')
+      } else if (current === 'completed') {
+        next.delete(sessionId)
+      } else {
+        // 'running' — never clear the spinner via user interaction
+        return state
+      }
+
       syncBadgeCount(next, state.sessionProjectMap)
       return { sessionStatuses: next }
     })
