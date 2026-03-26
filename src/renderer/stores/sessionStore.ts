@@ -9,9 +9,36 @@ interface DetachedWorktreeInfo {
   branch: string
 }
 
+interface PerProjectContext {
+  sessionId: string | null
+  prNumber: number | null
+}
+
+const LAST_ACTIVE_KEY = 'codecrucible-last-active-context'
+
+function loadLastActiveContexts(): Record<string, PerProjectContext> {
+  try {
+    const raw = localStorage.getItem(LAST_ACTIVE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveLastActiveContext(projectId: string, context: PerProjectContext) {
+  const all = loadLastActiveContexts()
+  all[projectId] = context
+  localStorage.setItem(LAST_ACTIVE_KEY, JSON.stringify(all))
+}
+
+function getLastActiveContext(projectId: string): PerProjectContext | null {
+  return loadLastActiveContexts()[projectId] ?? null
+}
+
 interface SessionState {
   sessions: Session[]
   staleSessions: Session[]
+  currentProjectId: string | null
   activeSessionId: string | null
   activePRNumber: number | null
   activeWorkspaceTab: WorkspaceTab
@@ -48,6 +75,7 @@ async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   staleSessions: [],
+  currentProjectId: null,
   activeSessionId: null,
   activePRNumber: null,
   activeWorkspaceTab: 'agent' as WorkspaceTab,
@@ -57,17 +85,51 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   previousMainBranch: null,
 
   loadSessions: async (projectId: string) => {
+    // Save current context for the project we're leaving
+    const prevProjectId = get().currentProjectId
+    if (prevProjectId && prevProjectId !== projectId) {
+      saveLastActiveContext(prevProjectId, {
+        sessionId: get().activeSessionId,
+        prNumber: get().activePRNumber,
+      })
+    }
+
     const sessions = await window.api.session.list(projectId)
     const currentId = get().activeSessionId
     const stillExists = currentId && sessions.some((s) => s.id === currentId)
+
+    // Check for a previously saved context for this project
+    const saved = getLastActiveContext(projectId)
+    const savedSessionExists = saved?.sessionId && sessions.some((s) => s.id === saved.sessionId)
+    const savedPRExists = saved?.prNumber != null
+
+    let activeSessionId: string | null
+    let activePRNumber: number | null = null
+    let activeWorkspaceTab: WorkspaceTab = 'agent'
+
+    if (stillExists) {
+      // Same project reload — keep current selection
+      activeSessionId = currentId
+      activePRNumber = get().activePRNumber
+      activeWorkspaceTab = get().activeWorkspaceTab
+    } else if (savedSessionExists || savedPRExists) {
+      // Returning to a project — restore last active context
+      activeSessionId = savedSessionExists ? saved!.sessionId : null
+      activePRNumber = saved!.prNumber
+      activeWorkspaceTab = saved!.prNumber ? 'pr' : 'agent'
+    } else {
+      // Fallback to first session
+      activeSessionId = sessions.length > 0 ? sessions[0].id : null
+    }
+
     set({
       sessions,
       staleSessions: [],
-      activeSessionId: sessions.length > 0 ? (stillExists ? currentId : sessions[0].id) : null,
-      // Reset workspace state so we don't carry over PR/git tab from previous project
-      ...(!stillExists && {
-        activePRNumber: null,
-        activeWorkspaceTab: 'agent' as WorkspaceTab,
+      currentProjectId: projectId,
+      activeSessionId,
+      activePRNumber,
+      activeWorkspaceTab,
+      ...(!stillExists && !savedSessionExists && {
         didStash: false,
         detachedWorktree: null,
       }),
@@ -91,6 +153,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.api.session.save(projectId, sessions)
     await restoreDetachedWorktree(get().detachedWorktree)
     set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
+    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null })
   },
 
   removeSession: async (projectId, repoPath, sessionId) => {
@@ -198,6 +261,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.api.session.save(projectId, sessions)
     await restoreDetachedWorktree(get().detachedWorktree)
     set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
+    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null })
   },
 
   setActiveSession: async (id: string, repoPath?: string) => {
@@ -213,6 +277,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // Now restore the worktree (branch is free)
     await restoreDetachedWorktree(detachedWorktree)
     set({ activeSessionId: id, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null, openedAsMainBranch: null, previousMainBranch: null })
+    const projectId = get().currentProjectId
+    if (projectId) saveLastActiveContext(projectId, { sessionId: id, prNumber: null })
   },
 
   setActiveWorkspaceTab: (tab: WorkspaceTab) => {
@@ -249,11 +315,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         detachedWorktree: null,
       })
     }
+    const projectId = get().currentProjectId
+    if (projectId) saveLastActiveContext(projectId, { sessionId: null, prNumber: pr.number })
   },
 
   closePR: async () => {
     await restoreDetachedWorktree(get().detachedWorktree)
     set({ activePRNumber: null, detachedWorktree: null })
+    const projectId = get().currentProjectId
+    if (projectId) saveLastActiveContext(projectId, { sessionId: get().activeSessionId, prNumber: null })
   },
 
   openAsMainBranch: async (repoPath, sessionId) => {
@@ -316,5 +386,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clearActiveContext: async () => {
     await restoreDetachedWorktree(get().detachedWorktree)
     set({ activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null, openedAsMainBranch: null, previousMainBranch: null })
+    const projectId = get().currentProjectId
+    if (projectId) saveLastActiveContext(projectId, { sessionId: null, prNumber: null })
   },
 }))
