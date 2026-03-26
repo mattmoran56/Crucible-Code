@@ -11,6 +11,7 @@ import { useProjectStore } from '../../stores/projectStore'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { usePRStore } from '../../stores/prStore'
 import { Button } from '../ui'
+import { useGitStore } from '../../stores/gitStore'
 import {
   useWorkspaceLayoutStore,
   isDynamicTab,
@@ -465,6 +466,7 @@ function ColumnPanel({
   onCloseDynamicTab: (tab: WorkspaceTab) => void
 }) {
   const { setActiveTab, closeColumn, moveTab, reorderTab } = useWorkspaceLayoutStore()
+  const workingFileCount = useGitStore((s) => s.workingFiles.length)
   const tabBarRef = useRef<HTMLDivElement>(null)
 
   /* ── Drag handlers for the column's tab bar ── */
@@ -581,6 +583,7 @@ function ColumnPanel({
                 disabledTooltip="Open a PR to use this tab"
                 columnId={column.id}
                 closable={isDynamicTab(tab)}
+                badge={tab === 'git' && workingFileCount > 0 ? workingFileCount : undefined}
                 onClick={() => setActiveTab(column.id, tab)}
                 onClose={() => onCloseDynamicTab(tab)}
               />
@@ -683,6 +686,7 @@ function DraggableTab({
   disabledTooltip,
   columnId,
   closable,
+  badge,
   onClick,
   onClose,
 }: {
@@ -692,6 +696,7 @@ function DraggableTab({
   disabledTooltip?: string
   columnId: string
   closable?: boolean
+  badge?: number
   onClick: () => void
   onClose?: () => void
 }) {
@@ -737,6 +742,11 @@ function DraggableTab({
     >
       {getTabIcon(tab)}
       {getTabLabel(tab)}
+      {badge != null && (
+        <span className="min-w-[16px] h-[16px] rounded-full bg-warning/20 text-warning text-[10px] font-medium flex items-center justify-center leading-none" style={{ padding: '0 4px' }}>
+          {badge}
+        </span>
+      )}
       {closable && (
         <span
           onClick={handleClose}
