@@ -1,6 +1,16 @@
-# CodeCrucible
+<p align="center">
+  <img src="resources/icon.png" width="128" alt="CodeCrucible icon" />
+</p>
 
-An IDE for agentic development. Manage multiple Claude Code sessions in parallel, each running in its own git worktree, with a built-in diff viewer and terminal.
+<h1 align="center">CodeCrucible</h1>
+
+<p align="center">
+  An IDE for agentic development. Manage multiple Claude Code sessions in parallel, each in its own git worktree, with a built-in diff viewer and terminal.
+</p>
+
+<p align="center">
+  <a href="LICENSE">MIT License</a> · <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
 ![CodeCrucible](screenshot.png)
 
@@ -8,13 +18,14 @@ An IDE for agentic development. Manage multiple Claude Code sessions in parallel
 
 - **Multiple projects** — Open any git repository as a project. Switch between them with tabs.
 - **Sessions** — Each session creates a git worktree with its own branch. Run independent Claude Code agents side by side without conflicts.
-- **Embedded terminal** — Full terminal (xterm.js) opens in the session's worktree directory. Launch Claude Code and work directly.
-- **Intervention notifications** — Desktop notifications when Claude Code needs your input (permission prompts, y/n questions).
+- **Embedded terminal** — Full terminal opens in the session's worktree directory. Launch Claude Code and work directly.
+- **Intervention notifications** — Desktop notifications when Claude Code needs your input (permission prompts, questions).
 - **Git diff viewer** — Browse commits, see changed files, and view inline diffs — like GitHub Desktop, built into the IDE.
 - **Keyboard navigable** — Full keyboard support throughout: arrow keys for lists and tabs, Escape to close dialogs, focus trapping in modals.
 - **Themeable** — Dark (Tokyo Night), Light, and Ultra Dark themes. Add your own with a single CSS block.
 
-## Getting Started
+<details>
+<summary><strong>Getting Started</strong></summary>
 
 ### Dev mode
 
@@ -28,11 +39,9 @@ npm run dev
 3. Use the terminal to run `claude` or any other commands in the isolated worktree.
 4. View commits and diffs in the git panel as your agent works.
 
-### Native install (recommended)
+### Native install (macOS arm64)
 
 The native install runs from its own bundled assets, so switching branches in the source repo won't break the running app.
-
-**Initial install:**
 
 ```bash
 npm run dist
@@ -40,19 +49,69 @@ cp -R dist-electron/mac-arm64/CodeCrucible.app /Applications/
 open /Applications/CodeCrucible.app
 ```
 
-**Auto-update:**
+The installed app polls `origin/main` every 5 minutes. When new commits land, an **Update Available** button appears in the title bar. Click it to pull, rebuild, and relaunch automatically.
 
-The installed app polls `origin/main` every 5 minutes. When new commits are available, an **Update Available** button appears in the title bar (left of "Add Project"). Click it to pull, rebuild, and relaunch automatically — no manual reinstall needed.
+</details>
 
-## Tech Stack
+<details>
+<summary><strong>Architecture</strong></summary>
 
-- Electron + React 19 + TypeScript
-- electron-vite for builds
-- Tailwind CSS 4 with CSS custom property theming
-- Zustand for state management
-- xterm.js + node-pty for the terminal
-- simple-git for git operations
+Three-layer Electron architecture with strict process isolation:
+
+```
+src/
+├── main/        # Electron main process (Node.js)
+│   ├── ipc/     # IPC handlers (one file per domain)
+│   └── services/# Business logic (git, worktree, terminal)
+├── preload/     # contextBridge — typed API on window.api
+├── renderer/    # React UI (no Node.js access)
+│   ├── components/
+│   │   ├── ui/       # Base components (Button, Dialog, ListBox, etc.)
+│   │   ├── layout/   # App shell
+│   │   ├── sessions/ # Session management
+│   │   ├── git/      # Diff viewer
+│   │   └── terminal/ # Terminal panel
+│   ├── stores/  # Zustand state (project, session, terminal, git)
+│   └── styles/  # Tailwind + theme definitions
+└── shared/      # Types and constants shared across processes
+```
+
+### Tech stack
+
+- **Runtime**: Electron 33 (main + renderer)
+- **UI**: React 19, TypeScript, Tailwind CSS 4
+- **Build**: electron-vite 5
+- **State**: Zustand
+- **Terminal**: xterm.js + node-pty
+- **Git**: simple-git
+- **Syntax highlighting**: Shiki
+
+</details>
+
+<details>
+<summary><strong>Theming</strong></summary>
+
+Three built-in themes: **Dark** (Tokyo Night, default), **Light**, and **Ultra Dark**.
+
+Themes are defined as CSS custom properties in `src/renderer/styles/globals.css`. Tailwind utilities reference these properties, so switching themes is instant.
+
+To add a custom theme, add a `[data-theme="your-theme"]` block with the same property names:
+
+```css
+[data-theme="your-theme"] {
+  --color-bg: #...;
+  --color-text: #...;
+  --color-accent: #...;
+  /* see globals.css for the full list */
+}
+```
+
+</details>
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: PR descriptions should explain the **intent and prompt** behind the change, not just the code. Features are accepted based on whether the aim fits the project.
 
 ## License
 
-MIT
+[MIT](LICENSE) — do whatever you want with it.
