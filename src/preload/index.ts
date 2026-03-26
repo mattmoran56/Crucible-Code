@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo } from '../shared/types'
 
 const api = {
   git: {
@@ -178,6 +178,20 @@ const api = {
       ipcRenderer.invoke(IPC.NOTES_SAVE, projectId, notes),
     delete: (projectId: string, noteId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.NOTES_DELETE, projectId, noteId),
+  },
+
+  usage: {
+    getSession: (sessionId: string): Promise<SessionUsage | null> =>
+      ipcRenderer.invoke(IPC.USAGE_GET_SESSION, sessionId),
+    getStats: (): Promise<UsageStats | null> =>
+      ipcRenderer.invoke(IPC.USAGE_GET_STATS),
+    getSubscription: (): Promise<SubscriptionInfo> =>
+      ipcRenderer.invoke(IPC.USAGE_GET_SUBSCRIPTION),
+    onSessionUpdate: (callback: (usage: SessionUsage) => void) => {
+      const listener = (_e: unknown, usage: SessionUsage) => callback(usage)
+      ipcRenderer.on(IPC.USAGE_SESSION_UPDATE, listener)
+      return () => ipcRenderer.removeListener(IPC.USAGE_SESSION_UPDATE, listener)
+    },
   },
 
   update: {

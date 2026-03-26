@@ -4,6 +4,8 @@ import { SessionSidebar } from './components/layout/SessionSidebar'
 import { SessionWorkspace } from './components/layout/SessionWorkspace'
 import { RightActivityBar } from './components/layout/RightActivityBar'
 import { NotesPanel } from './components/notes/NotesPanel'
+import { UsagePanel } from './components/usage/UsagePanel'
+import { useUsageStore } from './stores/usageStore'
 import { ResizeHandle, IconButton } from './components/ui'
 import { useProjectStore } from './stores/projectStore'
 import { useSessionStore } from './stores/sessionStore'
@@ -60,6 +62,14 @@ export default function App() {
     return remove
   }, [handleHookEvent])
 
+  // Listen for usage updates pushed from the main process
+  useEffect(() => {
+    const remove = window.api.usage.onSessionUpdate((usage) => {
+      useUsageStore.getState().updateSessionUsage(usage)
+    })
+    return remove
+  }, [])
+
   // Auto-clear attention/completed when user navigates to a session (keep running visible)
   // Only fires on session switch — not reactively when hook events arrive
   useEffect(() => {
@@ -104,7 +114,7 @@ export default function App() {
                   style={{ padding: '10px 12px' }}
                 >
                   <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel}
+                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel}
                   </span>
                   <IconButton label="Close panel" onClick={() => setActiveRightPanel(null)}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -114,6 +124,7 @@ export default function App() {
                 </div>
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   {activeRightPanel === 'notes' && <NotesPanel />}
+                  {activeRightPanel === 'usage' && <UsagePanel />}
                 </div>
               </div>
             </>

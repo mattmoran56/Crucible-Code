@@ -2,12 +2,13 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { getNotificationServerPort } from './notification-server'
+import { getUsageTempPath, registerSession } from './usage.service'
 
 /**
  * Write hook settings to the project's .claude/settings.local.json
  * and sync the Claude Code theme to ~/.claude.json.
  */
-export function writeClaudeHookSettings(worktreePath: string, claudeTheme = 'dark') {
+export function writeClaudeHookSettings(worktreePath: string, claudeTheme = 'dark', sessionId?: string) {
   const port = getNotificationServerPort()
   if (!port) return
 
@@ -22,13 +23,23 @@ export function writeClaudeHookSettings(worktreePath: string, claudeTheme = 'dar
     timeout: 5,
   })
 
-  const settings = {
+  const settings: Record<string, unknown> = {
     hooks: {
       UserPromptSubmit: [{ matcher: '', hooks: [makeHook('prompt')] }],
       Notification: [{ matcher: '', hooks: [makeHook('notification')] }],
       Stop: [{ matcher: '', hooks: [makeHook('stop')] }],
       // SubagentStop deliberately NOT configured — we only want main agent completion
     },
+  }
+
+  // Configure statusLine to write usage data to a temp file for this session
+  if (sessionId) {
+    const usagePath = getUsageTempPath(sessionId)
+    settings.statusLine = {
+      type: 'command',
+      command: `tee "${usagePath}" > /dev/null`,
+    }
+    registerSession(sessionId)
   }
 
   const settingsPath = join(claudeDir, 'settings.local.json')
