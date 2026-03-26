@@ -85,6 +85,9 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
   commentFilter: 'all',
 
   loadPR: async (repoPath, prNumber, projectId) => {
+    // Skip reload if this PR's data is already loaded
+    if (get().prNumber === prNumber && get().files.length > 0) return
+
     set({
       loading: true, prNumber, files: [], fullDiff: null, fileDiffCache: {}, fileDiffLoading: null,
       comments: [], mergeable: 'UNKNOWN', selectedFilePath: null,

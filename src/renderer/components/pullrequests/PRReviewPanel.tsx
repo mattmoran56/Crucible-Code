@@ -65,8 +65,6 @@ export function PRReviewPanel() {
   useEffect(() => {
     if (prNumber && activeProject) {
       loadPR(activeProject.repoPath, prNumber, activeProject.id)
-    } else {
-      clear()
     }
   }, [prNumber, activeProject?.id])
 
