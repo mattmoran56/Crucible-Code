@@ -154,10 +154,28 @@ function PRBody({ detail }: { detail: PRDetail }) {
 }
 
 export function PRConversationTab() {
-  const { detail, conversationComments, checks, checksPolling } = usePRReviewStore()
+  const { prNumber, detail, conversationComments, checks, checksPolling } = usePRReviewStore()
 
   return (
     <div className="flex-1 overflow-y-auto" style={{ padding: '12px 16px' }}>
+      {/* PR title and branches */}
+      {detail && (
+        <div style={{ marginBottom: '12px' }}>
+          <div className="text-sm font-medium text-text" style={{ marginBottom: '4px' }}>
+            {detail.title} <span className="text-text-muted font-normal">#{prNumber}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="font-mono text-[11px] bg-accent/15 text-accent rounded" style={{ padding: '1px 6px' }}>
+              {detail.headRefName}
+            </span>
+            <span className="text-text-muted">&rarr;</span>
+            <span className="font-mono text-[11px] bg-accent/15 text-accent rounded" style={{ padding: '1px 6px' }}>
+              {detail.baseRefName}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* PR description */}
       {detail && <PRBody detail={detail} />}
 

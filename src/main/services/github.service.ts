@@ -14,7 +14,7 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         '--state',
         'open',
         '--json',
-        'number,title,headRefName,author,updatedAt,isDraft',
+        'number,title,headRefName,baseRefName,author,updatedAt,isDraft',
         '--limit',
         '50',
       ],
@@ -25,6 +25,7 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
       number: number
       title: string
       headRefName: string
+      baseRefName: string
       author: { login: string }
       updatedAt: string
       isDraft: boolean
@@ -34,6 +35,7 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
       number: pr.number,
       title: pr.title,
       headRefName: pr.headRefName,
+      baseRefName: pr.baseRefName,
       author: pr.author.login,
       updatedAt: pr.updatedAt,
       isDraft: pr.isDraft,
