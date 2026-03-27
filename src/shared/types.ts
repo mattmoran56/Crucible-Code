@@ -155,3 +155,14 @@ export interface SubscriptionInfo {
   subscriptionType: string | null
   rateLimitTier: string | null
 }
+
+export interface FileEntry {
+  name: string
+  path: string
+  isDirectory: boolean
+}
+
+export interface FileStat {
+  size: number
+  exists: boolean
+}
