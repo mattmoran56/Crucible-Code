@@ -29,7 +29,7 @@ export function PRCard({ pr, isNew, isActive, onClick }: Props) {
         </span>
       </div>
       <div className="text-text-muted text-[10px] mt-1 truncate">
-        {pr.headRefName}
+        {pr.headRefName} &rarr; {pr.baseRefName}
       </div>
       <div className="text-text-muted text-[10px] mt-0.5 truncate">
         {pr.author}

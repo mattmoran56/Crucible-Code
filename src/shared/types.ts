@@ -43,6 +43,7 @@ export interface PullRequest {
   number: number
   title: string
   headRefName: string
+  baseRefName: string
   author: string
   updatedAt: string
   isDraft: boolean

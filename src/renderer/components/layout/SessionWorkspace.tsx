@@ -149,7 +149,10 @@ export function SessionWorkspace() {
       if (prOnlyMode) {
         resetLayout(['pr', 'review'], 'pr', contextId)
       } else if (activeSessionId) {
-        resetLayout(['agent', 'git', 'review'], 'agent', activeSessionId)
+        const sessionTabs: WorkspaceTab[] = sessionPR
+          ? ['agent', 'git', 'pr', 'review']
+          : ['agent', 'git', 'review']
+        resetLayout(sessionTabs, 'agent', activeSessionId)
       } else {
         resetLayout([])
       }
@@ -159,6 +162,23 @@ export function SessionWorkspace() {
     prevSessionRef.current = activeSessionId
     prevPRRef.current = effectivePRNumber
   }, [activeSessionId, effectivePRNumber, prOnlyMode])
+
+  // Dynamically add/remove the PR tab when the session has a matching PR
+  const prevSessionPRRef = useRef<number | null>(null)
+  useEffect(() => {
+    const prevPR = prevSessionPRRef.current
+    const curPR = sessionPR?.number ?? null
+    prevSessionPRRef.current = curPR
+
+    // Only manage tab when in session mode (not PR-only mode)
+    if (!activeSessionId || prOnlyMode) return
+
+    if (curPR != null && prevPR == null) {
+      addAvailableTab('pr')
+    } else if (curPR == null && prevPR != null) {
+      removeAvailableTab('pr')
+    }
+  }, [sessionPR?.number, activeSessionId, prOnlyMode])
 
   // Auto-save layout whenever columns change
   const currentContextId = activeSessionId ?? (activePRNumber != null ? `pr-${activePRNumber}` : null)

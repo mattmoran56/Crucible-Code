@@ -12,7 +12,7 @@ import { useResizable } from '../../hooks/useResizable'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { ToggleGroup } from '../ui/ToggleGroup'
-import type { PRReviewEvent, PRFile } from '../../../shared/types'
+import type { PRReviewEvent, PRFile, PullRequest } from '../../../shared/types'
 
 /** Extract the diff for a single file from the full PR diff */
 function extractFileDiff(fullDiff: string, filePath: string): string {
@@ -37,9 +37,16 @@ function extractFileDiff(fullDiff: string, filePath: string): string {
 }
 
 export function PRReviewPanel() {
-  const { activePRNumber, didStash, checkStaleness, clearActiveContext } = useSessionStore()
-  const { loadPRs } = usePRStore()
+  const { activePRNumber, activeSessionId, sessions, didStash, checkStaleness, clearActiveContext } = useSessionStore()
+  const { pullRequests, loadPRs } = usePRStore()
   const { projects, activeProjectId } = useProjectStore()
+
+  // Compute effective PR: explicit activePRNumber, or session's matched PR
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const sessionPR: PullRequest | undefined = activeSession
+    ? pullRequests.find((pr) => pr.headRefName === activeSession.branchName)
+    : undefined
+  const effectivePRNumber = activePRNumber ?? sessionPR?.number ?? null
   const {
     files, selectedFilePath, fullDiff, fileDiffCache, fileDiffLoading, comments, loading, mergeable,
     reviewLoading, mergeLoading, activeTab, viewedFiles,
@@ -57,7 +64,7 @@ export function PRReviewPanel() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
-  const prNumber = activePRNumber
+  const prNumber = effectivePRNumber
 
   const filesCol = useResizable({ direction: 'horizontal', initialSize: 240, minSize: 160, maxSize: 400 })
 
