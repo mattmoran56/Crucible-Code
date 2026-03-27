@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditorStore } from '../../stores/editorStore'
+import { useToastStore } from '../../stores/toastStore'
 import { IconButton } from '../ui/IconButton'
-import { Dialog } from '../ui/Dialog'
-import { Input } from '../ui/Input'
-import { Button } from '../ui/Button'
 import type { FileEntry } from '../../../shared/types'
+
+const DRAG_MIME = 'application/x-file-tree'
 
 interface FileExplorerProps {
   repoPath: string
@@ -15,8 +15,9 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
   const [entries, setEntries] = useState<Map<string, FileEntry[]>>(new Map())
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [showNewFile, setShowNewFile] = useState(false)
-  const [newFilePath, setNewFilePath] = useState('')
+  const [creatingInDir, setCreatingInDir] = useState<string | null>(null)
+  const [newFileName, setNewFileName] = useState('')
+  const [dragOverDir, setDragOverDir] = useState<string | null>(null)
   const treeRef = useRef<HTMLDivElement>(null)
 
   // Load root directory on mount
@@ -28,7 +29,6 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
   useEffect(() => {
     window.api.file.watch(repoPath)
     const removeListener = window.api.file.onChanged((filePath: string) => {
-      // Find which directory needs refreshing
       const dir = filePath.substring(0, filePath.lastIndexOf('/'))
       if (entries.has(dir) || dir === repoPath) {
         loadDirectory(dir || repoPath)
@@ -79,22 +79,71 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
     [openFile, repoPath]
   )
 
-  const handleCreateFile = useCallback(async () => {
-    if (!newFilePath.trim()) return
-    const fullPath = newFilePath.startsWith('/')
-      ? newFilePath
-      : `${repoPath}/${newFilePath}`
-    const { createNewFile } = useEditorStore.getState()
-    await createNewFile(fullPath, repoPath)
-    // Refresh parent directory
-    const dir = fullPath.substring(0, fullPath.lastIndexOf('/'))
-    loadDirectory(dir)
-    setShowNewFile(false)
-    setNewFilePath('')
-  }, [newFilePath, repoPath, loadDirectory])
+  const handleStartCreate = useCallback((dirPath: string) => {
+    // Expand the directory first
+    setExpandedDirs((prev) => {
+      const next = new Set(prev)
+      next.add(dirPath)
+      if (!entries.has(dirPath)) {
+        loadDirectory(dirPath)
+      }
+      return next
+    })
+    setCreatingInDir(dirPath)
+    setNewFileName('')
+  }, [entries, loadDirectory])
+
+  const handleConfirmCreate = useCallback(async () => {
+    if (!newFileName.trim() || !creatingInDir) return
+    const { addToast } = useToastStore.getState()
+    const fullPath = `${creatingInDir}/${newFileName.trim()}`
+    try {
+      await window.api.file.create(fullPath, repoPath)
+      await loadDirectory(creatingInDir)
+      // Open the new file
+      const { forceOpenFile } = useEditorStore.getState()
+      await forceOpenFile(fullPath, repoPath)
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+    }
+    setCreatingInDir(null)
+    setNewFileName('')
+  }, [newFileName, creatingInDir, repoPath, loadDirectory])
+
+  const handleCancelCreate = useCallback(() => {
+    setCreatingInDir(null)
+    setNewFileName('')
+  }, [])
+
+  const handleDrop = useCallback(async (targetDir: string, sourcePath: string) => {
+    const { addToast } = useToastStore.getState()
+    const fileName = sourcePath.split('/').pop()
+    if (!fileName) return
+    const newPath = `${targetDir}/${fileName}`
+    if (newPath === sourcePath) return
+
+    try {
+      await window.api.file.move(sourcePath, newPath, repoPath)
+      // Refresh both source and target directories
+      const sourceDir = sourcePath.substring(0, sourcePath.lastIndexOf('/'))
+      await Promise.all([loadDirectory(sourceDir), loadDirectory(targetDir)])
+      // Update open file path if it was moved
+      const { openFiles, setActiveFile } = useEditorStore.getState()
+      const wasOpen = openFiles.find((f) => f.path === sourcePath)
+      if (wasOpen) {
+        // Close old, open new
+        useEditorStore.getState().closeFile(sourcePath)
+        useEditorStore.getState().forceOpenFile(newPath, repoPath)
+      }
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+    }
+    setDragOverDir(null)
+  }, [repoPath, loadDirectory])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (creatingInDir) return // Don't navigate while creating
       if (!treeRef.current) return
       const items = treeRef.current.querySelectorAll<HTMLElement>('[data-tree-item]')
       const arr = Array.from(items)
@@ -115,13 +164,11 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
           prev.focus()
         }
       } else if (e.key === 'ArrowRight' && selectedPath) {
-        // Expand directory
         const entry = findEntry(selectedPath)
         if (entry?.isDirectory && !expandedDirs.has(selectedPath)) {
           toggleDir(selectedPath)
         }
       } else if (e.key === 'ArrowLeft' && selectedPath) {
-        // Collapse directory
         const entry = findEntry(selectedPath)
         if (entry?.isDirectory && expandedDirs.has(selectedPath)) {
           toggleDir(selectedPath)
@@ -135,7 +182,7 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
         }
       }
     },
-    [selectedPath, expandedDirs, toggleDir, handleFileClick]
+    [selectedPath, expandedDirs, toggleDir, handleFileClick, creatingInDir]
   )
 
   const findEntry = (path: string): FileEntry | undefined => {
@@ -158,7 +205,7 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
         <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
           Files
         </span>
-        <IconButton label="New file" onClick={() => setShowNewFile(true)} className="text-accent hover:text-accent-hover">
+        <IconButton label="New file in root" onClick={() => handleStartCreate(repoPath)} className="text-accent hover:text-accent-hover">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
             <polyline points="14 2 14 8 20 8" />
@@ -185,37 +232,79 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
             expandedDirs={expandedDirs}
             selectedPath={selectedPath}
             activeFilePath={activeFilePath}
+            creatingInDir={creatingInDir}
+            newFileName={newFileName}
+            dragOverDir={dragOverDir}
             onToggleDir={toggleDir}
             onFileClick={handleFileClick}
+            onStartCreate={handleStartCreate}
+            onNewFileNameChange={setNewFileName}
+            onConfirmCreate={handleConfirmCreate}
+            onCancelCreate={handleCancelCreate}
+            onDrop={handleDrop}
+            onDragOverDir={setDragOverDir}
           />
         ))}
-      </div>
-
-      {/* New File Dialog */}
-      <Dialog open={showNewFile} onClose={() => setShowNewFile(false)} title="New File">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            handleCreateFile()
-          }}
-        >
-          <Input
-            label="File path (relative to repo root)"
-            value={newFilePath}
-            onChange={(e) => setNewFilePath(e.target.value)}
-            placeholder="src/example.ts"
-            autoFocus
+        {/* Inline creation for root */}
+        {creatingInDir === repoPath && (
+          <InlineNewFile
+            depth={0}
+            value={newFileName}
+            onChange={setNewFileName}
+            onConfirm={handleConfirmCreate}
+            onCancel={handleCancelCreate}
           />
-          <div className="flex justify-end gap-2" style={{ marginTop: 12 }}>
-            <Button variant="ghost" size="sm" onClick={() => setShowNewFile(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" size="sm" type="submit" disabled={!newFilePath.trim()}>
-              Create
-            </Button>
-          </div>
-        </form>
-      </Dialog>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── Inline New File Input ────────────────────────────── */
+
+function InlineNewFile({
+  depth,
+  value,
+  onChange,
+  onConfirm,
+  onCancel,
+}: {
+  depth: number
+  value: string
+  onChange: (v: string) => void
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  return (
+    <div
+      className="flex items-center gap-1"
+      style={{ padding: '2px 8px', paddingLeft: `${depth * 16 + 8 + 28}px` }}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 text-text-muted">
+        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+        <polyline points="14 2 14 8 20 8" />
+      </svg>
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onConfirm()
+          if (e.key === 'Escape') onCancel()
+          e.stopPropagation()
+        }}
+        onBlur={onCancel}
+        className="flex-1 bg-bg text-text text-xs border border-accent rounded outline-none min-w-0"
+        style={{ padding: '1px 4px' }}
+        placeholder="filename.ts"
+      />
     </div>
   )
 }
@@ -229,8 +318,17 @@ function TreeNode({
   expandedDirs,
   selectedPath,
   activeFilePath,
+  creatingInDir,
+  newFileName,
+  dragOverDir,
   onToggleDir,
   onFileClick,
+  onStartCreate,
+  onNewFileNameChange,
+  onConfirmCreate,
+  onCancelCreate,
+  onDrop,
+  onDragOverDir,
 }: {
   entry: FileEntry
   depth: number
@@ -238,13 +336,49 @@ function TreeNode({
   expandedDirs: Set<string>
   selectedPath: string | null
   activeFilePath: string | null
+  creatingInDir: string | null
+  newFileName: string
+  dragOverDir: string | null
   onToggleDir: (path: string) => void
   onFileClick: (path: string) => void
+  onStartCreate: (dirPath: string) => void
+  onNewFileNameChange: (v: string) => void
+  onConfirmCreate: () => void
+  onCancelCreate: () => void
+  onDrop: (targetDir: string, sourcePath: string) => void
+  onDragOverDir: (dir: string | null) => void
 }) {
   const isExpanded = expandedDirs.has(entry.path)
   const isSelected = selectedPath === entry.path
   const isActive = activeFilePath === entry.path
+  const isDragTarget = dragOverDir === entry.path
   const children = entries.get(entry.path) ?? []
+
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    e.dataTransfer.setData(DRAG_MIME, entry.path)
+    e.dataTransfer.effectAllowed = 'move'
+  }, [entry.path])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!entry.isDirectory) return
+    if (!e.dataTransfer.types.includes(DRAG_MIME)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    onDragOverDir(entry.path)
+  }, [entry.isDirectory, entry.path, onDragOverDir])
+
+  const handleDragLeave = useCallback(() => {
+    onDragOverDir(null)
+  }, [onDragOverDir])
+
+  const handleDropOnDir = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    const sourcePath = e.dataTransfer.getData(DRAG_MIME)
+    if (sourcePath && entry.isDirectory) {
+      onDrop(entry.path, sourcePath)
+    }
+    onDragOverDir(null)
+  }, [entry.path, entry.isDirectory, onDrop, onDragOverDir])
 
   return (
     <>
@@ -255,9 +389,15 @@ function TreeNode({
         data-tree-item
         data-tree-path={entry.path}
         tabIndex={isSelected ? 0 : -1}
-        className={`flex items-center gap-1 cursor-pointer select-none
+        draggable
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDropOnDir}
+        className={`flex items-center gap-1 cursor-pointer select-none group
           hover:bg-bg-tertiary transition-colors
           ${isActive ? 'bg-accent/15 text-accent' : isSelected ? 'bg-bg-tertiary text-text' : 'text-text'}
+          ${isDragTarget ? 'ring-1 ring-inset ring-accent/50 bg-accent/10' : ''}
         `}
         style={{ padding: '3px 8px', paddingLeft: `${depth * 16 + 8}px` }}
         onClick={() => {
@@ -320,12 +460,41 @@ function TreeNode({
         )}
 
         {/* Name */}
-        <span className="truncate">{entry.name}</span>
+        <span className="truncate flex-1">{entry.name}</span>
+
+        {/* New file button on directories */}
+        {entry.isDirectory && (
+          <span
+            className="opacity-0 group-hover:opacity-100 flex-shrink-0 text-text-muted hover:text-accent transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation()
+              onStartCreate(entry.path)
+            }}
+            role="button"
+            aria-label={`New file in ${entry.name}`}
+            tabIndex={-1}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </span>
+        )}
       </div>
 
-      {/* Children */}
+      {/* Children + inline create */}
       {entry.isDirectory && isExpanded && (
         <div role="group">
+          {/* Inline new file input */}
+          {creatingInDir === entry.path && (
+            <InlineNewFile
+              depth={depth + 1}
+              value={newFileName}
+              onChange={onNewFileNameChange}
+              onConfirm={onConfirmCreate}
+              onCancel={onCancelCreate}
+            />
+          )}
           {children.map((child) => (
             <TreeNode
               key={child.path}
@@ -335,11 +504,20 @@ function TreeNode({
               expandedDirs={expandedDirs}
               selectedPath={selectedPath}
               activeFilePath={activeFilePath}
+              creatingInDir={creatingInDir}
+              newFileName={newFileName}
+              dragOverDir={dragOverDir}
               onToggleDir={onToggleDir}
               onFileClick={onFileClick}
+              onStartCreate={onStartCreate}
+              onNewFileNameChange={onNewFileNameChange}
+              onConfirmCreate={onConfirmCreate}
+              onCancelCreate={onCancelCreate}
+              onDrop={onDrop}
+              onDragOverDir={onDragOverDir}
             />
           ))}
-          {children.length === 0 && (
+          {children.length === 0 && creatingInDir !== entry.path && (
             <div
               className="text-text-muted italic"
               style={{ padding: '3px 8px', paddingLeft: `${(depth + 1) * 16 + 8}px` }}

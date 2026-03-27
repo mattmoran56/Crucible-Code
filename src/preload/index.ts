@@ -205,6 +205,8 @@ const api = {
       ipcRenderer.invoke(IPC.FILE_CREATE, filePath, rootPath),
     stat: (filePath: string): Promise<FileStat> =>
       ipcRenderer.invoke(IPC.FILE_STAT, filePath),
+    move: (oldPath: string, newPath: string, rootPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.FILE_MOVE, oldPath, newPath, rootPath),
     watch: (dirPath: string): Promise<void> =>
       ipcRenderer.invoke(IPC.FILE_WATCH, dirPath),
     unwatch: (dirPath: string): Promise<void> =>

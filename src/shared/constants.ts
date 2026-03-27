@@ -95,6 +95,7 @@ export const IPC = {
   FILE_WRITE: 'file:write',
   FILE_CREATE: 'file:create',
   FILE_STAT: 'file:stat',
+  FILE_MOVE: 'file:move',
   FILE_WATCH: 'file:watch',
   FILE_UNWATCH: 'file:unwatch',
   FILE_CHANGED: 'file:changed',

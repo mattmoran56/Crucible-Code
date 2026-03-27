@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile, mkdir, stat } from 'node:fs/promises'
+import { readdir, readFile, writeFile, mkdir, stat, rename } from 'node:fs/promises'
 import { join, resolve, relative } from 'node:path'
 import { watch, type FSWatcher } from 'node:fs'
 import type { BrowserWindow } from 'electron'
@@ -57,6 +57,14 @@ export async function createFile(filePath: string, rootPath: string): Promise<vo
   const dir = filePath.substring(0, filePath.lastIndexOf('/'))
   await mkdir(dir, { recursive: true })
   await writeFile(filePath, '', 'utf-8')
+}
+
+export async function moveFile(oldPath: string, newPath: string, rootPath: string): Promise<void> {
+  validatePath(oldPath, rootPath)
+  validatePath(newPath, rootPath)
+  const dir = newPath.substring(0, newPath.lastIndexOf('/'))
+  await mkdir(dir, { recursive: true })
+  await rename(oldPath, newPath)
 }
 
 export async function getFileStat(filePath: string): Promise<FileStat> {

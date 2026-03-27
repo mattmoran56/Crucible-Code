@@ -205,7 +205,7 @@ export function SessionSidebar() {
               <SessionCard
                 key={session.id}
                 session={session}
-                isActive={session.id === activeSessionId}
+                isActive={!editorMode && session.id === activeSessionId}
                 isOpenedAsMain={session.id === openedAsMainBranch}
                 status={sessionStatuses.get(session.id) ?? null}
                 pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
@@ -242,7 +242,7 @@ export function SessionSidebar() {
               <StaleSessionCard
                 key={session.id}
                 session={session}
-                isActive={session.id === activeSessionId}
+                isActive={!editorMode && session.id === activeSessionId}
                 onClick={() => { setEditorMode(false); setActiveSession(session.id, activeProject.repoPath) }}
                 onReactivate={() => reactivateSession(activeProject.id, session.id)}
                 onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
@@ -286,7 +286,7 @@ export function SessionSidebar() {
                   key={pr.number}
                   pr={pr}
                   isNew={!seenPRs.includes(pr.number)}
-                  isActive={activePRNumber === pr.number}
+                  isActive={!editorMode && activePRNumber === pr.number}
                   onClick={() => handlePRClick(pr)}
                 />
               ))

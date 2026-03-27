@@ -6,6 +6,7 @@ import {
   writeFileContent,
   createFile,
   getFileStat,
+  moveFile,
   watchDirectory,
   unwatchDirectory,
 } from '../services/file.service'
@@ -25,6 +26,10 @@ export function registerFileHandlers(window: BrowserWindow) {
 
   ipcMain.handle(IPC.FILE_CREATE, async (_e, filePath: string, rootPath: string) => {
     return createFile(filePath, rootPath)
+  })
+
+  ipcMain.handle(IPC.FILE_MOVE, async (_e, oldPath: string, newPath: string, rootPath: string) => {
+    return moveFile(oldPath, newPath, rootPath)
   })
 
   ipcMain.handle(IPC.FILE_STAT, async (_e, filePath: string) => {
