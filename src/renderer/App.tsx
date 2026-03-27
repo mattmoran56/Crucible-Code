@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { ProjectTabs } from './components/layout/ProjectTabs'
 import { SessionSidebar } from './components/layout/SessionSidebar'
 import { SessionWorkspace } from './components/layout/SessionWorkspace'
+import { EditorWorkspace } from './components/editor/EditorWorkspace'
+import { useEditorStore } from './stores/editorStore'
 import { RightActivityBar } from './components/layout/RightActivityBar'
 import { NotesPanel } from './components/notes/NotesPanel'
 import { UsagePanel } from './components/usage/UsagePanel'
@@ -19,6 +21,7 @@ import { LoadingScreen } from './components/LoadingScreen'
 export default function App() {
   const { loadProjects, projects } = useProjectStore()
   const { activeSessionId } = useSessionStore()
+  const { editorMode } = useEditorStore()
   const { handleHookEvent, registerSessions } = useNotificationStore()
   const { isOpen: settingsOpen } = useSettingsStore()
 
@@ -98,8 +101,8 @@ export default function App() {
           </div>
           <ResizeHandle direction="horizontal" onMouseDown={sidebar.onMouseDown} />
 
-          {/* Session workspace: toolbar + content (agent or git view) */}
-          <SessionWorkspace />
+          {/* Main workspace: editor or session view */}
+          {editorMode ? <EditorWorkspace /> : <SessionWorkspace />}
 
           {/* Right panel — shown when an activity bar icon is active */}
           {activeRightPanel && (

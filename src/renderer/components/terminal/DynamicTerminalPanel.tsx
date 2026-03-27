@@ -7,6 +7,10 @@ import { getTabBaseType, type WorkspaceTab } from '../../stores/workspaceLayoutS
 interface Props {
   tabId: WorkspaceTab
   visible: boolean
+  /** Override cwd for editor mode (uses repo root instead of worktree) */
+  overrideCwd?: string
+  /** Override session ID for editor mode */
+  overrideSessionId?: string
 }
 
 /**
@@ -14,15 +18,27 @@ interface Props {
  * Auto-spawns the terminal for the active session when it first becomes visible.
  * Renders all session terminals for this tab (so they persist across session switches).
  */
-export function DynamicTerminalPanel({ tabId, visible }: Props) {
+export function DynamicTerminalPanel({ tabId, visible, overrideCwd, overrideSessionId }: Props) {
   const { activeSessionId, sessions } = useSessionStore()
   const { terminals, spawnDynamicTerminal, getDynamicTerminal } = useTerminalStore()
 
   const baseType = getTabBaseType(tabId)
   const mode = baseType === 'agent' ? 'claude' as const : 'shell' as const
 
+  // Determine effective session context
+  const effectiveSessionId = overrideSessionId ?? activeSessionId
+
   // Spawn terminal for the active session if it doesn't exist yet
   useEffect(() => {
+    if (overrideCwd && overrideSessionId) {
+      // Editor mode: use override values
+      const existing = getDynamicTerminal(tabId, overrideSessionId)
+      if (!existing) {
+        spawnDynamicTerminal(tabId, overrideSessionId, 'Code Editor', overrideCwd, mode)
+      }
+      return
+    }
+
     const activeSession = sessions.find((s) => s.id === activeSessionId)
     if (!activeSession) return
 
@@ -30,7 +46,7 @@ export function DynamicTerminalPanel({ tabId, visible }: Props) {
     if (!existing) {
       spawnDynamicTerminal(tabId, activeSession.id, activeSession.name, activeSession.worktreePath, mode)
     }
-  }, [activeSessionId, tabId, mode, sessions, getDynamicTerminal, spawnDynamicTerminal])
+  }, [effectiveSessionId, tabId, mode, sessions, getDynamicTerminal, spawnDynamicTerminal, overrideCwd, overrideSessionId])
 
   // Render all terminals for this dynamic tab (across sessions) so they never unmount
   const prefix = `dyn:${tabId}:`
@@ -54,7 +70,7 @@ export function DynamicTerminalPanel({ tabId, visible }: Props) {
           terminalId={instance.terminalId}
           sessionId={instance.sessionId}
           sessionName={instance.sessionName}
-          visible={instance.sessionId === activeSessionId && visible}
+          visible={instance.sessionId === effectiveSessionId && visible}
         />
       ))}
     </div>

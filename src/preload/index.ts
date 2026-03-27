@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat } from '../shared/types'
 
 const api = {
   git: {
@@ -191,6 +191,30 @@ const api = {
       const listener = (_e: unknown, usage: SessionUsage) => callback(usage)
       ipcRenderer.on(IPC.USAGE_SESSION_UPDATE, listener)
       return () => ipcRenderer.removeListener(IPC.USAGE_SESSION_UPDATE, listener)
+    },
+  },
+
+  file: {
+    listDir: (dirPath: string): Promise<FileEntry[]> =>
+      ipcRenderer.invoke(IPC.FILE_LIST_DIR, dirPath),
+    read: (filePath: string, rootPath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.FILE_READ, filePath, rootPath),
+    write: (filePath: string, content: string, rootPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.FILE_WRITE, filePath, content, rootPath),
+    create: (filePath: string, rootPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.FILE_CREATE, filePath, rootPath),
+    stat: (filePath: string): Promise<FileStat> =>
+      ipcRenderer.invoke(IPC.FILE_STAT, filePath),
+    move: (oldPath: string, newPath: string, rootPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.FILE_MOVE, oldPath, newPath, rootPath),
+    watch: (dirPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.FILE_WATCH, dirPath),
+    unwatch: (dirPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.FILE_UNWATCH, dirPath),
+    onChanged: (callback: (filePath: string) => void) => {
+      const listener = (_e: unknown, filePath: string) => callback(filePath)
+      ipcRenderer.on(IPC.FILE_CHANGED, listener)
+      return () => ipcRenderer.removeListener(IPC.FILE_CHANGED, listener)
     },
   },
 

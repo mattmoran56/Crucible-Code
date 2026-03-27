@@ -88,4 +88,15 @@ export const IPC = {
   USAGE_GET_STATS: 'usage:get-stats',
   USAGE_GET_SUBSCRIPTION: 'usage:get-subscription',
   USAGE_SESSION_UPDATE: 'usage:session-update',
+
+  // File I/O
+  FILE_LIST_DIR: 'file:list-dir',
+  FILE_READ: 'file:read',
+  FILE_WRITE: 'file:write',
+  FILE_CREATE: 'file:create',
+  FILE_STAT: 'file:stat',
+  FILE_MOVE: 'file:move',
+  FILE_WATCH: 'file:watch',
+  FILE_UNWATCH: 'file:unwatch',
+  FILE_CHANGED: 'file:changed',
 } as const

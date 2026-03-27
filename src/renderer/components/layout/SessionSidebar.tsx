@@ -3,6 +3,7 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useEditorStore } from '../../stores/editorStore'
 import { SessionCard } from '../sessions/SessionCard'
 import { StaleSessionCard } from '../sessions/StaleSessionCard'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
@@ -105,6 +106,19 @@ export function SessionSidebar() {
     registerSessions(sessions)
   }, [sessions, registerSessions])
 
+  const { editorMode, setEditorMode, currentBranch, loadBranch } = useEditorStore()
+
+  // Load branch info for the Code nav item
+  useEffect(() => {
+    if (activeProject) {
+      loadBranch(activeProject.repoPath)
+    }
+  }, [activeProject?.repoPath, loadBranch])
+
+  const handleCodeClick = () => {
+    setEditorMode(true)
+  }
+
   if (!activeProject) {
     return (
       <Sidebar>
@@ -129,6 +143,7 @@ export function SessionSidebar() {
   }
 
   const handlePRClick = async (pr: (typeof pullRequests)[0]) => {
+    setEditorMode(false)
     markSeen(activeProject.id, pr.number)
     await openPR(activeProject.repoPath, pr)
   }
@@ -136,6 +151,28 @@ export function SessionSidebar() {
   return (
     <Sidebar>
       <div ref={sidebarRef} className="flex flex-col flex-1 min-h-0">
+        {/* Code editor nav item */}
+        <button
+          className={`flex items-center gap-2 w-full text-left text-xs transition-colors border-b border-border
+            ${editorMode
+              ? 'bg-accent/15 text-accent'
+              : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
+            }`}
+          style={{ padding: '10px 12px' }}
+          onClick={handleCodeClick}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+          <span className="font-medium">Code</span>
+          {currentBranch && (
+            <span className="ml-auto text-text-muted text-[10px] truncate" style={{ maxWidth: 80 }}>
+              {currentBranch}
+            </span>
+          )}
+        </button>
+
         {/* Sessions section — height controlled by resize handle */}
         <div style={{ height: prCollapsed ? undefined : sessionsPanel.size, flexShrink: 0 }} className={prCollapsed ? 'flex-1 min-h-0' : 'min-h-0'}>
           <SidebarSection
@@ -168,11 +205,12 @@ export function SessionSidebar() {
               <SessionCard
                 key={session.id}
                 session={session}
-                isActive={session.id === activeSessionId}
+                isActive={!editorMode && session.id === activeSessionId}
                 isOpenedAsMain={session.id === openedAsMainBranch}
                 status={sessionStatuses.get(session.id) ?? null}
                 pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
                 onClick={() => {
+                  setEditorMode(false)
                   setActiveSession(session.id, activeProject.repoPath)
                   clearStatus(session.id)
                 }}
@@ -204,8 +242,8 @@ export function SessionSidebar() {
               <StaleSessionCard
                 key={session.id}
                 session={session}
-                isActive={session.id === activeSessionId}
-                onClick={() => setActiveSession(session.id, activeProject.repoPath)}
+                isActive={!editorMode && session.id === activeSessionId}
+                onClick={() => { setEditorMode(false); setActiveSession(session.id, activeProject.repoPath) }}
                 onReactivate={() => reactivateSession(activeProject.id, session.id)}
                 onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
               />
@@ -248,7 +286,7 @@ export function SessionSidebar() {
                   key={pr.number}
                   pr={pr}
                   isNew={!seenPRs.includes(pr.number)}
-                  isActive={activePRNumber === pr.number}
+                  isActive={!editorMode && activePRNumber === pr.number}
                   onClick={() => handlePRClick(pr)}
                 />
               ))
