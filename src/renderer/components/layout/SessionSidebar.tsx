@@ -8,6 +8,7 @@ import { SessionCard } from '../sessions/SessionCard'
 import { StaleSessionCard } from '../sessions/StaleSessionCard'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
 import { ImportWorktreeDialog } from '../sessions/ImportWorktreeDialog'
+import { OpenBranchDialog } from '../sessions/OpenBranchDialog'
 import { PRCard } from '../pullrequests/PRCard'
 import { Sidebar, SidebarSection } from '../ui/Sidebar'
 import { IconButton } from '../ui/IconButton'
@@ -26,6 +27,7 @@ export function SessionSidebar() {
   const { sessionStatuses, clearStatus, registerSessions } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showOpenBranch, setShowOpenBranch] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
   const [staleCollapsed, setStaleCollapsed] = useState(true)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -188,6 +190,7 @@ export function SessionSidebar() {
                 </IconButton>
                 <DropdownMenu
                   items={[
+                    { label: 'Open existing branch', onClick: () => setShowOpenBranch(true) },
                     { label: 'Import existing worktree', onClick: () => setShowImport(true) },
                   ]}
                 >
@@ -299,6 +302,12 @@ export function SessionSidebar() {
         open={showCreate}
         project={activeProject}
         onClose={() => setShowCreate(false)}
+      />
+
+      <OpenBranchDialog
+        open={showOpenBranch}
+        project={activeProject}
+        onClose={() => setShowOpenBranch(false)}
       />
 
       <ImportWorktreeDialog

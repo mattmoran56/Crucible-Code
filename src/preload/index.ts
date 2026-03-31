@@ -27,6 +27,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_OPEN_PR, repoPath),
     listBranches: (repoPath: string): Promise<string[]> =>
       ipcRenderer.invoke(IPC.GIT_LIST_BRANCHES, repoPath),
+    defaultBranch: (repoPath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.GIT_DEFAULT_BRANCH, repoPath),
     mergeCheck: (repoPath: string, branch: string): Promise<{ hasConflicts: boolean }> =>
       ipcRenderer.invoke(IPC.GIT_MERGE_CHECK, repoPath, branch),
     merge: (repoPath: string, branch: string): Promise<void> =>
