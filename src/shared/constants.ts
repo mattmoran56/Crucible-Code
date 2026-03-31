@@ -16,6 +16,7 @@ export const IPC = {
   GIT_MERGE_CHECK: 'git:merge-check',
   GIT_MERGE: 'git:merge',
   GIT_IS_MERGED: 'git:is-merged',
+  GIT_DEFAULT_BRANCH: 'git:default-branch',
 
   // Worktree
   WORKTREE_CREATE: 'worktree:create',

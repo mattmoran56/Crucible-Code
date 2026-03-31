@@ -78,4 +78,8 @@ export function registerGitHandlers() {
   ipcMain.handle(IPC.GIT_IS_MERGED, async (_e, worktreePath: string, baseBranch: string) => {
     return gitService.isBranchMerged(worktreePath, baseBranch)
   })
+
+  ipcMain.handle(IPC.GIT_DEFAULT_BRANCH, async (_e, repoPath: string) => {
+    return gitService.getDefaultBranch(repoPath)
+  })
 }

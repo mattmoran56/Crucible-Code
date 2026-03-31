@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { Project } from '../../../shared/types'
 import { Dialog } from '../ui/Dialog'
 import { Input } from '../ui/Input'
+import { BranchCombobox } from '../ui/BranchCombobox'
 import { Button } from '../ui/Button'
 
 interface Props {
@@ -14,9 +15,27 @@ interface Props {
 export function CreateSessionDialog({ open, project, onClose }: Props) {
   const [name, setName] = useState('')
   const [baseBranch, setBaseBranch] = useState('')
+  const [branches, setBranches] = useState<string[]>([])
+  const [branchesLoading, setBranchesLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { createSession } = useSessionStore()
+
+  // Fetch default branch and branch list when dialog opens
+  useEffect(() => {
+    if (!open) return
+    setName('')
+    setError(null)
+    setBranchesLoading(true)
+    Promise.all([
+      window.api.git.defaultBranch(project.repoPath),
+      window.api.git.listBranches(project.repoPath),
+    ]).then(([defaultBranch, list]) => {
+      setBaseBranch(defaultBranch)
+      setBranches(list)
+      setBranchesLoading(false)
+    }).catch(() => setBranchesLoading(false))
+  }, [open, project.repoPath])
 
   const handleCreate = async () => {
     if (!name.trim()) return
@@ -47,11 +66,14 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
         className="mb-4"
       />
 
-      <Input
+      <BranchCombobox
         label="Base branch"
-        hint="Optional — defaults to HEAD"
+        hint="Branch to create the new session from"
         value={baseBranch}
-        onChange={(e) => setBaseBranch(e.target.value)}
+        onChange={setBaseBranch}
+        onSelect={setBaseBranch}
+        branches={branches}
+        loading={branchesLoading}
         placeholder="main"
         className="mb-5"
       />

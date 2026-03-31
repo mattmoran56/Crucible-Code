@@ -63,6 +63,7 @@ interface SessionState {
   checkStaleness: (repoPath: string) => Promise<void>
   markStale: (projectId: string, sessionId: string) => Promise<void>
   reactivateSession: (projectId: string, sessionId: string) => Promise<void>
+  openBranch: (projectId: string, repoPath: string, branch: string, sessionName: string) => Promise<void>
   importWorktree: (projectId: string, worktree: WorktreeInfo) => Promise<void>
 }
 
@@ -268,6 +269,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const sessions = [...get().sessions, reactivated]
     await window.api.session.save(projectId, [...sessions, ...staleSessions])
     set({ sessions, staleSessions })
+  },
+
+  openBranch: async (projectId, repoPath, branch, sessionName) => {
+    const worktreeInfo = await window.api.worktree.createFromBranch(repoPath, sessionName, branch)
+    const session: Session = {
+      id: crypto.randomUUID(),
+      name: sessionName,
+      branchName: worktreeInfo.branch,
+      worktreePath: worktreeInfo.path,
+      projectId,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    }
+
+    const sessions = [...get().sessions, session]
+    await window.api.session.save(projectId, sessions)
+    await restoreDetachedWorktree(get().detachedWorktree)
+    set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
+    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
   },
 
   importWorktree: async (projectId, worktree) => {

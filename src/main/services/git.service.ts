@@ -190,6 +190,20 @@ export function remoteUrlToGitHub(remoteUrl: string): string | null {
   return null
 }
 
+export async function getDefaultBranch(repoPath: string): Promise<string> {
+  const g = git(repoPath)
+  try {
+    const ref = (await g.raw(['symbolic-ref', 'refs/remotes/origin/HEAD'])).trim()
+    return ref.replace(/^refs\/remotes\/origin\//, '')
+  } catch {
+    try {
+      return (await g.raw(['symbolic-ref', '--short', 'HEAD'])).trim()
+    } catch {
+      return 'main'
+    }
+  }
+}
+
 export async function listBranches(repoPath: string): Promise<string[]> {
   const g = git(repoPath)
   const result = await g.branch(['-a'])
