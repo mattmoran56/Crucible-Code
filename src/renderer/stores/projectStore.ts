@@ -1,19 +1,24 @@
 import { create } from 'zustand'
-import type { Project } from '../../shared/types'
+import type { Project, ClaudeAccount } from '../../shared/types'
 
 interface ProjectState {
   projects: Project[]
   activeProjectId: string | null
+  claudeAccounts: ClaudeAccount[]
   loadProjects: () => Promise<void>
   addProject: () => Promise<void>
   removeProject: (id: string) => Promise<void>
   reorderProjects: (projectIds: string[]) => Promise<void>
   setActiveProject: (id: string) => void
+  updateProject: (project: Project) => Promise<void>
+  loadAccounts: () => Promise<void>
+  saveAccounts: (accounts: ClaudeAccount[]) => Promise<void>
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   activeProjectId: null,
+  claudeAccounts: [],
 
   loadProjects: async () => {
     const projects = await window.api.project.list()
@@ -56,5 +61,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   setActiveProject: (id: string) => {
     set({ activeProjectId: id })
+  },
+
+  updateProject: async (project: Project) => {
+    const projects = await window.api.project.update(project)
+    set({ projects })
+  },
+
+  loadAccounts: async () => {
+    const claudeAccounts = await window.api.account.list()
+    set({ claudeAccounts })
+  },
+
+  saveAccounts: async (accounts: ClaudeAccount[]) => {
+    await window.api.account.save(accounts)
+    set({ claudeAccounts: accounts })
   },
 }))

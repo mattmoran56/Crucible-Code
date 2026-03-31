@@ -1,7 +1,14 @@
+export interface ClaudeAccount {
+  id: string
+  label: string
+  configDir: string
+}
+
 export interface Project {
   id: string
   name: string
   repoPath: string
+  claudeAccountId?: string
 }
 
 export type SessionStatus = 'running' | 'attention' | 'completed'

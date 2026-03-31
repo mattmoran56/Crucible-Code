@@ -73,6 +73,16 @@ export const IPC = {
   // Worktree (remote branch)
   WORKTREE_CREATE_FROM_BRANCH: 'worktree:create-from-branch',
 
+  // Accounts
+  ACCOUNT_LIST: 'account:list',
+  ACCOUNT_SAVE: 'account:save',
+  ACCOUNT_AUTH_STATUS: 'account:auth-status',
+  ACCOUNT_AUTH_SPAWN: 'account:auth-spawn',
+  ACCOUNT_AUTH_KILL: 'account:auth-kill',
+
+  // Projects (mutation)
+  PROJECT_UPDATE: 'project:update',
+
   // Self-update
   UPDATE_STATUS: 'update:status',
   UPDATE_APPLY: 'update:apply',

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount } from '../shared/types'
 
 const api = {
   git: {
@@ -50,8 +50,8 @@ const api = {
   },
 
   terminal: {
-    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude' | 'review', claudeTheme?: string): Promise<string> =>
-      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd, mode, claudeTheme),
+    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude' | 'review', claudeTheme?: string, claudeConfigDir?: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd, mode, claudeTheme, claudeConfigDir),
     write: (terminalId: string, data: string) =>
       ipcRenderer.invoke(IPC.TERMINAL_WRITE, terminalId, data),
     resize: (terminalId: string, cols: number, rows: number) =>
@@ -108,6 +108,30 @@ const api = {
     reorder: (projectIds: string[]): Promise<Project[]> =>
       ipcRenderer.invoke(IPC.PROJECT_REORDER, projectIds),
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.PROJECT_SELECT_FOLDER),
+    update: (project: Project): Promise<Project[]> =>
+      ipcRenderer.invoke(IPC.PROJECT_UPDATE, project),
+  },
+
+  account: {
+    list: (): Promise<ClaudeAccount[]> => ipcRenderer.invoke(IPC.ACCOUNT_LIST),
+    save: (accounts: ClaudeAccount[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.ACCOUNT_SAVE, accounts),
+    authStatus: (configDir: string): Promise<{ email: string | null; orgName: string | null }> =>
+      ipcRenderer.invoke(IPC.ACCOUNT_AUTH_STATUS, configDir),
+    authSpawn: (authId: string, configDir: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.ACCOUNT_AUTH_SPAWN, authId, configDir),
+    authKill: (authId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.ACCOUNT_AUTH_KILL, authId),
+    onAuthData: (callback: (authId: string, data: string) => void) => {
+      const listener = (_e: any, authId: string, data: string) => callback(authId, data)
+      ipcRenderer.on('account:auth-data', listener)
+      return () => ipcRenderer.removeListener('account:auth-data', listener)
+    },
+    onAuthExit: (callback: (authId: string, exitCode: number) => void) => {
+      const listener = (_e: any, authId: string, exitCode: number) => callback(authId, exitCode)
+      ipcRenderer.on('account:auth-exit', listener)
+      return () => ipcRenderer.removeListener('account:auth-exit', listener)
+    },
   },
 
   github: {
