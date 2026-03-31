@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useSettingsStore } from './settingsStore'
+import { useProjectStore } from './projectStore'
 
 type TerminalMode = 'shell' | 'claude' | 'review'
 
@@ -45,6 +46,14 @@ function dynamicKey(tabId: string, sessionId: string) {
   return `dyn:${tabId}:${sessionId}`
 }
 
+function getActiveProjectConfigDir(): string | undefined {
+  const { projects, activeProjectId, claudeAccounts } = useProjectStore.getState()
+  const project = projects.find((p) => p.id === activeProjectId)
+  if (!project?.claudeAccountId) return undefined
+  const account = claudeAccounts.find((a) => a.id === project.claudeAccountId)
+  return account?.configDir
+}
+
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   terminals: {},
 
@@ -54,7 +63,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     if (existing) return existing.terminalId
 
     const { claudeTheme } = useSettingsStore.getState()
-    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme)
+    const claudeConfigDir = getActiveProjectConfigDir()
+    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir)
     set((state) => ({
       terminals: {
         ...state.terminals,
@@ -87,7 +97,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     if (existing) return existing.terminalId
 
     const { claudeTheme } = useSettingsStore.getState()
-    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme)
+    const claudeConfigDir = getActiveProjectConfigDir()
+    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir)
     set((state) => ({
       terminals: {
         ...state.terminals,

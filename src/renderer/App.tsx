@@ -19,7 +19,7 @@ import { useSettingsStore } from './stores/settingsStore'
 import { LoadingScreen } from './components/LoadingScreen'
 
 export default function App() {
-  const { loadProjects, projects } = useProjectStore()
+  const { loadProjects, loadAccounts, projects } = useProjectStore()
   const { activeSessionId } = useSessionStore()
   const { editorMode } = useEditorStore()
   const { handleHookEvent, registerSessions } = useNotificationStore()
@@ -35,12 +35,12 @@ export default function App() {
     setActiveRightPanel((prev) => (prev === panel ? null : panel))
 
   useEffect(() => {
-    loadProjects().finally(() => {
+    Promise.all([loadProjects(), loadAccounts()]).finally(() => {
       setLoading(false)
       // Unmount after fade-out transition (500ms)
       setTimeout(() => setShowLoader(false), 520)
     })
-  }, [loadProjects])
+  }, [loadProjects, loadAccounts])
 
   // Register sessions from all projects with the notification store for cross-project badges
   useEffect(() => {

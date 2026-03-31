@@ -1,5 +1,7 @@
 import * as pty from 'node-pty'
 import { BrowserWindow } from 'electron'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { IPC } from '../../shared/constants'
 
 export type TerminalMode = 'shell' | 'claude' | 'review'
@@ -12,6 +14,7 @@ interface TerminalInstance {
   window: BrowserWindow
   stopped: boolean
   claudeTheme: string
+  claudeConfigDir?: string
 }
 
 const terminals = new Map<string, TerminalInstance>()
@@ -42,12 +45,20 @@ function spawnPty(
     args = []
   }
 
+  const env: Record<string, string> = { ...process.env } as Record<string, string>
+  if (instance.claudeConfigDir) {
+    const resolved = instance.claudeConfigDir.startsWith('~/')
+      ? join(homedir(), instance.claudeConfigDir.slice(2))
+      : instance.claudeConfigDir
+    env.CLAUDE_CONFIG_DIR = resolved
+  }
+
   const ptyProcess = pty.spawn(command, args, {
     name: 'xterm-256color',
     cols: 120,
     rows: 30,
     cwd: instance.cwd,
-    env: { ...process.env } as Record<string, string>,
+    env,
   })
 
   ptyProcess.onData((data) => {
@@ -92,11 +103,12 @@ export function spawnTerminal(
   sessionId: string,
   cwd: string,
   mode: TerminalMode = 'shell',
-  claudeTheme = 'dark'
+  claudeTheme = 'dark',
+  claudeConfigDir?: string
 ): string {
   const terminalId = `term-${++terminalCounter}`
 
-  const instanceBase = { sessionId, mode, cwd, window, claudeTheme }
+  const instanceBase = { sessionId, mode, cwd, window, claudeTheme, claudeConfigDir }
   const ptyProcess = spawnPty(terminalId, instanceBase, false)
 
   terminals.set(terminalId, { ...instanceBase, pty: ptyProcess, stopped: false })

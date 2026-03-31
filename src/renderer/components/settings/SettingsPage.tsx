@@ -1,9 +1,14 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useProjectStore } from '../../stores/projectStore'
 import { THEMES, type ThemeName, type ClaudeTheme } from '../../../shared/themes'
+import type { ClaudeAccount } from '../../../shared/types'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { ToggleGroup } from '../ui/ToggleGroup'
+import { Input } from '../ui/Input'
 
 const LIGHT_THEMES = THEMES.filter((t) => !t.isDark)
 const DARK_THEMES = THEMES.filter((t) => t.isDark)
@@ -16,6 +21,164 @@ export function SettingsPage() {
     preferredDark, setPreferredDark,
     claudeTheme, setClaudeTheme,
   } = useSettingsStore()
+
+  const {
+    projects,
+    claudeAccounts, saveAccounts, updateProject,
+  } = useProjectStore()
+
+  // Account management state
+  const [showAccountManager, setShowAccountManager] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<{ label: string; configDir: string } | null>(null)
+  const [authStatuses, setAuthStatuses] = useState<Record<string, { email: string | null; orgName: string | null }>>({})
+  const [authStatusVersion, setAuthStatusVersion] = useState(0)
+
+  // Auth terminal state
+  const [authTerminalActive, setAuthTerminalActive] = useState(false)
+  const [authTerminalDone, setAuthTerminalDone] = useState(false)
+  const authTerminalRef = useRef<HTMLDivElement>(null)
+  const authTermRef = useRef<Terminal | null>(null)
+  const authFitRef = useRef<FitAddon | null>(null)
+  const authIdRef = useRef<string | null>(null)
+
+  // Load auth statuses for all accounts
+  useEffect(() => {
+    const loadStatuses = async () => {
+      const statuses: Record<string, { email: string | null; orgName: string | null }> = {}
+      for (const account of claudeAccounts) {
+        try {
+          statuses[account.id] = await window.api.account.authStatus(account.configDir)
+        } catch {
+          statuses[account.id] = { email: null, orgName: null }
+        }
+      }
+      // Also load default account status
+      try {
+        statuses['__default__'] = await window.api.account.authStatus('~/.claude')
+      } catch {
+        statuses['__default__'] = { email: null, orgName: null }
+      }
+      setAuthStatuses(statuses)
+    }
+    loadStatuses()
+  }, [claudeAccounts, authStatusVersion])
+
+  const handleProjectAccountChange = async (projectId: string, accountId: string) => {
+    const project = projects.find((p) => p.id === projectId)
+    if (!project) return
+    await updateProject({
+      ...project,
+      claudeAccountId: accountId || undefined,
+    })
+  }
+
+  const handleSaveAndLogin = async () => {
+    if (!editingAccount?.label || !editingAccount?.configDir) return
+    const newAccount: ClaudeAccount = {
+      id: crypto.randomUUID(),
+      label: editingAccount.label,
+      configDir: editingAccount.configDir,
+    }
+    await saveAccounts([...claudeAccounts, newAccount])
+
+    // Spawn auth terminal
+    const authId = `auth-${Date.now()}`
+    authIdRef.current = authId
+    setAuthTerminalActive(true)
+    setAuthTerminalDone(false)
+
+    await window.api.account.authSpawn(authId, editingAccount.configDir)
+  }
+
+  // Mount xterm when auth terminal becomes active
+  useEffect(() => {
+    if (!authTerminalActive || !authTerminalRef.current || authTermRef.current) return
+
+    const terminalTheme = THEMES.find((t) => t.name === theme)?.terminal ?? THEMES[0].terminal
+    const term = new Terminal({
+      theme: terminalTheme,
+      fontSize: 13,
+      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      cursorBlink: true,
+      scrollback: 1000,
+      rows: 14,
+    })
+    const fitAddon = new FitAddon()
+    term.loadAddon(fitAddon)
+    term.open(authTerminalRef.current)
+    requestAnimationFrame(() => fitAddon.fit())
+
+    authTermRef.current = term
+    authFitRef.current = fitAddon
+
+    const removeData = window.api.account.onAuthData((id, data) => {
+      if (id !== authIdRef.current) return
+      term.write(data)
+    })
+
+    const removeExit = window.api.account.onAuthExit((id) => {
+      if (id !== authIdRef.current) return
+      setAuthTerminalDone(true)
+      // Refresh auth statuses after login completes
+      setAuthStatusVersion((v) => v + 1)
+    })
+
+    return () => {
+      removeData()
+      removeExit()
+    }
+  }, [authTerminalActive, theme])
+
+  const handleAuthDone = () => {
+    // Clean up terminal
+    if (authIdRef.current) {
+      window.api.account.authKill(authIdRef.current)
+    }
+    if (authTermRef.current) {
+      authTermRef.current.dispose()
+      authTermRef.current = null
+      authFitRef.current = null
+    }
+    authIdRef.current = null
+    setAuthTerminalActive(false)
+    setAuthTerminalDone(false)
+    setEditingAccount(null)
+    setAuthStatusVersion((v) => v + 1)
+  }
+
+  const handleAddAccountCancel = () => {
+    if (authIdRef.current) {
+      window.api.account.authKill(authIdRef.current)
+    }
+    if (authTermRef.current) {
+      authTermRef.current.dispose()
+      authTermRef.current = null
+      authFitRef.current = null
+    }
+    authIdRef.current = null
+    setAuthTerminalActive(false)
+    setAuthTerminalDone(false)
+    setEditingAccount(null)
+  }
+
+  const handleRemoveAccount = async (accountId: string) => {
+    // Unassign from any projects that use this account
+    for (const p of projects) {
+      if (p.claudeAccountId === accountId) {
+        await updateProject({ ...p, claudeAccountId: undefined })
+      }
+    }
+    await saveAccounts(claudeAccounts.filter((a) => a.id !== accountId))
+  }
+
+  // Auto-generate config dir from label
+  const handleLabelChange = (label: string) => {
+    const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    setEditingAccount({
+      label,
+      configDir: slug ? `~/.claude-${slug}` : '',
+    })
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -272,6 +435,217 @@ export function SettingsPage() {
               )}
             </div>
           </div>
+
+          {/* ─── Claude Accounts ─── */}
+          <div style={{ marginTop: 40 }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+              <h1 className="text-lg font-semibold text-text">Claude Accounts</h1>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAccountManager(!showAccountManager)}
+                className="border border-border"
+                style={{ padding: '4px 10px' }}
+              >
+                {showAccountManager ? 'Done' : 'Manage'}
+              </Button>
+            </div>
+            <p className="text-xs text-text-muted" style={{ marginBottom: 20 }}>
+              Named accounts map to separate Claude config directories, each with their own login.
+            </p>
+
+            {/* Account list */}
+            <div className="flex flex-col gap-2">
+              {/* Default account (always present, not removable) */}
+              <div
+                className="flex items-center justify-between border border-border rounded-md"
+                style={{ padding: '8px 14px' }}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-text">Default</p>
+                  <p className="text-[11px] text-text-muted">~/.claude</p>
+                </div>
+                <div className="text-[11px] text-text-muted shrink-0" style={{ marginLeft: 12 }}>
+                  {authStatuses['__default__']?.email ?? 'Not logged in'}
+                </div>
+              </div>
+
+              {claudeAccounts.map((account) => (
+                <div
+                  key={account.id}
+                  className="flex items-center justify-between border border-border rounded-md"
+                  style={{ padding: '8px 14px' }}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-text">{account.label}</p>
+                    <p className="text-[11px] text-text-muted">{account.configDir}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0" style={{ marginLeft: 12 }}>
+                    <span className="text-[11px] text-text-muted">
+                      {authStatuses[account.id]?.email ?? 'Not logged in'}
+                    </span>
+                    {showAccountManager && (
+                      <IconButton
+                        label={`Remove ${account.label}`}
+                        onClick={() => handleRemoveAccount(account.id)}
+                        className="text-text-muted hover:text-danger"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </IconButton>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Add account form / auth terminal */}
+              {showAccountManager && (
+                <div
+                  className="border border-border rounded-md"
+                  style={{ padding: '10px 14px' }}
+                >
+                  {editingAccount ? (
+                    <div className="flex flex-col gap-3">
+                      {!authTerminalActive && (
+                        <>
+                          <Input
+                            label="Label"
+                            placeholder="e.g. Work, Personal"
+                            value={editingAccount.label}
+                            onChange={(e) => handleLabelChange(e.target.value)}
+                          />
+                          <Input
+                            label="Config directory"
+                            placeholder="e.g. ~/.claude-work"
+                            hint="Auto-generated from label. Edit if you want a custom path."
+                            value={editingAccount.configDir}
+                            onChange={(e) => setEditingAccount({ ...editingAccount, configDir: e.target.value })}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={handleSaveAndLogin}
+                              disabled={!editingAccount.label || !editingAccount.configDir}
+                              style={{ padding: '4px 12px' }}
+                            >
+                              Save &amp; Log In
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={handleAddAccountCancel}
+                              style={{ padding: '4px 12px' }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Embedded auth terminal */}
+                      {authTerminalActive && (
+                        <div>
+                          <p className="text-xs font-medium text-text" style={{ marginBottom: 6 }}>
+                            Logging in to {editingAccount.label} ({editingAccount.configDir})
+                          </p>
+                          <div
+                            ref={authTerminalRef}
+                            className="border border-border rounded"
+                            style={{ height: 280, overflow: 'hidden' }}
+                          />
+                          <div className="flex gap-2" style={{ marginTop: 8 }}>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={handleAuthDone}
+                              style={{ padding: '4px 12px' }}
+                            >
+                              {authTerminalDone ? 'Done' : 'Close'}
+                            </Button>
+                            {!authTerminalDone && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleAddAccountCancel}
+                                style={{ padding: '4px 12px' }}
+                              >
+                                Cancel
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditingAccount({ label: '', configDir: '' })}
+                      className="text-accent hover:text-accent-hover w-full"
+                      style={{ padding: '4px 12px' }}
+                    >
+                      + Add Account
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ─── Project Settings ─── */}
+          {projects.length > 0 && (
+            <div style={{ marginTop: 40 }}>
+              <h1 className="text-lg font-semibold text-text" style={{ marginBottom: 4 }}>
+                Project Accounts
+              </h1>
+              <p className="text-xs text-text-muted" style={{ marginBottom: 20 }}>
+                Choose which Claude account to use for each project.
+              </p>
+
+              <div className="flex flex-col gap-2">
+                {projects.map((project) => {
+                  const accountId = project.claudeAccountId ?? ''
+                  const status = accountId ? authStatuses[accountId] : authStatuses['__default__']
+                  return (
+                    <div
+                      key={project.id}
+                      className="border border-border rounded-md"
+                      style={{ padding: '10px 14px' }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-text">{project.name}</p>
+                          <p className="text-[10px] text-text-muted truncate">{project.repoPath}</p>
+                        </div>
+                        <select
+                          value={accountId}
+                          onChange={(e) => handleProjectAccountChange(project.id, e.target.value)}
+                          className="bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent shrink-0"
+                          style={{ padding: '6px 10px', minWidth: 180, marginLeft: 12 }}
+                        >
+                          <option value="">Default (~/.claude)</option>
+                          {claudeAccounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {status?.email && (
+                        <p className="text-[11px] text-text-muted" style={{ marginTop: 4 }}>
+                          {status.email}
+                          {status.orgName && <span> — {status.orgName}</span>}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
