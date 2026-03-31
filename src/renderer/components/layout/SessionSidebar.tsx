@@ -58,9 +58,13 @@ export function SessionSidebar() {
 
   // Load sessions then immediately check staleness (chained to avoid race condition)
   useEffect(() => {
+    let cancelled = false
     if (activeProjectId && activeProject) {
-      loadSessions(activeProjectId).then(() => checkStaleness(activeProject.repoPath))
+      loadSessions(activeProjectId).then(() => {
+        if (!cancelled) checkStaleness(activeProject.repoPath)
+      })
     }
+    return () => { cancelled = true }
   }, [activeProjectId])
 
   // Auto-expand stale sessions when there are some

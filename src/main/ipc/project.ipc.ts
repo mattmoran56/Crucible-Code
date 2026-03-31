@@ -148,8 +148,6 @@ export function registerProjectHandlers(window: BrowserWindow) {
   })
 
   ipcMain.handle(IPC.SESSION_SAVE, async (_e, projectId: string, sessionList: Session[]) => {
-    const sessions = store.get('sessions', {})
-    sessions[projectId] = sessionList
-    store.set('sessions', sessions)
+    store.set(`sessions.${projectId}`, sessionList)
   })
 }
