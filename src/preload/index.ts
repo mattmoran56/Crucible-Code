@@ -207,10 +207,10 @@ const api = {
   usage: {
     getSession: (sessionId: string): Promise<SessionUsage | null> =>
       ipcRenderer.invoke(IPC.USAGE_GET_SESSION, sessionId),
-    getStats: (): Promise<UsageStats | null> =>
-      ipcRenderer.invoke(IPC.USAGE_GET_STATS),
-    getSubscription: (): Promise<SubscriptionInfo> =>
-      ipcRenderer.invoke(IPC.USAGE_GET_SUBSCRIPTION),
+    getStats: (configDir?: string): Promise<UsageStats | null> =>
+      ipcRenderer.invoke(IPC.USAGE_GET_STATS, configDir),
+    getSubscription: (configDir?: string): Promise<SubscriptionInfo> =>
+      ipcRenderer.invoke(IPC.USAGE_GET_SUBSCRIPTION, configDir),
     onSessionUpdate: (callback: (usage: SessionUsage) => void) => {
       const listener = (_e: unknown, usage: SessionUsage) => callback(usage)
       ipcRenderer.on(IPC.USAGE_SESSION_UPDATE, listener)

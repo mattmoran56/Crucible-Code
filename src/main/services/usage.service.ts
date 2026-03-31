@@ -139,12 +139,18 @@ export function getSessionUsage(sessionId: string): SessionUsage | null {
   return usage ?? cached ?? null
 }
 
+function resolveConfigDir(configDir?: string): string {
+  if (!configDir) return join(homedir(), '.claude')
+  if (configDir.startsWith('~/')) return join(homedir(), configDir.slice(2))
+  return configDir
+}
+
 /**
- * Read ~/.claude/stats-cache.json for historical usage data.
+ * Read stats-cache.json for historical usage data.
  */
-export function getUsageStats(): UsageStats | null {
+export function getUsageStats(configDir?: string): UsageStats | null {
   try {
-    const statsPath = join(homedir(), '.claude', 'stats-cache.json')
+    const statsPath = join(resolveConfigDir(configDir), 'stats-cache.json')
     if (!existsSync(statsPath)) return null
     const raw = readFileSync(statsPath, 'utf-8')
     const data = JSON.parse(raw)
@@ -169,9 +175,27 @@ export function getUsageStats(): UsageStats | null {
 }
 
 /**
- * Read subscription info from the macOS keychain.
+ * Read subscription info from the config directory's settings.json
+ * or fall back to macOS keychain for the default account.
  */
-export function getSubscriptionInfo(): SubscriptionInfo {
+export function getSubscriptionInfo(configDir?: string): SubscriptionInfo {
+  // If a custom config dir is specified, read from its settings.json
+  if (configDir) {
+    try {
+      const resolved = resolveConfigDir(configDir)
+      const settingsPath = join(resolved, 'settings.json')
+      if (existsSync(settingsPath)) {
+        const data = JSON.parse(readFileSync(settingsPath, 'utf-8'))
+        return {
+          subscriptionType: data.subscriptionType ?? null,
+          rateLimitTier: data.rateLimitTier ?? null,
+        }
+      }
+    } catch { /* fall through */ }
+    return { subscriptionType: null, rateLimitTier: null }
+  }
+
+  // Default account: try macOS keychain
   if (platform() !== 'darwin') {
     return { subscriptionType: null, rateLimitTier: null }
   }

@@ -10,11 +10,11 @@ export function registerUsageHandlers(window: BrowserWindow) {
     return usageService.getSessionUsage(sessionId)
   })
 
-  ipcMain.handle(IPC.USAGE_GET_STATS, async () => {
-    return usageService.getUsageStats()
+  ipcMain.handle(IPC.USAGE_GET_STATS, async (_e, configDir?: string) => {
+    return usageService.getUsageStats(configDir)
   })
 
-  ipcMain.handle(IPC.USAGE_GET_SUBSCRIPTION, async () => {
-    return usageService.getSubscriptionInfo()
+  ipcMain.handle(IPC.USAGE_GET_SUBSCRIPTION, async (_e, configDir?: string) => {
+    return usageService.getSubscriptionInfo(configDir)
   })
 }

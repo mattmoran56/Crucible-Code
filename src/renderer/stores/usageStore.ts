@@ -1,6 +1,15 @@
 import { create } from 'zustand'
 import type { SessionUsage, UsageStats, SubscriptionInfo } from '../../shared/types'
 import { useToastStore } from './toastStore'
+import { useProjectStore } from './projectStore'
+
+function getActiveConfigDir(): string | undefined {
+  const { projects, activeProjectId, claudeAccounts } = useProjectStore.getState()
+  const project = projects.find((p) => p.id === activeProjectId)
+  if (!project?.claudeAccountId) return undefined
+  const account = claudeAccounts.find((a) => a.id === project.claudeAccountId)
+  return account?.configDir
+}
 
 interface UsageState {
   /** Usage data keyed by sessionId */
@@ -41,7 +50,8 @@ export const useUsageStore = create<UsageState>((set, get) => ({
   fetchStats: async () => {
     set({ statsLoading: true })
     try {
-      const stats = await window.api.usage.getStats()
+      const configDir = getActiveConfigDir()
+      const stats = await window.api.usage.getStats(configDir)
       set({ stats, statsLoading: false })
     } catch (err) {
       set({ statsLoading: false })
@@ -51,7 +61,8 @@ export const useUsageStore = create<UsageState>((set, get) => ({
 
   fetchSubscription: async () => {
     try {
-      const subscription = await window.api.usage.getSubscription()
+      const configDir = getActiveConfigDir()
+      const subscription = await window.api.usage.getSubscription(configDir)
       set({ subscription })
     } catch (err) {
       useToastStore.getState().addToast('error', err instanceof Error ? err.message : String(err))
