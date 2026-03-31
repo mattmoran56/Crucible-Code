@@ -100,6 +100,14 @@ export const IPC = {
   USAGE_GET_SUBSCRIPTION: 'usage:get-subscription',
   USAGE_SESSION_UPDATE: 'usage:session-update',
 
+  // Slack
+  SLACK_CONNECT: 'slack:connect',
+  SLACK_DISCONNECT: 'slack:disconnect',
+  SLACK_STATUS: 'slack:status',
+  SLACK_TEST: 'slack:test',
+  SLACK_SAVE_CONFIG: 'slack:save-config',
+  SLACK_LOAD_CONFIG: 'slack:load-config',
+
   // File I/O
   FILE_LIST_DIR: 'file:list-dir',
   FILE_READ: 'file:read',

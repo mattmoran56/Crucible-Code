@@ -1,9 +1,15 @@
 import http from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { URL } from 'node:url'
 import { app, BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
 import type { HookType } from '../../shared/types'
 import { showNotification } from './notification.service'
+import {
+  isConnected as isSlackConnected,
+  sendPermissionRequest,
+  sendNotificationMessage,
+} from './slack.service'
 
 interface SessionMapping {
   sessionId: string
@@ -74,62 +80,100 @@ export function handleNotificationForSession(sessionId: string, sessionName: str
   handleHookEvent(sessionId, sessionName, 'notification')
 }
 
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = ''
+    req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+    req.on('end', () => resolve(body))
+    req.on('error', reject)
+  })
+}
+
 export function startNotificationServer(window: BrowserWindow): Promise<number> {
   mainWindow = window
 
   return new Promise((resolve, reject) => {
-    server = http.createServer((req, res) => {
-      // New typed endpoint: POST /hook?type=prompt|notification|stop
-      if (req.method === 'POST' && req.url?.startsWith('/hook')) {
-        let body = ''
-        req.on('data', (chunk: Buffer) => {
-          body += chunk.toString()
-        })
-        req.on('end', () => {
-          try {
-            const data = JSON.parse(body)
-            const cwd = data.cwd || ''
-            const session = findSessionByWorktreePath(cwd)
+    server = http.createServer(async (req, res) => {
+      try {
+        // ── PreToolUse permission endpoint (long-poll) ──────────────
+        // The hook script POSTs here and blocks until Slack responds
+        if (req.method === 'POST' && req.url?.startsWith('/hook/permission')) {
+          const body = await readBody(req)
+          const data = JSON.parse(body)
+          const cwd = data.cwd || ''
+          const session = findSessionByWorktreePath(cwd)
 
-            if (session) {
-              const url = new URL(req.url!, `http://127.0.0.1`)
-              const hookType = (url.searchParams.get('type') || 'notification') as HookType
-              handleHookEvent(session.sessionId, session.sessionName, hookType)
-            }
-
+          if (!session || !isSlackConnected()) {
+            // No session or no Slack — return "ask" so the normal prompt shows
             res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: true }))
-          } catch {
-            res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'invalid json' }))
+            res.end(JSON.stringify({ decision: 'ask' }))
+            return
           }
-        })
-      } else if (req.method === 'POST' && req.url === '/notification') {
-        // Legacy endpoint — treat as notification type
-        let body = ''
-        req.on('data', (chunk: Buffer) => {
-          body += chunk.toString()
-        })
-        req.on('end', () => {
-          try {
-            const data = JSON.parse(body)
-            const cwd = data.cwd || ''
-            const session = findSessionByWorktreePath(cwd)
 
-            if (session) {
-              handleHookEvent(session.sessionId, session.sessionName, 'notification')
+          // Send to Slack and wait for button click
+          const requestId = randomUUID()
+          const decision = await sendPermissionRequest({
+            requestId,
+            sessionId: session.sessionId,
+            sessionName: session.sessionName,
+            toolName: data.tool_name || 'Unknown',
+            toolInput: data.tool_input || {},
+          })
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ decision }))
+          return
+        }
+
+        // ── Existing hook endpoint: POST /hook?type=prompt|notification|stop
+        if (req.method === 'POST' && req.url?.startsWith('/hook')) {
+          const body = await readBody(req)
+          const data = JSON.parse(body)
+          const cwd = data.cwd || ''
+          const session = findSessionByWorktreePath(cwd)
+
+          if (session) {
+            const url = new URL(req.url!, `http://127.0.0.1`)
+            const hookType = (url.searchParams.get('type') || 'notification') as HookType
+
+            handleHookEvent(session.sessionId, session.sessionName, hookType)
+
+            // Forward Notification hook data to Slack (informational)
+            if (hookType === 'notification' && isSlackConnected() && data.message) {
+              sendNotificationMessage(
+                session.sessionName,
+                data.message,
+                data.title
+              ).catch((err) => console.error('Slack notification failed:', err))
             }
-
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: true }))
-          } catch {
-            res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'invalid json' }))
           }
-        })
-      } else {
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+          return
+        }
+
+        // ── Legacy endpoint
+        if (req.method === 'POST' && req.url === '/notification') {
+          const body = await readBody(req)
+          const data = JSON.parse(body)
+          const cwd = data.cwd || ''
+          const session = findSessionByWorktreePath(cwd)
+
+          if (session) {
+            handleHookEvent(session.sessionId, session.sessionName, 'notification')
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+          return
+        }
+
         res.writeHead(404)
         res.end()
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'invalid request' }))
       }
     })
 

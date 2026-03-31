@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { getNotificationServerPort } from './notification-server'
 import { getUsageTempPath, registerSession } from './usage.service'
+import { isConnected as isSlackConnected } from './slack.service'
 
 /**
  * Write hook settings to the project's .claude/settings.local.json
@@ -23,14 +24,38 @@ export function writeClaudeHookSettings(worktreePath: string, claudeTheme = 'dar
     timeout: 5,
   })
 
-  const settings: Record<string, unknown> = {
-    hooks: {
-      UserPromptSubmit: [{ matcher: '', hooks: [makeHook('prompt')] }],
-      Notification: [{ matcher: '', hooks: [makeHook('notification')] }],
-      Stop: [{ matcher: '', hooks: [makeHook('stop')] }],
-      // SubagentStop deliberately NOT configured — we only want main agent completion
-    },
+  // PreToolUse hook: POSTs tool data to /hook/permission, waits for Slack decision.
+  // The endpoint long-polls until the user clicks Allow/Deny in Slack.
+  // If Slack is not connected or returns "ask", outputs nothing and exits 0,
+  // so Claude falls through to the normal interactive permission prompt.
+  const preToolUseHook = {
+    type: 'command' as const,
+    command: [
+      'INPUT=$(cat);',
+      `RESP=$(echo "$INPUT" | curl -s -X POST "http://127.0.0.1:${port}/hook/permission"`,
+      `-H 'Content-Type: application/json' -d @- --max-time 590);`,
+      'DECISION=$(echo "$RESP" | grep -o \'"decision":"[^"]*"\' | head -1 | cut -d\'"\' -f4);',
+      'if [ "$DECISION" = "allow" ] || [ "$DECISION" = "deny" ]; then',
+      '  printf \'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"%s","permissionDecisionReason":"Decided via Slack"}}\\n\' "$DECISION";',
+      'fi',
+    ].join(' '),
+    timeout: 600,
   }
+
+  const hooks: Record<string, unknown[]> = {
+    UserPromptSubmit: [{ matcher: '', hooks: [makeHook('prompt')] }],
+    Notification: [{ matcher: '', hooks: [makeHook('notification')] }],
+    Stop: [{ matcher: '', hooks: [makeHook('stop')] }],
+    // SubagentStop deliberately NOT configured — we only want main agent completion
+  }
+
+  // Only add PreToolUse hook when Slack is connected — otherwise it would
+  // block every tool call for 10 minutes waiting for a response that can't arrive
+  if (isSlackConnected()) {
+    hooks.PreToolUse = [{ matcher: '', hooks: [preToolUseHook] }]
+  }
+
+  const settings: Record<string, unknown> = { hooks }
 
   // Configure statusLine to write usage data to a temp file for this session
   if (sessionId) {

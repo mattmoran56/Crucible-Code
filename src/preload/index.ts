@@ -244,6 +244,17 @@ const api = {
     },
   },
 
+  slack: {
+    saveConfig: (config: { enabled: boolean; botToken: string; appToken: string; channelId: string }): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(IPC.SLACK_SAVE_CONFIG, config),
+    loadConfig: (): Promise<{ enabled: boolean; botTokenHint: string; appTokenHint: string; channelId: string }> =>
+      ipcRenderer.invoke(IPC.SLACK_LOAD_CONFIG),
+    connect: (): Promise<void> => ipcRenderer.invoke(IPC.SLACK_CONNECT),
+    disconnect: (): Promise<void> => ipcRenderer.invoke(IPC.SLACK_DISCONNECT),
+    status: (): Promise<{ connected: boolean }> => ipcRenderer.invoke(IPC.SLACK_STATUS),
+    test: (): Promise<void> => ipcRenderer.invoke(IPC.SLACK_TEST),
+  },
+
   update: {
     onStatus: (callback: (status: UpdateStatus) => void) => {
       const listener = (_e: any, status: UpdateStatus) => callback(status)

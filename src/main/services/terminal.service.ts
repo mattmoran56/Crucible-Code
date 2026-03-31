@@ -18,6 +18,8 @@ interface TerminalInstance {
 }
 
 const terminals = new Map<string, TerminalInstance>()
+const outputBuffers = new Map<string, string>()
+const MAX_BUFFER_SIZE = 4000
 let terminalCounter = 0
 
 function spawnPty(
@@ -62,6 +64,11 @@ function spawnPty(
   })
 
   ptyProcess.onData((data) => {
+    // Maintain rolling output buffer for Slack context
+    let buf = (outputBuffers.get(terminalId) ?? '') + data
+    if (buf.length > MAX_BUFFER_SIZE) buf = buf.slice(-MAX_BUFFER_SIZE)
+    outputBuffers.set(terminalId, buf)
+
     instance.window.webContents.send(IPC.TERMINAL_DATA, terminalId, data)
   })
 
@@ -135,6 +142,7 @@ export function killTerminal(terminalId: string): void {
     instance.stopped = true
     instance.pty.kill()
     terminals.delete(terminalId)
+    outputBuffers.delete(terminalId)
   }
 }
 
@@ -144,6 +152,23 @@ export function killSessionTerminals(sessionId: string): void {
       instance.stopped = true
       instance.pty.kill()
       terminals.delete(id)
+      outputBuffers.delete(id)
     }
   }
+}
+
+/** Find the terminal ID for a given session */
+export function getTerminalIdForSession(sessionId: string): string | undefined {
+  for (const [id, instance] of terminals) {
+    if (instance.sessionId === sessionId) return id
+  }
+  return undefined
+}
+
+/** Get the recent output buffer for a terminal, stripped of ANSI escape codes */
+export function getRecentOutput(terminalId: string): string {
+  const raw = outputBuffers.get(terminalId) ?? ''
+  // Strip ANSI escape sequences for clean Slack display
+  // eslint-disable-next-line no-control-regex
+  return raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\r/g, '')
 }
