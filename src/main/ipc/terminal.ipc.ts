@@ -2,15 +2,25 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
 import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
+import { seedPermissions, startWatching, stopWatching, setWindow } from '../services/permission-sync.service'
 import type { TerminalMode } from '../services/terminal.service'
 
 export function registerTerminalHandlers(window: BrowserWindow) {
+  setWindow(window)
+
   ipcMain.handle(
     IPC.TERMINAL_SPAWN,
-    async (_e, sessionId: string, cwd: string, mode?: TerminalMode, claudeTheme?: string, claudeConfigDir?: string) => {
+    async (_e, sessionId: string, cwd: string, mode?: TerminalMode, claudeTheme?: string, claudeConfigDir?: string, repoPath?: string) => {
       // Write Claude Code hook settings so notifications route to our server
       // and statusLine writes usage data for this session
       writeClaudeHookSettings(cwd, claudeTheme ?? 'dark', sessionId)
+
+      // Sync shared permissions from the main repo into this worktree
+      if (repoPath) {
+        seedPermissions(repoPath, cwd)
+        startWatching(repoPath, cwd)
+      }
+
       return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell', claudeTheme ?? 'dark', claudeConfigDir)
     }
   )
@@ -24,6 +34,8 @@ export function registerTerminalHandlers(window: BrowserWindow) {
   })
 
   ipcMain.handle(IPC.TERMINAL_KILL, async (_e, terminalId: string) => {
+    const cwd = terminalService.getTerminalCwd(terminalId)
+    if (cwd) stopWatching(cwd)
     terminalService.killTerminal(terminalId)
   })
 }

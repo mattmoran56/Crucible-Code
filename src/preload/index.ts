@@ -52,8 +52,8 @@ const api = {
   },
 
   terminal: {
-    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude' | 'review', claudeTheme?: string, claudeConfigDir?: string): Promise<string> =>
-      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd, mode, claudeTheme, claudeConfigDir),
+    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude' | 'review', claudeTheme?: string, claudeConfigDir?: string, repoPath?: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath),
     write: (terminalId: string, data: string) =>
       ipcRenderer.invoke(IPC.TERMINAL_WRITE, terminalId, data),
     resize: (terminalId: string, cols: number, rows: number) =>
@@ -241,6 +241,19 @@ const api = {
       const listener = (_e: unknown, filePath: string) => callback(filePath)
       ipcRenderer.on(IPC.FILE_CHANGED, listener)
       return () => ipcRenderer.removeListener(IPC.FILE_CHANGED, listener)
+    },
+  },
+
+  permissions: {
+    get: (repoPath: string): Promise<{ allow: string[]; deny: string[] }> =>
+      ipcRenderer.invoke(IPC.PERMISSIONS_GET, repoPath),
+    update: (repoPath: string, permissions: { allow: string[]; deny: string[] }): Promise<void> =>
+      ipcRenderer.invoke(IPC.PERMISSIONS_UPDATE, repoPath, permissions),
+    onChanged: (callback: (repoPath: string, permissions: { allow: string[]; deny: string[] }) => void) => {
+      const listener = (_e: unknown, repoPath: string, permissions: { allow: string[]; deny: string[] }) =>
+        callback(repoPath, permissions)
+      ipcRenderer.on(IPC.PERMISSIONS_CHANGED, listener)
+      return () => ipcRenderer.removeListener(IPC.PERMISSIONS_CHANGED, listener)
     },
   },
 

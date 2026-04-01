@@ -100,6 +100,11 @@ export const IPC = {
   USAGE_GET_SUBSCRIPTION: 'usage:get-subscription',
   USAGE_SESSION_UPDATE: 'usage:session-update',
 
+  // Permissions
+  PERMISSIONS_GET: 'permissions:get',
+  PERMISSIONS_UPDATE: 'permissions:update',
+  PERMISSIONS_CHANGED: 'permissions:changed',
+
   // File I/O
   FILE_LIST_DIR: 'file:list-dir',
   FILE_READ: 'file:read',

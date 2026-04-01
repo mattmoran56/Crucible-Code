@@ -10,6 +10,7 @@ import { registerUpdateHandlers } from './update.ipc'
 import { registerNotesHandlers } from './notes.ipc'
 import { registerUsageHandlers } from './usage.ipc'
 import { registerFileHandlers } from './file.ipc'
+import { registerPermissionsHandlers } from './permissions.ipc'
 import {
   registerSessionMapping,
   removeSessionMapping,
@@ -26,6 +27,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerNotesHandlers()
   registerUsageHandlers(window)
   registerFileHandlers(window)
+  registerPermissionsHandlers()
 
   // Session mapping management for notification routing
   ipcMain.handle(
