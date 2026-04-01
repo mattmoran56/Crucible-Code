@@ -55,6 +55,12 @@ function getActiveProjectConfigDir(): string | undefined {
   return account?.configDir
 }
 
+function getActiveProjectRepoPath(): string | undefined {
+  const { projects, activeProjectId } = useProjectStore.getState()
+  const project = projects.find((p) => p.id === activeProjectId)
+  return project?.repoPath
+}
+
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   terminals: {},
 
@@ -65,7 +71,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
     const { claudeTheme } = useSettingsStore.getState()
     const claudeConfigDir = getActiveProjectConfigDir()
-    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir)
+    const repoPath = getActiveProjectRepoPath()
+    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath)
     set((state) => ({
       terminals: {
         ...state.terminals,
@@ -100,7 +107,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
     const { claudeTheme } = useSettingsStore.getState()
     const claudeConfigDir = getActiveProjectConfigDir()
-    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir)
+    const repoPath = getActiveProjectRepoPath()
+    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath)
     set((state) => ({
       terminals: {
         ...state.terminals,

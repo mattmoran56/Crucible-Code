@@ -138,6 +138,10 @@ export function killTerminal(terminalId: string): void {
   }
 }
 
+export function getTerminalCwd(terminalId: string): string | undefined {
+  return terminals.get(terminalId)?.cwd
+}
+
 export function killSessionTerminals(sessionId: string): void {
   for (const [id, instance] of terminals) {
     if (instance.sessionId === sessionId) {
