@@ -6,6 +6,8 @@ import {
   startNotificationServer,
   stopNotificationServer,
 } from './services/notification-server'
+import { initSlackOnStartup } from './ipc/slack.ipc'
+import { stopSlack } from './services/slack.service'
 
 // When launched from Finder/Dock, process.env.PATH is the minimal macOS default
 // and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
@@ -37,6 +39,9 @@ async function createWindow() {
 
   registerAllHandlers(mainWindow)
 
+  // Auto-connect Slack if previously configured
+  initSlackOnStartup().catch(() => {})
+
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -47,6 +52,7 @@ async function createWindow() {
 app.whenReady().then(createWindow)
 
 app.on('window-all-closed', () => {
+  stopSlack().catch(() => {})
   stopNotificationServer()
   app.quit()
 })

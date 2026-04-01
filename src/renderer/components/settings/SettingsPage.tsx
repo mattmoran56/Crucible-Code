@@ -180,6 +180,81 @@ export function SettingsPage() {
     })
   }
 
+  // ─── Slack notification state ───
+  const [slackEnabled, setSlackEnabled] = useState(false)
+  const [slackBotToken, setSlackBotToken] = useState('')
+  const [slackAppToken, setSlackAppToken] = useState('')
+  const [slackChannelId, setSlackChannelId] = useState('')
+  const [slackBotTokenHint, setSlackBotTokenHint] = useState('')
+  const [slackAppTokenHint, setSlackAppTokenHint] = useState('')
+  const [slackConnected, setSlackConnected] = useState(false)
+  const [slackSaving, setSlackSaving] = useState(false)
+  const [slackTesting, setSlackTesting] = useState(false)
+  const [slackError, setSlackError] = useState('')
+  const [slackTestOk, setSlackTestOk] = useState(false)
+  const [slackExpanded, setSlackExpanded] = useState(false)
+
+  // Load Slack config on mount
+  useEffect(() => {
+    const loadSlack = async () => {
+      try {
+        const config = await window.api.slack.loadConfig()
+        setSlackEnabled(config.enabled)
+        setSlackBotTokenHint(config.botTokenHint)
+        setSlackAppTokenHint(config.appTokenHint)
+        setSlackChannelId(config.channelId)
+        const status = await window.api.slack.status()
+        setSlackConnected(status.connected)
+      } catch { /* ignore if not available */ }
+    }
+    loadSlack()
+  }, [])
+
+  const handleSlackSave = async () => {
+    setSlackSaving(true)
+    setSlackError('')
+    try {
+      const result = await window.api.slack.saveConfig({
+        enabled: slackEnabled,
+        botToken: slackBotToken || '', // empty = keep existing
+        appToken: slackAppToken || '',
+        channelId: slackChannelId,
+      })
+      if (!result.ok) {
+        setSlackError(result.error || 'Failed to connect')
+      }
+      // Refresh status
+      const status = await window.api.slack.status()
+      setSlackConnected(status.connected)
+      // Refresh hints
+      const config = await window.api.slack.loadConfig()
+      setSlackBotTokenHint(config.botTokenHint)
+      setSlackAppTokenHint(config.appTokenHint)
+      // Clear token inputs after save
+      setSlackBotToken('')
+      setSlackAppToken('')
+    } catch (err: any) {
+      setSlackError(err.message)
+    } finally {
+      setSlackSaving(false)
+    }
+  }
+
+  const handleSlackTest = async () => {
+    setSlackTesting(true)
+    setSlackTestOk(false)
+    setSlackError('')
+    try {
+      await window.api.slack.test()
+      setSlackTestOk(true)
+      setTimeout(() => setSlackTestOk(false), 3000)
+    } catch (err: any) {
+      setSlackError(err.message)
+    } finally {
+      setSlackTesting(false)
+    }
+  }
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeSettings()
@@ -646,6 +721,144 @@ export function SettingsPage() {
               </div>
             </div>
           )}
+          {/* ─── Slack Notifications ─── */}
+          <div style={{ marginTop: 40 }}>
+            <h1 className="text-lg font-semibold text-text" style={{ marginBottom: 4 }}>
+              Slack Notifications
+            </h1>
+            <p className="text-xs text-text-muted" style={{ marginBottom: 20 }}>
+              Get notified in Slack when Claude needs your attention, and respond with interactive buttons.
+            </p>
+
+            {/* Enable toggle */}
+            <div
+              className="flex items-center justify-between border border-border rounded-md"
+              style={{ padding: '10px 14px', marginBottom: 12 }}
+            >
+              <div>
+                <p className="text-xs font-medium text-text">Enable Slack</p>
+                <p className="text-[11px] text-text-muted">
+                  Send intervention prompts to a Slack channel
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {slackConnected && (
+                  <span className="text-[11px] text-success flex items-center gap-1">
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-success)', display: 'inline-block' }} />
+                    Connected
+                  </span>
+                )}
+                <ToggleGroup
+                  options={[
+                    { value: 'off', label: 'Off' },
+                    { value: 'on', label: 'On' },
+                  ]}
+                  value={slackEnabled ? 'on' : 'off'}
+                  onChange={(v) => setSlackEnabled(v === 'on')}
+                />
+              </div>
+            </div>
+
+            {slackEnabled && (
+              <div className="flex flex-col gap-3">
+                {/* Bot Token */}
+                <Input
+                  label="Bot Token"
+                  type="password"
+                  placeholder={slackBotTokenHint ? `Current: ${slackBotTokenHint}` : 'xoxb-...'}
+                  value={slackBotToken}
+                  onChange={(e) => setSlackBotToken(e.target.value)}
+                />
+
+                {/* App Token */}
+                <Input
+                  label="App-Level Token"
+                  type="password"
+                  placeholder={slackAppTokenHint ? `Current: ${slackAppTokenHint}` : 'xapp-...'}
+                  value={slackAppToken}
+                  onChange={(e) => setSlackAppToken(e.target.value)}
+                />
+
+                {/* Channel ID */}
+                <Input
+                  label="Channel ID"
+                  placeholder="C01ABCDEF23"
+                  hint="Right-click a channel in Slack > View channel details > copy the ID at the bottom."
+                  value={slackChannelId}
+                  onChange={(e) => setSlackChannelId(e.target.value)}
+                />
+
+                {/* Error */}
+                {slackError && (
+                  <p className="text-[11px] text-danger">{slackError}</p>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleSlackSave}
+                    disabled={slackSaving}
+                    style={{ padding: '4px 12px' }}
+                  >
+                    {slackSaving ? 'Saving...' : 'Save & Connect'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSlackTest}
+                    disabled={slackTesting || !slackConnected}
+                    className="border border-border"
+                    style={{ padding: '4px 12px' }}
+                  >
+                    {slackTesting ? 'Sending...' : slackTestOk ? 'Sent!' : 'Test Message'}
+                  </Button>
+                </div>
+
+                {/* Setup instructions */}
+                <div className="border border-border rounded-md" style={{ marginTop: 4 }}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSlackExpanded(!slackExpanded)}
+                    className="w-full text-left"
+                    style={{ padding: '8px 14px' }}
+                  >
+                    <span className="flex items-center gap-2 text-[11px] text-text-muted">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ transform: slackExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
+                      >
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                      Setup instructions
+                    </span>
+                  </Button>
+                  {slackExpanded && (
+                    <div className="text-[11px] text-text-muted" style={{ padding: '0 14px 12px' }}>
+                      <ol className="list-decimal" style={{ paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <li>Go to <span className="text-accent">api.slack.com/apps</span> and create a new app &quot;From scratch&quot;</li>
+                        <li>Under <strong>Socket Mode</strong>, enable it and generate an app-level token (starts with <code>xapp-</code>)</li>
+                        <li>Under <strong>OAuth &amp; Permissions</strong>, add the <code>chat:write</code> bot scope</li>
+                        <li>Under <strong>Interactivity &amp; Shortcuts</strong>, toggle Interactivity on</li>
+                        <li>Install the app to your workspace — copy the <strong>Bot User OAuth Token</strong> (starts with <code>xoxb-</code>)</li>
+                        <li>Invite the bot to your channel: <code>/invite @YourAppName</code></li>
+                        <li>Paste the tokens and channel ID above</li>
+                      </ol>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
