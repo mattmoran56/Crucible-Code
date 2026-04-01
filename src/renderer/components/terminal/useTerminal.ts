@@ -17,12 +17,21 @@ interface UseTerminalOptions {
 // Global registry — keeps xterm instances alive for the lifetime of the app
 const terminalInstances = new Map<
   string,
-  { term: Terminal; fitAddon: FitAddon; attached: boolean }
+  { term: Terminal; fitAddon: FitAddon; attached: boolean; unsubData: (() => void) | null; unsubExit: (() => void) | null }
 >()
 
 function getCurrentTerminalTheme() {
   const { theme } = useSettingsStore.getState()
   return THEMES.find((t) => t.name === theme)?.terminal ?? THEMES[0].terminal
+}
+
+export function destroyTerminal(terminalId: string): void {
+  const instance = terminalInstances.get(terminalId)
+  if (!instance) return
+  instance.unsubData?.()
+  instance.unsubExit?.()
+  instance.term.dispose()
+  terminalInstances.delete(terminalId)
 }
 
 export function useTerminal({ terminalId, sessionId, sessionName, visible = true }: UseTerminalOptions) {
@@ -113,7 +122,7 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
     })
 
     // Receive data from pty — always active, even when hidden
-    window.api.terminal.onData((id, data) => {
+    const unsubData = window.api.terminal.onData((id, data) => {
       if (id !== terminalId) return
       term.write(data)
       if (anchoredToBottom && !userScrolling) term.scrollToBottom()
@@ -135,12 +144,12 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       }
     })
 
-    window.api.terminal.onExit((id, code) => {
+    const unsubExit = window.api.terminal.onExit((id, code) => {
       if (id !== terminalId) return
       term.writeln(`\r\n[Process exited with code ${code}]`)
     })
 
-    terminalInstances.set(terminalId, { term, fitAddon, attached: true })
+    terminalInstances.set(terminalId, { term, fitAddon, attached: true, unsubData, unsubExit })
 
     // Initial fit + scroll to bottom
     requestAnimationFrame(() => {

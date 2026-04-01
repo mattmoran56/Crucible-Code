@@ -77,6 +77,8 @@ async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
   }
 }
 
+let loadSessionsRequestId = 0
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   staleSessions: [],
@@ -103,7 +105,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       })
     }
 
+    const thisRequestId = ++loadSessionsRequestId
     const sessions = await window.api.session.list(projectId)
+    if (thisRequestId !== loadSessionsRequestId) return  // stale response, discard
     const currentId = get().activeSessionId
     const stillExists = currentId && sessions.some((s) => s.id === currentId)
 
@@ -180,6 +184,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const sessions = [...get().sessions, session]
     await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
     set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
     saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
@@ -199,6 +204,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const sessions = get().sessions.filter((s) => s.id !== sessionId)
     const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)
     await window.api.session.save(projectId, [...sessions, ...staleSessions])
+    if (get().currentProjectId !== projectId) return
 
     set({
       sessions,
@@ -251,6 +257,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const sessions = get().sessions.filter((s) => s.id !== sessionId)
     const staleSessions = [staled, ...get().staleSessions]
     await window.api.session.save(projectId, [...sessions, ...staleSessions])
+    if (get().currentProjectId !== projectId) return
     set({
       sessions,
       staleSessions,
@@ -268,6 +275,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)
     const sessions = [...get().sessions, reactivated]
     await window.api.session.save(projectId, [...sessions, ...staleSessions])
+    if (get().currentProjectId !== projectId) return
     set({ sessions, staleSessions })
   },
 
@@ -285,6 +293,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const sessions = [...get().sessions, session]
     await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
     set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
     saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
@@ -307,6 +316,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const sessions = [...get().sessions, session]
     await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
     set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
     saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })

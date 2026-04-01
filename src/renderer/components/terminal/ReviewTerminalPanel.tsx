@@ -49,30 +49,39 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
     }
 
     reviewsLaunched.add(commandKey)
+
+    let unsub: (() => void) | null = null
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    let sent = false
+
     spawnTerminal(terminalSessionId, terminalName, cwd, 'review').then(
       (terminalId) => {
-        // Listen for Claude Code to be ready, then send the review command
-        let sent = false
-        const unsub = window.api.terminal.onData((tid, data) => {
+        unsub = window.api.terminal.onData((tid, data) => {
           if (tid !== terminalId || sent) return
           if (data.includes('>') || data.includes('$')) {
             sent = true
-            unsub()
+            unsub?.()
+            unsub = null
             setTimeout(() => {
               window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\r`)
             }, 100)
           }
         })
-        // Fallback: if we don't detect readiness within 10s, send anyway
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           if (!sent) {
             sent = true
-            unsub()
+            unsub?.()
+            unsub = null
             window.api.terminal.write(terminalId, `/review ${effectivePRNumber}\r`)
           }
         }, 10000)
       }
     )
+
+    return () => {
+      unsub?.()
+      if (timeoutId) clearTimeout(timeoutId)
+    }
   }, [terminalSessionId, effectivePRNumber, cwd, terminalName, commandKey, getTerminal, spawnTerminal])
 
   if (effectivePRNumber == null) {

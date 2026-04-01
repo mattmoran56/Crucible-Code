@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { useSettingsStore } from './settingsStore'
 import { useProjectStore } from './projectStore'
+import { destroyTerminal } from '../components/terminal/useTerminal'
 
 type TerminalMode = 'shell' | 'claude' | 'review'
 
@@ -78,6 +79,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const key = terminalKey(sessionId, mode)
     const instance = get().terminals[key]
     if (instance) {
+      destroyTerminal(instance.terminalId)
       await window.api.terminal.kill(instance.terminalId)
       set((state) => {
         const { [key]: _, ...rest } = state.terminals
@@ -112,6 +114,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const key = dynamicKey(tabId, sessionId)
     const instance = get().terminals[key]
     if (instance) {
+      destroyTerminal(instance.terminalId)
       await window.api.terminal.kill(instance.terminalId)
       set((state) => {
         const { [key]: _, ...rest } = state.terminals
@@ -131,6 +134,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     for (const key of keysToKill) {
       const instance = allTerminals[key]
       if (instance) {
+        destroyTerminal(instance.terminalId)
         await window.api.terminal.kill(instance.terminalId)
       }
     }
