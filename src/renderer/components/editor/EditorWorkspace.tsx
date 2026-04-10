@@ -14,7 +14,17 @@ import {
 } from '../../stores/workspaceLayoutStore'
 import { ColumnPanel } from '../layout/WorkspaceColumn'
 
-const EDITOR_CONTEXT_ID = 'code-editor'
+/**
+ * Editor layout/terminal state is scoped per project so that switching
+ * projects restores each project's own tabs, splits, agents and terminals
+ * instead of sharing a single global "code-editor" context.
+ */
+function editorContextIdFor(projectId: string | null | undefined): string {
+  return projectId ? `code-editor:${projectId}` : 'code-editor'
+}
+function editorSessionIdFor(projectId: string | null | undefined): string {
+  return projectId ? `__code-editor__:${projectId}` : '__code-editor__'
+}
 
 export function EditorWorkspace() {
   const { projects, activeProjectId } = useProjectStore()
@@ -26,18 +36,28 @@ export function EditorWorkspace() {
   const { killDynamicTerminalAll } = useTerminalStore()
   const { loadBranch } = useEditorStore()
 
-  // Initialize layout for editor mode
-  const initializedRef = useRef(false)
+  const editorContextId = editorContextIdFor(activeProjectId)
+  const editorSessionId = editorSessionIdFor(activeProjectId)
+
+  // Restore per-project layout when the active project changes, and save
+  // the outgoing project's layout first so we don't lose it.
+  const prevContextRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!initializedRef.current) {
-      resetLayout(['code'], 'code', EDITOR_CONTEXT_ID)
-      initializedRef.current = true
+    if (prevContextRef.current && prevContextRef.current !== editorContextId) {
+      saveLayout(prevContextRef.current)
     }
+    resetLayout(['code'], 'code', editorContextId)
+    prevContextRef.current = editorContextId
+  }, [editorContextId, resetLayout, saveLayout])
+
+  // Save the current project's layout when leaving editor mode (unmount)
+  useEffect(() => {
     return () => {
-      // Save layout when leaving editor mode
-      saveLayout(EDITOR_CONTEXT_ID)
+      if (prevContextRef.current) {
+        saveLayout(prevContextRef.current)
+      }
     }
-  }, [])
+  }, [saveLayout])
 
   // Load branch info
   useEffect(() => {
@@ -46,12 +66,12 @@ export function EditorWorkspace() {
     }
   }, [repoPath, loadBranch])
 
-  // Auto-save layout whenever columns change
+  // Auto-save layout whenever columns change (for the current project's context)
   useEffect(() => {
     if (columns.length > 0) {
-      saveLayout(EDITOR_CONTEXT_ID)
+      saveLayout(editorContextId)
     }
-  }, [columns])
+  }, [columns, editorContextId, saveLayout])
 
   // Column resize
   const columnsRef = useRef<HTMLDivElement>(null)
@@ -281,7 +301,7 @@ export function EditorWorkspace() {
             tabId={tab as WorkspaceTab}
             visible={isVisible}
             overrideCwd={repoPath}
-            overrideSessionId="__code-editor__"
+            overrideSessionId={editorSessionId}
           />,
           target
         )
