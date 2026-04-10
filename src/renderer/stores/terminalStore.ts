@@ -61,6 +61,11 @@ function getActiveProjectRepoPath(): string | undefined {
   return project?.repoPath
 }
 
+// Tracks in-flight spawns by key so concurrent callers (e.g. React StrictMode
+// double-invoked effects) dedupe onto a single PTY rather than racing to spawn
+// two and leaving an orphan running in the main process.
+const spawningTerminals = new Map<string, Promise<string>>()
+
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   terminals: {},
 
@@ -69,17 +74,28 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const existing = get().terminals[key]
     if (existing) return existing.terminalId
 
+    const inFlight = spawningTerminals.get(key)
+    if (inFlight) return inFlight
+
     const { claudeTheme } = useSettingsStore.getState()
     const claudeConfigDir = getActiveProjectConfigDir()
     const repoPath = getActiveProjectRepoPath()
-    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath)
-    set((state) => ({
-      terminals: {
-        ...state.terminals,
-        [key]: { terminalId, sessionId, sessionName, mode },
-      },
-    }))
-    return terminalId
+    const promise = (async () => {
+      try {
+        const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath)
+        set((state) => ({
+          terminals: {
+            ...state.terminals,
+            [key]: { terminalId, sessionId, sessionName, mode },
+          },
+        }))
+        return terminalId
+      } finally {
+        spawningTerminals.delete(key)
+      }
+    })()
+    spawningTerminals.set(key, promise)
+    return promise
   },
 
   killTerminal: async (sessionId: string, mode: TerminalMode = 'shell') => {
@@ -105,17 +121,28 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const existing = get().terminals[key]
     if (existing) return existing.terminalId
 
+    const inFlight = spawningTerminals.get(key)
+    if (inFlight) return inFlight
+
     const { claudeTheme } = useSettingsStore.getState()
     const claudeConfigDir = getActiveProjectConfigDir()
     const repoPath = getActiveProjectRepoPath()
-    const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath)
-    set((state) => ({
-      terminals: {
-        ...state.terminals,
-        [key]: { terminalId, sessionId, sessionName, mode },
-      },
-    }))
-    return terminalId
+    const promise = (async () => {
+      try {
+        const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath)
+        set((state) => ({
+          terminals: {
+            ...state.terminals,
+            [key]: { terminalId, sessionId, sessionName, mode },
+          },
+        }))
+        return terminalId
+      } finally {
+        spawningTerminals.delete(key)
+      }
+    })()
+    spawningTerminals.set(key, promise)
+    return promise
   },
 
   killDynamicTerminal: async (tabId, sessionId) => {

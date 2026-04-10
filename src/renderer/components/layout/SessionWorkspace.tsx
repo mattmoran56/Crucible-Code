@@ -293,48 +293,24 @@ export function SessionWorkspace() {
   const reviewVisible = columns.some((c) => c.activeTab === 'review')
 
   const isPausedForMain = openedAsMainBranch != null && openedAsMainBranch === activeSessionId
+  const pausedSession = isPausedForMain
+    ? sessions.find((s) => s.id === openedAsMainBranch)
+    : null
 
-  if (isPausedForMain) {
-    const pausedSession = sessions.find((s) => s.id === openedAsMainBranch)
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 text-center" style={{ maxWidth: 360 }}>
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
-            <circle cx="18" cy="18" r="3" />
-            <circle cx="6" cy="6" r="3" />
-            <path d="M13 6h3a2 2 0 0 1 2 2v7" />
-            <line x1="6" y1="9" x2="6" y2="21" />
-          </svg>
-          <div>
-            <h2 className="text-text text-sm font-medium mb-1">Session opened as main branch</h2>
-            <p className="text-text-muted text-xs leading-relaxed">
-              <strong className="text-text">{pausedSession?.branchName}</strong> is checked out in the main repository. The worktree is paused.
-            </p>
-            {didStash && (
-              <p className="text-warning text-xs mt-2">
-                Uncommitted changes were stashed before switching.
-              </p>
-            )}
-          </div>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => activeProject && returnToWorktree(activeProject.repoPath)}
-          >
-            Return to worktree
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  if (columns.length === 0) {
-    return <div className="flex-1 flex items-center justify-center text-text-muted text-sm">No session selected</div>
-  }
+  // Never early-return when columns are present or when paused: the portals below
+  // must stay mounted so the terminal (xterm) instance doesn't get detached from
+  // the DOM. Detaching and re-appending xterm's element leaves its renderer in a
+  // broken state, which manifested as a blank/white workspace after returning
+  // from "Open as main branch".
+  const showEmptyState = columns.length === 0 && !isPausedForMain
 
   return (
     <>
-      <div className="flex-1 flex min-h-0" ref={columnsRef}>
+      <div
+        className="flex-1 flex min-h-0 relative"
+        ref={columnsRef}
+        style={showEmptyState ? { display: 'none' } : undefined}
+      >
         {columns.map((col, i) => (
           <React.Fragment key={col.id}>
             {i > 0 && (
@@ -358,17 +334,56 @@ export function SessionWorkspace() {
             />
           </React.Fragment>
         ))}
+        {/* Paused overlay — covers the column tree while the session's branch is
+            checked out in the main repo. Portals stay mounted underneath so the
+            terminal isn't destroyed, and clicking "Return to worktree" just
+            hides the overlay. */}
+        {isPausedForMain && (
+          <div className="absolute inset-0 flex items-center justify-center bg-bg z-10">
+            <div className="flex flex-col items-center gap-4 text-center" style={{ maxWidth: 360 }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
+                <circle cx="18" cy="18" r="3" />
+                <circle cx="6" cy="6" r="3" />
+                <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                <line x1="6" y1="9" x2="6" y2="21" />
+              </svg>
+              <div>
+                <h2 className="text-text text-sm font-medium mb-1">Session opened as main branch</h2>
+                <p className="text-text-muted text-xs leading-relaxed">
+                  <strong className="text-text">{pausedSession?.branchName}</strong> is checked out in the main repository. The worktree is paused.
+                </p>
+                {didStash && (
+                  <p className="text-warning text-xs mt-2">
+                    Uncommitted changes were stashed before switching.
+                  </p>
+                )}
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => activeProject && returnToWorktree(activeProject.repoPath)}
+              >
+                Return to worktree
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
+      {showEmptyState && (
+        <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
+          No session selected
+        </div>
+      )}
       {/* Core panel mounting — panels never unmount, just get portaled between columns */}
-      {createPortal(<TerminalPanel mode="claude" visible={agentVisible} />, corePanelTargets.current.agent)}
-      {createPortal(<ReviewTerminalPanel visible={reviewVisible} />, corePanelTargets.current.review)}
+      {createPortal(<TerminalPanel mode="claude" visible={agentVisible && !isPausedForMain} />, corePanelTargets.current.agent)}
+      {createPortal(<ReviewTerminalPanel visible={reviewVisible && !isPausedForMain} />, corePanelTargets.current.review)}
       {createPortal(<GitPanel />, corePanelTargets.current.git)}
       {createPortal(<PRReviewPanel />, corePanelTargets.current.pr)}
       {/* Dynamic panel mounting */}
       {[...allDynamicTabs].map((tab) => {
         const target = dynamicPanelTargets.current.get(tab)
         if (!target) return null
-        const isVisible = columns.some((c) => c.activeTab === tab)
+        const isVisible = columns.some((c) => c.activeTab === tab) && !isPausedForMain
         return createPortal(
           <DynamicTerminalPanel key={tab} tabId={tab as WorkspaceTab} visible={isVisible} />,
           target
