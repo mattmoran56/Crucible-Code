@@ -5,6 +5,7 @@ import { usePRReviewStore } from '../../stores/prReviewStore'
 import { usePRStore } from '../../stores/prStore'
 import { PRDiffViewer } from '../git/DiffViewer'
 import { PRConversationTab } from './PRConversationTab'
+import { PRCommitsTab } from './PRCommitsTab'
 import { PRScrollableDiffView } from './PRScrollableDiffView'
 import { FileTree } from './FileTree'
 import { ResizeHandle } from '../ui/ResizeHandle'
@@ -272,11 +273,18 @@ export function PRReviewPanel() {
           onClick={() => setActiveTab('files')}
           label={`Files (${files.length})`}
         />
+        <InnerTab
+          active={activeTab === 'commits'}
+          onClick={() => setActiveTab('commits')}
+          label={`Commits (${commits.length})`}
+        />
       </div>
 
       {/* Tab content */}
       {activeTab === 'conversation' ? (
         <PRConversationTab />
+      ) : activeTab === 'commits' ? (
+        <PRCommitsTab />
       ) : (
         <div className="flex-1 flex flex-col min-h-0">
           {/* Stats bar + view mode toggle */}

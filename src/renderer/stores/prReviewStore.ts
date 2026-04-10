@@ -20,7 +20,7 @@ interface PRReviewState {
   conversationComments: PRConversationComment[]
   checks: PRCheck[]
   checksPolling: boolean
-  activeTab: 'conversation' | 'files'
+  activeTab: 'conversation' | 'files' | 'commits'
 
   // Viewed files
   viewedFiles: Set<string>
@@ -51,7 +51,7 @@ interface PRReviewState {
   submitReview: (repoPath: string, prNumber: number, event: PRReviewEvent, body?: string) => Promise<void>
   merge: (repoPath: string, prNumber: number, method: PRMergeMethod) => Promise<void>
   setCommentFilter: (filter: 'all' | 'unresolved') => void
-  setActiveTab: (tab: 'conversation' | 'files') => void
+  setActiveTab: (tab: 'conversation' | 'files' | 'commits') => void
   pollChecks: (repoPath: string, prNumber: number) => void
   stopPollingChecks: () => void
   clear: () => void
