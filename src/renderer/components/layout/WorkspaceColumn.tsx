@@ -132,6 +132,7 @@ export function ColumnPanel({
 }) {
   const { setActiveTab, closeColumn, moveTab, reorderTab } = useWorkspaceLayoutStore()
   const tabBarRef = useRef<HTMLDivElement>(null)
+  const isEmpty = column.tabs.length === 0
 
   /* ── Drag handlers for the column's tab bar ── */
 
@@ -212,6 +213,41 @@ export function ColumnPanel({
 
   const isDragOver = dragOverInfo?.columnId === column.id
 
+  /* ── Drop handlers for empty column body ── */
+  const handleBodyDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes(DRAG_MIME)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverInfo({ columnId: column.id, index: 0 })
+    },
+    [column.id, setDragOverInfo]
+  )
+
+  const handleBodyDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      const target = e.currentTarget as HTMLElement
+      if (!target.contains(e.relatedTarget as Node)) {
+        setDragOverInfo(null)
+      }
+    },
+    [setDragOverInfo]
+  )
+
+  const handleBodyDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setDragOverInfo(null)
+      const raw = e.dataTransfer.getData(DRAG_MIME)
+      if (!raw) return
+      const data: DragData = JSON.parse(raw)
+      if (data.sourceColumnId !== column.id) {
+        moveTab(data.tab, data.sourceColumnId, column.id, 0)
+      }
+    },
+    [column.id, moveTab, setDragOverInfo]
+  )
+
   return (
     <div
       className="flex flex-col min-h-0 min-w-0"
@@ -266,7 +302,27 @@ export function ColumnPanel({
       </div>
 
       {/* Content — portal targets get moved here by parent workspace */}
-      <div className="flex-1 flex flex-col min-h-0 relative" data-column-content />
+      {isEmpty ? (
+        <div
+          className={`flex-1 flex flex-col items-center justify-center min-h-0 relative transition-colors ${
+            isDragOver ? 'bg-accent/5' : ''
+          }`}
+          data-column-content
+          onDragOver={handleBodyDragOver}
+          onDragLeave={handleBodyDragLeave}
+          onDrop={handleBodyDrop}
+        >
+          <div className="text-text-muted text-xs text-center" style={{ padding: '20px' }}>
+            {isDragOver ? (
+              <span className="text-accent">Drop tab here</span>
+            ) : (
+              <span>Drag tabs here</span>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col min-h-0 relative" data-column-content />
+      )}
     </div>
   )
 }

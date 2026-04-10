@@ -29,7 +29,7 @@ export function getTabLabel(tab: WorkspaceTab): string {
 export interface WorkspaceColumn {
   id: string
   tabs: WorkspaceTab[]
-  activeTab: WorkspaceTab
+  activeTab: WorkspaceTab | undefined
   flex: number
 }
 
@@ -148,23 +148,14 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) =
 
   splitRight: () => {
     const { columns } = get()
-    const sourceIdx = columns.findIndex((c) => c.tabs.length > 1)
-    if (sourceIdx === -1) return
+    if (columns.length === 0) return
 
-    const sourceCol = columns[sourceIdx]
-    const tabToMove = sourceCol.tabs.find((t) => t !== sourceCol.activeTab)
-    if (!tabToMove) return
-
-    // Reset all flex to 1 so new columns get equal width
-    const newColumns = columns.map((c) =>
-      c.id === sourceCol.id
-        ? { ...c, tabs: c.tabs.filter((t) => t !== tabToMove), flex: 1 }
-        : { ...c, flex: 1 }
-    )
-    newColumns.splice(sourceIdx + 1, 0, {
+    // Reset all flex to 1 so columns get equal width
+    const newColumns = columns.map((c) => ({ ...c, flex: 1 }))
+    newColumns.push({
       id: nextColumnId(),
-      tabs: [tabToMove],
-      activeTab: tabToMove,
+      tabs: [],
+      activeTab: undefined,
       flex: 1,
     })
 
@@ -230,8 +221,8 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) =
       return c
     })
 
-    // Remove empty columns
-    newColumns = newColumns.filter((c) => c.tabs.length > 0)
+    // Remove the source column if it became empty
+    newColumns = newColumns.filter((c) => c.id !== fromColumnId || c.tabs.length > 0)
     set({ columns: newColumns })
   },
 
@@ -282,7 +273,7 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) =
   },
 
   canSplit: () => {
-    return get().columns.some((c) => c.tabs.length > 1)
+    return get().columns.length >= 1
   },
 
   addDynamicTab: (columnId, type) => {
