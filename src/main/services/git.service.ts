@@ -405,6 +405,28 @@ export async function getCommitFullDiff(repoPath: string, commitHash: string): P
   return g.diff([parentRef, commitHash])
 }
 
+export async function getWorkingFilesPR(repoPath: string): Promise<PRFile[]> {
+  const g = git(repoPath)
+  const status = await g.status()
+  const allFiles = [
+    ...status.modified.map((f) => ({ path: f, status: 'modified' })),
+    ...status.not_added.map((f) => ({ path: f, status: 'added' })),
+    ...status.created.map((f) => ({ path: f, status: 'added' })),
+    ...status.deleted.map((f) => ({ path: f, status: 'deleted' })),
+    ...status.renamed.map((f) => ({ path: (f as any).to ?? String(f), status: 'renamed' })),
+    ...status.staged.map((f) => ({ path: f, status: 'modified' })),
+  ]
+  // Dedupe by path
+  const seen = new Set<string>()
+  const files: PRFile[] = []
+  for (const f of allFiles) {
+    if (seen.has(f.path)) continue
+    seen.add(f.path)
+    files.push({ path: f.path, status: f.status, additions: 0, deletions: 0 })
+  }
+  return files
+}
+
 export async function getWorkingChangedFiles(repoPath: string): Promise<FileDiff[]> {
   const status = await git(repoPath).status()
   const files: FileDiff[] = []

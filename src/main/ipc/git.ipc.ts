@@ -103,4 +103,12 @@ export function registerGitHandlers() {
   ipcMain.handle(IPC.GIT_COMMIT_FULL_DIFF, async (_e, repoPath: string, commitHash: string) => {
     return gitService.getCommitFullDiff(repoPath, commitHash)
   })
+
+  ipcMain.handle(IPC.GIT_WORKING_FILES_PR, async (_e, repoPath: string) => {
+    return gitService.getWorkingFilesPR(repoPath)
+  })
+
+  ipcMain.handle(IPC.GIT_WORKING_DIFF, async (_e, repoPath: string) => {
+    return gitService.getWorkingDiff(repoPath)
+  })
 }

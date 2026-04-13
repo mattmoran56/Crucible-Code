@@ -45,6 +45,10 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_COMPARE_FILE_DIFF, repoPath, baseBranch, filePath),
     commitFullDiff: (repoPath: string, commitHash: string): Promise<string> =>
       ipcRenderer.invoke(IPC.GIT_COMMIT_FULL_DIFF, repoPath, commitHash),
+    workingFilesPR: (repoPath: string): Promise<PRFile[]> =>
+      ipcRenderer.invoke(IPC.GIT_WORKING_FILES_PR, repoPath),
+    workingDiff: (repoPath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.GIT_WORKING_DIFF, repoPath),
   },
 
   worktree: {

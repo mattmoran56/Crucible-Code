@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { usePRPreviewStore } from '../../stores/prPreviewStore'
+import { usePRPreviewStore, WORKING_CHANGES_HASH } from '../../stores/prPreviewStore'
 import { PRDiffViewer } from './DiffViewer'
 import { FileTree } from '../pullrequests/FileTree'
 import { PRScrollableDiffView } from '../pullrequests/PRScrollableDiffView'
@@ -35,12 +35,14 @@ interface Props {
 
 export function PRPreviewPanel({ repoPath }: Props) {
   const {
-    baseBranch, files, fullDiff, commits,
+    baseBranch, files, fullDiff, commits, workingFiles,
     selectedFilePath, selectedCommitHash, commitDiff,
     viewMode, loading,
     selectFile, selectNextFile, selectPrevFile,
     selectCommit, nextCommit, prevCommit, setViewMode,
   } = usePRPreviewStore()
+
+  const hasWorkingChanges = workingFiles.length > 0
 
   const filesCol = useResizable({ direction: 'horizontal', initialSize: 240, minSize: 160, maxSize: 400 })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -71,9 +73,10 @@ export function PRPreviewPanel({ repoPath }: Props) {
   // Use commit-specific diff when a commit is selected, otherwise full diff
   const activeDiff = selectedCommitHash ? commitDiff : fullDiff
 
-  // Filter files when viewing a specific commit
+  // Filter files when viewing a specific commit or working changes
   const displayFiles = useMemo(() => {
     if (!selectedCommitHash || !commitDiff) return files
+    if (selectedCommitHash === WORKING_CHANGES_HASH) return workingFiles
     const fileSet = new Set<string>()
     for (const line of commitDiff.split('\n')) {
       if (line.startsWith('diff --git')) {
@@ -82,7 +85,7 @@ export function PRPreviewPanel({ repoPath }: Props) {
       }
     }
     return files.filter((f) => fileSet.has(f.path))
-  }, [selectedCommitHash, commitDiff, files])
+  }, [selectedCommitHash, commitDiff, files, workingFiles])
 
   // No-ops for FileTree props we don't need — must be before any early returns
   const emptySet = useMemo(() => new Set<string>(), [])
@@ -100,9 +103,13 @@ export function PRPreviewPanel({ repoPath }: Props) {
     ? extractFileDiff(activeDiff, selectedFilePath)
     : ''
 
-  const commitIndex = selectedCommitHash
-    ? commits.findIndex((c) => c.hash === selectedCommitHash)
-    : -1
+  // Build list of all selectable entries for index tracking
+  const totalEntries = commits.length + (hasWorkingChanges ? 1 : 0)
+  const commitIndex = selectedCommitHash === WORKING_CHANGES_HASH
+    ? commits.length // working changes is after all commits
+    : selectedCommitHash
+      ? commits.findIndex((c) => c.hash === selectedCommitHash)
+      : -1
 
   const totalAdded = files.reduce((s, f) => s + f.additions, 0)
   const totalDeleted = files.reduce((s, f) => s + f.deletions, 0)
@@ -131,7 +138,7 @@ export function PRPreviewPanel({ repoPath }: Props) {
       </div>
 
       {/* Commit selector */}
-      {commits.length > 0 && (
+      {(commits.length > 0 || hasWorkingChanges) && (
         <div
           className="flex items-center gap-2 bg-bg-secondary border-b border-border text-xs"
           style={{ padding: '4px 12px' }}
@@ -148,6 +155,11 @@ export function PRPreviewPanel({ repoPath }: Props) {
                 {i + 1}. {c.hash.slice(0, 7)} — {c.message.length > 50 ? c.message.slice(0, 50) + '…' : c.message}
               </option>
             ))}
+            {hasWorkingChanges && (
+              <option value={WORKING_CHANGES_HASH}>
+                Uncommitted changes ({workingFiles.length} file{workingFiles.length !== 1 ? 's' : ''})
+              </option>
+            )}
           </select>
           {selectedCommitHash && (
             <div className="flex items-center gap-1 text-text-muted">
@@ -160,12 +172,16 @@ export function PRPreviewPanel({ repoPath }: Props) {
               >
                 ←
               </button>
-              <span>Commit {commitIndex + 1} of {commits.length}</span>
+              <span>
+                {selectedCommitHash === WORKING_CHANGES_HASH
+                  ? 'Uncommitted changes'
+                  : `Commit ${commitIndex + 1} of ${totalEntries}`}
+              </span>
               <button
                 className="hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
                 style={{ padding: '2px 4px' }}
                 onClick={() => nextCommit(repoPath)}
-                disabled={commitIndex === commits.length - 1}
+                disabled={commitIndex === totalEntries - 1}
                 aria-label="Next commit"
               >
                 →

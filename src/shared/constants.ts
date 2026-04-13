@@ -22,6 +22,8 @@ export const IPC = {
   GIT_COMPARE_DIFF: 'git:compare-diff',
   GIT_COMPARE_FILE_DIFF: 'git:compare-file-diff',
   GIT_COMMIT_FULL_DIFF: 'git:commit-full-diff',
+  GIT_WORKING_FILES_PR: 'git:working-files-pr',
+  GIT_WORKING_DIFF: 'git:working-diff',
 
   // Worktree
   WORKTREE_CREATE: 'worktree:create',
