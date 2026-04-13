@@ -3,6 +3,7 @@ import { BrowserWindow } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { IPC } from '../../shared/constants'
+import { handleHookEvent, findSessionById } from './notification-server'
 
 export type TerminalMode = 'shell' | 'claude' | 'review'
 
@@ -75,6 +76,14 @@ function spawnPty(
     }
 
     if (current.mode === 'claude') {
+      // The process exited — emit a definitive 'stop' event.
+      // This is the ground truth that the task finished, even if the
+      // Stop hook's curl call was swallowed or timed out.
+      const session = findSessionById(current.sessionId)
+      if (session) {
+        handleHookEvent(session.sessionId, session.sessionName, 'stop')
+      }
+
       // Auto-restart Claude Code after a brief pause
       instance.window.webContents.send(
         IPC.TERMINAL_DATA,
