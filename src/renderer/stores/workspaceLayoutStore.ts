@@ -109,22 +109,32 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) =
     if (contextId) {
       const saved = get().savedLayouts[contextId]
       if (saved && saved.length > 0) {
-        // Validate saved layout: ensure all core tabs in saved layout are in the available tabs,
-        // and add any new available tabs that weren't in the saved layout.
-        // Dynamic tabs are always considered valid (they'll re-spawn their terminals).
+        // Restore the saved layout, filtering out core tabs that are no longer
+        // available (e.g. 'pr' tab when PR data hasn't loaded yet after a
+        // project switch). Dynamic tabs are always kept.
         const availableSet = new Set(tabs)
         const savedTabs = new Set(saved.flatMap((c) => c.tabs))
+        const missingTabs = tabs.filter((t) => !savedTabs.has(t))
 
-        // Check if saved layout is still compatible (all saved core tabs still available)
-        const allValid = [...savedTabs].every((t) => availableSet.has(t) || isDynamicTab(t))
-        if (allValid) {
-          // Add any new tabs that aren't in the saved layout to the first column
-          const missingTabs = tabs.filter((t) => !savedTabs.has(t))
-          const restored = saved.map((c, i) =>
-            i === 0 && missingTabs.length > 0
-              ? { ...c, tabs: [...c.tabs, ...missingTabs] }
-              : c
-          )
+        const restored = saved
+          .map((c, i) => {
+            const filteredTabs = c.tabs.filter(
+              (t) => availableSet.has(t) || isDynamicTab(t)
+            )
+            if (i === 0 && missingTabs.length > 0) {
+              filteredTabs.push(...missingTabs)
+            }
+            return {
+              ...c,
+              tabs: filteredTabs,
+              activeTab: filteredTabs.includes(c.activeTab!)
+                ? c.activeTab
+                : filteredTabs[0],
+            }
+          })
+          .filter((c) => c.tabs.length > 0)
+
+        if (restored.length > 0) {
           set({ columns: restored })
           return
         }
