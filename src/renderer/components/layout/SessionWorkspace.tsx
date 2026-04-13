@@ -49,6 +49,19 @@ export function SessionWorkspace() {
   const prevPRRef = useRef<number | null>(null)
   const initializedRef = useRef(false)
 
+  // Save layout on unmount (e.g. switching to editor mode) so it can be
+  // restored when the user switches back.
+  useEffect(() => {
+    return () => {
+      const ctxId =
+        prevSessionRef.current ??
+        (prevPRRef.current != null ? `pr-${prevPRRef.current}` : null)
+      if (ctxId) {
+        useWorkspaceLayoutStore.getState().saveLayout(ctxId)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     const prevContextId = prevSessionRef.current ?? (prevPRRef.current != null ? `pr-${prevPRRef.current}` : null)
     const sessionChanged = activeSessionId !== prevSessionRef.current
