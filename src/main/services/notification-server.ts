@@ -40,6 +40,13 @@ export function removeSessionMapping(worktreePath: string) {
   sessionMappings.delete(normalizedPath)
 }
 
+export function findSessionById(sessionId: string): SessionMapping | undefined {
+  for (const mapping of sessionMappings.values()) {
+    if (mapping.sessionId === sessionId) return mapping
+  }
+  return undefined
+}
+
 function findSessionByWorktreePath(cwd: string): SessionMapping | undefined {
   const normalizedCwd = cwd.replace(/\/+$/, '')
   // Direct match first
