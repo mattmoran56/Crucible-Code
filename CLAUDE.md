@@ -140,6 +140,24 @@ To add a new theme: add a `[data-theme="your-theme"]` block with the same proper
 | `danger` | Deleted files, destructive actions |
 | `warning` | Modified files, caution |
 
+## README & Screenshots
+
+When implementing big features (or a set of smaller changes that together form a notable feature), update the README:
+
+1. Add the feature to the **Feature highlights** bullet list if it's user-facing
+2. Add a collapsible `<details>` block under **Features (detailed)** with specifics
+3. Update the **Architecture** section if new directories/stores were added
+4. **Capture new screenshots** using the `/update-screenshots` skill — this runs Storybook + Playwright to generate PNGs. Review the screenshots yourself and iterate until they look good before committing.
+
+### Storybook & Screenshots
+
+- **Storybook**: `npm run storybook` — renders components with mock data via `mock/mockApi.ts`
+- **Screenshots**: `npm run screenshots` — Playwright captures from running Storybook to `docs/screenshots/`
+- **Mock data**: `mock/mockData.ts` — update when adding new features that need mock state
+- **Store setup**: `src/renderer/stories/helpers/storeSetup.ts` — pre-populates Zustand stores for stories
+- **Stories**: Co-located `.stories.tsx` files next to components. Full app stories in `src/renderer/stories/FullApp.stories.tsx`
+- Add new stories for new components. For compound components, use `setupStoresForStory()` decorator.
+
 ## Layout Principles
 
 - **All panels are resizable** — Every block/panel in the IDE should be resizable by dragging its edge. Use `ResizeHandle` + `useResizable` hook for this. The sidebar, terminal, commit list, changed files columns are all resizable.
