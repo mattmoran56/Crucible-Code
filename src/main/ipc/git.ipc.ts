@@ -82,4 +82,25 @@ export function registerGitHandlers() {
   ipcMain.handle(IPC.GIT_DEFAULT_BRANCH, async (_e, repoPath: string) => {
     return gitService.getDefaultBranch(repoPath)
   })
+
+  // Branch comparison (PR preview)
+  ipcMain.handle(IPC.GIT_COMPARE_COMMITS, async (_e, repoPath: string, baseBranch: string) => {
+    return gitService.getCompareCommits(repoPath, baseBranch)
+  })
+
+  ipcMain.handle(IPC.GIT_COMPARE_FILES, async (_e, repoPath: string, baseBranch: string) => {
+    return gitService.getCompareFiles(repoPath, baseBranch)
+  })
+
+  ipcMain.handle(IPC.GIT_COMPARE_DIFF, async (_e, repoPath: string, baseBranch: string) => {
+    return gitService.getCompareDiff(repoPath, baseBranch)
+  })
+
+  ipcMain.handle(IPC.GIT_COMPARE_FILE_DIFF, async (_e, repoPath: string, baseBranch: string, filePath: string) => {
+    return gitService.getCompareFileDiff(repoPath, baseBranch, filePath)
+  })
+
+  ipcMain.handle(IPC.GIT_COMMIT_FULL_DIFF, async (_e, repoPath: string, commitHash: string) => {
+    return gitService.getCommitFullDiff(repoPath, commitHash)
+  })
 }

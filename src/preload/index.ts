@@ -35,6 +35,16 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_MERGE, repoPath, branch),
     isMerged: (worktreePath: string, baseBranch: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.GIT_IS_MERGED, worktreePath, baseBranch),
+    compareCommits: (repoPath: string, baseBranch: string): Promise<Commit[]> =>
+      ipcRenderer.invoke(IPC.GIT_COMPARE_COMMITS, repoPath, baseBranch),
+    compareFiles: (repoPath: string, baseBranch: string): Promise<PRFile[]> =>
+      ipcRenderer.invoke(IPC.GIT_COMPARE_FILES, repoPath, baseBranch),
+    compareDiff: (repoPath: string, baseBranch: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.GIT_COMPARE_DIFF, repoPath, baseBranch),
+    compareFileDiff: (repoPath: string, baseBranch: string, filePath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.GIT_COMPARE_FILE_DIFF, repoPath, baseBranch, filePath),
+    commitFullDiff: (repoPath: string, commitHash: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.GIT_COMMIT_FULL_DIFF, repoPath, commitHash),
   },
 
   worktree: {

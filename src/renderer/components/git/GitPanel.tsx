@@ -1,10 +1,12 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useGitStore } from '../../stores/gitStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useToastStore } from '../../stores/toastStore'
+import { usePRPreviewStore } from '../../stores/prPreviewStore'
 import { CommitList } from './CommitList'
 import { ChangedFiles } from './ChangedFiles'
 import { DiffViewer } from './DiffViewer'
+import { PRPreviewPanel } from './PRPreviewPanel'
 import { ResizeHandle } from '../ui/ResizeHandle'
 import { Dialog } from '../ui/Dialog'
 import { Button } from '../ui/Button'
@@ -42,6 +44,163 @@ const MergeIcon = () => (
     <circle cx="18" cy="18" r="3" />
   </svg>
 )
+
+const CompareIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="18" cy="18" r="3" />
+    <circle cx="6" cy="6" r="3" />
+    <path d="M6 21V9a9 9 0 0 0 9 9" />
+  </svg>
+)
+
+// ── Branch picker dropdown ────────────────────────────────────────────────
+
+function BranchPickerDropdown({
+  repoPath,
+  selectedBranch,
+  onSelect,
+}: {
+  repoPath: string
+  selectedBranch: string | null
+  onSelect: (branch: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [branches, setBranches] = useState<string[]>([])
+  const [loadingBranches, setLoadingBranches] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Load branches when opened
+  useEffect(() => {
+    if (!open) return
+    setLoadingBranches(true)
+    setQuery('')
+    window.api.git.listBranches(repoPath)
+      .then(setBranches)
+      .catch(() => setBranches([]))
+      .finally(() => {
+        setLoadingBranches(false)
+        // Focus input after branches load
+        setTimeout(() => inputRef.current?.focus(), 0)
+      })
+  }, [open, repoPath])
+
+  // Close on click outside
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open])
+
+  const filtered = useMemo(
+    () => branches.filter((b) => b.toLowerCase().includes(query.toLowerCase())),
+    [branches, query]
+  )
+
+  const handleSelect = (branch: string | null) => {
+    onSelect(branch)
+    setOpen(false)
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-1.5 text-[11px] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded ${
+          selectedBranch ? 'text-accent' : 'text-text-muted hover:text-text'
+        }`}
+        style={{ padding: '4px 8px' }}
+      >
+        <CompareIcon />
+        {selectedBranch ? `vs ${selectedBranch}` : 'Compare'}
+        <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" className={`transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path d="M1 2.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className="absolute top-full left-0 mt-1 bg-bg-secondary border border-border rounded shadow-lg z-50"
+          style={{ width: '240px' }}
+        >
+          {/* Search input */}
+          <div style={{ padding: '6px' }}>
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search branches…"
+              className="w-full bg-bg border border-border rounded text-xs text-text focus:outline-none focus:border-accent"
+              style={{ padding: '5px 8px' }}
+            />
+          </div>
+
+          {/* Branch list */}
+          <div
+            className="overflow-y-auto border-t border-border"
+            style={{ maxHeight: '200px' }}
+            role="listbox"
+            aria-label="Compare branch"
+          >
+            {/* None option */}
+            <div
+              role="option"
+              aria-selected={selectedBranch === null}
+              onClick={() => handleSelect(null)}
+              className={`text-xs cursor-pointer transition-colors ${
+                selectedBranch === null
+                  ? 'bg-accent/15 text-text'
+                  : 'text-text-muted hover:bg-bg-tertiary hover:text-text'
+              }`}
+              style={{ padding: '6px 10px' }}
+            >
+              None
+            </div>
+
+            {loadingBranches ? (
+              <div className="text-text-muted text-xs text-center" style={{ padding: '10px' }}>Loading…</div>
+            ) : filtered.length === 0 ? (
+              <div className="text-text-muted text-xs text-center" style={{ padding: '10px' }}>No branches found</div>
+            ) : (
+              filtered.map((b) => (
+                <div
+                  key={b}
+                  role="option"
+                  aria-selected={selectedBranch === b}
+                  onClick={() => handleSelect(b)}
+                  className={`text-xs cursor-pointer transition-colors truncate ${
+                    selectedBranch === b
+                      ? 'bg-accent/15 text-text'
+                      : 'text-text-muted hover:bg-bg-tertiary hover:text-text'
+                  }`}
+                  style={{ padding: '6px 10px' }}
+                >
+                  {b}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Toolbar button ─────────────────────────────────────────────────────────
 
@@ -214,6 +373,7 @@ export function GitPanel() {
   const { activeSessionId, sessions } = useSessionStore()
   const { loadCommits, loadWorkingFiles, loadCommitStatuses, clear } = useGitStore()
   const { addToast } = useToastStore.getState()
+  const previewActive = usePRPreviewStore((s) => s.active)
 
   const commitCol = useResizable({ direction: 'horizontal', initialSize: 288, minSize: 160, maxSize: 500 })
   const filesCol = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
@@ -230,6 +390,9 @@ export function GitPanel() {
       return
     }
 
+    // Don't poll when PR preview is active
+    if (previewActive) return
+
     const refresh = () => {
       loadCommits(activeSession.worktreePath)
       loadWorkingFiles(activeSession.worktreePath)
@@ -239,6 +402,11 @@ export function GitPanel() {
     refresh()
     const id = setInterval(refresh, POLL_INTERVAL)
     return () => clearInterval(id)
+  }, [activeSession?.id, previewActive])
+
+  // Deactivate PR preview when session changes
+  useEffect(() => {
+    usePRPreviewStore.getState().deactivate()
   }, [activeSession?.id])
 
   const handlePush = async () => {
@@ -267,6 +435,17 @@ export function GitPanel() {
     }
   }
 
+  const previewBaseBranch = usePRPreviewStore((s) => s.baseBranch)
+
+  const handleCompareSelect = useCallback((branch: string | null) => {
+    if (!activeSession) return
+    if (branch === null) {
+      usePRPreviewStore.getState().deactivate()
+    } else {
+      usePRPreviewStore.getState().activate(activeSession.worktreePath, branch)
+    }
+  }, [activeSession?.worktreePath])
+
   if (!activeSession) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
@@ -284,33 +463,45 @@ export function GitPanel() {
         <ToolbarBtn icon={<OpenPRIcon />} label="Open PR" onClick={handleOpenPR} loading={openingPR} />
         <div className="w-px h-4 bg-border mx-0.5" />
         <ToolbarBtn icon={<MergeIcon />} label="Merge In" onClick={() => setMergeOpen(true)} />
+        <div className="w-px h-4 bg-border mx-0.5" />
+        <BranchPickerDropdown
+          repoPath={activeSession.worktreePath}
+          selectedBranch={previewBaseBranch}
+          onSelect={handleCompareSelect}
+        />
       </div>
 
-      {/* Three-column layout */}
-      <div className="flex-1 flex min-h-0 min-w-0">
-        {/* Commit list */}
-        <div style={{ width: commitCol.size }} className="flex-shrink-0 flex flex-col min-h-0">
-          <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted">
-            Commits
-          </div>
-          <CommitList repoPath={activeSession.worktreePath} />
-        </div>
-        <ResizeHandle direction="horizontal" onMouseDown={commitCol.onMouseDown} />
+      {previewActive ? (
+        <PRPreviewPanel repoPath={activeSession.worktreePath} />
+      ) : (
+        <>
+          {/* Three-column layout */}
+          <div className="flex-1 flex min-h-0 min-w-0">
+            {/* Commit list */}
+            <div style={{ width: commitCol.size }} className="flex-shrink-0 flex flex-col min-h-0">
+              <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted">
+                Commits
+              </div>
+              <CommitList repoPath={activeSession.worktreePath} />
+            </div>
+            <ResizeHandle direction="horizontal" onMouseDown={commitCol.onMouseDown} />
 
-        {/* Changed files */}
-        <div style={{ width: filesCol.size }} className="flex-shrink-0 flex flex-col min-h-0">
-          <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted">
-            Changed Files
-          </div>
-          <ChangedFiles repoPath={activeSession.worktreePath} />
-        </div>
-        <ResizeHandle direction="horizontal" onMouseDown={filesCol.onMouseDown} />
+            {/* Changed files */}
+            <div style={{ width: filesCol.size }} className="flex-shrink-0 flex flex-col min-h-0">
+              <div className="px-3 py-1.5 bg-bg-tertiary border-b border-border text-xs text-text-muted">
+                Changed Files
+              </div>
+              <ChangedFiles repoPath={activeSession.worktreePath} />
+            </div>
+            <ResizeHandle direction="horizontal" onMouseDown={filesCol.onMouseDown} />
 
-        {/* Diff viewer */}
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
-          <DiffViewer />
-        </div>
-      </div>
+            {/* Diff viewer */}
+            <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+              <DiffViewer />
+            </div>
+          </div>
+        </>
+      )}
 
       <MergeDialog
         open={mergeOpen}

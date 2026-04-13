@@ -17,6 +17,11 @@ export const IPC = {
   GIT_MERGE: 'git:merge',
   GIT_IS_MERGED: 'git:is-merged',
   GIT_DEFAULT_BRANCH: 'git:default-branch',
+  GIT_COMPARE_COMMITS: 'git:compare-commits',
+  GIT_COMPARE_FILES: 'git:compare-files',
+  GIT_COMPARE_DIFF: 'git:compare-diff',
+  GIT_COMPARE_FILE_DIFF: 'git:compare-file-diff',
+  GIT_COMMIT_FULL_DIFF: 'git:commit-full-diff',
 
   // Worktree
   WORKTREE_CREATE: 'worktree:create',
