@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, ConfigItem, ConfigTrackingMode } from '../shared/types'
 
 const api = {
   git: {
@@ -269,6 +269,29 @@ const api = {
       return () => ipcRenderer.removeListener(IPC.UPDATE_LOG, listener)
     },
     apply: () => ipcRenderer.invoke(IPC.UPDATE_APPLY),
+  },
+
+  config: {
+    list: (repoPath: string): Promise<ConfigItem[]> =>
+      ipcRenderer.invoke(IPC.CONFIG_LIST, repoPath),
+    getContent: (repoPath: string, itemId: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.CONFIG_GET_CONTENT, repoPath, itemId),
+    setTracking: (repoPath: string, itemId: string, mode: ConfigTrackingMode): Promise<void> =>
+      ipcRenderer.invoke(IPC.CONFIG_SET_TRACKING, repoPath, itemId, mode),
+    createCommand: (repoPath: string, name: string, content: string): Promise<ConfigItem> =>
+      ipcRenderer.invoke(IPC.CONFIG_CREATE_COMMAND, repoPath, name, content),
+    createClaudeMd: (repoPath: string, location: 'root' | '.claude', content: string): Promise<ConfigItem> =>
+      ipcRenderer.invoke(IPC.CONFIG_CREATE_CLAUDEMD, repoPath, location, content),
+    delete: (repoPath: string, itemId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.CONFIG_DELETE, repoPath, itemId),
+    updateContent: (repoPath: string, itemId: string, content: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.CONFIG_UPDATE_CONTENT, repoPath, itemId, content),
+    onChanged: (callback: (repoPath: string, items: ConfigItem[]) => void) => {
+      const listener = (_e: unknown, repoPath: string, items: ConfigItem[]) =>
+        callback(repoPath, items)
+      ipcRenderer.on(IPC.CONFIG_CHANGED, listener)
+      return () => ipcRenderer.removeListener(IPC.CONFIG_CHANGED, listener)
+    },
   },
 }
 

@@ -8,6 +8,7 @@ import { RightActivityBar } from './components/layout/RightActivityBar'
 import { NotesPanel } from './components/notes/NotesPanel'
 import { UsagePanel } from './components/usage/UsagePanel'
 import { PermissionsPanel } from './components/permissions/PermissionsPanel'
+import { ConfigPanel } from './components/config/ConfigPanel'
 import { useUsageStore } from './stores/usageStore'
 import { ResizeHandle, IconButton } from './components/ui'
 import { useProjectStore } from './stores/projectStore'
@@ -118,7 +119,7 @@ export default function App() {
                   style={{ padding: '10px 12px' }}
                 >
                   <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel === 'permissions' ? 'Permissions' : activeRightPanel}
+                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel === 'permissions' ? 'Permissions' : activeRightPanel === 'config' ? 'Config' : activeRightPanel}
                   </span>
                   <IconButton label="Close panel" onClick={() => setActiveRightPanel(null)}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -130,6 +131,7 @@ export default function App() {
                   {activeRightPanel === 'notes' && <NotesPanel />}
                   {activeRightPanel === 'usage' && <UsagePanel />}
                   {activeRightPanel === 'permissions' && <PermissionsPanel />}
+                  {activeRightPanel === 'config' && <ConfigPanel />}
                 </div>
               </div>
             </>
