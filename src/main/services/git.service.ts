@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import simpleGit, { SimpleGit } from 'simple-git'
-import type { Commit, FileDiff } from '../../shared/types'
+import type { Commit, FileDiff, PRFile } from '../../shared/types'
 
 function git(repoPath: string): SimpleGit {
   return simpleGit(repoPath)
@@ -329,6 +329,102 @@ export async function isBranchMerged(
   } catch {
     return false
   }
+}
+
+// ── Branch comparison (PR preview) ─────────────────────────────────────────
+
+const STATUS_MAP: Record<string, string> = {
+  A: 'added',
+  M: 'modified',
+  D: 'deleted',
+  R: 'renamed',
+}
+
+export async function getCompareFiles(repoPath: string, baseBranch: string): Promise<PRFile[]> {
+  const g = git(repoPath)
+  const ref = `${baseBranch}...HEAD`
+
+  // Get line stats
+  const numstat = await g.raw(['diff', '--numstat', ref])
+  const statsMap = new Map<string, { additions: number; deletions: number }>()
+  for (const line of numstat.trim().split('\n').filter(Boolean)) {
+    const [add, del, ...pathParts] = line.split('\t')
+    const filePath = pathParts.join('\t') // handle paths with tabs (renames)
+    statsMap.set(filePath, {
+      additions: add === '-' ? 0 : parseInt(add, 10),
+      deletions: del === '-' ? 0 : parseInt(del, 10),
+    })
+  }
+
+  // Get file statuses
+  const nameStatus = await g.raw(['diff', '--name-status', ref])
+  const files: PRFile[] = []
+  for (const line of nameStatus.trim().split('\n').filter(Boolean)) {
+    const [statusCode, ...pathParts] = line.split('\t')
+    // Renames have two paths: old\tnew — use the new path
+    const filePath = pathParts.length > 1 ? pathParts[pathParts.length - 1] : pathParts[0]
+    const status = STATUS_MAP[statusCode.charAt(0)] || 'modified'
+    const stats = statsMap.get(filePath) || statsMap.get(pathParts[0]) || { additions: 0, deletions: 0 }
+    files.push({ path: filePath, status, ...stats })
+  }
+
+  return files
+}
+
+export async function getCompareDiff(repoPath: string, baseBranch: string): Promise<string> {
+  return git(repoPath).diff([`${baseBranch}...HEAD`])
+}
+
+export async function getCompareFileDiff(
+  repoPath: string,
+  baseBranch: string,
+  filePath: string
+): Promise<string> {
+  return git(repoPath).diff([`${baseBranch}...HEAD`, '--', filePath])
+}
+
+export async function getCompareCommits(repoPath: string, baseBranch: string): Promise<Commit[]> {
+  const g = git(repoPath)
+  const log = await g.log({ from: baseBranch, to: 'HEAD' })
+  return log.all.map((entry) => ({
+    hash: entry.hash,
+    message: entry.message,
+    author: entry.author_name,
+    date: entry.date,
+  }))
+}
+
+export async function getCommitFullDiff(repoPath: string, commitHash: string): Promise<string> {
+  const g = git(repoPath)
+  let parentRef = `${commitHash}~1`
+  try {
+    await g.raw(['rev-parse', '--verify', parentRef])
+  } catch {
+    parentRef = '4b825dc642cb6eb9a060e54bf899d69f82cf7202'
+  }
+  return g.diff([parentRef, commitHash])
+}
+
+export async function getWorkingFilesPR(repoPath: string): Promise<PRFile[]> {
+  const g = git(repoPath)
+  const status = await g.status()
+  const allFiles = [
+    ...status.modified.map((f) => ({ path: f, status: 'modified' })),
+    ...status.not_added.map((f) => ({ path: f, status: 'added' })),
+    ...status.created.map((f) => ({ path: f, status: 'added' })),
+    ...status.deleted.map((f) => ({ path: f, status: 'deleted' })),
+    ...status.renamed.map((f) => ({ path: (f as any).to ?? String(f), status: 'renamed' })),
+    ...status.staged.map((f) => ({ path: f, status: 'modified' })),
+  ]
+  // Dedupe by path
+  const seen = new Set<string>()
+  const files: PRFile[] = []
+  for (const f of allFiles) {
+    if (seen.has(f.path)) continue
+    seen.add(f.path)
+    files.push({ path: f.path, status: f.status, additions: 0, deletions: 0 })
+  }
+  return files
 }
 
 export async function getWorkingChangedFiles(repoPath: string): Promise<FileDiff[]> {
