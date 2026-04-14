@@ -7,6 +7,8 @@ export const WORKING_CHANGES_HASH = 'WORKING_CHANGES'
 interface PRPreviewState {
   active: boolean
   baseBranch: string | null
+  /** Session ID this preview is associated with (for persistence) */
+  sessionId: string | null
   /** All files: committed changes + uncommitted working changes (deduped) */
   files: PRFile[]
   /** Full diff: committed diff + working diff appended */
@@ -22,8 +24,8 @@ interface PRPreviewState {
   viewMode: 'single' | 'scroll'
   loading: boolean
 
-  activate: (repoPath: string, branch: string) => Promise<void>
-  deactivate: () => void
+  activate: (repoPath: string, branch: string, sessionId?: string) => Promise<void>
+  deactivate: (sessionId?: string) => void
   setBaseBranch: (repoPath: string, branch: string) => Promise<void>
   selectFile: (filePath: string) => void
   selectNextFile: () => void
@@ -54,9 +56,37 @@ function mergeFiles(committedFiles: PRFile[], workingFiles: PRFile[]): PRFile[] 
   return result
 }
 
+const SAVED_BRANCHES_KEY = 'codecrucible-pr-preview-branches'
+
+function loadSavedBranches(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SAVED_BRANCHES_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveBranchForSession(sessionId: string, branch: string) {
+  const all = loadSavedBranches()
+  all[sessionId] = branch
+  localStorage.setItem(SAVED_BRANCHES_KEY, JSON.stringify(all))
+}
+
+function clearBranchForSession(sessionId: string) {
+  const all = loadSavedBranches()
+  delete all[sessionId]
+  localStorage.setItem(SAVED_BRANCHES_KEY, JSON.stringify(all))
+}
+
+export function getSavedBranchForSession(sessionId: string): string | null {
+  return loadSavedBranches()[sessionId] ?? null
+}
+
 export const usePRPreviewStore = create<PRPreviewState>((set, get) => ({
   active: false,
   baseBranch: null,
+  sessionId: null,
   files: [],
   fullDiff: null,
   workingDiff: null,
@@ -68,15 +98,18 @@ export const usePRPreviewStore = create<PRPreviewState>((set, get) => ({
   viewMode: 'single',
   loading: false,
 
-  activate: async (repoPath, branch) => {
-    set({ active: true, loading: true })
+  activate: async (repoPath, branch, sessionId) => {
+    set({ active: true, loading: true, sessionId: sessionId ?? null })
+    if (sessionId) saveBranchForSession(sessionId, branch)
     await get().setBaseBranch(repoPath, branch)
   },
 
-  deactivate: () => {
+  deactivate: (sessionId) => {
+    if (sessionId) clearBranchForSession(sessionId)
     set({
       active: false,
       baseBranch: null,
+      sessionId: null,
       files: [],
       fullDiff: null,
       workingDiff: null,
@@ -90,6 +123,8 @@ export const usePRPreviewStore = create<PRPreviewState>((set, get) => ({
   },
 
   setBaseBranch: async (repoPath, branch) => {
+    const { sessionId } = get()
+    if (sessionId) saveBranchForSession(sessionId, branch)
     set({
       baseBranch: branch,
       loading: true,

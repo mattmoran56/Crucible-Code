@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useGitStore } from '../../stores/gitStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useToastStore } from '../../stores/toastStore'
-import { usePRPreviewStore } from '../../stores/prPreviewStore'
+import { usePRPreviewStore, getSavedBranchForSession } from '../../stores/prPreviewStore'
 import { CommitList } from './CommitList'
 import { ChangedFiles } from './ChangedFiles'
 import { DiffViewer } from './DiffViewer'
@@ -404,9 +404,19 @@ export function GitPanel() {
     return () => clearInterval(id)
   }, [activeSession?.id, previewActive])
 
-  // Deactivate PR preview when session changes
+  // Save/restore PR preview when session changes
   useEffect(() => {
-    usePRPreviewStore.getState().deactivate()
+    if (!activeSession) {
+      usePRPreviewStore.getState().deactivate()
+      return
+    }
+    // Check if the new session has a saved PR preview branch
+    const savedBranch = getSavedBranchForSession(activeSession.id)
+    if (savedBranch) {
+      usePRPreviewStore.getState().activate(activeSession.worktreePath, savedBranch, activeSession.id)
+    } else {
+      usePRPreviewStore.getState().deactivate()
+    }
   }, [activeSession?.id])
 
   const handlePush = async () => {
@@ -440,11 +450,11 @@ export function GitPanel() {
   const handleCompareSelect = useCallback((branch: string | null) => {
     if (!activeSession) return
     if (branch === null) {
-      usePRPreviewStore.getState().deactivate()
+      usePRPreviewStore.getState().deactivate(activeSession.id)
     } else {
-      usePRPreviewStore.getState().activate(activeSession.worktreePath, branch)
+      usePRPreviewStore.getState().activate(activeSession.worktreePath, branch, activeSession.id)
     }
-  }, [activeSession?.worktreePath])
+  }, [activeSession?.id, activeSession?.worktreePath])
 
   if (!activeSession) {
     return (
