@@ -173,3 +173,16 @@ export interface FileStat {
   size: number
   exists: boolean
 }
+
+// Config management
+
+export type ConfigItemType = 'command' | 'hook' | 'claudemd' | 'memory'
+export type ConfigTrackingMode = 'local' | 'shared'
+
+export interface ConfigItem {
+  id: string                    // e.g. "command:my-skill", "claudemd:root"
+  type: ConfigItemType
+  name: string                  // Display name
+  relativePath: string          // Path relative to repo root (for git exclude)
+  tracking: ConfigTrackingMode  // Current git tracking state
+}

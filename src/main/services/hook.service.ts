@@ -23,13 +23,48 @@ export function writeClaudeHookSettings(worktreePath: string, claudeTheme = 'dar
     timeout: 5,
   })
 
+  // Build CodeCrucible's own hooks
+  const ccHooks: Record<string, unknown[]> = {
+    UserPromptSubmit: [{ matcher: '', hooks: [makeHook('prompt')] }],
+    Notification: [{ matcher: '', hooks: [makeHook('notification')] }],
+    Stop: [{ matcher: '', hooks: [makeHook('stop')] }],
+    // SubagentStop deliberately NOT configured — we only want main agent completion
+  }
+
+  // Preserve user-defined hooks (anything NOT matching our curl pattern)
+  const ccPattern = /curl.*127\.0\.0\.1.*\/hook/
+  let existingHooks: Record<string, unknown[]> = {}
+  try {
+    const settingsPath = join(claudeDir, 'settings.local.json')
+    if (existsSync(settingsPath)) {
+      const raw = readFileSync(settingsPath, 'utf-8')
+      const parsed = JSON.parse(raw)
+      if (parsed.hooks && typeof parsed.hooks === 'object') {
+        existingHooks = parsed.hooks
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+
+  // Merge: for each event type, put CC hook first, then user hooks
+  const mergedHooks: Record<string, unknown[]> = { ...ccHooks }
+  for (const [eventType, entries] of Object.entries(existingHooks)) {
+    if (!Array.isArray(entries)) continue
+    const userEntries = entries.filter((entry: any) => {
+      if (!entry?.hooks || !Array.isArray(entry.hooks)) return true
+      // Keep if none of the hooks match the CC pattern
+      return !entry.hooks.some(
+        (h: any) => typeof h.command === 'string' && ccPattern.test(h.command)
+      )
+    })
+    if (userEntries.length > 0) {
+      mergedHooks[eventType] = [...(mergedHooks[eventType] || []), ...userEntries]
+    }
+  }
+
   const settings: Record<string, unknown> = {
-    hooks: {
-      UserPromptSubmit: [{ matcher: '', hooks: [makeHook('prompt')] }],
-      Notification: [{ matcher: '', hooks: [makeHook('notification')] }],
-      Stop: [{ matcher: '', hooks: [makeHook('stop')] }],
-      // SubagentStop deliberately NOT configured — we only want main agent completion
-    },
+    hooks: mergedHooks,
   }
 
   // Configure statusLine to write usage data to a temp file for this session

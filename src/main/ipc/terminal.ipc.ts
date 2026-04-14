@@ -3,6 +3,7 @@ import { IPC } from '../../shared/constants'
 import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
 import { seedPermissions, startWatching, stopWatching, setWindow } from '../services/permission-sync.service'
+import * as configSync from '../services/config-sync.service'
 import type { TerminalMode } from '../services/terminal.service'
 
 export function registerTerminalHandlers(window: BrowserWindow) {
@@ -19,6 +20,10 @@ export function registerTerminalHandlers(window: BrowserWindow) {
       if (repoPath) {
         seedPermissions(repoPath, cwd)
         startWatching(repoPath, cwd)
+
+        // Sync Claude config (commands, CLAUDE.md) from canonical to this worktree
+        configSync.syncConfigToWorktree(repoPath, cwd)
+        configSync.startWatching(repoPath, cwd)
       }
 
       return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell', claudeTheme ?? 'dark', claudeConfigDir)
@@ -35,7 +40,10 @@ export function registerTerminalHandlers(window: BrowserWindow) {
 
   ipcMain.handle(IPC.TERMINAL_KILL, async (_e, terminalId: string) => {
     const cwd = terminalService.getTerminalCwd(terminalId)
-    if (cwd) stopWatching(cwd)
+    if (cwd) {
+      stopWatching(cwd)
+      configSync.stopWatching(cwd)
+    }
     terminalService.killTerminal(terminalId)
   })
 }

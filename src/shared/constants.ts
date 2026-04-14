@@ -122,4 +122,14 @@ export const IPC = {
   FILE_WATCH: 'file:watch',
   FILE_UNWATCH: 'file:unwatch',
   FILE_CHANGED: 'file:changed',
+
+  // Config (Claude Code config management)
+  CONFIG_LIST: 'config:list',
+  CONFIG_GET_CONTENT: 'config:get-content',
+  CONFIG_SET_TRACKING: 'config:set-tracking',
+  CONFIG_CREATE_COMMAND: 'config:create-command',
+  CONFIG_CREATE_CLAUDEMD: 'config:create-claudemd',
+  CONFIG_DELETE: 'config:delete',
+  CONFIG_UPDATE_CONTENT: 'config:update-content',
+  CONFIG_CHANGED: 'config:changed',
 } as const
