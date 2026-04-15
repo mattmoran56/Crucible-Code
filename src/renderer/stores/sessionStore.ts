@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Session, PullRequest, WorktreeInfo } from '../../shared/types'
 import { useToastStore } from './toastStore'
+import { useTerminalStore } from './terminalStore'
 
 type WorkspaceTab = 'agent' | 'git' | 'pr'
 
@@ -18,25 +19,14 @@ interface PerProjectContext {
   didStash: boolean
 }
 
-const LAST_ACTIVE_KEY = 'codecrucible-last-active-context'
-
-function loadLastActiveContexts(): Record<string, PerProjectContext> {
-  try {
-    const raw = localStorage.getItem(LAST_ACTIVE_KEY)
-    return raw ? JSON.parse(raw) : {}
-  } catch {
-    return {}
-  }
-}
-
+// Fire-and-forget save to electron-store (crash-safe)
 function saveLastActiveContext(projectId: string, context: PerProjectContext) {
-  const all = loadLastActiveContexts()
-  all[projectId] = context
-  localStorage.setItem(LAST_ACTIVE_KEY, JSON.stringify(all))
+  window.api.session.saveContext(projectId, context as unknown as Record<string, unknown>)
 }
 
-function getLastActiveContext(projectId: string): PerProjectContext | null {
-  return loadLastActiveContexts()[projectId] ?? null
+async function getLastActiveContext(projectId: string): Promise<PerProjectContext | null> {
+  const raw = await window.api.session.getContext(projectId)
+  return (raw as PerProjectContext | null) ?? null
 }
 
 interface SessionState {
@@ -112,7 +102,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const stillExists = currentId && sessions.some((s) => s.id === currentId)
 
     // Check for a previously saved context for this project
-    const saved = getLastActiveContext(projectId)
+    const saved = await getLastActiveContext(projectId)
     const savedSessionExists = saved?.sessionId && sessions.some((s) => s.id === saved.sessionId)
     const savedPRExists = saved?.prNumber != null
 
@@ -200,6 +190,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         // Worktree may already be removed
       }
     }
+
+    // Clean up all terminals for this session (both renderer xterm instances and main PTY processes)
+    await useTerminalStore.getState().killAllForSession(sessionId)
+    await window.api.terminal.killSession(sessionId)
 
     const sessions = get().sessions.filter((s) => s.id !== sessionId)
     const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 export type CoreTab = 'agent' | 'git' | 'pr' | 'review' | 'code'
 export type WorkspaceTab = CoreTab | `agent:${string}` | `terminal:${string}`
@@ -36,6 +37,12 @@ export interface WorkspaceColumn {
 let columnIdCounter = 0
 function nextColumnId(): string {
   return `col-${++columnIdCounter}`
+}
+
+interface PersistedLayoutState {
+  savedLayouts: Record<string, WorkspaceColumn[]>
+  dynamicAgentCounter: number
+  dynamicTerminalCounter: number
 }
 
 let dynamicAgentCounter = 1
@@ -95,7 +102,9 @@ interface WorkspaceLayoutState {
   getDynamicTabs: () => WorkspaceTab[]
 }
 
-export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) => ({
+export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>()(
+  persist(
+    (set, get) => ({
   columns: [],
   savedLayouts: {},
 
@@ -321,4 +330,23 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>((set, get) =
   getDynamicTabs: () => {
     return get().columns.flatMap((c) => c.tabs.filter(isDynamicTab))
   },
-}))
+}),
+    {
+      name: 'codecrucible-workspace-layout',
+      partialize: (state): PersistedLayoutState => ({
+        savedLayouts: state.savedLayouts,
+        dynamicAgentCounter,
+        dynamicTerminalCounter,
+      }),
+      onRehydrate: (_state) => {
+        return (rehydratedState) => {
+          if (rehydratedState) {
+            const persisted = rehydratedState as unknown as { dynamicAgentCounter?: number; dynamicTerminalCounter?: number }
+            if (persisted.dynamicAgentCounter) dynamicAgentCounter = persisted.dynamicAgentCounter
+            if (persisted.dynamicTerminalCounter) dynamicTerminalCounter = persisted.dynamicTerminalCounter
+          }
+        }
+      },
+    }
+  )
+)

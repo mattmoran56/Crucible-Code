@@ -11,7 +11,7 @@ export function registerTerminalHandlers(window: BrowserWindow) {
 
   ipcMain.handle(
     IPC.TERMINAL_SPAWN,
-    async (_e, sessionId: string, cwd: string, mode?: TerminalMode, claudeTheme?: string, claudeConfigDir?: string, repoPath?: string) => {
+    async (_e, sessionId: string, cwd: string, mode?: TerminalMode, claudeTheme?: string, claudeConfigDir?: string, repoPath?: string, resume?: boolean) => {
       // Write Claude Code hook settings so notifications route to our server
       // and statusLine writes usage data for this session
       writeClaudeHookSettings(cwd, claudeTheme ?? 'dark', sessionId)
@@ -26,7 +26,7 @@ export function registerTerminalHandlers(window: BrowserWindow) {
         configSync.startWatching(repoPath, cwd)
       }
 
-      return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell', claudeTheme ?? 'dark', claudeConfigDir)
+      return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell', claudeTheme ?? 'dark', claudeConfigDir, repoPath, resume ?? false)
     }
   )
 
@@ -45,5 +45,17 @@ export function registerTerminalHandlers(window: BrowserWindow) {
       configSync.stopWatching(cwd)
     }
     terminalService.killTerminal(terminalId)
+  })
+
+  ipcMain.handle(IPC.TERMINAL_KILL_SESSION, async (_e, sessionId: string) => {
+    const cwds = terminalService.killSessionTerminals(sessionId)
+    for (const cwd of cwds) {
+      stopWatching(cwd)
+      configSync.stopWatching(cwd)
+    }
+  })
+
+  ipcMain.handle(IPC.TERMINAL_RECOVERY_LIST, async () => {
+    return terminalService.getAndClearRecoveryList()
   })
 }

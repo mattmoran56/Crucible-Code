@@ -35,8 +35,10 @@ export const IPC = {
   TERMINAL_WRITE: 'terminal:write',
   TERMINAL_RESIZE: 'terminal:resize',
   TERMINAL_KILL: 'terminal:kill',
+  TERMINAL_KILL_SESSION: 'terminal:kill-session',
   TERMINAL_DATA: 'terminal:data',
   TERMINAL_EXIT: 'terminal:exit',
+  TERMINAL_RECOVERY_LIST: 'terminal:recovery-list',
 
   // Notifications
   NOTIFICATION_SHOW: 'notification:show',
@@ -56,6 +58,8 @@ export const IPC = {
   // Sessions
   SESSION_LIST: 'session:list',
   SESSION_SAVE: 'session:save',
+  SESSION_CONTEXT_SAVE: 'session:context:save',
+  SESSION_CONTEXT_GET: 'session:context:get',
 
   // Pull Requests
   PR_LIST: 'pr:list',

@@ -23,10 +23,14 @@ export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
     }
   }, [activeSessionId, mode, sessions, getTerminal, spawnTerminal])
 
-  // Render ALL terminals of this mode (across all projects) so they never
-  // unmount during project switches — mirrors the within-project pattern
-  // where all session terminals stay mounted and toggle visibility.
-  const allInstances = Object.values(terminals).filter((t) => t.mode === mode)
+  // Render only PRIMARY (non-dynamic) terminals of this mode across all projects
+  // so they never unmount during project switches. Dynamic terminals are rendered
+  // by DynamicTerminalPanel — filtering them out here prevents two TerminalView
+  // components from fighting over the same xterm DOM element (which causes the
+  // first terminal to freeze/go blank when a second agent tab is opened).
+  const allInstances = Object.entries(terminals)
+    .filter(([key, t]) => t.mode === mode && !key.startsWith('dyn:'))
+    .map(([, instance]) => instance)
 
   if (sessions.length === 0 && allInstances.length === 0) {
     return (

@@ -17,7 +17,7 @@ interface UseTerminalOptions {
 // Global registry — keeps xterm instances alive for the lifetime of the app
 const terminalInstances = new Map<
   string,
-  { term: Terminal; fitAddon: FitAddon; attached: boolean; unsubData: (() => void) | null; unsubExit: (() => void) | null }
+  { term: Terminal; fitAddon: FitAddon; attached: boolean; unsubData: (() => void) | null; unsubExit: (() => void) | null; cleanupWheel: (() => void) | null }
 >()
 
 function getCurrentTerminalTheme() {
@@ -30,6 +30,7 @@ export function destroyTerminal(terminalId: string): void {
   if (!instance) return
   instance.unsubData?.()
   instance.unsubExit?.()
+  instance.cleanupWheel?.()
   instance.term.dispose()
   terminalInstances.delete(terminalId)
 }
@@ -101,14 +102,15 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
     let userScrolling = false
 
     const el = containerRef.current!
-    el.addEventListener('wheel', () => {
+    const wheelHandler = () => {
       userScrolling = true
       requestAnimationFrame(() => {
         const buf = term.buffer.active
         anchoredToBottom = buf.viewportY >= buf.baseY - 3
         userScrolling = false
       })
-    })
+    }
+    el.addEventListener('wheel', wheelHandler)
 
     // Also catch keyboard scrolling (Shift+PageUp/Down etc)
     term.onKey(({ domEvent }) => {
@@ -149,7 +151,8 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       term.writeln(`\r\n[Process exited with code ${code}]`)
     })
 
-    terminalInstances.set(terminalId, { term, fitAddon, attached: true, unsubData, unsubExit })
+    const cleanupWheel = () => el.removeEventListener('wheel', wheelHandler)
+    terminalInstances.set(terminalId, { term, fitAddon, attached: true, unsubData, unsubExit, cleanupWheel })
 
     // Initial fit + scroll to bottom
     requestAnimationFrame(() => {
