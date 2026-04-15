@@ -1,5 +1,6 @@
 import React from 'react'
 import { Tooltip } from '../ui'
+import { CustomButtonBar } from '../buttons/CustomButtonBar'
 
 interface RightActivityBarProps {
   activePanel: string | null
@@ -87,6 +88,9 @@ export function RightActivityBar({ activePanel, onToggle }: RightActivityBarProp
           </svg>
         </button>
       </Tooltip>
+
+      {/* Custom buttons */}
+      <CustomButtonBar placement="right-activity-bar" />
     </div>
   )
 }

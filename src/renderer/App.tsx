@@ -19,6 +19,8 @@ import { ToastContainer } from './components/ui/ToastContainer'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { useSettingsStore } from './stores/settingsStore'
 import { LoadingScreen } from './components/LoadingScreen'
+import { useButtonStore } from './stores/buttonStore'
+import { useButtonShortcuts } from './hooks/useButtonShortcuts'
 
 export default function App() {
   const { loadProjects, loadAccounts, projects } = useProjectStore()
@@ -26,6 +28,9 @@ export default function App() {
   const { editorMode } = useEditorStore()
   const { handleHookEvent, registerSessions } = useNotificationStore()
   const { isOpen: settingsOpen } = useSettingsStore()
+  const { loadButtons, loadGroups } = useButtonStore()
+
+  useButtonShortcuts()
 
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
   const rightPanel = useResizable({ direction: 'horizontal', initialSize: 300, minSize: 200, maxSize: 600, inverted: true })
@@ -37,7 +42,7 @@ export default function App() {
     setActiveRightPanel((prev) => (prev === panel ? null : panel))
 
   useEffect(() => {
-    Promise.all([loadProjects(), loadAccounts()]).finally(() => {
+    Promise.all([loadProjects(), loadAccounts(), loadButtons(), loadGroups()]).finally(() => {
       setLoading(false)
       // Unmount after fade-out transition (500ms)
       setTimeout(() => setShowLoader(false), 520)

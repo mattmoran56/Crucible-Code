@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { IconButton, Tooltip, ResizeHandle } from '../ui'
+import { CustomButtonBar } from '../buttons/CustomButtonBar'
 import { useGitStore } from '../../stores/gitStore'
 import {
   useWorkspaceLayoutStore,
@@ -300,6 +301,9 @@ export function ColumnPanel({
           )}
         </div>
       </div>
+
+      {/* Custom button toolbar */}
+      <CustomButtonBar placement="session-toolbar" />
 
       {/* Content — portal targets get moved here by parent workspace */}
       {isEmpty ? (

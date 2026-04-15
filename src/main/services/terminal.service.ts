@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { IPC } from '../../shared/constants'
 import { handleHookEvent, findSessionById } from './notification-server'
 
-export type TerminalMode = 'shell' | 'claude' | 'review'
+export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
 interface TerminalInstance {
   pty: pty.IPty
@@ -16,6 +16,7 @@ interface TerminalInstance {
   stopped: boolean
   claudeTheme: string
   claudeConfigDir?: string
+  commandString?: string
 }
 
 const terminals = new Map<string, TerminalInstance>()
@@ -41,6 +42,10 @@ function spawnPty(
     } else {
       args = ['-l', '-c', isResume ? 'claude --resume' : 'claude']
     }
+  } else if (instance.mode === 'command' && instance.commandString) {
+    // Run a specific command via shell -l -c "cmd", exits when done
+    command = shell
+    args = ['-l', '-c', instance.commandString]
   } else {
     command = shell
     args = []
@@ -113,11 +118,12 @@ export function spawnTerminal(
   cwd: string,
   mode: TerminalMode = 'shell',
   claudeTheme = 'dark',
-  claudeConfigDir?: string
+  claudeConfigDir?: string,
+  commandString?: string
 ): string {
   const terminalId = `term-${++terminalCounter}`
 
-  const instanceBase = { sessionId, mode, cwd, window, claudeTheme, claudeConfigDir }
+  const instanceBase = { sessionId, mode, cwd, window, claudeTheme, claudeConfigDir, commandString }
   const ptyProcess = spawnPty(terminalId, instanceBase, false)
 
   terminals.set(terminalId, { ...instanceBase, pty: ptyProcess, stopped: false })

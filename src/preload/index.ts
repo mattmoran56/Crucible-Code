@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, ConfigItem, ConfigTrackingMode } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, ConfigItem, ConfigTrackingMode, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode } from '../shared/types'
 
 const api = {
   git: {
@@ -283,6 +283,25 @@ const api = {
       return () => ipcRenderer.removeListener(IPC.UPDATE_LOG, listener)
     },
     apply: () => ipcRenderer.invoke(IPC.UPDATE_APPLY),
+  },
+
+  button: {
+    list: (): Promise<CustomButton[]> =>
+      ipcRenderer.invoke(IPC.BUTTON_LIST),
+    save: (buttons: CustomButton[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.BUTTON_SAVE, buttons),
+    groupList: (): Promise<CustomButtonGroup[]> =>
+      ipcRenderer.invoke(IPC.BUTTON_GROUP_LIST),
+    groupSave: (groups: CustomButtonGroup[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.BUTTON_GROUP_SAVE, groups),
+    execute: (
+      resolvedCommand: string,
+      cwd: string,
+      actionType: ButtonActionType,
+      executionMode: ButtonExecutionMode,
+      sessionId: string
+    ): Promise<string> =>
+      ipcRenderer.invoke(IPC.BUTTON_EXECUTE, resolvedCommand, cwd, actionType, executionMode, sessionId),
   },
 
   config: {
