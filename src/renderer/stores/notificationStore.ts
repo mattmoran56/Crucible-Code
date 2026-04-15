@@ -8,6 +8,9 @@ interface NotificationState {
   /** Map of sessionId → projectId (covers all projects, not just active) */
   sessionProjectMap: Map<string, string>
 
+  /** Sessions that received a stop event while in attention state */
+  stoppedWhileAttention: Set<string>
+
   /** Process a hook event and apply state transitions */
   handleHookEvent: (sessionId: string, hookType: HookType) => void
 
@@ -39,24 +42,33 @@ function syncBadgeCount(statuses: Map<string, SessionStatus>, projectMap: Map<st
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   sessionStatuses: new Map(),
   sessionProjectMap: new Map(),
+  stoppedWhileAttention: new Set(),
 
   handleHookEvent: (sessionId: string, hookType: HookType) => {
     set((state) => {
       const current = state.sessionStatuses.get(sessionId)
 
       let next: SessionStatus
+      const nextStopped = new Set(state.stoppedWhileAttention)
       switch (hookType) {
         case 'prompt':
           // Short-circuit: if already running, no state change needed
           if (current === 'running') return state
+          // New prompt means Claude is working again — clear any stale stop flag
+          nextStopped.delete(sessionId)
           next = 'running'
           break
         case 'notification':
           next = 'attention'
           break
         case 'stop':
-          // Attention is NOT overridden by stop — user action still needed
-          if (current === 'attention') return state
+          if (current === 'attention') {
+            // Claude stopped while we're showing attention — record it so
+            // clearStatus transitions to completed instead of back to running.
+            nextStopped.add(sessionId)
+            return { stoppedWhileAttention: nextStopped }
+          }
+          nextStopped.delete(sessionId)
           next = 'completed'
           break
       }
@@ -64,7 +76,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       const nextStatuses = new Map(state.sessionStatuses)
       nextStatuses.set(sessionId, next)
       syncBadgeCount(nextStatuses, state.sessionProjectMap)
-      return { sessionStatuses: nextStatuses }
+      return { sessionStatuses: nextStatuses, stoppedWhileAttention: nextStopped }
     })
   },
 
@@ -74,19 +86,27 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       if (!current) return state
 
       const next = new Map(state.sessionStatuses)
+      const nextStopped = new Set(state.stoppedWhileAttention)
 
       if (current === 'attention') {
-        // Process is still running — restore spinner
-        next.set(sessionId, 'running')
+        if (state.stoppedWhileAttention.has(sessionId)) {
+          // Stop already arrived — task is done, clear everything
+          next.delete(sessionId)
+          nextStopped.delete(sessionId)
+        } else {
+          // Process is still running — restore spinner
+          next.set(sessionId, 'running')
+        }
       } else if (current === 'completed') {
         next.delete(sessionId)
+        nextStopped.delete(sessionId)
       } else {
         // 'running' — never clear the spinner via user interaction
         return state
       }
 
       syncBadgeCount(next, state.sessionProjectMap)
-      return { sessionStatuses: next }
+      return { sessionStatuses: next, stoppedWhileAttention: nextStopped }
     })
   },
 
