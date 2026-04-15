@@ -66,13 +66,16 @@ const api = {
   },
 
   terminal: {
-    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude' | 'review', claudeTheme?: string, claudeConfigDir?: string, repoPath?: string): Promise<string> =>
-      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath),
+    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude' | 'review', claudeTheme?: string, claudeConfigDir?: string, repoPath?: string, resume?: boolean): Promise<string> =>
+      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath, resume),
     write: (terminalId: string, data: string) =>
       ipcRenderer.invoke(IPC.TERMINAL_WRITE, terminalId, data),
     resize: (terminalId: string, cols: number, rows: number) =>
       ipcRenderer.invoke(IPC.TERMINAL_RESIZE, terminalId, cols, rows),
     kill: (terminalId: string) => ipcRenderer.invoke(IPC.TERMINAL_KILL, terminalId),
+    killSession: (sessionId: string) => ipcRenderer.invoke(IPC.TERMINAL_KILL_SESSION, sessionId),
+    getRecoveryList: (): Promise<Array<{ terminalId: string; sessionId: string; mode: 'shell' | 'claude' | 'review'; cwd: string; claudeTheme: string; claudeConfigDir?: string; repoPath?: string }>> =>
+      ipcRenderer.invoke(IPC.TERMINAL_RECOVERY_LIST),
     onData: (callback: (terminalId: string, data: string) => void) => {
       const listener = (_e: any, terminalId: string, data: string) => callback(terminalId, data)
       ipcRenderer.on(IPC.TERMINAL_DATA, listener)
@@ -209,6 +212,10 @@ const api = {
       ipcRenderer.invoke(IPC.SESSION_LIST, projectId),
     save: (projectId: string, sessions: Session[]) =>
       ipcRenderer.invoke(IPC.SESSION_SAVE, projectId, sessions),
+    saveContext: (projectId: string, context: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.SESSION_CONTEXT_SAVE, projectId, context),
+    getContext: (projectId: string): Promise<Record<string, unknown> | null> =>
+      ipcRenderer.invoke(IPC.SESSION_CONTEXT_GET, projectId),
   },
 
   notes: {

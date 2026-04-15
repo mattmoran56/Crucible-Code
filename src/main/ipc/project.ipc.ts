@@ -14,11 +14,13 @@ const store = new Store<{
   projects: Project[]
   sessions: Record<string, Session[]>
   accounts: ClaudeAccount[]
+  sessionContexts: Record<string, Record<string, unknown>>
 }>({
   defaults: {
     projects: [],
     sessions: {},
     accounts: [],
+    sessionContexts: {},
   },
 })
 
@@ -149,5 +151,14 @@ export function registerProjectHandlers(window: BrowserWindow) {
 
   ipcMain.handle(IPC.SESSION_SAVE, async (_e, projectId: string, sessionList: Session[]) => {
     store.set(`sessions.${projectId}`, sessionList)
+  })
+
+  // Session context persistence (crash-safe alternative to localStorage)
+  ipcMain.handle(IPC.SESSION_CONTEXT_SAVE, async (_e, projectId: string, context: Record<string, unknown>) => {
+    store.set(`sessionContexts.${projectId}`, context)
+  })
+
+  ipcMain.handle(IPC.SESSION_CONTEXT_GET, async (_e, projectId: string) => {
+    return store.get(`sessionContexts.${projectId}` as any, null)
   })
 }
