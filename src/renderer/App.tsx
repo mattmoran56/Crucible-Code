@@ -14,6 +14,7 @@ import { ResizeHandle, IconButton } from './components/ui'
 import { useProjectStore } from './stores/projectStore'
 import { useSessionStore } from './stores/sessionStore'
 import { useNotificationStore } from './stores/notificationStore'
+import { useTerminalStore } from './stores/terminalStore'
 import { useResizable } from './hooks/useResizable'
 import { ToastContainer } from './components/ui/ToastContainer'
 import { SettingsPage } from './components/settings/SettingsPage'
@@ -45,6 +46,7 @@ export default function App() {
   }, [loadProjects, loadAccounts])
 
   // Register sessions from all projects with the notification store for cross-project badges
+  // and recover any terminals that were running before a crash/restart
   useEffect(() => {
     if (projects.length === 0) return
     Promise.all(
@@ -56,6 +58,10 @@ export default function App() {
       for (const s of allSessions) {
         window.api.notification.registerSession(s.id, s.name, s.projectId, s.worktreePath)
       }
+      // Recover terminals from previous session (after crash/restart)
+      useTerminalStore.getState().recoverTerminals(
+        allSessions.map((s) => ({ id: s.id, name: s.name, worktreePath: s.worktreePath }))
+      )
     })
   }, [projects, registerSessions])
 

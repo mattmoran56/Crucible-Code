@@ -6,6 +6,7 @@ import {
   startNotificationServer,
   stopNotificationServer,
 } from './services/notification-server'
+import { killAllTerminals } from './services/terminal.service'
 
 // When launched from Finder/Dock, process.env.PATH is the minimal macOS default
 // and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
@@ -46,7 +47,12 @@ async function createWindow() {
 
 app.whenReady().then(createWindow)
 
+app.on('before-quit', () => {
+  killAllTerminals()
+})
+
 app.on('window-all-closed', () => {
+  killAllTerminals()
   stopNotificationServer()
   app.quit()
 })

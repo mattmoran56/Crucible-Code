@@ -16,7 +16,7 @@ interface TerminalState {
   // Keyed by `${sessionId}:${mode}` so each session can have both a claude and shell terminal
   // Dynamic terminals use `${tabId}:${sessionId}` keys
   terminals: Record<string, TerminalInstance>
-  spawnTerminal: (sessionId: string, sessionName: string, cwd: string, mode?: TerminalMode) => Promise<string>
+  spawnTerminal: (sessionId: string, sessionName: string, cwd: string, mode?: TerminalMode, resume?: boolean) => Promise<string>
   killTerminal: (sessionId: string, mode?: TerminalMode) => Promise<void>
   getTerminal: (sessionId: string, mode?: TerminalMode) => TerminalInstance | undefined
 
@@ -37,6 +37,12 @@ interface TerminalState {
 
   /** Kill all dynamic terminals for a given tab ID (all sessions) */
   killDynamicTerminalAll: (tabId: string) => Promise<void>
+
+  /** Kill all terminals (static + dynamic) for a given session */
+  killAllForSession: (sessionId: string) => Promise<void>
+
+  /** Recover terminals from a previous session (after crash/restart) */
+  recoverTerminals: (sessions: Array<{ id: string; name: string; worktreePath: string }>) => Promise<void>
 }
 
 function terminalKey(sessionId: string, mode: TerminalMode) {
@@ -69,7 +75,7 @@ const spawningTerminals = new Map<string, Promise<string>>()
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   terminals: {},
 
-  spawnTerminal: async (sessionId: string, sessionName: string, cwd: string, mode: TerminalMode = 'shell') => {
+  spawnTerminal: async (sessionId: string, sessionName: string, cwd: string, mode: TerminalMode = 'shell', resume = false) => {
     const key = terminalKey(sessionId, mode)
     const existing = get().terminals[key]
     if (existing) return existing.terminalId
@@ -82,7 +88,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const repoPath = getActiveProjectRepoPath()
     const promise = (async () => {
       try {
-        const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath)
+        const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath, resume)
         set((state) => ({
           terminals: {
             ...state.terminals,
@@ -181,6 +187,62 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
         }
         return { terminals: rest }
       })
+    }
+  },
+
+  killAllForSession: async (sessionId: string) => {
+    const allTerminals = get().terminals
+    const keysToKill = Object.keys(allTerminals).filter((key) => {
+      const instance = allTerminals[key]
+      return instance.sessionId === sessionId
+    })
+
+    for (const key of keysToKill) {
+      const instance = allTerminals[key]
+      if (instance) {
+        destroyTerminal(instance.terminalId)
+      }
+    }
+
+    // The main process handles PTY cleanup via killSession IPC
+    // (called separately by sessionStore.removeSession)
+
+    if (keysToKill.length > 0) {
+      set((state) => {
+        const rest = { ...state.terminals }
+        for (const key of keysToKill) {
+          delete rest[key]
+        }
+        return { terminals: rest }
+      })
+    }
+  },
+
+  recoverTerminals: async (sessions) => {
+    const recoveryList = await window.api.terminal.getRecoveryList()
+    if (recoveryList.length === 0) return
+
+    const sessionMap = new Map(sessions.map((s) => [s.id, s]))
+
+    for (const entry of recoveryList) {
+      const session = sessionMap.get(entry.sessionId)
+      if (!session) continue // Session was deleted, skip recovery
+
+      // Only recover claude and shell terminals (review terminals are ephemeral)
+      if (entry.mode === 'review') continue
+
+      const resume = entry.mode === 'claude'
+      try {
+        await get().spawnTerminal(
+          session.id,
+          session.name,
+          entry.cwd,
+          entry.mode,
+          resume
+        )
+      } catch {
+        // Terminal recovery is best-effort
+      }
     }
   },
 }))
