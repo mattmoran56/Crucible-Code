@@ -184,8 +184,17 @@ export function PRReviewPanel() {
   }
 
   const handleMerge = async () => {
+    const baseBranch = matchedPR?.baseRefName
     await merge(activeProject.repoPath, prNumber, 'merge')
     setShowMergeConfirm(false)
+    // Fetch and pull the base branch so local repo has the merged changes
+    if (baseBranch) {
+      try {
+        await window.api.git.fetchAndPull(activeProject.repoPath, baseBranch)
+      } catch {
+        // Non-critical — don't block the merge flow
+      }
+    }
     await clearActiveContext()
     loadPRs(activeProject.repoPath)
     checkStaleness(activeProject.repoPath)

@@ -165,6 +165,18 @@ export async function restoreWorktreeBranch(worktreePath: string, branch: string
   await g.raw(['-c', 'core.hooksPath=/dev/null', 'checkout', branch])
 }
 
+/** Fetch a branch from origin and fast-forward the local ref if possible. */
+export async function fetchAndPull(repoPath: string, branch: string): Promise<void> {
+  const g = git(repoPath)
+  await g.raw(['fetch', 'origin', branch])
+  // Try to update the local branch ref — only works if it's a fast-forward
+  try {
+    await g.raw(['update-ref', `refs/heads/${branch}`, `origin/${branch}`])
+  } catch {
+    // Branch may not exist locally or can't fast-forward — that's fine
+  }
+}
+
 export async function pushBranch(repoPath: string): Promise<void> {
   const g = git(repoPath)
   const status = await g.status()

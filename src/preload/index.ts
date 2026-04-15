@@ -51,6 +51,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_WORKING_DIFF, repoPath),
     showFileBase64: (repoPath: string, ref: string, filePath: string): Promise<string | null> =>
       ipcRenderer.invoke(IPC.GIT_SHOW_FILE_BASE64, repoPath, ref, filePath),
+    fetchAndPull: (repoPath: string, branch: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_FETCH_AND_PULL, repoPath, branch),
   },
 
   worktree: {

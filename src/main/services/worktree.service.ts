@@ -44,6 +44,15 @@ export async function createWorktree(
     }
   }
 
+  // Fetch the latest version of the base branch from origin
+  try {
+    await g.raw(['fetch', 'origin', base])
+    // Fast-forward the local ref so the worktree starts from the latest
+    await g.raw(['update-ref', `refs/heads/${base}`, `origin/${base}`])
+  } catch {
+    // Fetch may fail if offline or branch doesn't exist on remote — continue
+  }
+
   try {
     await g.raw(['worktree', 'add', '-b', branchName, wtPath, base])
   } catch (err) {
