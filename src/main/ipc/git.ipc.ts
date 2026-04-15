@@ -111,4 +111,12 @@ export function registerGitHandlers() {
   ipcMain.handle(IPC.GIT_WORKING_DIFF, async (_e, repoPath: string) => {
     return gitService.getWorkingDiff(repoPath)
   })
+
+  ipcMain.handle(IPC.GIT_SHOW_FILE_BASE64, async (_e, repoPath: string, ref: string, filePath: string) => {
+    return gitService.showFileBase64(repoPath, ref, filePath)
+  })
+
+  ipcMain.handle(IPC.GIT_FETCH_AND_PULL, async (_e, repoPath: string, branch: string) => {
+    return gitService.fetchAndPull(repoPath, branch)
+  })
 }

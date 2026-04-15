@@ -24,6 +24,8 @@ export const IPC = {
   GIT_COMMIT_FULL_DIFF: 'git:commit-full-diff',
   GIT_WORKING_FILES_PR: 'git:working-files-pr',
   GIT_WORKING_DIFF: 'git:working-diff',
+  GIT_SHOW_FILE_BASE64: 'git:show-file-base64',
+  GIT_FETCH_AND_PULL: 'git:fetch-and-pull',
 
   // Worktree
   WORKTREE_CREATE: 'worktree:create',
@@ -123,6 +125,7 @@ export const IPC = {
   FILE_CREATE: 'file:create',
   FILE_STAT: 'file:stat',
   FILE_MOVE: 'file:move',
+  FILE_READ_BASE64: 'file:read-base64',
   FILE_WATCH: 'file:watch',
   FILE_UNWATCH: 'file:unwatch',
   FILE_CHANGED: 'file:changed',

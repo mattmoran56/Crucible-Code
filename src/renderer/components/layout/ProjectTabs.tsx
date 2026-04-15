@@ -76,7 +76,7 @@ export function ProjectTabs() {
   }
 
   return (
-    <div className="titlebar-drag flex h-11 items-center bg-bg-tertiary border-b border-border" style={{ borderBottomColor: '#ff00ff', borderBottomWidth: 2 }}>
+    <div className="titlebar-drag flex h-11 items-center bg-bg-tertiary border-b border-border">
       {/* Reserve space for macOS traffic lights */}
       <div className="w-[78px] shrink-0" />
 

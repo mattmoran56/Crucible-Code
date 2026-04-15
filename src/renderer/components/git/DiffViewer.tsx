@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react'
-import { useGitStore } from '../../stores/gitStore'
+import { useGitStore, WORKING_CHANGES_HASH } from '../../stores/gitStore'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { Button } from '../ui/Button'
 import { marked } from 'marked'
 import { useDiffHighlighting, type TokenMap } from '../../hooks/useDiffHighlighting'
 import type { ThemedToken } from 'shiki'
 import type { PRComment } from '../../../shared/types'
+import { ImageDiffViewer, isImageFile } from './ImageDiffViewer'
 
 // Configure marked for inline rendering
 marked.setOptions({ breaks: true })
@@ -593,8 +594,8 @@ function DiffHeader({
 
 // --- Main DiffViewer (for git tab, no comments) ---
 
-export function DiffViewer() {
-  const { filePatch, selectedFilePath } = useGitStore()
+export function DiffViewer({ repoPath }: { repoPath?: string }) {
+  const { filePatch, selectedFilePath, selectedCommitHash, changedFiles } = useGitStore()
   const [mode, setMode] = useState<DiffMode>('unified')
   const lines = useMemo(() => (filePatch ? parsePatch(filePatch) : []), [filePatch])
   const tokenMap = useDiffHighlighting(lines, selectedFilePath)
@@ -611,6 +612,24 @@ export function DiffViewer() {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
         Loading...
+      </div>
+    )
+  }
+
+  // Image files: show visual preview instead of text diff
+  if (repoPath && selectedFilePath && isImageFile(selectedFilePath) && selectedCommitHash) {
+    const fileStatus = changedFiles.find((f) => f.filePath === selectedFilePath)?.status || 'modified'
+    const isWorking = selectedCommitHash === WORKING_CHANGES_HASH
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <DiffHeader filePath={selectedFilePath} mode={mode} onModeChange={setMode} />
+        <ImageDiffViewer
+          repoPath={repoPath}
+          filePath={selectedFilePath}
+          status={fileStatus}
+          beforeRef={isWorking ? 'HEAD' : `${selectedCommitHash}~1`}
+          afterRef={isWorking ? null : selectedCommitHash}
+        />
       </div>
     )
   }

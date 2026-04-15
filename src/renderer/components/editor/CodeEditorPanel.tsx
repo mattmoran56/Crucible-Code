@@ -6,6 +6,7 @@ import { bracketMatching } from '@codemirror/language'
 import { useEditorStore, type OpenFile } from '../../stores/editorStore'
 import { getLanguageExtension } from './languageMap'
 import { createEditorTheme } from './codemirrorTheme'
+import { isImageFile } from '../git/ImageDiffViewer'
 
 interface CodeEditorPanelProps {
   repoPath: string
@@ -36,7 +37,9 @@ export function CodeEditorPanel({ repoPath }: CodeEditorPanelProps) {
 
       {/* Editor */}
       <div className="flex-1 min-h-0">
-        {activeFile ? (
+        {activeFile && isImageFile(activeFile.path) ? (
+          <ImagePreview filePath={activeFile.path} repoPath={repoPath} />
+        ) : activeFile ? (
           <CodeMirrorEditor
             file={activeFile}
             repoPath={repoPath}
@@ -274,4 +277,62 @@ function CodeMirrorEditor({
   }, [])
 
   return <div ref={containerRef} className="h-full" />
+}
+
+/* ── Image Preview ────────────────────────────────────── */
+
+function ImagePreview({ filePath, repoPath }: { filePath: string; repoPath: string }) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setSrc(null)
+    setError(false)
+
+    const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase()
+    const mimeMap: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.bmp': 'image/bmp', '.webp': 'image/webp',
+      '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.avif': 'image/avif',
+    }
+    const mime = mimeMap[ext] || 'image/png'
+
+    window.api.file.readBase64(filePath, repoPath)
+      .then((data) => {
+        if (!cancelled) setSrc(`data:${mime};base64,${data}`)
+      })
+      .catch(() => {
+        if (!cancelled) setError(true)
+      })
+
+    return () => { cancelled = true }
+  }, [filePath, repoPath])
+
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center text-text-muted text-xs">
+        Unable to load image
+      </div>
+    )
+  }
+
+  if (!src) {
+    return (
+      <div className="h-full flex items-center justify-center text-text-muted text-xs">
+        Loading image...
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full flex flex-col items-center justify-center overflow-auto bg-bg" style={{ padding: '16px' }}>
+      <img
+        src={src}
+        alt={filePath.split('/').pop() || 'Image'}
+        style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+        draggable={false}
+      />
+    </div>
+  )
 }

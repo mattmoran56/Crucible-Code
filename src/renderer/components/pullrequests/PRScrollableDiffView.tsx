@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { PRDiffViewer } from '../git/DiffViewer'
+import { ImageDiffViewer, isImageFile } from '../git/ImageDiffViewer'
 import type { PRFile, PRComment } from '../../../shared/types'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -21,6 +22,9 @@ interface PRScrollableDiffViewProps {
   viewedFiles: Set<string>
   onToggleViewed: (path: string) => void
   onAddComment: (path: string, startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => Promise<void>
+  repoPath?: string
+  beforeRef?: string
+  selectedCommitHash?: string | null
 }
 
 function extractFileDiff(fullDiff: string, filePath: string): string {
@@ -45,6 +49,7 @@ function extractFileDiff(fullDiff: string, filePath: string): string {
 
 export function PRScrollableDiffView({
   files, fullDiff, comments, viewedFiles, onToggleViewed, onAddComment,
+  repoPath, beforeRef, selectedCommitHash,
 }: PRScrollableDiffViewProps) {
   return (
     <div className="flex-1 overflow-y-auto">
@@ -59,6 +64,9 @@ export function PRScrollableDiffView({
           onAddComment={(startLine, endLine, side, body) =>
             onAddComment(file.path, startLine, endLine, side, body)
           }
+          repoPath={repoPath}
+          beforeRef={beforeRef}
+          selectedCommitHash={selectedCommitHash}
         />
       ))}
     </div>
@@ -72,10 +80,14 @@ interface LazyFileSectionProps {
   isViewed: boolean
   onToggleViewed: () => void
   onAddComment: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => Promise<void>
+  repoPath?: string
+  beforeRef?: string
+  selectedCommitHash?: string | null
 }
 
 function LazyFileSection({
   file, fullDiff, comments, isViewed, onToggleViewed, onAddComment,
+  repoPath, beforeRef, selectedCommitHash,
 }: LazyFileSectionProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
@@ -160,13 +172,34 @@ function LazyFileSection({
       </div>
       {/* Diff content — hidden when collapsed */}
       {!collapsed && (
-        visible && fileDiff ? (
-          <PRDiffViewer
-            patch={fileDiff}
-            filePath={file.path}
-            comments={comments}
-            onAddComment={onAddComment}
-          />
+        visible ? (
+          repoPath && isImageFile(file.path) ? (
+            <ImageDiffViewer
+              repoPath={repoPath}
+              filePath={file.path}
+              status={(file.status as 'added' | 'modified' | 'deleted' | 'renamed') || 'modified'}
+              beforeRef={selectedCommitHash && selectedCommitHash !== 'WORKING_CHANGES'
+                ? `${selectedCommitHash}~1`
+                : beforeRef || 'HEAD'}
+              afterRef={selectedCommitHash === 'WORKING_CHANGES'
+                ? null
+                : selectedCommitHash || undefined}
+            />
+          ) : fileDiff ? (
+            <PRDiffViewer
+              patch={fileDiff}
+              filePath={file.path}
+              comments={comments}
+              onAddComment={onAddComment}
+            />
+          ) : (
+            <div
+              className="flex items-center justify-center text-text-muted text-xs"
+              style={{ height: 100 }}
+            >
+              Loading...
+            </div>
+          )
         ) : (
           <div
             className="flex items-center justify-center text-text-muted text-xs"
