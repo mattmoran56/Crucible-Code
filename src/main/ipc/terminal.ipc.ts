@@ -26,7 +26,7 @@ export function registerTerminalHandlers(window: BrowserWindow) {
         configSync.startWatching(repoPath, cwd)
       }
 
-      return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell', claudeTheme ?? 'dark', claudeConfigDir, repoPath, resume ?? false)
+      return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell', claudeTheme ?? 'dark', claudeConfigDir, undefined, repoPath, resume ?? false)
     }
   )
 

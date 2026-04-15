@@ -65,3 +65,21 @@ export const Settings: Story = {
     },
   ],
 }
+
+export const CustomButtons: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory()
+      return <Story />
+    },
+  ],
+}
+
+export const ButtonSettings: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ settingsOpen: true })
+      return <Story />
+    },
+  ],
+}

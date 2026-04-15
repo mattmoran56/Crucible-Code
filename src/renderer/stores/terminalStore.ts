@@ -38,6 +38,9 @@ interface TerminalState {
   /** Kill all dynamic terminals for a given tab ID (all sessions) */
   killDynamicTerminalAll: (tabId: string) => Promise<void>
 
+  /** Register an externally-spawned terminal (e.g. from button execution) */
+  registerDynamicTerminal: (tabId: string, terminalId: string, sessionId: string, sessionName: string, mode: TerminalMode) => void
+
   /** Kill all terminals (static + dynamic) for a given session */
   killAllForSession: (sessionId: string) => Promise<void>
 
@@ -167,6 +170,16 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   getDynamicTerminal: (tabId, sessionId) => {
     const key = dynamicKey(tabId, sessionId)
     return get().terminals[key]
+  },
+
+  registerDynamicTerminal: (tabId, terminalId, sessionId, sessionName, mode) => {
+    const key = dynamicKey(tabId, sessionId)
+    set((state) => ({
+      terminals: {
+        ...state.terminals,
+        [key]: { terminalId, sessionId, sessionName, mode },
+      },
+    }))
   },
 
   killDynamicTerminalAll: async (tabId) => {

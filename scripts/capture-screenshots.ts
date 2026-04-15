@@ -22,6 +22,8 @@ interface ScreenshotTarget {
   theme?: string
   delay?: number
   viewport?: { width: number; height: number }
+  /** CSS selector to scroll into view before capture */
+  scrollTo?: string
 }
 
 /**
@@ -93,6 +95,17 @@ const targets: ScreenshotTarget[] = [
     delay: 1000,
     viewport: { width: 300, height: 600 },
   },
+  {
+    name: 'custom-buttons',
+    storyId: 'app-full-layout--custom-buttons',
+    delay: 2000,
+  },
+  {
+    name: 'button-settings',
+    storyId: 'app-full-layout--button-settings',
+    delay: 2000,
+    scrollTo: 'Custom Buttons',
+  },
 ]
 
 async function captureScreenshots() {
@@ -118,6 +131,29 @@ async function captureScreenshots() {
 
     if (target.delay) {
       await page.waitForTimeout(target.delay)
+    }
+
+    if (target.scrollTo) {
+      await page.evaluate((text) => {
+        // Find heading by text content and scroll its scroll container
+        const all = document.querySelectorAll('h1, h2, h3')
+        const el = Array.from(all).find((e) => e.textContent?.includes(text))
+        if (el) {
+          // Find the nearest scrollable ancestor
+          let container: HTMLElement | null = el.parentElement
+          while (container) {
+            const style = getComputedStyle(container)
+            if (style.overflowY === 'auto' || style.overflowY === 'scroll') break
+            container = container.parentElement
+          }
+          if (container) {
+            const rect = el.getBoundingClientRect()
+            const containerRect = container.getBoundingClientRect()
+            container.scrollTop += rect.top - containerRect.top
+          }
+        }
+      }, target.scrollTo)
+      await page.waitForTimeout(500)
     }
 
     const outputPath = path.join(OUTPUT_DIR, `${target.name}.png`)

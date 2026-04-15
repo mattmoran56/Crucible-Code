@@ -139,4 +139,11 @@ export const IPC = {
   CONFIG_DELETE: 'config:delete',
   CONFIG_UPDATE_CONTENT: 'config:update-content',
   CONFIG_CHANGED: 'config:changed',
+
+  // Custom Buttons
+  BUTTON_LIST: 'button:list',
+  BUTTON_SAVE: 'button:save',
+  BUTTON_GROUP_LIST: 'button-group:list',
+  BUTTON_GROUP_SAVE: 'button-group:save',
+  BUTTON_EXECUTE: 'button:execute',
 } as const

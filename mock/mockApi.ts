@@ -24,6 +24,8 @@ import {
   mockFileTreeRenderer,
   mockFileContent,
   mockTerminalOutput,
+  mockButtons,
+  mockButtonGroups,
 } from './mockData'
 
 // Collect terminal.onData callbacks so we can push fake output
@@ -189,6 +191,25 @@ export const mockApi = {
       deny: ['Bash(rm -rf *)'],
     }),
     update: async () => {},
+    onChanged: () => noop(),
+  },
+
+  button: {
+    list: async () => mockButtons,
+    save: async () => {},
+    groupList: async () => mockButtonGroups,
+    groupSave: async () => {},
+    execute: async () => `mock-btn-term-${++terminalCounter}`,
+  },
+
+  config: {
+    list: async () => [],
+    getContent: async () => null,
+    setTracking: async () => {},
+    createCommand: async () => ({ id: 'mock', name: 'mock', type: 'command', path: '/mock', tracking: 'none' }),
+    createClaudeMd: async () => ({ id: 'mock', name: 'mock', type: 'claude-md', path: '/mock', tracking: 'none' }),
+    delete: async () => {},
+    updateContent: async () => {},
     onChanged: () => noop(),
   },
 

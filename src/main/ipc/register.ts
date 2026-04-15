@@ -12,6 +12,7 @@ import { registerUsageHandlers } from './usage.ipc'
 import { registerFileHandlers } from './file.ipc'
 import { registerPermissionsHandlers } from './permissions.ipc'
 import { registerConfigHandlers } from './config.ipc'
+import { registerButtonHandlers } from './button.ipc'
 import {
   registerSessionMapping,
   removeSessionMapping,
@@ -30,6 +31,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerFileHandlers(window)
   registerPermissionsHandlers()
   registerConfigHandlers(window)
+  registerButtonHandlers(window)
 
   // Session mapping management for notification routing
   ipcMain.handle(

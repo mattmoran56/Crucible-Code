@@ -186,3 +186,39 @@ export interface ConfigItem {
   relativePath: string          // Path relative to repo root (for git exclude)
   tracking: ConfigTrackingMode  // Current git tracking state
 }
+
+// Custom Buttons
+
+export type ButtonPlacement = 'session-toolbar' | 'project-tabs' | 'right-activity-bar'
+export type ButtonActionType = 'shell' | 'claude'
+export type ButtonExecutionMode = 'terminal' | 'background'
+
+export type ButtonScope =
+  | { type: 'global' }
+  | { type: 'all-projects' }
+  | { type: 'projects'; projectIds: string[] }
+
+export interface CustomButton {
+  id: string
+  label: string
+  icon?: string
+  placement: ButtonPlacement
+  actionType: ButtonActionType
+  executionMode: ButtonExecutionMode
+  command: string
+  cwd?: string
+  scope: ButtonScope
+  order: number
+  groupId?: string
+  confirmMessage?: string
+  shortcut?: string
+}
+
+export interface CustomButtonGroup {
+  id: string
+  label: string
+  icon?: string
+  placement: ButtonPlacement
+  scope: ButtonScope
+  order: number
+}

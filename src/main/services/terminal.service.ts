@@ -6,7 +6,7 @@ import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import { handleHookEvent, findSessionById } from './notification-server'
 
-export type TerminalMode = 'shell' | 'claude' | 'review'
+export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
 interface TerminalInstance {
   pty: pty.IPty
@@ -17,6 +17,7 @@ interface TerminalInstance {
   stopped: boolean
   claudeTheme: string
   claudeConfigDir?: string
+  commandString?: string
   repoPath?: string
 }
 
@@ -89,6 +90,10 @@ function spawnPty(
     } else {
       args = ['-l', '-c', isResume ? 'claude --resume' : 'claude']
     }
+  } else if (instance.mode === 'command' && instance.commandString) {
+    // Run a specific command via shell -l -c "cmd", exits when done
+    command = shell
+    args = ['-l', '-c', instance.commandString]
   } else {
     command = shell
     args = []
@@ -164,12 +169,13 @@ export function spawnTerminal(
   mode: TerminalMode = 'shell',
   claudeTheme = 'dark',
   claudeConfigDir?: string,
+  commandString?: string,
   repoPath?: string,
   resume = false
 ): string {
   const terminalId = `term-${++terminalCounter}`
 
-  const instanceBase = { sessionId, mode, cwd, window, claudeTheme, claudeConfigDir, repoPath }
+  const instanceBase = { sessionId, mode, cwd, window, claudeTheme, claudeConfigDir, commandString, repoPath }
   const ptyProcess = spawnPty(terminalId, instanceBase, resume)
 
   const instance = { ...instanceBase, pty: ptyProcess, stopped: false }

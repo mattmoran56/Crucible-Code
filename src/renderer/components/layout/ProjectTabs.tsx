@@ -5,6 +5,7 @@ import { useUpdateStore } from '../../stores/updateStore'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { CustomButtonBar } from '../buttons/CustomButtonBar'
 import type { Project } from '../../../../shared/types'
 
 export function ProjectTabs() {
@@ -175,6 +176,9 @@ export function ProjectTabs() {
           <span className="truncate">{updateButtonLabel}</span>
         </Button>
       )}
+
+      {/* Custom buttons (project-tabs placement) */}
+      <CustomButtonBar placement="project-tabs" />
 
       {/* Add project + Settings */}
       <Button

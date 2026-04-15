@@ -9,6 +9,7 @@ import { useUsageStore } from '../../stores/usageStore'
 import { useNotesStore } from '../../stores/notesStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useWorkspaceLayoutStore, type WorkspaceTab } from '../../stores/workspaceLayoutStore'
+import { useButtonStore } from '../../stores/buttonStore'
 import type { SessionStatus } from '../../../shared/types'
 
 import {
@@ -33,6 +34,8 @@ import {
   mockSubscription,
   mockNotes,
   mockFileContent,
+  mockButtons,
+  mockButtonGroups,
 } from '@mock/mockData'
 
 interface StorySetupOptions {
@@ -189,6 +192,13 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     selectedNoteId: null,
   })
 
+  // Button store
+  useButtonStore.setState({
+    buttons: mockButtons,
+    groups: mockButtonGroups,
+    runningButtons: {},
+  })
+
   // Settings store
   if (options.settingsOpen) {
     useSettingsStore.setState({ isOpen: true })
@@ -232,5 +242,6 @@ export function resetStores() {
   useUsageStore.setState({ sessionUsages: {}, stats: null, subscription: null })
   useNotesStore.setState({ notes: [], selectedNoteId: null })
   useSettingsStore.setState({ isOpen: false })
+  useButtonStore.setState({ buttons: [], groups: [], runningButtons: {} })
   useWorkspaceLayoutStore.setState({ columns: [], savedLayouts: {} })
 }
