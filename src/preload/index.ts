@@ -49,6 +49,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_WORKING_FILES_PR, repoPath),
     workingDiff: (repoPath: string): Promise<string> =>
       ipcRenderer.invoke(IPC.GIT_WORKING_DIFF, repoPath),
+    showFileBase64: (repoPath: string, ref: string, filePath: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.GIT_SHOW_FILE_BASE64, repoPath, ref, filePath),
   },
 
   worktree: {
@@ -246,6 +248,8 @@ const api = {
       ipcRenderer.invoke(IPC.FILE_LIST_DIR, dirPath),
     read: (filePath: string, rootPath: string): Promise<string> =>
       ipcRenderer.invoke(IPC.FILE_READ, filePath, rootPath),
+    readBase64: (filePath: string, rootPath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.FILE_READ_BASE64, filePath, rootPath),
     write: (filePath: string, content: string, rootPath: string): Promise<void> =>
       ipcRenderer.invoke(IPC.FILE_WRITE, filePath, content, rootPath),
     create: (filePath: string, rootPath: string): Promise<void> =>

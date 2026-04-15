@@ -507,7 +507,7 @@ export function GitPanel() {
 
             {/* Diff viewer */}
             <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
-              <DiffViewer />
+              <DiffViewer repoPath={activeSession.worktreePath} />
             </div>
           </div>
         </>

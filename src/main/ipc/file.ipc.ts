@@ -3,6 +3,7 @@ import { IPC } from '../../shared/constants'
 import {
   listDirectory,
   readFileContent,
+  readFileBase64,
   writeFileContent,
   createFile,
   getFileStat,
@@ -30,6 +31,10 @@ export function registerFileHandlers(window: BrowserWindow) {
 
   ipcMain.handle(IPC.FILE_MOVE, async (_e, oldPath: string, newPath: string, rootPath: string) => {
     return moveFile(oldPath, newPath, rootPath)
+  })
+
+  ipcMain.handle(IPC.FILE_READ_BASE64, async (_e, filePath: string, rootPath: string) => {
+    return readFileBase64(filePath, rootPath)
   })
 
   ipcMain.handle(IPC.FILE_STAT, async (_e, filePath: string) => {

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import simpleGit, { SimpleGit } from 'simple-git'
 import type { Commit, FileDiff, PRFile } from '../../shared/types'
@@ -448,4 +449,27 @@ export async function getWorkingChangedFiles(repoPath: string): Promise<FileDiff
   }
 
   return files
+}
+
+/** Read a file from a git ref as base64. Returns null if the file doesn't exist at that ref. */
+export async function showFileBase64(
+  repoPath: string,
+  ref: string,
+  filePath: string
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['show', `${ref}:${filePath}`],
+      { cwd: repoPath, maxBuffer: 10 * 1024 * 1024, encoding: 'buffer' },
+      (err, stdout) => {
+        if (err) {
+          resolve(null)
+          return
+        }
+        const base64 = (stdout as unknown as Buffer).toString('base64')
+        resolve(base64)
+      }
+    )
+  })
 }
