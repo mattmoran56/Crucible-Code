@@ -17,8 +17,16 @@ interface UseTerminalOptions {
 // Global registry — keeps xterm instances alive for the lifetime of the app
 const terminalInstances = new Map<
   string,
-  { term: Terminal; fitAddon: FitAddon; attached: boolean; unsubData: (() => void) | null; unsubExit: (() => void) | null; cleanupWheel: (() => void) | null }
+  { term: Terminal; fitAddon: FitAddon; attached: boolean; visible: boolean; anchoredToBottom: boolean; unsubData: (() => void) | null; unsubExit: (() => void) | null; cleanupWheel: (() => void) | null }
 >()
+
+/** Force the xterm viewport scrollbar to sync with the buffer position */
+function syncViewportScroll(term: Terminal): void {
+  const viewport = term.element?.querySelector('.xterm-viewport') as HTMLElement | null
+  if (viewport) {
+    viewport.scrollTop = viewport.scrollHeight
+  }
+}
 
 function getCurrentTerminalTheme() {
   const { theme } = useSettingsStore.getState()
@@ -65,6 +73,7 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
           const { cols, rows } = existing.term
           window.api.terminal.resize(terminalId, cols, rows)
           existing.term.scrollToBottom()
+          syncViewportScroll(existing.term)
         })
       }
       return
@@ -98,7 +107,7 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
     })
 
     // Track user-initiated scrolls only (wheel/keyboard), not programmatic ones
-    let anchoredToBottom = true
+    // anchoredToBottom is stored on the instance object so the visibility effect can read it
     let userScrolling = false
 
     const el = containerRef.current!
@@ -106,7 +115,8 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       userScrolling = true
       requestAnimationFrame(() => {
         const buf = term.buffer.active
-        anchoredToBottom = buf.viewportY >= buf.baseY - 3
+        const inst = terminalInstances.get(terminalId)
+        if (inst) inst.anchoredToBottom = buf.viewportY >= buf.baseY - 3
         userScrolling = false
       })
     }
@@ -118,7 +128,8 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
           (domEvent.shiftKey && (domEvent.key === 'ArrowUp' || domEvent.key === 'ArrowDown'))) {
         requestAnimationFrame(() => {
           const buf = term.buffer.active
-          anchoredToBottom = buf.viewportY >= buf.baseY - 3
+          const inst = terminalInstances.get(terminalId)
+          if (inst) inst.anchoredToBottom = buf.viewportY >= buf.baseY - 3
         })
       }
     })
@@ -127,7 +138,12 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
     const unsubData = window.api.terminal.onData((id, data) => {
       if (id !== terminalId) return
       term.write(data)
-      if (anchoredToBottom && !userScrolling) term.scrollToBottom()
+
+      // Only scroll while visible — scrollToBottom on a hidden element desyncs the scrollbar
+      const inst = terminalInstances.get(terminalId)
+      if (inst?.visible && inst.anchoredToBottom && !userScrolling) {
+        term.scrollToBottom()
+      }
 
       // Intervention detection
       lineBuffer.current += data
@@ -152,7 +168,7 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
     })
 
     const cleanupWheel = () => el.removeEventListener('wheel', wheelHandler)
-    terminalInstances.set(terminalId, { term, fitAddon, attached: true, unsubData, unsubExit, cleanupWheel })
+    terminalInstances.set(terminalId, { term, fitAddon, attached: true, visible: true, anchoredToBottom: true, unsubData, unsubExit, cleanupWheel })
 
     // Initial fit + scroll to bottom
     requestAnimationFrame(() => {
@@ -165,6 +181,14 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
     // Never dispose — terminal lives for the lifetime of the app
   }, [terminalId, sessionId, sessionName])
 
+  // Track visibility on the instance so the data handler knows whether to scroll
+  useEffect(() => {
+    if (!terminalId) return
+    const instance = terminalInstances.get(terminalId)
+    if (!instance) return
+    instance.visible = !!visible
+  }, [visible, terminalId])
+
   // Re-fit and scroll to bottom when becoming visible
   useEffect(() => {
     if (!visible || !terminalId) return
@@ -172,14 +196,24 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
     const instance = terminalInstances.get(terminalId)
     if (!instance) return
 
-    // Use multiple frames to let layout fully settle
+    // Fit first, then sync scroll after layout settles
     const raf = requestAnimationFrame(() => {
-      setTimeout(() => {
-        instance.fitAddon.fit()
-        const { cols, rows } = instance.term
-        window.api.terminal.resize(terminalId, cols, rows)
+      instance.fitAddon.fit()
+      const { cols, rows } = instance.term
+      window.api.terminal.resize(terminalId, cols, rows)
+
+      if (instance.anchoredToBottom) {
         instance.term.scrollToBottom()
-      }, 100)
+        // Force the viewport scrollbar to match — scrollToBottom alone can desync
+        // when the terminal received writes while hidden
+        syncViewportScroll(instance.term)
+
+        // Second sync after xterm finishes its own reflow
+        requestAnimationFrame(() => {
+          instance.term.scrollToBottom()
+          syncViewportScroll(instance.term)
+        })
+      }
     })
 
     return () => cancelAnimationFrame(raf)
