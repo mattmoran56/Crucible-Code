@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePRPreviewStore, WORKING_CHANGES_HASH } from '../../stores/prPreviewStore'
 import { PRDiffViewer } from './DiffViewer'
+import { ImageDiffViewer, isImageFile } from './ImageDiffViewer'
 import { FileTree } from '../pullrequests/FileTree'
 import { PRScrollableDiffView } from '../pullrequests/PRScrollableDiffView'
 import { ResizeHandle } from '../ui/ResizeHandle'
@@ -257,6 +258,9 @@ export function PRPreviewPanel({ repoPath }: Props) {
                 viewedFiles={emptySet}
                 onToggleViewed={noop}
                 onAddComment={async () => {}}
+                repoPath={repoPath}
+                beforeRef={baseBranch || 'HEAD'}
+                selectedCommitHash={selectedCommitHash}
               />
             ) : (
               <>
@@ -287,7 +291,22 @@ export function PRPreviewPanel({ repoPath }: Props) {
                     <span className="text-text truncate ml-1">{selectedFilePath}</span>
                   </div>
                 )}
-                {selectedFilePath && fileDiff ? (
+                {selectedFilePath && isImageFile(selectedFilePath) ? (
+                  <ImageDiffViewer
+                    repoPath={repoPath}
+                    filePath={selectedFilePath}
+                    status={(() => {
+                      const f = displayFiles.find((f) => f.path === selectedFilePath)
+                      return (f?.status as 'added' | 'modified' | 'deleted' | 'renamed') || 'modified'
+                    })()}
+                    beforeRef={selectedCommitHash && selectedCommitHash !== WORKING_CHANGES_HASH
+                      ? `${selectedCommitHash}~1`
+                      : baseBranch || 'HEAD'}
+                    afterRef={selectedCommitHash === WORKING_CHANGES_HASH
+                      ? null
+                      : selectedCommitHash || undefined}
+                  />
+                ) : selectedFilePath && fileDiff ? (
                   <PRDiffViewer
                     patch={fileDiff}
                     filePath={selectedFilePath}

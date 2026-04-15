@@ -34,6 +34,15 @@ interface EditorState {
   handleExternalChange: (filePath: string, repoPath: string) => Promise<void>
 }
 
+const IMAGE_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'ico', 'avif',
+])
+
+function isImageFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+  return IMAGE_EXTENSIONS.has(ext)
+}
+
 function getLanguage(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
   const map: Record<string, string> = {
@@ -103,7 +112,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
 
     try {
-      const content = await window.api.file.read(filePath, repoPath)
+      // Image files: open as tab without reading text content (rendered by ImagePreview)
+      const content = isImageFile(filePath) ? '' : await window.api.file.read(filePath, repoPath)
       const file: OpenFile = {
         path: filePath,
         name: getFileName(filePath),

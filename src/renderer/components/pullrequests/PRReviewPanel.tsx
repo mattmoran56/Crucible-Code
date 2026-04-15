@@ -4,6 +4,7 @@ import { useProjectStore } from '../../stores/projectStore'
 import { usePRReviewStore } from '../../stores/prReviewStore'
 import { usePRStore } from '../../stores/prStore'
 import { PRDiffViewer } from '../git/DiffViewer'
+import { ImageDiffViewer, isImageFile } from '../git/ImageDiffViewer'
 import { PRConversationTab } from './PRConversationTab'
 import { PRCommitsTab } from './PRCommitsTab'
 import { PRScrollableDiffView } from './PRScrollableDiffView'
@@ -66,6 +67,8 @@ export function PRReviewPanel() {
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const prNumber = effectivePRNumber
+  const matchedPR = prNumber ? pullRequests.find((pr) => pr.number === prNumber) : undefined
+  const prBaseRef = matchedPR ? `origin/${matchedPR.baseRefName}` : 'origin/main'
 
   const filesCol = useResizable({ direction: 'horizontal', initialSize: 240, minSize: 160, maxSize: 400 })
 
@@ -181,8 +184,17 @@ export function PRReviewPanel() {
   }
 
   const handleMerge = async () => {
+    const baseBranch = matchedPR?.baseRefName
     await merge(activeProject.repoPath, prNumber, 'merge')
     setShowMergeConfirm(false)
+    // Fetch and pull the base branch so local repo has the merged changes
+    if (baseBranch) {
+      try {
+        await window.api.git.fetchAndPull(activeProject.repoPath, baseBranch)
+      } catch {
+        // Non-critical — don't block the merge flow
+      }
+    }
     await clearActiveContext()
     loadPRs(activeProject.repoPath)
     checkStaleness(activeProject.repoPath)
@@ -427,6 +439,9 @@ export function PRReviewPanel() {
                   onAddComment={async (path, startLine, endLine, side, body) => {
                     await addComment(activeProject.repoPath, prNumber, body, path, startLine, endLine, side)
                   }}
+                  repoPath={activeProject?.repoPath}
+                  beforeRef={prBaseRef}
+                  selectedCommitHash={selectedCommitHash}
                 />
               ) : (
                 <>
@@ -457,7 +472,18 @@ export function PRReviewPanel() {
                       <span className="text-text truncate ml-1">{selectedFilePath}</span>
                     </div>
                   )}
-                  {isFileDiffLoading ? (
+                  {activeProject && selectedFilePath && isImageFile(selectedFilePath) ? (
+                    <ImageDiffViewer
+                      repoPath={activeProject.repoPath}
+                      filePath={selectedFilePath}
+                      status={(() => {
+                        const f = filteredDisplayFiles.find((f) => f.path === selectedFilePath)
+                        return (f?.status as 'added' | 'modified' | 'deleted' | 'renamed') || 'modified'
+                      })()}
+                      beforeRef={selectedCommitHash ? `${selectedCommitHash}~1` : prBaseRef}
+                      afterRef={selectedCommitHash || `origin/${matchedPR?.headRefName || 'HEAD'}`}
+                    />
+                  ) : isFileDiffLoading ? (
                     <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
                       Loading diff...
                     </div>

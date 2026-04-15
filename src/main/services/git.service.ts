@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import simpleGit, { SimpleGit } from 'simple-git'
 import type { Commit, FileDiff, PRFile } from '../../shared/types'
@@ -162,6 +163,18 @@ export async function checkoutBranch(
 export async function restoreWorktreeBranch(worktreePath: string, branch: string): Promise<void> {
   const g = gitNoLFS(worktreePath)
   await g.raw(['-c', 'core.hooksPath=/dev/null', 'checkout', branch])
+}
+
+/** Fetch a branch from origin and fast-forward the local ref if possible. */
+export async function fetchAndPull(repoPath: string, branch: string): Promise<void> {
+  const g = git(repoPath)
+  await g.raw(['fetch', 'origin', branch])
+  // Try to update the local branch ref — only works if it's a fast-forward
+  try {
+    await g.raw(['update-ref', `refs/heads/${branch}`, `origin/${branch}`])
+  } catch {
+    // Branch may not exist locally or can't fast-forward — that's fine
+  }
 }
 
 export async function pushBranch(repoPath: string): Promise<void> {
@@ -448,4 +461,27 @@ export async function getWorkingChangedFiles(repoPath: string): Promise<FileDiff
   }
 
   return files
+}
+
+/** Read a file from a git ref as base64. Returns null if the file doesn't exist at that ref. */
+export async function showFileBase64(
+  repoPath: string,
+  ref: string,
+  filePath: string
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['show', `${ref}:${filePath}`],
+      { cwd: repoPath, maxBuffer: 10 * 1024 * 1024, encoding: 'buffer' },
+      (err, stdout) => {
+        if (err) {
+          resolve(null)
+          return
+        }
+        const base64 = (stdout as unknown as Buffer).toString('base64')
+        resolve(base64)
+      }
+    )
+  })
 }

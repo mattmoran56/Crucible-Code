@@ -67,6 +67,16 @@ export async function moveFile(oldPath: string, newPath: string, rootPath: strin
   await rename(oldPath, newPath)
 }
 
+export async function readFileBase64(filePath: string, rootPath: string): Promise<string> {
+  validatePath(filePath, rootPath)
+  const s = await stat(filePath)
+  if (s.size > MAX_FILE_SIZE) {
+    throw new Error(`File is too large (${(s.size / 1024 / 1024).toFixed(1)}MB). Maximum is 5MB.`)
+  }
+  const buffer = await readFile(filePath)
+  return buffer.toString('base64')
+}
+
 export async function getFileStat(filePath: string): Promise<FileStat> {
   try {
     const s = await stat(filePath)
