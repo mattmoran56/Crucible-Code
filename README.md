@@ -26,6 +26,7 @@
 - **Usage tracking** — Rate limit bars and activity stats per session
 - **Code editor** — CodeMirror editor with file explorer for editing files in any worktree
 - **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
+- **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
 ## Visual Tour
@@ -70,6 +71,26 @@ Sessions show live status: running (spinner), needs attention (dot), completed (
 Built-in CodeMirror editor with file explorer — edit files directly in any worktree.
 
 ![Editor](docs/screenshots/editor.png)
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Custom buttons**
+
+Add configurable action buttons to the toolbar, top bar, or right sidebar.
+
+![Custom buttons](docs/screenshots/custom-buttons.png)
+
+</td>
+<td width="50%">
+
+**Button settings**
+
+Full settings UI for creating, editing, and organizing custom buttons.
+
+![Button settings](docs/screenshots/button-settings.png)
 
 </td>
 </tr>
@@ -251,6 +272,22 @@ Per-project notes panel accessible from the right activity bar.
 </details>
 
 <details>
+<summary><strong>Custom buttons</strong></summary>
+
+Create configurable action buttons that run shell commands or Claude prompts from anywhere in the IDE.
+
+- **Three placements** — Session toolbar, top project bar, or right activity bar
+- **Two action types** — Shell commands or Claude prompts with template variable substitution (`{{branch}}`, `{{worktreePath}}`, `{{sessionName}}`, `{{repoPath}}`, `{{projectName}}`)
+- **Two execution modes** — Background (silent with toast notification on completion) or terminal (interactive with live output)
+- **Button groups** — Organize related buttons into dropdown menus
+- **Scope control** — Global, all projects, or specific projects only
+- **Keyboard shortcuts** — Assign Electron accelerator shortcuts (e.g. `Cmd+Shift+T`)
+- **Confirmation dialogs** — Optional confirmation prompt before executing destructive actions
+- **Icon picker** — 35+ built-in Lucide icons plus custom emoji support
+
+</details>
+
+<details>
 <summary><strong>Permissions sync</strong></summary>
 
 View and edit Claude Code permissions (allow/deny lists) from the right panel.
@@ -279,6 +316,7 @@ src/
 │   │   ├── git/          # Git viewer (CommitList, ChangedFiles, DiffViewer)
 │   │   ├── terminal/     # Terminal (TerminalPanel, DynamicTerminalPanel)
 │   │   ├── editor/       # Code editor (CodeEditorPanel, FileExplorer)
+│   │   ├── buttons/      # Custom buttons (CustomButtonBar, ButtonRenderer, IconPicker)
 │   │   ├── pullrequests/ # PR review (PRReviewPanel, PRConversationTab, FileTree)
 │   │   ├── notes/        # Notes panel
 │   │   ├── usage/        # Usage tracking panel

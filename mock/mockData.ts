@@ -16,6 +16,8 @@ import type {
   Note,
   FileEntry,
   ClaudeAccount,
+  CustomButton,
+  CustomButtonGroup,
 } from '../src/shared/types'
 
 // --- Accounts ---
@@ -463,4 +465,100 @@ export const mockTerminalOutput = [
   '  \x1b[2mFiles: 4 created, 2 modified (+394/-22 lines)\x1b[0m\r\n',
   '\r\n',
   '\x1b[1;36m>\x1b[0m ',
+]
+
+// --- Custom Buttons ---
+
+export const mockButtons: CustomButton[] = [
+  {
+    id: 'btn-1',
+    label: 'Run Tests',
+    icon: 'Play',
+    placement: 'session-toolbar',
+    actionType: 'shell',
+    executionMode: 'background',
+    command: 'npm test',
+    scope: { type: 'global' },
+    order: 0,
+  },
+  {
+    id: 'btn-2',
+    label: 'Lint & Fix',
+    icon: 'Wrench',
+    placement: 'session-toolbar',
+    actionType: 'shell',
+    executionMode: 'terminal',
+    command: 'npm run lint -- --fix',
+    scope: { type: 'global' },
+    order: 1,
+  },
+  {
+    id: 'btn-3',
+    label: 'Review Code',
+    icon: 'Eye',
+    placement: 'session-toolbar',
+    actionType: 'claude',
+    executionMode: 'terminal',
+    command: 'Review the changes in this branch and suggest improvements',
+    scope: { type: 'all-projects' },
+    order: 2,
+  },
+  {
+    id: 'btn-4',
+    label: 'Build',
+    icon: 'Hammer',
+    placement: 'project-tabs',
+    actionType: 'shell',
+    executionMode: 'background',
+    command: 'npm run build',
+    scope: { type: 'global' },
+    order: 0,
+  },
+  {
+    id: 'btn-5',
+    label: 'Deploy',
+    icon: 'Rocket',
+    placement: 'project-tabs',
+    actionType: 'shell',
+    executionMode: 'background',
+    command: 'npm run deploy',
+    scope: { type: 'projects', projectIds: ['proj-1'] },
+    order: 1,
+    confirmMessage: 'Are you sure you want to deploy to production?',
+    groupId: 'grp-1',
+  },
+  {
+    id: 'btn-6',
+    label: 'Deploy Staging',
+    icon: 'Cloud',
+    placement: 'project-tabs',
+    actionType: 'shell',
+    executionMode: 'background',
+    command: 'npm run deploy:staging',
+    scope: { type: 'projects', projectIds: ['proj-1'] },
+    order: 2,
+    groupId: 'grp-1',
+  },
+  {
+    id: 'btn-7',
+    label: 'Sync',
+    icon: 'RefreshCw',
+    placement: 'right-activity-bar',
+    actionType: 'shell',
+    executionMode: 'background',
+    command: 'git fetch --all && git pull',
+    scope: { type: 'global' },
+    order: 0,
+  },
+]
+
+export const mockButtonGroups: CustomButtonGroup[] = [
+  {
+    id: 'grp-1',
+    label: 'Deploy',
+    icon: 'Rocket',
+    placement: 'project-tabs',
+    scope: { type: 'projects', projectIds: ['proj-1'] },
+    order: 1,
+  },
 ]
