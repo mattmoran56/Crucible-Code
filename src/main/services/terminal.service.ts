@@ -33,6 +33,7 @@ export interface PersistedTerminal {
 
 const terminals = new Map<string, TerminalInstance>()
 let terminalCounter = 0
+let shuttingDown = false
 
 // Persist active terminal metadata to disk so we can recover after crash
 const terminalStore = new Store<{
@@ -68,6 +69,13 @@ export function getAndClearRecoveryList(): PersistedTerminal[] {
   const list = Object.values(active)
   terminalStore.set('activeTerminals', {})
   return list
+}
+
+/** Safely send IPC — no-op if the window is already destroyed. */
+function safeSend(window: BrowserWindow, channel: string, ...args: unknown[]): void {
+  if (!window.isDestroyed()) {
+    window.webContents.send(channel, ...args)
+  }
 }
 
 function spawnPty(
@@ -116,14 +124,17 @@ function spawnPty(
   })
 
   ptyProcess.onData((data) => {
-    instance.window.webContents.send(IPC.TERMINAL_DATA, terminalId, data)
+    safeSend(instance.window, IPC.TERMINAL_DATA, terminalId, data)
   })
 
   ptyProcess.onExit(({ exitCode }) => {
+    // During shutdown, skip all exit handling to avoid errors
+    if (shuttingDown) return
+
     const current = terminals.get(terminalId)
     if (!current || current.stopped) {
       // Terminal was intentionally killed, don't restart
-      instance.window.webContents.send(IPC.TERMINAL_EXIT, terminalId, exitCode)
+      safeSend(instance.window, IPC.TERMINAL_EXIT, terminalId, exitCode)
       terminals.delete(terminalId)
       unpersistTerminal(terminalId)
       return
@@ -139,13 +150,15 @@ function spawnPty(
       }
 
       // Auto-restart Claude Code after a brief pause
-      instance.window.webContents.send(
+      safeSend(
+        instance.window,
         IPC.TERMINAL_DATA,
         terminalId,
         '\r\n\x1b[90m[Claude Code exited — restarting...]\x1b[0m\r\n\r\n'
       )
 
       setTimeout(() => {
+        if (shuttingDown) return
         const check = terminals.get(terminalId)
         if (!check || check.stopped) return
 
@@ -153,7 +166,7 @@ function spawnPty(
         check.pty = newPty
       }, 1000)
     } else {
-      instance.window.webContents.send(IPC.TERMINAL_EXIT, terminalId, exitCode)
+      safeSend(instance.window, IPC.TERMINAL_EXIT, terminalId, exitCode)
       terminals.delete(terminalId)
       unpersistTerminal(terminalId)
     }
@@ -229,6 +242,7 @@ export function killSessionTerminals(sessionId: string): string[] {
 
 /** Kill every terminal (used on app quit). */
 export function killAllTerminals(): void {
+  shuttingDown = true
   for (const [id, instance] of terminals) {
     instance.stopped = true
     instance.pty.kill()
