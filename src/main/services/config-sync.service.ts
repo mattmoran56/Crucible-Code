@@ -324,8 +324,10 @@ export function deleteConfigItem(repoPath: string, itemId: string): void {
 
 /**
  * Copy canonical config files into a worktree. Called on terminal spawn.
+ * Skips the main repo — only actual worktrees should be synced to.
  */
 export function syncConfigToWorktree(repoPath: string, worktreePath: string): void {
+  if (!isWorktree(worktreePath)) return
   const canonical = getCanonicalDir(repoPath)
 
   // Seed from repo first time
@@ -372,8 +374,10 @@ export function syncConfigToWorktree(repoPath: string, worktreePath: string): vo
 
 /**
  * Register a worktree and start watching for config changes.
+ * Skips the main repo — only actual worktrees should be watched.
  */
 export function startWatching(repoPath: string, worktreePath: string): void {
+  if (!isWorktree(worktreePath)) return
   // Register in active set
   if (!activeWorktrees.has(repoPath)) {
     activeWorktrees.set(repoPath, new Set())
@@ -607,6 +611,7 @@ function broadcastToWorktrees(repoPath: string): void {
 
   const canonical = getCanonicalDir(repoPath)
   for (const wt of worktrees) {
+    if (!isWorktree(wt)) continue
     suppressSet.add(wt)
     copyCanonicalToWorktree(canonical, wt)
   }
