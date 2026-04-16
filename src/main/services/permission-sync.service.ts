@@ -117,6 +117,25 @@ export function stopWatching(worktreePath: string): void {
 }
 
 /**
+ * Stop all watchers and clear all timers (used on app quit).
+ */
+export function stopAllWatching(): void {
+  for (const watcher of watchers.values()) {
+    watcher.close()
+  }
+  watchers.clear()
+
+  for (const timer of debounceTimers.values()) {
+    clearTimeout(timer)
+  }
+  debounceTimers.clear()
+
+  activeWorktrees.clear()
+  repoLookup.clear()
+  suppressSet.clear()
+}
+
+/**
  * Read shared permissions from the canonical store (for UI panel).
  */
 export function getSharedPermissions(repoPath: string): Permissions {

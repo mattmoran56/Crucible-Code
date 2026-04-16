@@ -454,6 +454,30 @@ export function stopWatching(worktreePath: string): void {
   suppressSet.delete(worktreePath)
 }
 
+/**
+ * Stop all watchers and clear all timers (used on app quit).
+ */
+export function stopAllWatching(): void {
+  for (const watcher of claudeWatchers.values()) {
+    watcher.close()
+  }
+  claudeWatchers.clear()
+
+  for (const watcher of claudeMdWatchers.values()) {
+    watcher.close()
+  }
+  claudeMdWatchers.clear()
+
+  for (const timer of debounceTimers.values()) {
+    clearTimeout(timer)
+  }
+  debounceTimers.clear()
+
+  activeWorktrees.clear()
+  repoLookup.clear()
+  suppressSet.clear()
+}
+
 // --- Internal helpers ---
 
 /**
