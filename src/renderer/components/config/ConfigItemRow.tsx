@@ -4,6 +4,7 @@ import type { ConfigItem, ConfigTrackingMode } from '../../../shared/types'
 
 const TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   command: { bg: 'bg-accent/15', text: 'text-accent', label: 'Command' },
+  skill: { bg: 'bg-purple-500/15', text: 'text-purple-400', label: 'Skill' },
   hook: { bg: 'bg-warning/15', text: 'text-warning', label: 'Hook' },
   claudemd: { bg: 'bg-success/15', text: 'text-success', label: 'CLAUDE.md' },
   memory: { bg: 'bg-text-muted/15', text: 'text-text-muted', label: 'Memory' },
