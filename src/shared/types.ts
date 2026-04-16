@@ -176,7 +176,7 @@ export interface FileStat {
 
 // Config management
 
-export type ConfigItemType = 'command' | 'hook' | 'claudemd' | 'memory'
+export type ConfigItemType = 'command' | 'skill' | 'hook' | 'claudemd' | 'memory'
 export type ConfigTrackingMode = 'local' | 'shared'
 
 export interface ConfigItem {

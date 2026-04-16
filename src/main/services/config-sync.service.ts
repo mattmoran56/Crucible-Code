@@ -45,6 +45,43 @@ const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 /** BrowserWindow ref for sending IPC events */
 let mainWindow: BrowserWindow | null = null
 
+// --- Helpers ---
+
+/**
+ * Recursively find all .md files relative to `dir`.
+ */
+function walkMdFiles(dir: string, prefix = ''): string[] {
+  if (!existsSync(dir)) return []
+  const results: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+    if (entry.isDirectory()) {
+      results.push(...walkMdFiles(join(dir, entry.name), rel))
+    } else if (entry.name.endsWith('.md')) {
+      results.push(rel)
+    }
+  }
+  return results
+}
+
+/**
+ * Recursively copy a directory of .md files, preserving subdirectory structure.
+ */
+function copyMdDir(srcDir: string, destDir: string): void {
+  if (!existsSync(srcDir)) return
+  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+    const srcPath = join(srcDir, entry.name)
+    const destPath = join(destDir, entry.name)
+    if (entry.isDirectory()) {
+      if (!existsSync(destPath)) mkdirSync(destPath, { recursive: true })
+      copyMdDir(srcPath, destPath)
+    } else if (entry.name.endsWith('.md')) {
+      if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
+      copyFileSync(srcPath, destPath)
+    }
+  }
+}
+
 // --- Public API ---
 
 export function setWindow(window: BrowserWindow) {
@@ -92,6 +129,20 @@ export function discoverConfigItems(repoPath: string): ConfigItem[] {
         tracking: excludedPaths.has(relativePath) ? 'local' : 'shared',
       })
     }
+  }
+
+  // Skills (recursive scan)
+  const skillsDir = join(canonical, 'skills')
+  for (const relFile of walkMdFiles(skillsDir)) {
+    const name = relFile.replace(/\.md$/, '')
+    const relativePath = `.claude/skills/${relFile}`
+    items.push({
+      id: `skill:${name}`,
+      type: 'skill',
+      name,
+      relativePath,
+      tracking: excludedPaths.has(relativePath) ? 'local' : 'shared',
+    })
   }
 
   // CLAUDE.md (root)
@@ -158,6 +209,8 @@ export function updateConfigContent(repoPath: string, itemId: string, content: s
  * Toggle git tracking for a config item.
  */
 export function setTracking(repoPath: string, itemId: string, mode: ConfigTrackingMode): void {
+  // Tracking toggle only applies to the main repo, not worktrees
+  // (worktrees always have config files excluded)
   const items = discoverConfigItems(repoPath)
   const item = items.find((i) => i.id === itemId)
   if (!item) return
@@ -291,6 +344,14 @@ export function syncConfigToWorktree(repoPath: string, worktreePath: string): vo
     }
   }
 
+  // Copy skills (recursive)
+  const skillsDir = join(canonical, 'skills')
+  if (existsSync(skillsDir)) {
+    const wtSkillsDir = join(worktreePath, '.claude', 'skills')
+    suppressSet.add(worktreePath)
+    copyMdDir(skillsDir, wtSkillsDir)
+  }
+
   // Copy CLAUDE.md (root)
   if (existsSync(join(canonical, 'CLAUDE.md'))) {
     suppressSet.add(worktreePath)
@@ -304,6 +365,9 @@ export function syncConfigToWorktree(repoPath: string, worktreePath: string): vo
     suppressSet.add(worktreePath)
     copyFileSync(join(canonical, '.claude-CLAUDE.md'), join(claudeDir, 'CLAUDE.md'))
   }
+
+  // Ensure all config files are git-excluded in worktrees
+  excludeAllConfigInWorktree(repoPath, worktreePath)
 }
 
 /**
@@ -327,8 +391,8 @@ export function startWatching(repoPath: string, worktreePath: string): void {
   try {
     const watcher = watch(claudeDir, { recursive: true }, (eventType, filename) => {
       if (!filename) return
-      // Only care about commands and CLAUDE.md changes
-      if (filename.startsWith('commands/') || filename === 'CLAUDE.md') {
+      // Only care about commands, skills, and CLAUDE.md changes
+      if (filename.startsWith('commands/') || filename.startsWith('skills/') || filename === 'CLAUDE.md') {
         handleFileChange(worktreePath)
       }
     })
@@ -352,15 +416,10 @@ export function startWatching(repoPath: string, worktreePath: string): void {
 }
 
 /**
- * Stop watching a worktree. Does a final sync to canonical before cleanup.
+ * Stop watching a worktree and clean up.
  */
 export function stopWatching(worktreePath: string): void {
   const repoPath = repoLookup.get(worktreePath)
-
-  // Final sync before cleanup
-  if (repoPath) {
-    syncWorktreeToCanonical(worktreePath, repoPath)
-  }
 
   // Close watchers
   const claudeWatcher = claudeWatchers.get(worktreePath)
@@ -403,11 +462,13 @@ export function stopWatching(worktreePath: string): void {
 function initialSeedFromRepo(repoPath: string, canonical: string): void {
   // Check if canonical already has content
   const commandsDir = join(canonical, 'commands')
+  const skillsDir = join(canonical, 'skills')
   const hasCommands = existsSync(commandsDir) && readdirSync(commandsDir).some((f) => f.endsWith('.md'))
+  const hasSkills = existsSync(skillsDir) && walkMdFiles(skillsDir).length > 0
   const hasClaudeMd = existsSync(join(canonical, 'CLAUDE.md'))
   const hasClaudeClaudeMd = existsSync(join(canonical, '.claude-CLAUDE.md'))
 
-  if (hasCommands || hasClaudeMd || hasClaudeClaudeMd) return
+  if (hasCommands || hasSkills || hasClaudeMd || hasClaudeClaudeMd) return
 
   // Seed from main repo
   const repoCommandsDir = join(repoPath, '.claude', 'commands')
@@ -417,6 +478,12 @@ function initialSeedFromRepo(repoPath: string, canonical: string): void {
       if (!file.endsWith('.md')) continue
       copyFileSync(join(repoCommandsDir, file), join(commandsDir, file))
     }
+  }
+
+  // Seed skills (recursive)
+  const repoSkillsDir = join(repoPath, '.claude', 'skills')
+  if (existsSync(repoSkillsDir)) {
+    copyMdDir(repoSkillsDir, skillsDir)
   }
 
   if (existsSync(join(repoPath, 'CLAUDE.md'))) {
@@ -450,49 +517,31 @@ function processChange(worktreePath: string): void {
   const repoPath = repoLookup.get(worktreePath)
   if (!repoPath) return
 
-  // Sync this worktree's config to canonical
-  syncWorktreeToCanonical(worktreePath, repoPath)
+  const canonical = getCanonicalDir(repoPath)
 
-  // Broadcast canonical to all other active worktrees
-  const worktrees = activeWorktrees.get(repoPath)
-  if (worktrees) {
-    const canonical = getCanonicalDir(repoPath)
-    for (const wt of worktrees) {
-      if (wt === worktreePath) continue
-      suppressSet.add(wt)
-      copyCanonicalToWorktree(canonical, wt)
+  // Adopt genuinely NEW files (exist in worktree but not canonical)
+  const adopted = adoptNewFiles(worktreePath, canonical)
+
+  // Restore canonical state to worktree (revert modifications/deletions)
+  suppressSet.add(worktreePath)
+  copyCanonicalToWorktree(canonical, worktreePath)
+
+  // If new files were adopted, broadcast to other worktrees and update exclude
+  if (adopted) {
+    const worktrees = activeWorktrees.get(repoPath)
+    if (worktrees) {
+      for (const wt of worktrees) {
+        if (wt === worktreePath) continue
+        suppressSet.add(wt)
+        copyCanonicalToWorktree(canonical, wt)
+        excludeAllConfigInWorktree(repoPath, wt)
+      }
     }
+    // Also exclude new files in the originating worktree
+    excludeAllConfigInWorktree(repoPath, worktreePath)
   }
 
   emitChanged(repoPath)
-}
-
-function syncWorktreeToCanonical(worktreePath: string, repoPath: string): void {
-  const canonical = getCanonicalDir(repoPath)
-
-  // Sync commands
-  const wtCommandsDir = join(worktreePath, '.claude', 'commands')
-  if (existsSync(wtCommandsDir)) {
-    const canonicalCommandsDir = join(canonical, 'commands')
-    if (!existsSync(canonicalCommandsDir)) mkdirSync(canonicalCommandsDir, { recursive: true })
-
-    for (const file of readdirSync(wtCommandsDir)) {
-      if (!file.endsWith('.md')) continue
-      copyFileSync(join(wtCommandsDir, file), join(canonicalCommandsDir, file))
-    }
-  }
-
-  // Sync CLAUDE.md (root)
-  const wtClaudeMd = join(worktreePath, 'CLAUDE.md')
-  if (existsSync(wtClaudeMd)) {
-    copyFileSync(wtClaudeMd, join(canonical, 'CLAUDE.md'))
-  }
-
-  // Sync .claude/CLAUDE.md
-  const wtClaudeClaudeMd = join(worktreePath, '.claude', 'CLAUDE.md')
-  if (existsSync(wtClaudeClaudeMd)) {
-    copyFileSync(wtClaudeClaudeMd, join(canonical, '.claude-CLAUDE.md'))
-  }
 }
 
 function copyCanonicalToWorktree(canonical: string, worktreePath: string): void {
@@ -506,6 +555,13 @@ function copyCanonicalToWorktree(canonical: string, worktreePath: string): void 
       if (!file.endsWith('.md')) continue
       copyFileSync(join(commandsDir, file), join(wtCommandsDir, file))
     }
+  }
+
+  // Copy skills (recursive)
+  const skillsDir = join(canonical, 'skills')
+  if (existsSync(skillsDir)) {
+    const wtSkillsDir = join(worktreePath, '.claude', 'skills')
+    copyMdDir(skillsDir, wtSkillsDir)
   }
 
   // Copy CLAUDE.md (root)
@@ -540,6 +596,10 @@ function canonicalPathForItem(canonical: string, itemId: string): string | null 
     const name = itemId.slice('command:'.length)
     return join(canonical, 'commands', `${name}.md`)
   }
+  if (itemId.startsWith('skill:')) {
+    const name = itemId.slice('skill:'.length)
+    return join(canonical, 'skills', `${name}.md`)
+  }
   if (itemId === 'claudemd:root') {
     return join(canonical, 'CLAUDE.md')
   }
@@ -557,6 +617,10 @@ function worktreePathForItem(worktreePath: string, itemId: string): string | nul
     const name = itemId.slice('command:'.length)
     return join(worktreePath, '.claude', 'commands', `${name}.md`)
   }
+  if (itemId.startsWith('skill:')) {
+    const name = itemId.slice('skill:'.length)
+    return join(worktreePath, '.claude', 'skills', `${name}.md`)
+  }
   if (itemId === 'claudemd:root') {
     return join(worktreePath, 'CLAUDE.md')
   }
@@ -564,6 +628,115 @@ function worktreePathForItem(worktreePath: string, itemId: string): string | nul
     return join(worktreePath, '.claude', 'CLAUDE.md')
   }
   return null
+}
+
+/**
+ * Adopt new .md files from a worktree into canonical.
+ * Only copies files that do NOT exist in canonical (new creations).
+ * Returns true if any files were adopted.
+ */
+function adoptNewFiles(worktreePath: string, canonical: string): boolean {
+  let adopted = false
+
+  // Check commands
+  const wtCommandsDir = join(worktreePath, '.claude', 'commands')
+  const canonicalCommandsDir = join(canonical, 'commands')
+  if (existsSync(wtCommandsDir)) {
+    for (const file of readdirSync(wtCommandsDir)) {
+      if (!file.endsWith('.md')) continue
+      const canonicalPath = join(canonicalCommandsDir, file)
+      if (!existsSync(canonicalPath)) {
+        if (!existsSync(canonicalCommandsDir)) mkdirSync(canonicalCommandsDir, { recursive: true })
+        copyFileSync(join(wtCommandsDir, file), canonicalPath)
+        adopted = true
+      }
+    }
+  }
+
+  // Check skills (recursive)
+  const wtSkillsDir = join(worktreePath, '.claude', 'skills')
+  const canonicalSkillsDir = join(canonical, 'skills')
+  if (existsSync(wtSkillsDir)) {
+    for (const relFile of walkMdFiles(wtSkillsDir)) {
+      const canonicalPath = join(canonicalSkillsDir, relFile)
+      if (!existsSync(canonicalPath)) {
+        const dir = dirname(canonicalPath)
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+        copyFileSync(join(wtSkillsDir, relFile), canonicalPath)
+        adopted = true
+      }
+    }
+  }
+
+  return adopted
+}
+
+/**
+ * Check if a path is a worktree (not the main repo).
+ */
+function isWorktree(worktreePath: string): boolean {
+  return worktreePath.includes('.codecrucible-worktrees')
+}
+
+/**
+ * Ensure all config files are git-excluded in a worktree.
+ * Worktrees always have config files excluded from git.
+ */
+function excludeAllConfigInWorktree(repoPath: string, worktreePath: string): void {
+  if (!isWorktree(worktreePath)) return
+
+  // Get the worktree-specific git exclude path
+  // Worktrees have their own .git directory (or a .git file pointing to the main repo)
+  let excludePath: string | null = null
+  try {
+    const gitDir = execSync('git rev-parse --git-dir', {
+      cwd: worktreePath,
+      encoding: 'utf-8',
+    }).trim()
+
+    const absGitDir = gitDir.startsWith('/')
+      ? gitDir
+      : join(worktreePath, gitDir)
+
+    const infoDir = join(absGitDir, 'info')
+    if (!existsSync(infoDir)) mkdirSync(infoDir, { recursive: true })
+    excludePath = join(infoDir, 'exclude')
+  } catch {
+    return
+  }
+
+  if (!excludePath) return
+
+  // Collect all config file paths that should be excluded
+  const canonical = getCanonicalDir(repoPath)
+  const pathsToExclude = new Set<string>()
+
+  // Commands
+  const commandsDir = join(canonical, 'commands')
+  if (existsSync(commandsDir)) {
+    for (const file of readdirSync(commandsDir)) {
+      if (!file.endsWith('.md')) continue
+      pathsToExclude.add(`.claude/commands/${file}`)
+    }
+  }
+
+  // Skills
+  for (const relFile of walkMdFiles(join(canonical, 'skills'))) {
+    pathsToExclude.add(`.claude/skills/${relFile}`)
+  }
+
+  // CLAUDE.md files
+  if (existsSync(join(canonical, 'CLAUDE.md'))) {
+    pathsToExclude.add('CLAUDE.md')
+  }
+  if (existsSync(join(canonical, '.claude-CLAUDE.md'))) {
+    pathsToExclude.add('.claude/CLAUDE.md')
+  }
+
+  // Ensure all paths are in the managed exclude section
+  for (const p of pathsToExclude) {
+    updateExcludeFile(excludePath, p, 'local')
+  }
 }
 
 // --- Git exclude management ---

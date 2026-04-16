@@ -181,6 +181,7 @@ export function ConfigPanel() {
   }
 
   const commands = items.filter((i) => i.type === 'command')
+  const skills = items.filter((i) => i.type === 'skill')
   const hooks = items.filter((i) => i.type === 'hook')
   const claudeMds = items.filter((i) => i.type === 'claudemd')
   const existingTypes = new Set(items.map((i) => i.id))
@@ -244,6 +245,13 @@ export function ConfigPanel() {
             <ConfigSection
               title="Commands"
               items={commands}
+              onSelect={handleSelect}
+              onToggleTracking={handleToggleTracking}
+              onDelete={handleDelete}
+            />
+            <ConfigSection
+              title="Skills"
+              items={skills}
               onSelect={handleSelect}
               onToggleTracking={handleToggleTracking}
               onDelete={handleDelete}
