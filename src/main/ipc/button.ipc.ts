@@ -54,12 +54,8 @@ export function registerButtonHandlers(window: BrowserWindow) {
           actionType === 'shell' ? resolvedCommand : undefined
         )
 
-        // For claude background mode, write the prompt after claude starts
-        if (actionType === 'claude') {
-          setTimeout(() => {
-            terminalService.writeTerminal(terminalId, resolvedCommand + '\n')
-          }, 2000)
-        }
+        // For claude background mode, the renderer will detect the prompt
+        // and write the command (same pattern as review tabs)
 
         return terminalId
       }
@@ -68,10 +64,14 @@ export function registerButtonHandlers(window: BrowserWindow) {
       const mode = actionType === 'claude' ? 'claude' : 'shell'
       const terminalId = terminalService.spawnTerminal(window, sessionId, cwd, mode)
 
-      const delay = actionType === 'claude' ? 2000 : 300
-      setTimeout(() => {
-        terminalService.writeTerminal(terminalId, resolvedCommand + '\n')
-      }, delay)
+      // For shell commands, write after a short delay.
+      // For claude commands, the renderer will detect the prompt
+      // and write the command (same pattern as review tabs).
+      if (actionType === 'shell') {
+        setTimeout(() => {
+          terminalService.writeTerminal(terminalId, resolvedCommand + '\n')
+        }, 300)
+      }
 
       return terminalId
     }

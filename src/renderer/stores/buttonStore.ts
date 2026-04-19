@@ -194,6 +194,30 @@ export const useButtonStore = create<ButtonState>()((set, get) => ({
         sessionId
       )
 
+      // For claude action type, wait for the prompt before writing the command
+      // (same pattern as review tabs)
+      if (button.actionType === 'claude') {
+        let sent = false
+        const unsub = window.api.terminal.onData((tid: string, data: string) => {
+          if (tid !== terminalId || sent) return
+          if (data.includes('>') || data.includes('$')) {
+            sent = true
+            unsub()
+            setTimeout(() => {
+              window.api.terminal.write(terminalId, resolvedCommand + '\r')
+            }, 100)
+          }
+        })
+        // Fallback timeout in case prompt detection misses
+        setTimeout(() => {
+          if (!sent) {
+            sent = true
+            unsub()
+            window.api.terminal.write(terminalId, resolvedCommand + '\r')
+          }
+        }, 10000)
+      }
+
       if (button.executionMode === 'background') {
         get().setButtonRunState(buttonId, { terminalId, running: true })
 
