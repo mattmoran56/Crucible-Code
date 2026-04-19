@@ -320,8 +320,7 @@ src/
 │   │   ├── pullrequests/ # PR review (PRReviewPanel, PRConversationTab, FileTree)
 │   │   ├── notes/        # Notes panel
 │   │   ├── usage/        # Usage tracking panel
-│   │   ├── permissions/  # Permissions panel
-│   │   └── settings/     # Settings page
+│   │   └── permissions/  # Permissions panel
 │   ├── stores/      # Zustand state (14 stores)
 │   ├── hooks/       # Shared hooks (useResizable, useFocusTrap, useRovingIndex)
 │   └── styles/      # Tailwind + CSS custom property themes
