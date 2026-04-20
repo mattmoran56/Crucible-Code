@@ -174,19 +174,6 @@ export interface FileStat {
   exists: boolean
 }
 
-// Config management
-
-export type ConfigItemType = 'command' | 'skill' | 'hook' | 'claudemd' | 'memory'
-export type ConfigTrackingMode = 'local' | 'shared'
-
-export interface ConfigItem {
-  id: string                    // e.g. "command:my-skill", "claudemd:root"
-  type: ConfigItemType
-  name: string                  // Display name
-  relativePath: string          // Path relative to repo root (for git exclude)
-  tracking: ConfigTrackingMode  // Current git tracking state
-}
-
 // Custom Buttons
 
 export type ButtonPlacement = 'session-toolbar' | 'project-tabs' | 'right-activity-bar'
