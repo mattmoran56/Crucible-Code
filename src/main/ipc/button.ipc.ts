@@ -47,16 +47,23 @@ export function registerButtonHandlers(window: BrowserWindow) {
       if (executionMode === 'background') {
         // Background mode: spawn with the command baked into shell -l -c "cmd"
         // so the process exits when the command completes
-        const mode = actionType === 'claude' ? 'claude' : 'command'
+        if (actionType === 'claude') {
+          // Pipe the prompt to claude so it runs non-interactively and exits when done.
+          // Using heredoc to avoid escaping issues with the prompt content.
+          const commandString = `claude <<'CODECRUCIBLE_EOF'\n${resolvedCommand}\nCODECRUCIBLE_EOF`
+          const terminalId = terminalService.spawnTerminal(
+            window, sessionId, cwd, 'command',
+            'dark', undefined,
+            commandString
+          )
+          return terminalId
+        }
+
         const terminalId = terminalService.spawnTerminal(
-          window, sessionId, cwd, mode,
+          window, sessionId, cwd, 'command',
           'dark', undefined,
-          actionType === 'shell' ? resolvedCommand : undefined
+          resolvedCommand
         )
-
-        // For claude background mode, the renderer will detect the prompt
-        // and write the command (same pattern as review tabs)
-
         return terminalId
       }
 
