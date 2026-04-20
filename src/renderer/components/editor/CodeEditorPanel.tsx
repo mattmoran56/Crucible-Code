@@ -1,12 +1,17 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { bracketMatching } from '@codemirror/language'
+import { marked } from 'marked'
 import { useEditorStore, type OpenFile } from '../../stores/editorStore'
 import { getLanguageExtension } from './languageMap'
 import { createEditorTheme } from './codemirrorTheme'
 import { isImageFile } from '../git/ImageDiffViewer'
+
+function isMarkdownFile(path: string): boolean {
+  return /\.(md|mdx|markdown)$/i.test(path)
+}
 
 interface CodeEditorPanelProps {
   repoPath: string
@@ -15,6 +20,8 @@ interface CodeEditorPanelProps {
 export function CodeEditorPanel({ repoPath }: CodeEditorPanelProps) {
   const { openFiles, activeFilePath, setActiveFile, closeFile, saveFile, saveActiveFile, updateFileContent } = useEditorStore()
   const activeFile = openFiles.find((f) => f.path === activeFilePath)
+  const [markdownPreview, setMarkdownPreview] = useState(false)
+  const showMarkdownToggle = activeFile && isMarkdownFile(activeFile.path) && !isImageFile(activeFile.path)
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -32,6 +39,21 @@ export function CodeEditorPanel({ repoPath }: CodeEditorPanelProps) {
             }
             closeFile(path)
           }}
+          trailingAction={showMarkdownToggle ? (
+            <button
+              onClick={() => setMarkdownPreview((v) => !v)}
+              className={`flex items-center justify-center rounded transition-colors flex-shrink-0
+                ${markdownPreview ? 'text-accent bg-accent/15' : 'text-text-muted hover:text-text'}`}
+              style={{ width: 28, height: 28, marginRight: 4 }}
+              title={markdownPreview ? 'Hide markdown preview' : 'Preview markdown'}
+              aria-label="Toggle markdown preview"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </button>
+          ) : undefined}
         />
       )}
 
@@ -40,12 +62,21 @@ export function CodeEditorPanel({ repoPath }: CodeEditorPanelProps) {
         {activeFile && isImageFile(activeFile.path) ? (
           <ImagePreview filePath={activeFile.path} repoPath={repoPath} />
         ) : activeFile ? (
-          <CodeMirrorEditor
-            file={activeFile}
-            repoPath={repoPath}
-            onContentChange={updateFileContent}
-            onSave={saveActiveFile}
-          />
+          <div className="flex h-full min-h-0">
+            <div className={markdownPreview && showMarkdownToggle ? 'w-1/2 min-h-0 border-r border-border' : 'w-full min-h-0'}>
+              <CodeMirrorEditor
+                file={activeFile}
+                repoPath={repoPath}
+                onContentChange={updateFileContent}
+                onSave={saveActiveFile}
+              />
+            </div>
+            {markdownPreview && showMarkdownToggle && (
+              <div className="w-1/2 min-h-0 overflow-auto" style={{ padding: '16px' }}>
+                <MarkdownPreview content={activeFile.content} />
+              </div>
+            )}
+          </div>
         ) : (
           <div className="h-full flex items-center justify-center text-text-muted text-xs">
             Select a file to edit
@@ -63,18 +94,21 @@ function FileTabs({
   activeFilePath,
   onSelect,
   onClose,
+  trailingAction,
 }: {
   files: OpenFile[]
   activeFilePath: string | null
   onSelect: (path: string) => void
   onClose: (path: string) => void
+  trailingAction?: React.ReactNode
 }) {
   return (
     <div
-      className="flex items-center bg-bg-tertiary border-b border-border overflow-x-auto"
+      className="flex items-center bg-bg-tertiary border-b border-border"
       style={{ padding: '0 4px' }}
       role="tablist"
     >
+      <div className="flex items-center overflow-x-auto flex-1 min-w-0">
       {files.map((file) => {
         const isActive = file.path === activeFilePath
         const isDirty = file.content !== file.savedContent
@@ -115,6 +149,8 @@ function FileTabs({
           </button>
         )
       })}
+      </div>
+      {trailingAction}
     </div>
   )
 }
@@ -334,5 +370,17 @@ function ImagePreview({ filePath, repoPath }: { filePath: string; repoPath: stri
         draggable={false}
       />
     </div>
+  )
+}
+
+/* ── Markdown Preview ────────────────────────────────── */
+
+function MarkdownPreview({ content }: { content: string }) {
+  const html = useMemo(() => marked.parse(content) as string, [content])
+  return (
+    <div
+      className="markdown-body"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   )
 }
