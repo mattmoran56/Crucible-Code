@@ -194,9 +194,10 @@ export const useButtonStore = create<ButtonState>()((set, get) => ({
         sessionId
       )
 
-      // For claude action type, wait for the prompt before writing the command
-      // (same pattern as review tabs)
-      if (button.actionType === 'claude') {
+      // For claude action type in foreground mode, wait for the prompt before
+      // writing the command (same pattern as review tabs).
+      // Background claude buttons have the command piped in already.
+      if (button.actionType === 'claude' && button.executionMode !== 'background') {
         let sent = false
         const unsub = window.api.terminal.onData((tid: string, data: string) => {
           if (tid !== terminalId || sent) return
