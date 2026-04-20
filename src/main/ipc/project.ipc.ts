@@ -146,7 +146,22 @@ export function registerProjectHandlers(window: BrowserWindow) {
 
   ipcMain.handle(IPC.SESSION_LIST, async (_e, projectId: string) => {
     const sessions = store.get('sessions', {})
-    return sessions[projectId] || []
+    const list: Session[] = sessions[projectId] || []
+
+    // Backfill createdAt for any legacy sessions missing it
+    let needsSave = false
+    for (let i = 0; i < list.length; i++) {
+      if (!list[i].createdAt) {
+        // Use a base epoch with index offset so backfilled sessions get unique, stable timestamps
+        list[i].createdAt = new Date(1000 + i).toISOString()
+        needsSave = true
+      }
+    }
+    if (needsSave) {
+      store.set(`sessions.${projectId}`, list)
+    }
+
+    return list
   })
 
   ipcMain.handle(IPC.SESSION_SAVE, async (_e, projectId: string, sessionList: Session[]) => {

@@ -67,6 +67,11 @@ async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
   }
 }
 
+// Sort sessions by createdAt descending (newest first) for stable display order
+function sortByCreatedAtDesc(sessions: Session[]): Session[] {
+  return [...sessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
+
 let loadSessionsRequestId = 0
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -96,7 +101,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
 
     const thisRequestId = ++loadSessionsRequestId
-    const sessions = await window.api.session.list(projectId)
+    const sessions = sortByCreatedAtDesc(await window.api.session.list(projectId))
     if (thisRequestId !== loadSessionsRequestId) return  // stale response, discard
     const currentId = get().activeSessionId
     const stillExists = currentId && sessions.some((s) => s.id === currentId)
@@ -172,7 +177,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       baseBranch,
     }
 
-    const sessions = [...get().sessions, session]
+    const sessions = sortByCreatedAtDesc([...get().sessions, session])
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
@@ -241,7 +246,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     )
 
     stale.sort((a, b) => new Date(b.staleAt!).getTime() - new Date(a.staleAt!).getTime())
-    set({ sessions: active, staleSessions: stale })
+    set({ sessions: sortByCreatedAtDesc(active), staleSessions: stale })
   },
 
   markStale: async (projectId: string, sessionId: string) => {
@@ -267,7 +272,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (!session) return
     const reactivated = { ...session, lastActiveAt: new Date().toISOString(), staleAt: undefined }
     const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)
-    const sessions = [...get().sessions, reactivated]
+    const sessions = sortByCreatedAtDesc([...get().sessions, reactivated])
     await window.api.session.save(projectId, [...sessions, ...staleSessions])
     if (get().currentProjectId !== projectId) return
     set({ sessions, staleSessions })
@@ -285,7 +290,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       lastActiveAt: new Date().toISOString(),
     }
 
-    const sessions = [...get().sessions, session]
+    const sessions = sortByCreatedAtDesc([...get().sessions, session])
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
@@ -308,7 +313,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       lastActiveAt: new Date().toISOString(),
     }
 
-    const sessions = [...get().sessions, session]
+    const sessions = sortByCreatedAtDesc([...get().sessions, session])
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
