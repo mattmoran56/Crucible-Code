@@ -55,33 +55,72 @@ const CompareIcon = () => (
 
 // ── Branch picker dropdown ────────────────────────────────────────────────
 
+function BranchOption({
+  branch,
+  label,
+  selected,
+  onSelect,
+}: {
+  branch: string | null
+  label?: string
+  selected: boolean
+  onSelect: (branch: string | null) => void
+}) {
+  return (
+    <div
+      role="option"
+      aria-selected={selected}
+      onClick={() => onSelect(branch)}
+      className={`text-xs cursor-pointer transition-colors truncate ${
+        selected
+          ? 'bg-accent/15 text-text'
+          : 'text-text-muted hover:bg-bg-tertiary hover:text-text'
+      }`}
+      style={{ padding: '6px 10px' }}
+    >
+      {label ?? branch ?? 'None'}
+    </div>
+  )
+}
+
 function BranchPickerDropdown({
   repoPath,
   selectedBranch,
+  sessionBaseBranch,
   onSelect,
 }: {
   repoPath: string
   selectedBranch: string | null
+  sessionBaseBranch?: string
   onSelect: (branch: string | null) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [branches, setBranches] = useState<string[]>([])
+  const [defaultBranch, setDefaultBranch] = useState<string | null>(null)
   const [loadingBranches, setLoadingBranches] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Load branches when opened
+  // Load branches + default branch when opened
   useEffect(() => {
     if (!open) return
     setLoadingBranches(true)
     setQuery('')
-    window.api.git.listBranches(repoPath)
-      .then(setBranches)
-      .catch(() => setBranches([]))
+    Promise.all([
+      window.api.git.listBranches(repoPath),
+      window.api.git.defaultBranch(repoPath).catch(() => null),
+    ])
+      .then(([branchList, defBranch]) => {
+        setBranches(branchList)
+        setDefaultBranch(defBranch ?? null)
+      })
+      .catch(() => {
+        setBranches([])
+        setDefaultBranch(null)
+      })
       .finally(() => {
         setLoadingBranches(false)
-        // Focus input after branches load
         setTimeout(() => inputRef.current?.focus(), 0)
       })
   }, [open, repoPath])
@@ -108,10 +147,34 @@ function BranchPickerDropdown({
     return () => document.removeEventListener('keydown', handler)
   }, [open])
 
-  const filtered = useMemo(
-    () => branches.filter((b) => b.toLowerCase().includes(query.toLowerCase())),
-    [branches, query]
-  )
+  // Compute pinned branches (deduplicated, only if they exist in the branch list)
+  const pinnedBranches = useMemo(() => {
+    const pinned: { branch: string; label: string }[] = []
+    const seen = new Set<string>()
+    if (defaultBranch && branches.includes(defaultBranch)) {
+      pinned.push({ branch: defaultBranch, label: `${defaultBranch} (default)` })
+      seen.add(defaultBranch)
+    }
+    if (sessionBaseBranch && !seen.has(sessionBaseBranch) && branches.includes(sessionBaseBranch)) {
+      pinned.push({ branch: sessionBaseBranch, label: `${sessionBaseBranch} (base)` })
+      seen.add(sessionBaseBranch)
+    }
+    return { items: pinned, names: seen }
+  }, [branches, defaultBranch, sessionBaseBranch])
+
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase()
+    return branches.filter(
+      (b) => !pinnedBranches.names.has(b) && b.toLowerCase().includes(q)
+    )
+  }, [branches, query, pinnedBranches.names])
+
+  // Also filter pinned branches by query
+  const filteredPinned = useMemo(() => {
+    if (!query) return pinnedBranches.items
+    const q = query.toLowerCase()
+    return pinnedBranches.items.filter((p) => p.branch.toLowerCase().includes(q))
+  }, [pinnedBranches.items, query])
 
   const handleSelect = (branch: string | null) => {
     onSelect(branch)
@@ -119,7 +182,7 @@ function BranchPickerDropdown({
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative flex items-center gap-0.5">
       <button
         onClick={() => setOpen(!open)}
         className={`flex items-center gap-1.5 text-[11px] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded ${
@@ -133,6 +196,20 @@ function BranchPickerDropdown({
           <path d="M1 2.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" />
         </svg>
       </button>
+
+      {/* Quick dismiss X button when comparing */}
+      {selectedBranch && (
+        <button
+          onClick={() => onSelect(null)}
+          className="flex items-center justify-center text-text-muted hover:text-text transition-colors rounded hover:bg-bg-tertiary"
+          style={{ width: '18px', height: '18px' }}
+          title="Stop comparing"
+        >
+          <svg width="8" height="8" viewBox="0 0 8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M1 1l6 6M7 1l-6 6" />
+          </svg>
+        </button>
+      )}
 
       {open && (
         <div
@@ -159,40 +236,36 @@ function BranchPickerDropdown({
             aria-label="Compare branch"
           >
             {/* None option */}
-            <div
-              role="option"
-              aria-selected={selectedBranch === null}
-              onClick={() => handleSelect(null)}
-              className={`text-xs cursor-pointer transition-colors ${
-                selectedBranch === null
-                  ? 'bg-accent/15 text-text'
-                  : 'text-text-muted hover:bg-bg-tertiary hover:text-text'
-              }`}
-              style={{ padding: '6px 10px' }}
-            >
-              None
-            </div>
+            <BranchOption branch={null} label="None" selected={selectedBranch === null} onSelect={handleSelect} />
+
+            {/* Pinned branches */}
+            {filteredPinned.map((p) => (
+              <BranchOption
+                key={p.branch}
+                branch={p.branch}
+                label={p.label}
+                selected={selectedBranch === p.branch}
+                onSelect={handleSelect}
+              />
+            ))}
+
+            {/* Divider between pinned and rest */}
+            {filteredPinned.length > 0 && filtered.length > 0 && (
+              <div className="border-t border-border my-0.5" />
+            )}
 
             {loadingBranches ? (
               <div className="text-text-muted text-xs text-center" style={{ padding: '10px' }}>Loading…</div>
-            ) : filtered.length === 0 ? (
+            ) : filtered.length === 0 && filteredPinned.length === 0 ? (
               <div className="text-text-muted text-xs text-center" style={{ padding: '10px' }}>No branches found</div>
             ) : (
               filtered.map((b) => (
-                <div
+                <BranchOption
                   key={b}
-                  role="option"
-                  aria-selected={selectedBranch === b}
-                  onClick={() => handleSelect(b)}
-                  className={`text-xs cursor-pointer transition-colors truncate ${
-                    selectedBranch === b
-                      ? 'bg-accent/15 text-text'
-                      : 'text-text-muted hover:bg-bg-tertiary hover:text-text'
-                  }`}
-                  style={{ padding: '6px 10px' }}
-                >
-                  {b}
-                </div>
+                  branch={b}
+                  selected={selectedBranch === b}
+                  onSelect={handleSelect}
+                />
               ))
             )}
           </div>
@@ -477,6 +550,7 @@ export function GitPanel() {
         <BranchPickerDropdown
           repoPath={activeSession.worktreePath}
           selectedBranch={previewBaseBranch}
+          sessionBaseBranch={activeSession.baseBranch}
           onSelect={handleCompareSelect}
         />
       </div>
