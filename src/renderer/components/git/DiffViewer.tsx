@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useGitStore, WORKING_CHANGES_HASH } from '../../stores/gitStore'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { Button } from '../ui/Button'
@@ -7,6 +8,7 @@ import { useDiffHighlighting, type TokenMap } from '../../hooks/useDiffHighlight
 import type { ThemedToken } from 'shiki'
 import type { PRComment } from '../../../shared/types'
 import { ImageDiffViewer, isImageFile } from './ImageDiffViewer'
+import { DiffErrorBoundary } from '../ui/DiffErrorBoundary'
 
 // Configure marked for inline rendering
 marked.setOptions({ breaks: true })
@@ -348,6 +350,23 @@ function InlineComment({ comment }: { comment: PRComment }) {
   )
 }
 
+// --- Comment lookup helper ---
+
+function useCommentLookup(comments: PRComment[], filePath: string | null) {
+  return useMemo(() => {
+    const map = new Map<string, PRComment[]>()
+    if (!filePath) return map
+    for (const c of comments) {
+      if (c.path !== filePath) continue
+      const key = `${c.line}:${c.side || 'RIGHT'}`
+      const arr = map.get(key)
+      if (arr) arr.push(c)
+      else map.set(key, [c])
+    }
+    return map
+  }, [comments, filePath])
+}
+
 // --- Unified diff view ---
 
 function UnifiedView({
@@ -356,30 +375,46 @@ function UnifiedView({
   filePath,
   tokenMap,
   onAddComment,
+  scrollContainerRef,
 }: {
   lines: DiffLine[]
   comments: PRComment[]
   filePath: string | null
   tokenMap: TokenMap | null
   onAddComment?: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>
 }) {
   const { commentRange, startDrag, extendDrag, rangePosition, cancelComment, submitComment } = useLineDrag(onAddComment)
+  const commentsByLine = useCommentLookup(comments, filePath)
+
+  const virtualizer = useVirtualizer({
+    count: lines.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 20,
+    overscan: 20,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  })
 
   return (
-    <div>
-      {lines.map((line, i) => {
+    <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+      {virtualizer.getVirtualItems().map((virtualRow) => {
+        const i = virtualRow.index
+        const line = lines[i]
         const lineNum = line.newLine ?? line.oldLine
         const canComment = onAddComment && lineNum != null && (line.type === 'add' || line.type === 'delete' || line.type === 'context')
         const side: 'LEFT' | 'RIGHT' = line.type === 'delete' ? 'LEFT' : 'RIGHT'
         const rangePos = lineNum != null ? rangePosition(lineNum, side) : 'none' as const
         const highlighted = rangePos !== 'none'
-        const lineComments = filePath
-          ? comments.filter((c) => c.path === filePath && c.line === lineNum)
-          : []
+        const lineComments = lineNum != null ? (commentsByLine.get(`${lineNum}:${side}`) ?? []) : []
         const showForm = commentRange && lineNum === commentRange.endLine && commentRange.side === side
 
         return (
-          <React.Fragment key={i}>
+          <div
+            key={i}
+            ref={virtualizer.measureElement}
+            data-index={i}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
+          >
             <div
               className={`group flex px-2 leading-5 ${LINE_STYLES[line.type] || ''} ${highlighted ? 'bg-accent/15' : ''}`}
               onMouseEnter={() => lineNum != null && extendDrag(lineNum, side)}
@@ -413,7 +448,7 @@ function UnifiedView({
                 onCancel={cancelComment}
               />
             )}
-          </React.Fragment>
+          </div>
         )
       })}
     </div>
@@ -428,15 +463,18 @@ function SplitView({
   filePath,
   tokenMap,
   onAddComment,
+  scrollContainerRef,
 }: {
   lines: DiffLine[]
   comments: PRComment[]
   filePath: string | null
   tokenMap: TokenMap | null
   onAddComment?: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>
 }) {
-  const rows = toSplitRows(lines)
+  const rows = useMemo(() => toSplitRows(lines), [lines])
   const { commentRange, startDrag, extendDrag, rangePosition, cancelComment, submitComment } = useLineDrag(onAddComment)
+  const commentsByLine = useCommentLookup(comments, filePath)
 
   // Map DiffLine references back to original indices for token lookup
   const lineToIndex = useMemo(() => {
@@ -451,9 +489,19 @@ function SplitView({
     return LINE_STYLES[line.type] || ''
   }
 
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 20,
+    overscan: 20,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  })
+
   return (
-    <div>
-      {rows.map((row, i) => {
+    <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+      {virtualizer.getVirtualItems().map((virtualRow) => {
+        const i = virtualRow.index
+        const row = rows[i]
         const leftLineNum = row.left?.oldLine
         const rightLineNum = row.right?.newLine
         const canCommentLeft = onAddComment && leftLineNum != null && row.left && (row.left.type === 'delete' || row.left.type === 'context')
@@ -463,18 +511,19 @@ function SplitView({
         const leftHighlighted = leftRangePos !== 'none'
         const rightHighlighted = rightRangePos !== 'none'
 
-        const leftComments = filePath && leftLineNum != null
-          ? comments.filter((c) => c.path === filePath && c.line === leftLineNum && c.side === 'LEFT')
-          : []
-        const rightComments = filePath && rightLineNum != null
-          ? comments.filter((c) => c.path === filePath && c.line === rightLineNum && (c.side === 'RIGHT' || !c.side))
-          : []
+        const leftComments = leftLineNum != null ? (commentsByLine.get(`${leftLineNum}:LEFT`) ?? []) : []
+        const rightComments = rightLineNum != null ? (commentsByLine.get(`${rightLineNum}:RIGHT`) ?? []) : []
 
         const showLeftForm = commentRange && commentRange.side === 'LEFT' && leftLineNum === commentRange.endLine
         const showRightForm = commentRange && commentRange.side === 'RIGHT' && rightLineNum === commentRange.endLine
 
         return (
-          <React.Fragment key={i}>
+          <div
+            key={i}
+            ref={virtualizer.measureElement}
+            data-index={i}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
+          >
             <div className="group flex leading-5">
               {/* Left side */}
               <div
@@ -561,7 +610,7 @@ function SplitView({
                 </div>
               </div>
             )}
-          </React.Fragment>
+          </div>
         )
       })}
     </div>
@@ -597,6 +646,7 @@ function DiffHeader({
 export function DiffViewer({ repoPath }: { repoPath?: string }) {
   const { filePatch, selectedFilePath, selectedCommitHash, changedFiles } = useGitStore()
   const [mode, setMode] = useState<DiffMode>('unified')
+  const scrollRef = useRef<HTMLDivElement>(null)
   const lines = useMemo(() => (filePatch ? parsePatch(filePatch) : []), [filePatch])
   const tokenMap = useDiffHighlighting(lines, selectedFilePath)
 
@@ -637,12 +687,14 @@ export function DiffViewer({ repoPath }: { repoPath?: string }) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <DiffHeader filePath={selectedFilePath} mode={mode} onModeChange={setMode} />
-      <div className="flex-1 overflow-auto font-mono text-xs">
-        {mode === 'unified' ? (
-          <UnifiedView lines={lines} comments={[]} filePath={null} tokenMap={tokenMap} />
-        ) : (
-          <SplitView lines={lines} comments={[]} filePath={null} tokenMap={tokenMap} />
-        )}
+      <div ref={scrollRef} className="flex-1 overflow-auto font-mono text-xs">
+        <DiffErrorBoundary filePath={selectedFilePath}>
+          {mode === 'unified' ? (
+            <UnifiedView lines={lines} comments={[]} filePath={null} tokenMap={tokenMap} scrollContainerRef={scrollRef} />
+          ) : (
+            <SplitView lines={lines} comments={[]} filePath={null} tokenMap={tokenMap} scrollContainerRef={scrollRef} />
+          )}
+        </DiffErrorBoundary>
       </div>
     </div>
   )
@@ -662,18 +714,21 @@ export function PRDiffViewer({
   onAddComment: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
 }) {
   const [mode, setMode] = useState<DiffMode>('split')
+  const scrollRef = useRef<HTMLDivElement>(null)
   const lines = useMemo(() => parsePatch(patch), [patch])
   const tokenMap = useDiffHighlighting(lines, filePath)
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <DiffHeader filePath={filePath} mode={mode} onModeChange={setMode} />
-      <div className="flex-1 overflow-auto font-mono text-xs">
-        {mode === 'unified' ? (
-          <UnifiedView lines={lines} comments={comments} filePath={filePath} tokenMap={tokenMap} onAddComment={onAddComment} />
-        ) : (
-          <SplitView lines={lines} comments={comments} filePath={filePath} tokenMap={tokenMap} onAddComment={onAddComment} />
-        )}
+      <div ref={scrollRef} className="flex-1 overflow-auto font-mono text-xs">
+        <DiffErrorBoundary filePath={filePath}>
+          {mode === 'unified' ? (
+            <UnifiedView lines={lines} comments={comments} filePath={filePath} tokenMap={tokenMap} onAddComment={onAddComment} scrollContainerRef={scrollRef} />
+          ) : (
+            <SplitView lines={lines} comments={comments} filePath={filePath} tokenMap={tokenMap} onAddComment={onAddComment} scrollContainerRef={scrollRef} />
+          )}
+        </DiffErrorBoundary>
       </div>
     </div>
   )

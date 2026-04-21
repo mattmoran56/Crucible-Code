@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { PRDiffViewer } from '../git/DiffViewer'
 import { ImageDiffViewer, isImageFile } from '../git/ImageDiffViewer'
 import type { PRFile, PRComment } from '../../../shared/types'
+import { DiffErrorBoundary } from '../ui/DiffErrorBoundary'
+import { extractFileDiff } from '../../lib/extractFileDiff'
 
 const STATUS_COLORS: Record<string, string> = {
   added: 'text-success',
@@ -25,26 +27,6 @@ interface PRScrollableDiffViewProps {
   repoPath?: string
   beforeRef?: string
   selectedCommitHash?: string | null
-}
-
-function extractFileDiff(fullDiff: string, filePath: string): string {
-  const lines = fullDiff.split('\n')
-  let capture = false
-  const result: string[] = []
-
-  for (const line of lines) {
-    if (line.startsWith('diff --git')) {
-      if (capture) break
-      if (line.includes(`b/${filePath}`)) {
-        capture = true
-      }
-    }
-    if (capture) {
-      result.push(line)
-    }
-  }
-
-  return result.join('\n')
 }
 
 export function PRScrollableDiffView({
@@ -186,12 +168,14 @@ function LazyFileSection({
                 : selectedCommitHash || undefined}
             />
           ) : fileDiff ? (
-            <PRDiffViewer
-              patch={fileDiff}
-              filePath={file.path}
-              comments={comments}
-              onAddComment={onAddComment}
-            />
+            <DiffErrorBoundary filePath={file.path}>
+              <PRDiffViewer
+                patch={fileDiff}
+                filePath={file.path}
+                comments={comments}
+                onAddComment={onAddComment}
+              />
+            </DiffErrorBoundary>
           ) : (
             <div
               className="flex items-center justify-center text-text-muted text-xs"

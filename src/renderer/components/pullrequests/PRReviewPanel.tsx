@@ -15,28 +15,7 @@ import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import type { PRReviewEvent, PRFile, PullRequest } from '../../../shared/types'
-
-/** Extract the diff for a single file from the full PR diff */
-function extractFileDiff(fullDiff: string, filePath: string): string {
-  const lines = fullDiff.split('\n')
-  let capture = false
-  const result: string[] = []
-
-  for (const line of lines) {
-    if (line.startsWith('diff --git')) {
-      if (capture) break
-      // Check if this diff block is for our file
-      if (line.includes(`b/${filePath}`)) {
-        capture = true
-      }
-    }
-    if (capture) {
-      result.push(line)
-    }
-  }
-
-  return result.join('\n')
-}
+import { extractFileDiff } from '../../lib/extractFileDiff'
 
 export function PRReviewPanel() {
   const { activePRNumber, activeSessionId, sessions, didStash, checkStaleness, clearActiveContext } = useSessionStore()
