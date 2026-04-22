@@ -8,21 +8,7 @@ import { FileTree } from './FileTree'
 import { ListBox, ListItem } from '../ui/ListBox'
 import { ResizeHandle } from '../ui/ResizeHandle'
 import { useResizable } from '../../hooks/useResizable'
-
-/** Extract the diff for a single file from a combined diff */
-function extractFileDiff(fullDiff: string, filePath: string): string {
-  const lines = fullDiff.split('\n')
-  let capture = false
-  const result: string[] = []
-  for (const line of lines) {
-    if (line.startsWith('diff --git')) {
-      if (capture) break
-      if (line.includes(`b/${filePath}`)) capture = true
-    }
-    if (capture) result.push(line)
-  }
-  return result.join('\n')
-}
+import { extractFileDiff } from '../../lib/extractFileDiff'
 
 export function PRCommitsTab() {
   const { projects, activeProjectId } = useProjectStore()

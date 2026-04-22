@@ -8,27 +8,7 @@ import { ResizeHandle } from '../ui/ResizeHandle'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { useResizable } from '../../hooks/useResizable'
 import type { PRFile } from '../../../shared/types'
-
-/** Extract the diff for a single file from a full unified diff */
-function extractFileDiff(fullDiff: string, filePath: string): string {
-  const lines = fullDiff.split('\n')
-  let capture = false
-  const result: string[] = []
-
-  for (const line of lines) {
-    if (line.startsWith('diff --git')) {
-      if (capture) break
-      if (line.includes(`b/${filePath}`)) {
-        capture = true
-      }
-    }
-    if (capture) {
-      result.push(line)
-    }
-  }
-
-  return result.join('\n')
-}
+import { extractFileDiff } from '../../lib/extractFileDiff'
 
 interface Props {
   repoPath: string

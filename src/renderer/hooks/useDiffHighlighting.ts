@@ -75,10 +75,14 @@ interface DiffLineInput {
   content: string
 }
 
+const HIGHLIGHT_LINE_THRESHOLD = 3000
+
 async function highlightDiffLines(
   lines: DiffLineInput[],
   filePath: string,
 ): Promise<TokenMap | null> {
+  if (lines.length > HIGHLIGHT_LINE_THRESHOLD) return null
+
   const lang = langFromPath(filePath)
   if (!lang) return null
 
