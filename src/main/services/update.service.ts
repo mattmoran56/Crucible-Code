@@ -54,8 +54,11 @@ export async function applyUpdate(
     await g.pull('origin', 'main')
     onLog('git pull done')
 
+    onLog('Installing dependencies...')
+    await runShell('npm install', onLog)
+
     onLog('Building...')
-    await runBuild(onLog)
+    await runShell('npm run build', onLog)
     onLog('Build done, installing...')
 
     const repoOut = join(__REPO_PATH__, 'out')
@@ -69,10 +72,10 @@ export async function applyUpdate(
   }
 }
 
-function runBuild(onLog: (line: string) => void): Promise<void> {
+function runShell(cmd: string, onLog: (line: string) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const shell = process.env.SHELL || '/bin/zsh'
-    const child = spawn(shell, ['-l', '-c', 'npm run build'], {
+    const child = spawn(shell, ['-l', '-c', cmd], {
       cwd: __REPO_PATH__,
     })
 
@@ -81,7 +84,7 @@ function runBuild(onLog: (line: string) => void): Promise<void> {
 
     child.on('close', (code) => {
       if (code === 0) resolve()
-      else reject(new Error(`Build exited with code ${code}`))
+      else reject(new Error(`"${cmd}" exited with code ${code}`))
     })
 
     child.on('error', reject)
