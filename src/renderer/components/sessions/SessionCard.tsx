@@ -58,6 +58,10 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
         onClick={onClick}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick() }}
         className={`group w-full text-left text-xs transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset cursor-default ${
+          isOpenedAsMain
+            ? 'bg-accent/10 border-l-2 border-l-accent'
+            : ''
+        } ${
           isActive
             ? 'bg-accent/15 text-accent'
             : 'text-text hover:bg-bg-tertiary'
@@ -68,8 +72,13 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
           <div className="font-medium truncate flex-1 pr-5">{session.name}</div>
           <StatusIndicator status={status} />
         </div>
-        <div className="text-text-muted text-[10px] mt-1 truncate pr-5">
-          {session.branchName}
+        <div className="text-text-muted text-[10px] mt-1 flex items-center gap-1.5 pr-5">
+          <span className="truncate">{session.branchName}</span>
+          {isOpenedAsMain && (
+            <span className="shrink-0 inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide bg-accent/20 text-accent">
+              Open
+            </span>
+          )}
         </div>
         {pr && (
           <div className="flex items-center gap-1 mt-0.5 pr-5">
