@@ -32,6 +32,13 @@ export function SessionSidebar() {
   const [staleCollapsed, setStaleCollapsed] = useState(true)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Listen for app-action create-session events from custom buttons
+  useEffect(() => {
+    const handler = () => setShowCreate(true)
+    window.addEventListener('app:create-session', handler)
+    return () => window.removeEventListener('app:create-session', handler)
+  }, [])
+
   const activeProject = projects.find((p) => p.id === activeProjectId)
 
   // Measure sidebar height for resize constraints

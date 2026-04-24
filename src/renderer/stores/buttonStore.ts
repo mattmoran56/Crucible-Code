@@ -9,6 +9,7 @@ import { useSessionStore } from './sessionStore'
 import { useProjectStore } from './projectStore'
 import { useTerminalStore } from './terminalStore'
 import { useWorkspaceLayoutStore } from './workspaceLayoutStore'
+import { getAppAction } from './appActions'
 
 interface ButtonRunState {
   terminalId: string
@@ -160,6 +161,29 @@ export const useButtonStore = create<ButtonState>()((set, get) => ({
   executeButton: async (buttonId) => {
     const button = get().buttons.find((b) => b.id === buttonId)
     if (!button) return
+
+    // Handle app-action type
+    if (button.actionType === 'app-action') {
+      const actionDef = getAppAction(button.command)
+      if (!actionDef) {
+        useToastStore.getState().addToast('error', `Unknown app action: ${button.command}`)
+        return
+      }
+      if (actionDef.requiresActiveSession && !useSessionStore.getState().activeSessionId) {
+        useToastStore.getState().addToast('warning', `"${button.label}" requires an active session`)
+        return
+      }
+      if (actionDef.requiresActiveProject && !useProjectStore.getState().activeProjectId) {
+        useToastStore.getState().addToast('warning', `"${button.label}" requires an active project`)
+        return
+      }
+      try {
+        await actionDef.execute()
+      } catch (err: any) {
+        useToastStore.getState().addToast('error', err.message)
+      }
+      return
+    }
 
     const sessionState = useSessionStore.getState()
     const projectState = useProjectStore.getState()
