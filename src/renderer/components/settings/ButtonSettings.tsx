@@ -360,7 +360,13 @@ export function ButtonSettings() {
           <div>
             <label className="block text-xs text-text-muted mb-1.5">Placement</label>
             <ToggleGroup
-              options={PLACEMENT_OPTIONS}
+              options={form.actionType === 'app-action' && form.command
+                ? PLACEMENT_OPTIONS.filter((o) => {
+                    const def = getAppAction(form.command)
+                    return def ? def.validPlacements.includes(o.value) : true
+                  })
+                : PLACEMENT_OPTIONS
+              }
               value={form.placement}
               onChange={(v) => updateFormField('placement', v)}
             />
@@ -398,8 +404,13 @@ export function ButtonSettings() {
                 onChange={(e) => {
                   updateFormField('command', e.target.value)
                   const def = getAppAction(e.target.value)
-                  if (def?.defaultConfirmMessage && !form.confirmMessage) {
-                    updateFormField('confirmMessage', def.defaultConfirmMessage)
+                  if (def) {
+                    if (!def.validPlacements.includes(form.placement)) {
+                      updateFormField('placement', def.validPlacements[0])
+                    }
+                    if (def.defaultConfirmMessage && !form.confirmMessage) {
+                      updateFormField('confirmMessage', def.defaultConfirmMessage)
+                    }
                   }
                 }}
                 className="w-full bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent"

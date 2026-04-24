@@ -9,7 +9,7 @@ export interface AppActionDef {
   label: string
   group: string
   icon?: string
-  validPlacements?: ButtonPlacement[]
+  validPlacements: ButtonPlacement[]
   requiresActiveSession?: boolean
   requiresActiveProject?: boolean
   defaultConfirmMessage?: string
@@ -41,7 +41,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Return to Worktree',
       group: 'Session',
       icon: 'ArrowRight',
-      validPlacements: ['session-toolbar'],
+      validPlacements: ['session-toolbar', 'project-tabs'],
       requiresActiveProject: true,
       execute: () => {
         const { projects, activeProjectId } = useProjectStore.getState()
@@ -106,6 +106,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Create Session',
       group: 'Session',
       icon: 'Play',
+      validPlacements: ['session-toolbar', 'project-tabs'],
       requiresActiveProject: true,
       execute: () => {
         window.dispatchEvent(new CustomEvent('app:create-session'))
@@ -118,6 +119,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Open New Agent Tab',
       group: 'Tabs',
       icon: 'Sparkles',
+      validPlacements: ['session-toolbar'],
       execute: () => {
         const { columns, addDynamicTab } = useWorkspaceLayoutStore.getState()
         if (columns[0]?.id) addDynamicTab(columns[0].id, 'agent')
@@ -128,6 +130,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Open New Terminal Tab',
       group: 'Tabs',
       icon: 'Terminal',
+      validPlacements: ['session-toolbar'],
       execute: () => {
         const { columns, addDynamicTab } = useWorkspaceLayoutStore.getState()
         if (columns[0]?.id) addDynamicTab(columns[0].id, 'terminal')
@@ -138,6 +141,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Switch to Agent Tab',
       group: 'Tabs',
       icon: 'Sparkles',
+      validPlacements: ['session-toolbar'],
       execute: () => {
         const { columns, setActiveTab } = useWorkspaceLayoutStore.getState()
         if (columns[0]?.id) setActiveTab(columns[0].id, 'agent')
@@ -148,6 +152,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Switch to Git Tab',
       group: 'Tabs',
       icon: 'GitBranch',
+      validPlacements: ['session-toolbar'],
       execute: () => {
         const { columns, setActiveTab } = useWorkspaceLayoutStore.getState()
         if (columns[0]?.id) setActiveTab(columns[0].id, 'git')
@@ -158,6 +163,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Switch to PR Tab',
       group: 'Tabs',
       icon: 'Eye',
+      validPlacements: ['session-toolbar'],
       execute: () => {
         const { columns, setActiveTab } = useWorkspaceLayoutStore.getState()
         if (columns[0]?.id) setActiveTab(columns[0].id, 'pr')
@@ -168,6 +174,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Switch to Review Tab',
       group: 'Tabs',
       icon: 'Search',
+      validPlacements: ['session-toolbar'],
       execute: () => {
         const { columns, setActiveTab } = useWorkspaceLayoutStore.getState()
         if (columns[0]?.id) setActiveTab(columns[0].id, 'review')
@@ -178,6 +185,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Switch to Code Tab',
       group: 'Tabs',
       icon: 'Code',
+      validPlacements: ['session-toolbar'],
       execute: () => {
         const { columns, setActiveTab } = useWorkspaceLayoutStore.getState()
         if (columns[0]?.id) setActiveTab(columns[0].id, 'code')
@@ -188,6 +196,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Split Column Right',
       group: 'Tabs',
       icon: 'Copy',
+      validPlacements: ['session-toolbar'],
       execute: () => {
         useWorkspaceLayoutStore.getState().splitRight()
       },
@@ -199,6 +208,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Add Project',
       group: 'Project',
       icon: 'Download',
+      validPlacements: ['session-toolbar', 'project-tabs', 'right-activity-bar'],
       execute: () => {
         useProjectStore.getState().addProject()
       },
@@ -208,6 +218,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Remove Project',
       group: 'Project',
       icon: 'Trash',
+      validPlacements: ['session-toolbar', 'project-tabs'],
       requiresActiveProject: true,
       defaultConfirmMessage: 'Remove this project from CodeCrucible? The repository will not be deleted.',
       execute: () => {
@@ -224,6 +235,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Open Settings',
       group: 'App',
       icon: 'Settings',
+      validPlacements: ['session-toolbar', 'project-tabs', 'right-activity-bar'],
       execute: () => {
         useSettingsStore.getState().openSettings()
       },
@@ -233,6 +245,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Toggle Notes Panel',
       group: 'App',
       icon: 'FileText',
+      validPlacements: ['session-toolbar', 'project-tabs', 'right-activity-bar'],
       execute: () => {
         window.dispatchEvent(new CustomEvent('app:toggle-panel', { detail: { panel: 'notes' } }))
       },
@@ -242,6 +255,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Toggle Usage Panel',
       group: 'App',
       icon: 'Clock',
+      validPlacements: ['session-toolbar', 'project-tabs', 'right-activity-bar'],
       execute: () => {
         window.dispatchEvent(new CustomEvent('app:toggle-panel', { detail: { panel: 'usage' } }))
       },
@@ -251,6 +265,7 @@ export function getAppActions(): AppActionDef[] {
       label: 'Toggle Permissions Panel',
       group: 'App',
       icon: 'Star',
+      validPlacements: ['session-toolbar', 'project-tabs', 'right-activity-bar'],
       execute: () => {
         window.dispatchEvent(new CustomEvent('app:toggle-panel', { detail: { panel: 'permissions' } }))
       },
