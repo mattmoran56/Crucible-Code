@@ -101,6 +101,11 @@ const targets: ScreenshotTarget[] = [
     delay: 2000,
   },
   {
+    name: 'opened-as-main-branch',
+    storyId: 'app-full-layout--opened-as-main-branch',
+    delay: 2000,
+  },
+  {
     name: 'button-settings',
     storyId: 'app-full-layout--button-settings',
     delay: 2000,

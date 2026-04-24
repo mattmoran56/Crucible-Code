@@ -47,6 +47,10 @@ interface StorySetupOptions {
   settingsOpen?: boolean
   /** Session statuses to show in sidebar */
   sessionStatuses?: Record<string, SessionStatus>
+  /** Set to a session ID to show the "opened as main branch" banner */
+  openedAsMainBranch?: string | null
+  /** Whether uncommitted changes were stashed when opening as main */
+  didStash?: boolean
 }
 
 export function setupStoresForStory(options: StorySetupOptions = {}) {
@@ -69,10 +73,10 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     activeSessionId: activeSessionForStore,
     activePRNumber: options.activePRNumber ?? null,
     activeWorkspaceTab: options.activeWorkspaceTab ?? 'agent',
-    openedAsMainBranch: null,
+    openedAsMainBranch: options.openedAsMainBranch ?? null,
     previousMainBranch: null,
     detachedWorktree: null,
-    didStash: false,
+    didStash: options.didStash ?? false,
   })
 
   // Seed localStorage so sessionStore.loadSessions() restores the right context
@@ -81,10 +85,10 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
   savedContexts[projectId] = {
     sessionId: activeSessionForStore,
     prNumber: options.activePRNumber ?? null,
-    openedAsMainBranch: null,
+    openedAsMainBranch: options.openedAsMainBranch ?? null,
     previousMainBranch: null,
     detachedWorktree: null,
-    didStash: false,
+    didStash: options.didStash ?? false,
   }
   localStorage.setItem('codecrucible-last-active-context', JSON.stringify(savedContexts))
 

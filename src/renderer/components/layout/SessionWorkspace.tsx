@@ -320,67 +320,68 @@ export function SessionWorkspace() {
   return (
     <>
       <div
-        className="flex-1 flex min-h-0 relative"
-        ref={columnsRef}
+        className="flex-1 flex flex-col min-h-0"
         style={showEmptyState ? { display: 'none' } : undefined}
       >
-        {columns.map((col, i) => (
-          <React.Fragment key={col.id}>
-            {i > 0 && (
-              <ResizeHandle
-                direction="horizontal"
-                onMouseDown={(e) => onResizeStart(e, columns[i - 1].id, col.id)}
-              />
-            )}
-            <ColumnPanel
-              column={col}
-              canClose={columns.length > 1}
-              canSplit={splitEnabled}
-              onSplit={splitRight}
-              disabledTabs={effectivePRNumber == null ? PR_REQUIRED_TABS : undefined}
-              disabledTooltip="Open a PR to use this tab"
-              dragOverInfo={dragOverInfo}
-              setDragOverInfo={setDragOverInfo}
-              onAddDynamicTab={handleAddDynamicTab}
-              onCloseDynamicTab={handleCloseDynamicTab}
-              badge={workingFileCount > 0 ? { tab: 'git', count: workingFileCount } : undefined}
-            />
-          </React.Fragment>
-        ))}
-        {/* Paused overlay — covers the column tree while the session's branch is
-            checked out in the main repo. Portals stay mounted underneath so the
-            terminal isn't destroyed, and clicking "Return to worktree" just
-            hides the overlay. */}
         {isPausedForMain && (
-          <div className="absolute inset-0 flex items-center justify-center bg-bg z-10">
-            <div className="flex flex-col items-center gap-4 text-center" style={{ maxWidth: 360 }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent">
-                <circle cx="18" cy="18" r="3" />
-                <circle cx="6" cy="6" r="3" />
-                <path d="M13 6h3a2 2 0 0 1 2 2v7" />
-                <line x1="6" y1="9" x2="6" y2="21" />
-              </svg>
-              <div>
-                <h2 className="text-text text-sm font-medium mb-1">Session opened as main branch</h2>
-                <p className="text-text-muted text-xs leading-relaxed">
-                  <strong className="text-text">{pausedSession?.branchName}</strong> is checked out in the main repository. The worktree is paused.
-                </p>
-                {didStash && (
-                  <p className="text-warning text-xs mt-2">
-                    Uncommitted changes were stashed before switching.
-                  </p>
-                )}
-              </div>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => activeProject && returnToWorktree(activeProject.repoPath)}
-              >
-                Return to worktree
-              </Button>
-            </div>
+          <div className="flex items-center gap-2 px-5 py-3 bg-accent border-b border-accent text-xs text-white shrink-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white shrink-0">
+              <circle cx="18" cy="18" r="3" />
+              <circle cx="6" cy="6" r="3" />
+              <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+              <line x1="6" y1="9" x2="6" y2="21" />
+            </svg>
+            <span className="truncate">
+              <strong>{pausedSession?.branchName}</strong> checked out as main
+            </span>
+            {didStash && (
+              <span className="text-warning shrink-0">
+                (uncommitted changes were stashed)
+              </span>
+            )}
+            <div className="flex-1" />
+            <button
+              className="shrink-0 rounded-md text-xs font-medium cursor-pointer transition-colors"
+              style={{
+                padding: '5px 12px',
+                margin: '4px 0',
+                background: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                border: '1px solid rgba(255,255,255,0.4)',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.35)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)' }}
+              onClick={() => activeProject && returnToWorktree(activeProject.repoPath)}
+            >
+              Return to worktree
+            </button>
           </div>
         )}
+        <div className="flex-1 flex min-h-0 relative" ref={columnsRef}>
+          {columns.map((col, i) => (
+            <React.Fragment key={col.id}>
+              {i > 0 && (
+                <ResizeHandle
+                  direction="horizontal"
+                  onMouseDown={(e) => onResizeStart(e, columns[i - 1].id, col.id)}
+                />
+              )}
+              <ColumnPanel
+                column={col}
+                canClose={columns.length > 1}
+                canSplit={splitEnabled}
+                onSplit={splitRight}
+                disabledTabs={effectivePRNumber == null ? PR_REQUIRED_TABS : undefined}
+                disabledTooltip="Open a PR to use this tab"
+                dragOverInfo={dragOverInfo}
+                setDragOverInfo={setDragOverInfo}
+                onAddDynamicTab={handleAddDynamicTab}
+                onCloseDynamicTab={handleCloseDynamicTab}
+                badge={workingFileCount > 0 ? { tab: 'git', count: workingFileCount } : undefined}
+              />
+            </React.Fragment>
+          ))}
+        </div>
       </div>
       {showEmptyState && (
         <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
@@ -388,15 +389,15 @@ export function SessionWorkspace() {
         </div>
       )}
       {/* Core panel mounting — panels never unmount, just get portaled between columns */}
-      {createPortal(<TerminalPanel mode="claude" visible={agentVisible && !isPausedForMain} />, corePanelTargets.current.agent)}
-      {createPortal(<ReviewTerminalPanel visible={reviewVisible && !isPausedForMain} />, corePanelTargets.current.review)}
+      {createPortal(<TerminalPanel mode="claude" visible={agentVisible} />, corePanelTargets.current.agent)}
+      {createPortal(<ReviewTerminalPanel visible={reviewVisible} />, corePanelTargets.current.review)}
       {createPortal(<GitPanel />, corePanelTargets.current.git)}
       {createPortal(<PRReviewPanel />, corePanelTargets.current.pr)}
       {/* Dynamic panel mounting */}
       {[...allDynamicTabs].map((tab) => {
         const target = dynamicPanelTargets.current.get(tab)
         if (!target) return null
-        const isVisible = columns.some((c) => c.activeTab === tab) && !isPausedForMain
+        const isVisible = columns.some((c) => c.activeTab === tab)
         return createPortal(
           <DynamicTerminalPanel key={tab} tabId={tab as WorkspaceTab} visible={isVisible} />,
           target
