@@ -3,12 +3,14 @@ import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import type { PRReviewEvent, PRMergeMethod } from '../../shared/types'
 import * as githubService from '../services/github.service'
+import { getStorePath } from '../store-path'
 
 const store = new Store<{
   seenPRs: Record<string, number[]>
   viewedFiles: Record<string, string[]>
 }>({
   name: 'github',
+  cwd: getStorePath(),
   defaults: {
     seenPRs: {},
     viewedFiles: {},
