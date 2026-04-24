@@ -75,6 +75,15 @@ export const CustomButtons: Story = {
   ],
 }
 
+export const OpenedAsMainBranch: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ openedAsMainBranch: 'sess-1', didStash: true })
+      return <Story />
+    },
+  ],
+}
+
 export const ButtonSettings: Story = {
   decorators: [
     (Story) => {
