@@ -15,6 +15,7 @@ import { Dialog } from '../ui/Dialog'
 import { Input } from '../ui/Input'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { IconPicker, renderButtonIcon } from '../buttons/IconPicker'
+import { getAppAction, getAppActionGroups } from '../../stores/appActions'
 
 const PLACEMENT_OPTIONS: { value: ButtonPlacement; label: string }[] = [
   { value: 'session-toolbar', label: 'Session' },
@@ -25,6 +26,7 @@ const PLACEMENT_OPTIONS: { value: ButtonPlacement; label: string }[] = [
 const ACTION_OPTIONS: { value: ButtonActionType; label: string }[] = [
   { value: 'shell', label: 'Shell' },
   { value: 'claude', label: 'Claude' },
+  { value: 'app-action', label: 'App Action' },
 ]
 
 const EXEC_OPTIONS: { value: ButtonExecutionMode; label: string }[] = [
@@ -370,47 +372,81 @@ export function ButtonSettings() {
               <ToggleGroup
                 options={ACTION_OPTIONS}
                 value={form.actionType}
-                onChange={(v) => updateFormField('actionType', v)}
+                onChange={(v) => {
+                  updateFormField('actionType', v)
+                  updateFormField('command', '')
+                }}
               />
             </div>
+            {form.actionType !== 'app-action' && (
+              <div>
+                <label className="block text-xs text-text-muted mb-1.5">Execution</label>
+                <ToggleGroup
+                  options={EXEC_OPTIONS}
+                  value={form.executionMode}
+                  onChange={(v) => updateFormField('executionMode', v)}
+                />
+              </div>
+            )}
+          </div>
+
+          {form.actionType === 'app-action' ? (
             <div>
-              <label className="block text-xs text-text-muted mb-1.5">Execution</label>
-              <ToggleGroup
-                options={EXEC_OPTIONS}
-                value={form.executionMode}
-                onChange={(v) => updateFormField('executionMode', v)}
-              />
+              <label className="block text-xs text-text-muted mb-1.5">App Action</label>
+              <select
+                value={form.command}
+                onChange={(e) => {
+                  updateFormField('command', e.target.value)
+                  const def = getAppAction(e.target.value)
+                  if (def?.defaultConfirmMessage && !form.confirmMessage) {
+                    updateFormField('confirmMessage', def.defaultConfirmMessage)
+                  }
+                }}
+                className="w-full bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent"
+                style={{ padding: '8px 14px' }}
+              >
+                <option value="">Select an action...</option>
+                {getAppActionGroups().map(({ group, actions }) => (
+                  <optgroup key={group} label={group}>
+                    {actions.map((a) => (
+                      <option key={a.id} value={a.id}>{a.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
             </div>
-          </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs text-text-muted mb-1.5">
+                  {form.actionType === 'claude' ? 'Claude Prompt' : 'Command'}
+                </label>
+                <textarea
+                  value={form.command}
+                  onChange={(e) => updateFormField('command', e.target.value)}
+                  placeholder={
+                    form.actionType === 'claude'
+                      ? 'Run the test suite and fix any failures'
+                      : 'npm test'
+                  }
+                  rows={3}
+                  className="w-full bg-bg border border-border rounded-md text-xs text-text font-mono focus:outline-none focus:border-accent"
+                  style={{ padding: '8px 14px', resize: 'vertical' }}
+                />
+                <p className="text-[10px] text-text-muted" style={{ marginTop: 2 }}>
+                  Variables: {'{{branch}}'}, {'{{worktreePath}}'}, {'{{sessionName}}'}, {'{{repoPath}}'}, {'{{projectName}}'}
+                </p>
+              </div>
 
-          <div>
-            <label className="block text-xs text-text-muted mb-1.5">
-              {form.actionType === 'claude' ? 'Claude Prompt' : 'Command'}
-            </label>
-            <textarea
-              value={form.command}
-              onChange={(e) => updateFormField('command', e.target.value)}
-              placeholder={
-                form.actionType === 'claude'
-                  ? 'Run the test suite and fix any failures'
-                  : 'npm test'
-              }
-              rows={3}
-              className="w-full bg-bg border border-border rounded-md text-xs text-text font-mono focus:outline-none focus:border-accent"
-              style={{ padding: '8px 14px', resize: 'vertical' }}
-            />
-            <p className="text-[10px] text-text-muted" style={{ marginTop: 2 }}>
-              Variables: {'{{branch}}'}, {'{{worktreePath}}'}, {'{{sessionName}}'}, {'{{repoPath}}'}, {'{{projectName}}'}
-            </p>
-          </div>
-
-          <Input
-            label="Working Directory (optional)"
-            value={form.cwd}
-            onChange={(e) => updateFormField('cwd', e.target.value)}
-            placeholder="{{worktreePath}}"
-            hint="Defaults to session worktree path"
-          />
+              <Input
+                label="Working Directory (optional)"
+                value={form.cwd}
+                onChange={(e) => updateFormField('cwd', e.target.value)}
+                placeholder="{{worktreePath}}"
+                hint="Defaults to session worktree path"
+              />
+            </>
+          )}
 
           <div>
             <label className="block text-xs text-text-muted mb-1.5">Scope</label>
@@ -571,7 +607,7 @@ function ButtonRow({
           </span>
         )}
         <span className="text-[10px] text-text-muted">
-          {button.actionType === 'claude' ? 'Claude' : 'Shell'}
+          {button.actionType === 'claude' ? 'Claude' : button.actionType === 'app-action' ? 'Action' : 'Shell'}
         </span>
       </div>
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

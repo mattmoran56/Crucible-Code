@@ -177,7 +177,33 @@ export interface FileStat {
 // Custom Buttons
 
 export type ButtonPlacement = 'session-toolbar' | 'project-tabs' | 'right-activity-bar'
-export type ButtonActionType = 'shell' | 'claude'
+export type ButtonActionType = 'shell' | 'claude' | 'app-action'
+
+export type AppAction =
+  // Session actions
+  | 'session:open-as-main'
+  | 'session:return-to-worktree'
+  | 'session:delete'
+  | 'session:mark-stale'
+  | 'session:reactivate'
+  | 'session:create'
+  // Tab actions
+  | 'tab:open-agent'
+  | 'tab:open-terminal'
+  | 'tab:switch-agent'
+  | 'tab:switch-git'
+  | 'tab:switch-pr'
+  | 'tab:switch-review'
+  | 'tab:switch-code'
+  | 'tab:split-right'
+  // Project actions
+  | 'project:add'
+  | 'project:remove'
+  // App actions
+  | 'app:open-settings'
+  | 'app:toggle-notes'
+  | 'app:toggle-usage'
+  | 'app:toggle-permissions'
 export type ButtonExecutionMode = 'terminal' | 'background'
 
 export type ButtonScope =

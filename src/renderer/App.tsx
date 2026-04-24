@@ -41,6 +41,16 @@ export default function App() {
   const toggleRightPanel = (panel: string) =>
     setActiveRightPanel((prev) => (prev === panel ? null : panel))
 
+  // Listen for app-action panel toggle events from custom buttons
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const panel = (e as CustomEvent<{ panel: string }>).detail.panel
+      toggleRightPanel(panel)
+    }
+    window.addEventListener('app:toggle-panel', handler)
+    return () => window.removeEventListener('app:toggle-panel', handler)
+  }, [])
+
   useEffect(() => {
     Promise.all([loadProjects(), loadAccounts(), loadButtons(), loadGroups()]).finally(() => {
       setLoading(false)
