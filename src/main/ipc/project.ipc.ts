@@ -6,6 +6,7 @@ import * as pty from 'node-pty'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import type { Project, Session, ClaudeAccount } from '../../shared/types'
+import { getStorePath } from '../store-path'
 
 // Auth terminal instances (lightweight, separate from session terminals)
 const authTerminals = new Map<string, pty.IPty>()
@@ -16,6 +17,7 @@ const store = new Store<{
   accounts: ClaudeAccount[]
   sessionContexts: Record<string, Record<string, unknown>>
 }>({
+  cwd: getStorePath(),
   defaults: {
     projects: [],
     sessions: {},
@@ -146,7 +148,7 @@ export function registerProjectHandlers(window: BrowserWindow) {
 
   ipcMain.handle(IPC.SESSION_LIST, async (_e, projectId: string) => {
     const sessions = store.get('sessions', {})
-    const list: Session[] = sessions[projectId] || []
+    const list: Session[] = (sessions[projectId] || []).map((s) => ({ ...s }))
 
     // Backfill createdAt for any legacy sessions missing it
     let needsSave = false

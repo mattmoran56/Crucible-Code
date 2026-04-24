@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import { handleHookEvent, findSessionById } from './notification-server'
+import { getStorePath } from '../store-path'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
@@ -40,6 +41,7 @@ const terminalStore = new Store<{
   activeTerminals: Record<string, PersistedTerminal>
 }>({
   name: 'terminal-state',
+  cwd: getStorePath(),
   defaults: { activeTerminals: {} },
 })
 

@@ -8,12 +8,14 @@ import type {
   ButtonExecutionMode,
 } from '../../shared/types'
 import * as terminalService from '../services/terminal.service'
+import { getStorePath } from '../store-path'
 
 const store = new Store<{
   buttons: CustomButton[]
   groups: CustomButtonGroup[]
 }>({
   name: 'custom-buttons',
+  cwd: getStorePath(),
   defaults: { buttons: [], groups: [] },
 })
 

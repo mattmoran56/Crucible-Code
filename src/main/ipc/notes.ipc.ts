@@ -2,9 +2,11 @@ import { ipcMain } from 'electron'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import type { Note } from '../../shared/types'
+import { getStorePath } from '../store-path'
 
 const store = new Store<{ notes: Record<string, Note[]> }>({
   name: 'notes',
+  cwd: getStorePath(),
   defaults: { notes: {} },
 })
 
