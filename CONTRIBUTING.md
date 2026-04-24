@@ -21,6 +21,8 @@ When you open a PR, the most important thing is explaining *what you were trying
 
 Features are accepted or rejected based on whether the *aim* fits the project direction, so make the aim clear. A well-explained intent with rough code is more useful than polished code with no context.
 
+**Include screenshots for all front-end changes.** If your PR touches UI — layouts, components, styles, or visual behavior — attach before/after screenshots (or a short screen recording) in the PR description. This proves the change works as intended and makes review faster. PRs that modify the UI without visual evidence will be sent back.
+
 ## Code style
 
 - TypeScript throughout — no `any` where a type can be inferred or defined
