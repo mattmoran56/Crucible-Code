@@ -22,6 +22,8 @@ export function useMultiPanelResize({
   const dragging = useRef<number | null>(null)
   const startY = useRef(0)
   const startSizes = useRef<number[]>([])
+  const minSizesRef = useRef(minSizes)
+  minSizesRef.current = minSizes
 
   // Recalculate sizes when containerSize or collapsed state changes
   useEffect(() => {
@@ -49,10 +51,10 @@ export function useMultiPanelResize({
           return Math.round(availableSpace / expandedIndices.length)
         }
         const ratio = prevSize / prevExpandedTotal
-        return Math.max(minSizes[i], Math.round(availableSpace * ratio))
+        return Math.max(minSizesRef.current[i], Math.round(availableSpace * ratio))
       })
     })
-  }, [containerSize, collapsedPanels, collapsedSize, minSizes, panelCount])
+  }, [containerSize, collapsedPanels, collapsedSize, panelCount])
 
   const onHandleMouseDown = useCallback(
     (handleIndex: number) => (e: React.MouseEvent) => {
@@ -83,8 +85,9 @@ export function useMultiPanelResize({
       const aboveSize = startSizes.current[aboveIdx] + delta
       const belowSize = startSizes.current[belowIdx] - delta
 
-      const aboveClamped = Math.max(minSizes[aboveIdx], aboveSize)
-      const belowClamped = Math.max(minSizes[belowIdx], belowSize)
+      const mins = minSizesRef.current
+      const aboveClamped = Math.max(mins[aboveIdx], aboveSize)
+      const belowClamped = Math.max(mins[belowIdx], belowSize)
 
       // If clamping changed one, adjust the other
       let finalAbove = aboveClamped
@@ -94,11 +97,11 @@ export function useMultiPanelResize({
 
       if (aboveClamped + belowClamped > totalPair) {
         // One hit its min — the other gets the rest
-        if (aboveSize < minSizes[aboveIdx]) {
-          finalAbove = minSizes[aboveIdx]
+        if (aboveSize < mins[aboveIdx]) {
+          finalAbove = mins[aboveIdx]
           finalBelow = totalPair - finalAbove
         } else {
-          finalBelow = minSizes[belowIdx]
+          finalBelow = mins[belowIdx]
           finalAbove = totalPair - finalBelow
         }
       }
@@ -124,7 +127,7 @@ export function useMultiPanelResize({
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
     }
-  }, [collapsedPanels, minSizes])
+  }, [collapsedPanels])
 
   return { sizes, onHandleMouseDown }
 }

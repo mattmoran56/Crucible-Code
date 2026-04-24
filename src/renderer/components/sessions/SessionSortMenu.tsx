@@ -9,7 +9,6 @@ import {
 
 const SORT_OPTIONS: { key: SessionSortKey; label: string }[] = [
   { key: 'created', label: 'Created' },
-  { key: 'lastActive', label: 'Last Active' },
   { key: 'name', label: 'Name' },
 ]
 

@@ -54,6 +54,7 @@ export interface PullRequest {
   author: string
   updatedAt: string
   isDraft: boolean
+  state: 'OPEN' | 'MERGED'
 }
 
 export interface PRFile {
