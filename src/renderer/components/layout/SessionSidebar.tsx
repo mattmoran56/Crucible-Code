@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useEditorStore } from '../../stores/editorStore'
+import { useSessionViewStore } from '../../stores/sessionViewStore'
 import { SessionCard } from '../sessions/SessionCard'
 import { StaleSessionCard } from '../sessions/StaleSessionCard'
+import { SessionSortMenu } from '../sessions/SessionSortMenu'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
 import { ImportWorktreeDialog } from '../sessions/ImportWorktreeDialog'
 import { OpenBranchDialog } from '../sessions/OpenBranchDialog'
@@ -14,7 +16,7 @@ import { Sidebar, SidebarSection } from '../ui/Sidebar'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu } from '../ui/DropdownMenu'
 import { ResizeHandle } from '../ui/ResizeHandle'
-import { useResizable } from '../../hooks/useResizable'
+import { useMultiPanelResize } from '../../hooks/useMultiPanelResize'
 
 const PR_POLL_INTERVAL = 30_000
 
@@ -49,11 +51,20 @@ export function SessionSidebar() {
     return () => observer.disconnect()
   }, [])
 
-  const sessionsPanel = useResizable({
-    direction: 'vertical',
-    initialSize: Math.round(sidebarHeight * 0.6),
-    minSize: 80,
-    maxSize: Math.round(sidebarHeight * 0.85),
+  const collapsedPanels = React.useMemo(
+    () => [false, staleCollapsed, prCollapsed],
+    [staleCollapsed, prCollapsed]
+  )
+
+  // Subtract Code button (~37px) and two resize handles (3px each) from available space
+  const panelSpace = Math.max(0, sidebarHeight - 37 - 6)
+
+  const { sizes, onHandleMouseDown } = useMultiPanelResize({
+    containerSize: panelSpace,
+    minSizes: [60, 60, 60],
+    initialRatios: [0.5, 0.25, 0.25],
+    collapsedPanels,
+    collapsedSize: 37,
   })
 
   // Load sessions then immediately check staleness (chained to avoid race condition)
@@ -154,6 +165,49 @@ export function SessionSidebar() {
     await openPR(activeProject.repoPath, pr)
   }
 
+  const { sortBy, groupBy } = useSessionViewStore()
+
+  const sortedSessions = useMemo(() => {
+    const sorted = [...sessions]
+    switch (sortBy) {
+      case 'created':
+        sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        break
+      case 'lastActive':
+        sorted.sort((a, b) => {
+          const aTime = a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : new Date(a.createdAt).getTime()
+          const bTime = b.lastActiveAt ? new Date(b.lastActiveAt).getTime() : new Date(b.createdAt).getTime()
+          return bTime - aTime
+        })
+        break
+      case 'name':
+        sorted.sort((a, b) => a.name.localeCompare(b.name))
+        break
+    }
+    return sorted
+  }, [sessions, sortBy])
+
+  const groupedSessions = useMemo(() => {
+    if (groupBy === 'none') return [{ label: null as string | null, sessions: sortedSessions }]
+
+    const active: typeof sortedSessions = []
+    const draft: typeof sortedSessions = []
+    const noPR: typeof sortedSessions = []
+
+    for (const s of sortedSessions) {
+      const pr = pullRequests.find((pr) => pr.headRefName === s.branchName)
+      if (!pr) noPR.push(s)
+      else if (pr.isDraft) draft.push(s)
+      else active.push(s)
+    }
+
+    return [
+      { label: 'Active PR', sessions: active },
+      { label: 'Draft PR', sessions: draft },
+      { label: 'No PR', sessions: noPR },
+    ].filter((g) => g.sessions.length > 0)
+  }, [sortedSessions, groupBy, pullRequests])
+
   return (
     <Sidebar>
       <div ref={sidebarRef} className="flex flex-col flex-1 min-h-0">
@@ -179,12 +233,13 @@ export function SessionSidebar() {
           )}
         </button>
 
-        {/* Sessions section — height controlled by resize handle */}
-        <div style={{ height: prCollapsed ? undefined : sessionsPanel.size, flexShrink: 0 }} className={prCollapsed ? 'flex-1 min-h-0' : 'min-h-0'}>
+        {/* Sessions section */}
+        <div style={{ height: sizes[0], flexShrink: 0 }} className="min-h-0 overflow-hidden">
           <SidebarSection
             title="Sessions"
             action={
               <div className="flex items-center gap-1">
+                <SessionSortMenu />
                 <IconButton
                   label="New session"
                   onClick={() => setShowCreate(true)}
@@ -208,23 +263,32 @@ export function SessionSidebar() {
               </div>
             }
           >
-            {sessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                isActive={!editorMode && session.id === activeSessionId}
-                isOpenedAsMain={session.id === openedAsMainBranch}
-                status={sessionStatuses.get(session.id) ?? null}
-                pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
-                onClick={() => {
-                  setEditorMode(false)
-                  setActiveSession(session.id, activeProject.repoPath)
-                  clearStatus(session.id)
-                }}
-                onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
-                onMarkStale={() => markStale(activeProject.id, session.id)}
-                onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
-              />
+            {groupedSessions.map((group) => (
+              <React.Fragment key={group.label ?? 'all'}>
+                {group.label && (
+                  <div className="text-[10px] text-text-muted uppercase tracking-wide font-medium px-1 pt-2 pb-1">
+                    {group.label}
+                  </div>
+                )}
+                {group.sessions.map((session) => (
+                  <SessionCard
+                    key={session.id}
+                    session={session}
+                    isActive={!editorMode && session.id === activeSessionId}
+                    isOpenedAsMain={session.id === openedAsMainBranch}
+                    status={sessionStatuses.get(session.id) ?? null}
+                    pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
+                    onClick={() => {
+                      setEditorMode(false)
+                      setActiveSession(session.id, activeProject.repoPath)
+                      clearStatus(session.id)
+                    }}
+                    onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
+                    onMarkStale={() => markStale(activeProject.id, session.id)}
+                    onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
+                  />
+                ))}
+              </React.Fragment>
             ))}
             {sessions.length === 0 && (
               <p className="text-text-muted text-xs text-center py-4">No sessions yet</p>
@@ -232,13 +296,11 @@ export function SessionSidebar() {
           </SidebarSection>
         </div>
 
-        {/* Resize handle between sections */}
-        {!prCollapsed && (
-          <ResizeHandle direction="vertical" onMouseDown={sessionsPanel.onMouseDown} />
-        )}
+        {/* Resize handle: Sessions ↔ Stale Sessions */}
+        <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(0)} />
 
-        {/* Stale Sessions section — collapsible, fixed max-height */}
-        <div className="flex-none" style={{ maxHeight: staleCollapsed ? undefined : 200, overflowY: staleCollapsed ? undefined : 'auto' }}>
+        {/* Stale Sessions section */}
+        <div style={{ height: sizes[1], flexShrink: 0 }} className="min-h-0 overflow-hidden">
           <SidebarSection
             title="Stale Sessions"
             collapsible
@@ -261,8 +323,11 @@ export function SessionSidebar() {
           </SidebarSection>
         </div>
 
-        {/* Pull Requests section — fills remaining space */}
-        <div className={prCollapsed ? '' : 'flex-1 min-h-0'}>
+        {/* Resize handle: Stale Sessions ↔ Pull Requests */}
+        <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(1)} />
+
+        {/* Pull Requests section */}
+        <div style={{ height: sizes[2], flexShrink: 0 }} className="min-h-0 overflow-hidden">
           <SidebarSection
             title="Pull Requests"
             collapsible

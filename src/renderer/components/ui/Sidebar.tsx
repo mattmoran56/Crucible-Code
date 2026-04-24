@@ -60,7 +60,7 @@ export function SidebarSection({
   children,
 }: SidebarSectionProps) {
   return (
-    <section className="flex flex-col flex-1 min-h-0">
+    <section className="flex flex-col h-full min-h-0 overflow-hidden">
       <div
         className={`border-b border-border flex items-center justify-between ${collapsible ? 'cursor-pointer select-none hover:bg-bg-tertiary' : ''}`}
         style={{ padding: '10px 12px' }}
