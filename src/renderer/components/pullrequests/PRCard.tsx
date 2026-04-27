@@ -1,5 +1,6 @@
 import React from 'react'
 import type { PullRequest } from '../../../shared/types'
+import { CIIndicator } from './CIIndicator'
 
 interface Props {
   pr: PullRequest
@@ -21,6 +22,7 @@ export function PRCard({ pr, isNew, isActive, onClick }: Props) {
         <span
           className={`shrink-0 w-1.5 h-1.5 rounded-full ${pr.isDraft ? 'bg-text-muted' : 'bg-success'}`}
         />
+        <CIIndicator status={pr.ciStatus} />
         {isNew && (
           <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-accent" />
         )}

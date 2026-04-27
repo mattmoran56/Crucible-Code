@@ -1,11 +1,26 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread } from '../../shared/types'
+import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread, CIStatus } from '../../shared/types'
 
 const execFileAsync = promisify(execFile)
 
+function deriveCIStatus(rollup: Array<{ status?: string | null; conclusion?: string | null }> | null | undefined): CIStatus {
+  if (!rollup || rollup.length === 0) return 'none'
+  const isPending = rollup.some((c) => {
+    const s = c.status?.toLowerCase()
+    return s && s !== 'completed'
+  })
+  if (isPending) return 'pending'
+  const failureConclusions = new Set(['failure', 'cancelled', 'timed_out', 'action_required'])
+  const isFailure = rollup.some((c) => {
+    const concl = c.conclusion?.toLowerCase()
+    return concl ? failureConclusions.has(concl) : false
+  })
+  return isFailure ? 'failure' : 'success'
+}
+
 export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
-  const fields = 'number,title,headRefName,baseRefName,author,updatedAt,isDraft,state'
+  const fields = 'number,title,headRefName,baseRefName,author,updatedAt,isDraft,state,statusCheckRollup'
 
   async function fetchPRs(state: string): Promise<PullRequest[]> {
     try {
@@ -24,6 +39,7 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         updatedAt: string
         isDraft: boolean
         state: string
+        statusCheckRollup?: Array<{ status?: string | null; conclusion?: string | null }> | null
       }>
 
       return raw.map((pr) => ({
@@ -35,6 +51,7 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         updatedAt: pr.updatedAt,
         isDraft: pr.isDraft,
         state: pr.state === 'MERGED' ? 'MERGED' as const : 'OPEN' as const,
+        ciStatus: deriveCIStatus(pr.statusCheckRollup),
       }))
     } catch {
       return []

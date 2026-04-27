@@ -219,6 +219,8 @@ export const mockPullRequests: PullRequest[] = [
     author: 'alice',
     updatedAt: hoursAgo(1),
     isDraft: false,
+    state: 'OPEN',
+    ciStatus: 'pending',
   },
   {
     number: 38,
@@ -228,6 +230,8 @@ export const mockPullRequests: PullRequest[] = [
     author: 'bob',
     updatedAt: hoursAgo(5),
     isDraft: false,
+    state: 'OPEN',
+    ciStatus: 'success',
   },
   {
     number: 35,
@@ -237,6 +241,8 @@ export const mockPullRequests: PullRequest[] = [
     author: 'alice',
     updatedAt: daysAgo(1),
     isDraft: true,
+    state: 'OPEN',
+    ciStatus: 'failure',
   },
 ]
 

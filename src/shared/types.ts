@@ -46,6 +46,8 @@ export interface WorktreeInfo {
   branch: string
 }
 
+export type CIStatus = 'success' | 'failure' | 'pending' | 'none'
+
 export interface PullRequest {
   number: number
   title: string
@@ -55,6 +57,7 @@ export interface PullRequest {
   updatedAt: string
   isDraft: boolean
   state: 'OPEN' | 'MERGED'
+  ciStatus: CIStatus
 }
 
 export interface PRFile {
