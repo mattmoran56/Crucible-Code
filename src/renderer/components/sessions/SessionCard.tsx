@@ -4,6 +4,7 @@ import { IconButton } from '../ui/IconButton'
 import { DropdownMenu } from '../ui/DropdownMenu'
 import { Dialog } from '../ui/Dialog'
 import { Button } from '../ui/Button'
+import { CIIndicator } from '../pullrequests/CIIndicator'
 
 interface Props {
   session: Session
@@ -85,6 +86,7 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
             <span
               className={`shrink-0 w-1.5 h-1.5 rounded-full ${pr.isDraft ? 'bg-text-muted' : 'bg-success'}`}
             />
+            <CIIndicator status={pr.ciStatus} />
             <span className="text-text-muted text-[10px] truncate">
               #{pr.number} {pr.title}
             </span>
