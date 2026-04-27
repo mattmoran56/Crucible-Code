@@ -27,12 +27,13 @@ export function ProjectTabs() {
 
   const getPendingCount = getNotificationCountForProject
 
-  const handleUpdateClick = () => {
+  const handleUpdateClick = async () => {
     if (status.state === 'error') {
       reset()
       return
     }
-    window.api.update.apply()
+    const builtCommit = await window.api.update.apply()
+    setStatus({ state: 'updating', builtCommit })
   }
 
   const updateButtonVisible =

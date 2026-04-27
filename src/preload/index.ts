@@ -295,7 +295,8 @@ const api = {
       ipcRenderer.on(IPC.UPDATE_LOG, listener)
       return () => ipcRenderer.removeListener(IPC.UPDATE_LOG, listener)
     },
-    apply: () => ipcRenderer.invoke(IPC.UPDATE_APPLY),
+    apply: (): Promise<string> => ipcRenderer.invoke(IPC.UPDATE_APPLY),
+    getBuiltCommit: (): Promise<string> => ipcRenderer.invoke(IPC.UPDATE_BUILT_COMMIT),
   },
 
   button: {

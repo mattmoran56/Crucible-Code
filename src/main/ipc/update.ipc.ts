@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { IPC } from '../../shared/constants'
-import { startUpdatePoller, stopUpdatePoller, applyUpdate } from '../services/update.service'
+import { startUpdatePoller, stopUpdatePoller, applyUpdate, getBuiltCommit } from '../services/update.service'
 import type { UpdateStatus } from '../../shared/types'
 
 export function registerUpdateHandlers(window: BrowserWindow): void {
@@ -23,7 +23,10 @@ export function registerUpdateHandlers(window: BrowserWindow): void {
         }
       }
     )
+    return getBuiltCommit()
   })
+
+  ipcMain.handle(IPC.UPDATE_BUILT_COMMIT, () => getBuiltCommit())
 }
 
 export function unregisterUpdateHandlers(): void {

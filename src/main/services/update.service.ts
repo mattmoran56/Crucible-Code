@@ -10,6 +10,10 @@ declare const __BUILT_COMMIT__: string
 
 let pollInterval: NodeJS.Timeout | null = null
 
+export function getBuiltCommit(): string {
+  return __BUILT_COMMIT__
+}
+
 export async function startUpdatePoller(
   onStatus: (status: UpdateStatus) => void
 ): Promise<void> {
@@ -22,9 +26,9 @@ export async function startUpdatePoller(
       const result = await g.raw(['rev-list', '--count', `${__BUILT_COMMIT__}..origin/main`])
       const count = parseInt(result.trim(), 10)
       if (count > 0) {
-        onStatus({ state: 'available', commitCount: count })
+        onStatus({ state: 'available', commitCount: count, builtCommit: __BUILT_COMMIT__ })
       } else {
-        onStatus({ state: 'idle' })
+        onStatus({ state: 'idle', builtCommit: __BUILT_COMMIT__ })
       }
     } catch {
       // Network failure — skip this poll cycle silently
@@ -47,7 +51,7 @@ export async function applyUpdate(
   onStatus: (status: UpdateStatus) => void
 ): Promise<void> {
   try {
-    onStatus({ state: 'updating' })
+    onStatus({ state: 'updating', builtCommit: __BUILT_COMMIT__ })
     onLog('Pulling latest commits...')
 
     const g = simpleGit(__REPO_PATH__)
@@ -68,7 +72,7 @@ export async function applyUpdate(
     app.relaunch()
     app.quit()
   } catch (err) {
-    onStatus({ state: 'error', error: err instanceof Error ? err.message : String(err) })
+    onStatus({ state: 'error', error: err instanceof Error ? err.message : String(err), builtCommit: __BUILT_COMMIT__ })
   }
 }
 

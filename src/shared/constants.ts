@@ -101,6 +101,7 @@ export const IPC = {
   UPDATE_STATUS: 'update:status',
   UPDATE_APPLY: 'update:apply',
   UPDATE_LOG: 'update:log',
+  UPDATE_BUILT_COMMIT: 'update:builtCommit',
 
   // Notes
   NOTES_LIST: 'notes:list',

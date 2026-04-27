@@ -120,6 +120,7 @@ export interface UpdateStatus {
   state: 'idle' | 'available' | 'updating' | 'error'
   commitCount?: number
   error?: string
+  builtCommit?: string
 }
 
 // Usage tracking

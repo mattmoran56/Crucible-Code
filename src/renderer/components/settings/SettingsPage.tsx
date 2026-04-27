@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useProjectStore } from '../../stores/projectStore'
+import { useUpdateStore } from '../../stores/updateStore'
 import { THEMES, type ThemeName, type ClaudeTheme } from '../../../shared/themes'
 import type { ClaudeAccount } from '../../../shared/types'
 import { Button } from '../ui/Button'
@@ -27,6 +28,16 @@ export function SettingsPage() {
     projects,
     claudeAccounts, saveAccounts, updateProject,
   } = useProjectStore()
+
+  const builtCommitFromStatus = useUpdateStore((s) => s.status.builtCommit)
+  const [builtCommit, setBuiltCommit] = useState<string | null>(null)
+  useEffect(() => {
+    if (builtCommitFromStatus) {
+      setBuiltCommit(builtCommitFromStatus)
+      return
+    }
+    window.api.update.getBuiltCommit().then(setBuiltCommit).catch(() => setBuiltCommit(null))
+  }, [builtCommitFromStatus])
 
   // Account management state
   const [showAccountManager, setShowAccountManager] = useState(false)
@@ -649,6 +660,10 @@ export function SettingsPage() {
           )}
 
           <ButtonSettings />
+
+          <div className="mt-8 pt-4 border-t border-border text-xs text-text-muted text-center">
+            Build: {builtCommit ? builtCommit.slice(0, 7) : 'unknown'}
+          </div>
         </div>
       </div>
     </div>
