@@ -22,6 +22,8 @@ export function SettingsPage() {
     preferredLight, setPreferredLight,
     preferredDark, setPreferredDark,
     claudeTheme, setClaudeTheme,
+    mergedCleanupAction, setMergedCleanupAction,
+    mergedCleanupDelay, setMergedCleanupDelay,
   } = useSettingsStore()
 
   const {
@@ -414,6 +416,64 @@ export function SettingsPage() {
               value={claudeTheme}
               onChange={(v) => setClaudeTheme(v as ClaudeTheme)}
             />
+          </div>
+
+          {/* ─── Session Cleanup ─── */}
+          <div style={{ marginTop: 40 }}>
+            <h1 className="text-lg font-semibold text-text" style={{ marginBottom: 4 }}>Merged PR Cleanup</h1>
+            <p className="text-xs text-text-muted" style={{ marginBottom: 20 }}>
+              Automatically clean up sessions after their PR is merged.
+            </p>
+
+            {/* Cleanup action */}
+            <div
+              className="flex items-center justify-between border border-border rounded-md"
+              style={{ padding: '10px 14px', marginBottom: 10 }}
+            >
+              <div>
+                <p className="text-xs font-medium text-text">Cleanup action</p>
+                <p className="text-[11px] text-text-muted">
+                  What to do with a session after its PR is merged
+                </p>
+              </div>
+              <select
+                value={mergedCleanupAction}
+                onChange={(e) => setMergedCleanupAction(e.target.value as typeof mergedCleanupAction)}
+                className="bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent shrink-0"
+                style={{ padding: '6px 10px', minWidth: 180 }}
+              >
+                <option value="nothing">Do nothing</option>
+                <option value="closeTerminals">Close terminals</option>
+                <option value="deleteSession">Delete session</option>
+              </select>
+            </div>
+
+            {/* Delay */}
+            {mergedCleanupAction !== 'nothing' && (
+              <div
+                className="flex items-center justify-between border border-border rounded-md"
+                style={{ padding: '10px 14px' }}
+              >
+                <div>
+                  <p className="text-xs font-medium text-text">Cleanup delay</p>
+                  <p className="text-[11px] text-text-muted">
+                    How long to wait after merge before cleaning up
+                  </p>
+                </div>
+                <select
+                  value={mergedCleanupDelay}
+                  onChange={(e) => setMergedCleanupDelay(Number(e.target.value) as typeof mergedCleanupDelay)}
+                  className="bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent shrink-0"
+                  style={{ padding: '6px 10px', minWidth: 180 }}
+                >
+                  <option value={0}>Immediately</option>
+                  <option value={15}>After 15 minutes</option>
+                  <option value={30}>After 30 minutes</option>
+                  <option value={60}>After 1 hour</option>
+                  <option value={120}>After 2 hours</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Color palette detail for active theme */}

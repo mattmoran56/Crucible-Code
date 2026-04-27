@@ -5,44 +5,48 @@ import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDe
 const execFileAsync = promisify(execFile)
 
 export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
-  try {
-    const { stdout } = await execFileAsync(
-      'gh',
-      [
-        'pr',
-        'list',
-        '--state',
-        'open',
-        '--json',
-        'number,title,headRefName,baseRefName,author,updatedAt,isDraft',
-        '--limit',
-        '50',
-      ],
-      { cwd: repoPath }
-    )
+  const fields = 'number,title,headRefName,baseRefName,author,updatedAt,isDraft,state'
 
-    const raw = JSON.parse(stdout) as Array<{
-      number: number
-      title: string
-      headRefName: string
-      baseRefName: string
-      author: { login: string }
-      updatedAt: string
-      isDraft: boolean
-    }>
+  async function fetchPRs(state: string): Promise<PullRequest[]> {
+    try {
+      const { stdout } = await execFileAsync(
+        'gh',
+        ['pr', 'list', '--state', state, '--json', fields, '--limit', '50'],
+        { cwd: repoPath }
+      )
 
-    return raw.map((pr) => ({
-      number: pr.number,
-      title: pr.title,
-      headRefName: pr.headRefName,
-      baseRefName: pr.baseRefName,
-      author: pr.author.login,
-      updatedAt: pr.updatedAt,
-      isDraft: pr.isDraft,
-    }))
-  } catch {
-    return []
+      const raw = JSON.parse(stdout) as Array<{
+        number: number
+        title: string
+        headRefName: string
+        baseRefName: string
+        author: { login: string }
+        updatedAt: string
+        isDraft: boolean
+        state: string
+      }>
+
+      return raw.map((pr) => ({
+        number: pr.number,
+        title: pr.title,
+        headRefName: pr.headRefName,
+        baseRefName: pr.baseRefName,
+        author: pr.author.login,
+        updatedAt: pr.updatedAt,
+        isDraft: pr.isDraft,
+        state: pr.state === 'MERGED' ? 'MERGED' as const : 'OPEN' as const,
+      }))
+    } catch {
+      return []
+    }
   }
+
+  const [open, merged] = await Promise.all([
+    fetchPRs('open'),
+    fetchPRs('merged'),
+  ])
+
+  return [...open, ...merged]
 }
 
 export async function getPRDiff(repoPath: string, prNumber: number): Promise<string | null> {

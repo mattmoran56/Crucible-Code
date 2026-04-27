@@ -5,12 +5,17 @@ export type { ThemeName, ClaudeTheme }
 
 const STORAGE_KEY = 'codecrucible-settings'
 
+export type MergedCleanupAction = 'nothing' | 'closeTerminals' | 'deleteSession'
+export type MergedCleanupDelay = 0 | 15 | 30 | 60 | 120
+
 interface PersistedSettings {
   theme: ThemeName
   matchSystem: boolean
   preferredLight: ThemeName
   preferredDark: ThemeName
   claudeTheme: ClaudeTheme
+  mergedCleanupAction: MergedCleanupAction
+  mergedCleanupDelay: MergedCleanupDelay
 }
 
 function getDefaultClaudeTheme(theme: ThemeName): ClaudeTheme {
@@ -22,7 +27,7 @@ function loadSettings(): PersistedSettings {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return JSON.parse(raw)
   } catch { /* ignore */ }
-  return { theme: 'dark', matchSystem: false, preferredLight: 'light', preferredDark: 'dark', claudeTheme: 'dark' }
+  return { theme: 'dark', matchSystem: false, preferredLight: 'light', preferredDark: 'dark', claudeTheme: 'dark', mergedCleanupAction: 'deleteSession', mergedCleanupDelay: 30 }
 }
 
 function saveSettings(s: PersistedSettings) {
@@ -46,6 +51,8 @@ interface SettingsState {
   preferredLight: ThemeName
   preferredDark: ThemeName
   claudeTheme: ClaudeTheme
+  mergedCleanupAction: MergedCleanupAction
+  mergedCleanupDelay: MergedCleanupDelay
   openSettings: () => void
   closeSettings: () => void
   setTheme: (theme: ThemeName) => void
@@ -53,6 +60,8 @@ interface SettingsState {
   setPreferredLight: (theme: ThemeName) => void
   setPreferredDark: (theme: ThemeName) => void
   setClaudeTheme: (claudeTheme: ClaudeTheme) => void
+  setMergedCleanupAction: (action: MergedCleanupAction) => void
+  setMergedCleanupDelay: (delay: MergedCleanupDelay) => void
 }
 
 const initial = loadSettings()
@@ -69,6 +78,8 @@ function persist(get: () => SettingsState, overrides: Partial<PersistedSettings>
     preferredLight: s.preferredLight,
     preferredDark: s.preferredDark,
     claudeTheme: s.claudeTheme,
+    mergedCleanupAction: s.mergedCleanupAction,
+    mergedCleanupDelay: s.mergedCleanupDelay,
     ...overrides,
   })
 }
@@ -80,6 +91,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   preferredLight: initial.preferredLight,
   preferredDark: initial.preferredDark,
   claudeTheme: initial.claudeTheme ?? getDefaultClaudeTheme(initialTheme),
+  mergedCleanupAction: initial.mergedCleanupAction ?? 'deleteSession',
+  mergedCleanupDelay: initial.mergedCleanupDelay ?? 30,
   openSettings: () => set({ isOpen: true }),
   closeSettings: () => set({ isOpen: false }),
   setTheme: (theme) => {
@@ -131,6 +144,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ claudeTheme })
     persist(get, { claudeTheme })
   },
+  setMergedCleanupAction: (action) => {
+    set({ mergedCleanupAction: action })
+    persist(get, { mergedCleanupAction: action })
+  },
+  setMergedCleanupDelay: (delay) => {
+    set({ mergedCleanupDelay: delay })
+    persist(get, { mergedCleanupDelay: delay })
+  },
 }))
 
 // Listen for OS color scheme changes
@@ -142,6 +163,6 @@ mq.addEventListener('change', () => {
     applyTheme(resolved)
     const claudeTheme = getDefaultClaudeTheme(resolved)
     useSettingsStore.setState({ theme: resolved, claudeTheme })
-    saveSettings({ theme: resolved, matchSystem: true, preferredLight: s.preferredLight, preferredDark: s.preferredDark, claudeTheme })
+    saveSettings({ theme: resolved, matchSystem: true, preferredLight: s.preferredLight, preferredDark: s.preferredDark, claudeTheme, mergedCleanupAction: s.mergedCleanupAction, mergedCleanupDelay: s.mergedCleanupDelay })
   }
 })
