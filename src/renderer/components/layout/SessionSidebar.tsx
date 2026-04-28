@@ -46,28 +46,32 @@ export function SessionSidebar() {
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
 
-  // Measure sidebar height for resize constraints
-  const sidebarRef = useRef<HTMLDivElement>(null)
-  const [sidebarHeight, setSidebarHeight] = useState(600)
+  // Measure the panels container directly (sections + handles) so panel sizing
+  // is independent of the Code button's height or any other sibling. Use a
+  // callback ref + state so the observer reattaches when SessionSidebar's
+  // early-return path swaps in the real JSX after activeProject loads.
+  const [panelsContainerEl, setPanelsContainerEl] = useState<HTMLDivElement | null>(null)
+  const [panelsHeight, setPanelsHeight] = useState(0)
 
   useEffect(() => {
-    if (!sidebarRef.current) return
+    if (!panelsContainerEl) return
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        setSidebarHeight(entry.contentRect.height)
+        setPanelsHeight(entry.contentRect.height)
       }
     })
-    observer.observe(sidebarRef.current)
+    observer.observe(panelsContainerEl)
     return () => observer.disconnect()
-  }, [])
+  }, [panelsContainerEl])
 
   const collapsedPanels = React.useMemo(
     () => [false, staleCollapsed, prCollapsed],
     [staleCollapsed, prCollapsed]
   )
 
-  // Subtract Code button (~37px) and two resize handles (3px each) from available space
-  const panelSpace = Math.max(0, sidebarHeight - 37 - 6)
+  // Subtract two resize handles (3px each) so panel sizes sum to fill the
+  // remaining space exactly.
+  const panelSpace = Math.max(0, panelsHeight - 6)
 
   const { sizes, onHandleMouseDown } = useMultiPanelResize({
     containerSize: panelSpace,
@@ -322,35 +326,36 @@ export function SessionSidebar() {
 
   return (
     <Sidebar>
-      <div ref={sidebarRef} className="flex flex-col flex-1 min-h-0">
-        {/* Code editor nav item */}
-        <button
-          className={`flex items-center gap-2 w-full text-left text-xs transition-colors border-b border-border
-            ${editorMode
-              ? 'bg-accent/15 text-accent'
-              : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
-            }`}
-          style={{ padding: '10px 12px' }}
-          onClick={handleCodeClick}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="16 18 22 12 16 6" />
-            <polyline points="8 6 2 12 8 18" />
-          </svg>
-          <span className="font-medium">Code</span>
-          {codeNeedsAttention && (
-            <span
-              aria-label="Agent waiting for attention"
-              className="shrink-0 w-2 h-2 rounded-full bg-warning"
-            />
-          )}
-          {currentBranch && (
-            <span className="ml-auto text-text-muted text-[10px] truncate" style={{ maxWidth: 80 }}>
-              {currentBranch}
-            </span>
-          )}
-        </button>
+      {/* Code editor nav item — sibling of the panels container so its height
+          doesn't have to be hard-coded into the resize math */}
+      <button
+        className={`flex-shrink-0 flex items-center gap-2 w-full text-left text-xs transition-colors border-b border-border
+          ${editorMode
+            ? 'bg-accent/15 text-accent'
+            : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
+          }`}
+        style={{ padding: '10px 12px' }}
+        onClick={handleCodeClick}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="16 18 22 12 16 6" />
+          <polyline points="8 6 2 12 8 18" />
+        </svg>
+        <span className="font-medium">Code</span>
+        {codeNeedsAttention && (
+          <span
+            aria-label="Agent waiting for attention"
+            className="shrink-0 w-2 h-2 rounded-full bg-warning"
+          />
+        )}
+        {currentBranch && (
+          <span className="ml-auto text-text-muted text-[10px] truncate" style={{ maxWidth: 80 }}>
+            {currentBranch}
+          </span>
+        )}
+      </button>
 
+      <div ref={setPanelsContainerEl} className="flex flex-col flex-1 min-h-0">
         {/* Sessions section */}
         <div style={{ height: sizes[0], flexShrink: 0 }} className="min-h-0 overflow-hidden">
           <SidebarSection

@@ -163,12 +163,12 @@ export default function App() {
       {/* Settings overlay — main tree stays mounted but hidden */}
       {settingsOpen && <SettingsPage />}
 
-      <div className={settingsOpen ? 'hidden' : 'contents'}>
+      <div style={{ display: settingsOpen ? 'none' : 'contents' }}>
         <ProjectTabs />
 
         <div className="flex-1 flex min-h-0">
           {/* Session sidebar — resizable width */}
-          <div style={{ width: sidebar.size }} className="flex-shrink-0">
+          <div style={{ width: sidebar.size }} className="flex-shrink-0 h-full">
             <SessionSidebar />
           </div>
           <ResizeHandle direction="horizontal" onMouseDown={sidebar.onMouseDown} />

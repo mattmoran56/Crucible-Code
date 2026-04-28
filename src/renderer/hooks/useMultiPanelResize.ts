@@ -8,6 +8,52 @@ interface UseMultiPanelResizeOptions {
   collapsedSize: number
 }
 
+// Distribute `total` across `values` proportionally, then clamp each to its
+// minimum and redistribute the deficit across panels that still have room.
+// Iterates until stable. If the minimums can't fit, every panel is pinned at
+// its minimum and the result will exceed `total`.
+function waterFill(values: number[], mins: number[], total: number): number[] {
+  const n = values.length
+  if (n === 0) return []
+  const result = [...values]
+  const pinned = new Array(n).fill(false)
+
+  for (let iter = 0; iter < n + 1; iter++) {
+    let deficit = 0
+    for (let i = 0; i < n; i++) {
+      if (!pinned[i] && result[i] < mins[i]) {
+        deficit += mins[i] - result[i]
+        result[i] = mins[i]
+        pinned[i] = true
+      }
+    }
+    if (deficit === 0) break
+
+    const flexibleSum = result.reduce(
+      (s, v, i) => (pinned[i] ? s : s + v),
+      0
+    )
+    if (flexibleSum <= 0) break
+
+    for (let i = 0; i < n; i++) {
+      if (!pinned[i]) {
+        result[i] = Math.max(0, result[i] - (deficit * result[i]) / flexibleSum)
+      }
+    }
+  }
+
+  const pinnedTotal = result.reduce((s, v, i) => (pinned[i] ? s + v : s), 0)
+  const flexibleTarget = Math.max(0, total - pinnedTotal)
+  const flexibleSum = result.reduce((s, v, i) => (pinned[i] ? s : s + v), 0)
+  if (flexibleSum > 0 && flexibleTarget > 0) {
+    const scale = flexibleTarget / flexibleSum
+    for (let i = 0; i < n; i++) {
+      if (!pinned[i]) result[i] *= scale
+    }
+  }
+  return result
+}
+
 export function useMultiPanelResize({
   containerSize,
   minSizes,
@@ -17,43 +63,87 @@ export function useMultiPanelResize({
 }: UseMultiPanelResizeOptions) {
   const panelCount = minSizes.length
   const [sizes, setSizes] = useState<number[]>(() =>
-    initialRatios.map((r) => Math.round(containerSize * r))
+    new Array(panelCount).fill(0)
   )
   const dragging = useRef<number | null>(null)
   const startY = useRef(0)
   const startSizes = useRef<number[]>([])
   const minSizesRef = useRef(minSizes)
   minSizesRef.current = minSizes
+  const collapsedRef = useRef(collapsedPanels)
+  collapsedRef.current = collapsedPanels
+  const initialRatiosRef = useRef(initialRatios)
 
-  // Recalculate sizes when containerSize or collapsed state changes
+  // Each panel's intended expanded size. Seeded from initialRatios on the
+  // first non-zero containerSize, then updated only by drags. Used as the
+  // ratio source for the recalc, so a collapse → expand cycle restores the
+  // panel to a sensible size instead of getting stuck at min.
+  const expandedSizesRef = useRef<number[]>(new Array(panelCount).fill(0))
+  const seededRef = useRef(false)
+
   useEffect(() => {
     if (containerSize <= 0) return
 
-    setSizes((prev) => {
-      const collapsedTotal = collapsedPanels.reduce(
-        (sum, c) => sum + (c ? collapsedSize : 0),
-        0
-      )
-      const availableSpace = containerSize - collapsedTotal
+    if (!seededRef.current) {
+      const ratios = initialRatiosRef.current
+      const ratioSum = ratios.reduce((a, b) => a + b, 0) || 1
+      for (let i = 0; i < panelCount; i++) {
+        expandedSizesRef.current[i] = Math.max(
+          minSizesRef.current[i],
+          Math.round((containerSize * ratios[i]) / ratioSum)
+        )
+      }
+      seededRef.current = true
+    }
 
-      // Get the previous expanded sizes for ratio calculation
-      const expandedIndices = collapsedPanels
-        .map((c, i) => (c ? -1 : i))
-        .filter((i) => i >= 0)
-      const prevExpandedTotal = expandedIndices.reduce(
-        (sum, i) => sum + prev[i],
-        0
-      )
+    const collapsedTotal = collapsedPanels.reduce(
+      (sum, c) => sum + (c ? collapsedSize : 0),
+      0
+    )
+    const availableSpace = Math.max(0, containerSize - collapsedTotal)
 
-      return prev.map((prevSize, i) => {
-        if (collapsedPanels[i]) return collapsedSize
-        if (prevExpandedTotal <= 0) {
-          return Math.round(availableSpace / expandedIndices.length)
-        }
-        const ratio = prevSize / prevExpandedTotal
-        return Math.max(minSizesRef.current[i], Math.round(availableSpace * ratio))
-      })
+    const expandedIdx: number[] = []
+    for (let i = 0; i < panelCount; i++) {
+      if (!collapsedPanels[i]) expandedIdx.push(i)
+    }
+
+    const next = new Array(panelCount).fill(0)
+    collapsedPanels.forEach((c, i) => {
+      if (c) next[i] = collapsedSize
     })
+
+    if (expandedIdx.length === 0 || availableSpace <= 0) {
+      setSizes(next)
+      return
+    }
+
+    const hints = expandedIdx.map((i) =>
+      Math.max(minSizesRef.current[i], expandedSizesRef.current[i])
+    )
+    const hintTotal = hints.reduce((a, b) => a + b, 0)
+
+    const raw =
+      hintTotal > 0
+        ? hints.map((h) => (availableSpace * h) / hintTotal)
+        : new Array(expandedIdx.length).fill(
+            availableSpace / expandedIdx.length
+          )
+
+    const filled = waterFill(
+      raw,
+      expandedIdx.map((i) => minSizesRef.current[i]),
+      availableSpace
+    )
+
+    const rounded = filled.map(Math.round)
+    const drift = availableSpace - rounded.reduce((a, b) => a + b, 0)
+    if (rounded.length > 0) rounded[rounded.length - 1] += drift
+
+    expandedIdx.forEach((i, k) => {
+      next[i] = rounded[k]
+    })
+
+    setSizes(next)
   }, [containerSize, collapsedPanels, collapsedSize, panelCount])
 
   const onHandleMouseDown = useCallback(
@@ -74,13 +164,15 @@ export function useMultiPanelResize({
       const handleIdx = dragging.current
       const delta = e.clientY - startY.current
 
-      // Find the actual panels above and below this handle
-      // (skip collapsed panels)
+      // Walk outward from the handle to find the nearest expanded panels.
+      // Collapsed neighbours are skipped so a handle adjacent to a collapsed
+      // section still resizes the next pair of expanded sections.
+      const collapsed = collapsedRef.current
       let aboveIdx = handleIdx
+      while (aboveIdx >= 0 && collapsed[aboveIdx]) aboveIdx--
       let belowIdx = handleIdx + 1
-
-      // If either panel is collapsed, don't allow resize
-      if (collapsedPanels[aboveIdx] || collapsedPanels[belowIdx]) return
+      while (belowIdx < panelCount && collapsed[belowIdx]) belowIdx++
+      if (aboveIdx < 0 || belowIdx >= panelCount) return
 
       const aboveSize = startSizes.current[aboveIdx] + delta
       const belowSize = startSizes.current[belowIdx] - delta
@@ -89,14 +181,12 @@ export function useMultiPanelResize({
       const aboveClamped = Math.max(mins[aboveIdx], aboveSize)
       const belowClamped = Math.max(mins[belowIdx], belowSize)
 
-      // If clamping changed one, adjust the other
       let finalAbove = aboveClamped
       let finalBelow = belowClamped
       const totalPair =
         startSizes.current[aboveIdx] + startSizes.current[belowIdx]
 
       if (aboveClamped + belowClamped > totalPair) {
-        // One hit its min — the other gets the rest
         if (aboveSize < mins[aboveIdx]) {
           finalAbove = mins[aboveIdx]
           finalBelow = totalPair - finalAbove
@@ -110,6 +200,8 @@ export function useMultiPanelResize({
         const next = [...prev]
         next[aboveIdx] = finalAbove
         next[belowIdx] = finalBelow
+        expandedSizesRef.current[aboveIdx] = finalAbove
+        expandedSizesRef.current[belowIdx] = finalBelow
         return next
       })
     }
@@ -127,7 +219,7 @@ export function useMultiPanelResize({
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
     }
-  }, [collapsedPanels])
+  }, [panelCount])
 
   return { sizes, onHandleMouseDown }
 }
