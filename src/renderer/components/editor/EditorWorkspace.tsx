@@ -6,6 +6,7 @@ import { ResizeHandle } from '../ui'
 import { useProjectStore } from '../../stores/projectStore'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useEditorStore } from '../../stores/editorStore'
+import { useNotificationStore } from '../../stores/notificationStore'
 import {
   useWorkspaceLayoutStore,
   isDynamicTab,
@@ -19,10 +20,10 @@ import { ColumnPanel } from '../layout/WorkspaceColumn'
  * projects restores each project's own tabs, splits, agents and terminals
  * instead of sharing a single global "code-editor" context.
  */
-function editorContextIdFor(projectId: string | null | undefined): string {
+export function editorContextIdFor(projectId: string | null | undefined): string {
   return projectId ? `code-editor:${projectId}` : 'code-editor'
 }
-function editorSessionIdFor(projectId: string | null | undefined): string {
+export function editorSessionIdFor(projectId: string | null | undefined): string {
   return projectId ? `__code-editor__:${projectId}` : '__code-editor__'
 }
 
@@ -35,9 +36,25 @@ export function EditorWorkspace() {
     useWorkspaceLayoutStore()
   const { killDynamicTerminalAll } = useTerminalStore()
   const { loadBranch } = useEditorStore()
+  // Subscribe so the tab bar re-renders when an agent's status changes.
+  const { getTabStatus, clearTabStatus } = useNotificationStore()
 
   const editorContextId = editorContextIdFor(activeProjectId)
   const editorSessionId = editorSessionIdFor(activeProjectId)
+
+  // Register the Code editor as a notification "context" so hooks fired from
+  // any agent terminal in this Code workspace are attributed to it (rather than
+  // dropped because the cwd doesn't match a session).
+  useEffect(() => {
+    if (!activeProject || !activeProjectId) return
+    window.api.notification.registerSession(
+      editorContextId,
+      activeProject.name,
+      activeProjectId,
+      activeProject.repoPath,
+      'code'
+    )
+  }, [activeProjectId, activeProject?.name, activeProject?.repoPath, editorContextId])
 
   // Restore per-project layout when the active project changes, and save
   // the outgoing project's layout first so we don't lose it.
@@ -284,6 +301,11 @@ export function EditorWorkspace() {
               setDragOverInfo={setDragOverInfo}
               onAddDynamicTab={handleAddDynamicTab}
               onCloseDynamicTab={handleCloseDynamicTab}
+              tabStatus={(tab) => {
+                const s = getTabStatus(editorContextId, tab)
+                return s === 'attention' || s === 'completed' ? s : undefined
+              }}
+              onTabStatusClear={(tab) => clearTabStatus(editorContextId, tab)}
             />
           </React.Fragment>
         ))}
@@ -302,6 +324,7 @@ export function EditorWorkspace() {
             visible={isVisible}
             overrideCwd={repoPath}
             overrideSessionId={editorSessionId}
+            overrideContextId={editorContextId}
           />,
           target
         )

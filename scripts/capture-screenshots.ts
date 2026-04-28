@@ -111,6 +111,21 @@ const targets: ScreenshotTarget[] = [
     delay: 2000,
     scrollTo: 'Custom Buttons',
   },
+  {
+    name: 'code-attention',
+    storyId: 'app-full-layout--code-attention',
+    delay: 2000,
+  },
+  {
+    name: 'pr-attention',
+    storyId: 'app-full-layout--pr-attention',
+    delay: 2000,
+  },
+  {
+    name: 'tab-attention',
+    storyId: 'app-full-layout--tab-attention',
+    delay: 2000,
+  },
 ]
 
 async function captureScreenshots() {

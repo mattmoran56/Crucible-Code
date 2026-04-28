@@ -19,7 +19,15 @@ export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
 
     const existing = getTerminal(activeSession.id, mode)
     if (!existing) {
-      spawnTerminal(activeSession.id, activeSession.name, activeSession.worktreePath, mode)
+      spawnTerminal(
+        activeSession.id,
+        activeSession.name,
+        activeSession.worktreePath,
+        mode,
+        false,
+        activeSession.id,
+        'agent'
+      )
     }
   }, [activeSessionId, mode, sessions, getTerminal, spawnTerminal])
 

@@ -14,6 +14,8 @@ import { useProjectStore } from './stores/projectStore'
 import { useSessionStore } from './stores/sessionStore'
 import { useNotificationStore } from './stores/notificationStore'
 import { useTerminalStore } from './stores/terminalStore'
+import { usePRStore } from './stores/prStore'
+import { useWorkspaceLayoutStore, type WorkspaceTab } from './stores/workspaceLayoutStore'
 import { useResizable } from './hooks/useResizable'
 import { ToastContainer } from './components/ui/ToastContainer'
 import { SettingsPage } from './components/settings/SettingsPage'
@@ -26,7 +28,7 @@ export default function App() {
   const { loadProjects, loadAccounts, projects } = useProjectStore()
   const { activeSessionId } = useSessionStore()
   const { editorMode } = useEditorStore()
-  const { handleHookEvent, registerSessions } = useNotificationStore()
+  const { handleHookEvent, registerSessions, clearContextStatuses } = useNotificationStore()
   const { isOpen: settingsOpen } = useSettingsStore()
   const { loadButtons, loadGroups } = useButtonStore()
 
@@ -70,7 +72,7 @@ export default function App() {
       registerSessions(allSessions)
       // Also register with main process for hook-based notification routing
       for (const s of allSessions) {
-        window.api.notification.registerSession(s.id, s.name, s.projectId, s.worktreePath)
+        window.api.notification.registerSession(s.id, s.name, s.projectId, s.worktreePath, 'session')
       }
       // Recover terminals from previous session (after crash/restart)
       useTerminalStore.getState().recoverTerminals(
@@ -79,13 +81,61 @@ export default function App() {
     })
   }, [projects, registerSessions])
 
-  // Listen for hook-driven session status events from the main process
+  // Listen for hook-driven status events from the main process. Each event is
+  // attributed to a (contextId, tabId) pair — sessions, the Code editor, and PRs
+  // are all "contexts".
   useEffect(() => {
-    const remove = window.api.notification.onSessionStatus((sessionId: string, hookType: string) => {
-      handleHookEvent(sessionId, hookType as import('../../shared/types').HookType)
+    const remove = window.api.notification.onSessionStatus((contextId: string, tabId: string, hookType: string) => {
+      handleHookEvent(contextId, tabId, hookType as import('../shared/types').HookType)
     })
     return remove
   }, [handleHookEvent])
+
+  // OS notification clicks ask the renderer to focus the firing context + tab.
+  useEffect(() => {
+    const remove = window.api.notification.onFocusRequest(async (contextId: string, tabId: string) => {
+      const { sessions, setActiveSession, openPR } = useSessionStore.getState()
+      const { setEditorMode } = useEditorStore.getState()
+      const { pullRequests } = usePRStore.getState()
+      const { projects, setActiveProject, activeProjectId } = useProjectStore.getState()
+
+      const focusTab = (cid: string) => {
+        const { columns, setActiveTab } = useWorkspaceLayoutStore.getState()
+        const tab = tabId as WorkspaceTab
+        const col = columns.find((c) => c.tabs.includes(tab))
+        if (col) setActiveTab(col.id, tab)
+        clearContextStatuses(cid)
+      }
+
+      if (contextId.startsWith('code-editor:')) {
+        const projectId = contextId.slice('code-editor:'.length)
+        if (projects.some((p) => p.id === projectId)) setActiveProject(projectId)
+        setEditorMode(true)
+        setTimeout(() => focusTab(contextId), 0)
+      } else if (contextId.startsWith('__pr__:')) {
+        const prNumber = Number(contextId.slice('__pr__:'.length))
+        const pr = pullRequests.find((p) => p.number === prNumber)
+        const activeProject = projects.find((p) => p.id === activeProjectId)
+        if (pr && activeProject) {
+          setEditorMode(false)
+          await openPR(activeProject.repoPath, pr)
+          setTimeout(() => focusTab(contextId), 0)
+        }
+      } else {
+        const session = sessions.find((s) => s.id === contextId)
+        if (session) {
+          const project = projects.find((p) => p.id === session.projectId)
+          if (project) {
+            setActiveProject(project.id)
+            setEditorMode(false)
+            setActiveSession(session.id, project.repoPath)
+            setTimeout(() => focusTab(contextId), 0)
+          }
+        }
+      }
+    })
+    return () => { remove() }
+  }, [clearContextStatuses])
 
   // Listen for usage updates pushed from the main process
   useEffect(() => {
@@ -99,8 +149,8 @@ export default function App() {
   // Only fires on session switch — not reactively when hook events arrive
   useEffect(() => {
     if (activeSessionId) {
-      const { sessionStatuses: statuses, clearStatus: clear } = useNotificationStore.getState()
-      const status = statuses.get(activeSessionId)
+      const { getContextStatus, clearContextStatuses: clear } = useNotificationStore.getState()
+      const status = getContextStatus(activeSessionId)
       if (status === 'attention' || status === 'completed') {
         clear(activeSessionId)
       }

@@ -12,6 +12,7 @@ import { useTerminalStore } from '../../stores/terminalStore'
 import { usePRStore } from '../../stores/prStore'
 import { Button } from '../ui'
 import { useGitStore } from '../../stores/gitStore'
+import { useNotificationStore } from '../../stores/notificationStore'
 import {
   useWorkspaceLayoutStore,
   isDynamicTab,
@@ -33,6 +34,8 @@ export function SessionWorkspace() {
     useWorkspaceLayoutStore()
   const { killDynamicTerminalAll } = useTerminalStore()
   const workingFileCount = useGitStore((s) => s.workingFiles.length)
+  // Subscribe to all notification state so per-tab statuses re-render the tab bar.
+  const { getTabStatus, clearTabStatus } = useNotificationStore()
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const { pullRequests } = usePRStore()
@@ -378,6 +381,14 @@ export function SessionWorkspace() {
                 onAddDynamicTab={handleAddDynamicTab}
                 onCloseDynamicTab={handleCloseDynamicTab}
                 badge={workingFileCount > 0 ? { tab: 'git', count: workingFileCount } : undefined}
+                tabStatus={(tab) => {
+                  if (!currentContextId) return undefined
+                  const s = getTabStatus(currentContextId, tab)
+                  return s === 'attention' || s === 'completed' ? s : undefined
+                }}
+                onTabStatusClear={(tab) => {
+                  if (currentContextId) clearTabStatus(currentContextId, tab)
+                }}
               />
             </React.Fragment>
           ))}

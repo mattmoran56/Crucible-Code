@@ -13,9 +13,10 @@ import { registerFileHandlers } from './file.ipc'
 import { registerPermissionsHandlers } from './permissions.ipc'
 import { registerButtonHandlers } from './button.ipc'
 import {
-  registerSessionMapping,
-  removeSessionMapping,
+  registerContextMapping,
+  removeContextMapping,
 } from '../services/notification-server'
+import type { ContextKind } from '../../shared/types'
 
 export function registerAllHandlers(window: BrowserWindow) {
   registerGitHandlers()
@@ -31,21 +32,24 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerPermissionsHandlers()
   registerButtonHandlers(window)
 
-  // Session mapping management for notification routing
+  // Context mapping management for notification routing.
+  // The renderer registers sessions, the Code editor (per-project) and individual
+  // PRs as 'contexts' that hook events can be attributed to.
   ipcMain.handle(
     'notification:register-session',
     async (
       _e,
-      sessionId: string,
-      sessionName: string,
+      contextId: string,
+      name: string,
       projectId: string,
-      worktreePath: string
+      worktreePath: string,
+      kind: ContextKind = 'session'
     ) => {
-      registerSessionMapping({ sessionId, sessionName, projectId, worktreePath })
+      registerContextMapping({ contextId, name, projectId, worktreePath, kind })
     }
   )
 
-  ipcMain.handle('notification:unregister-session', async (_e, worktreePath: string) => {
-    removeSessionMapping(worktreePath)
+  ipcMain.handle('notification:unregister-session', async (_e, contextId: string) => {
+    removeContextMapping(contextId)
   })
 }

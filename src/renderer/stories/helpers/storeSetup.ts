@@ -45,8 +45,12 @@ interface StorySetupOptions {
   activePRNumber?: number | null
   editorMode?: boolean
   settingsOpen?: boolean
-  /** Session statuses to show in sidebar */
+  /** Session statuses to show in sidebar — shorthand for default 'agent' tab in each context */
   sessionStatuses?: Record<string, SessionStatus>
+  /** Per-(contextId, tabId) statuses — use this when you need code-editor:* / __pr__:* contexts or non-'agent' tabs. */
+  contextStatuses?: Record<string, Record<string, SessionStatus>>
+  /** Workspace tabs to seed for the default layout (e.g. ['agent', 'agent:1', 'git']) */
+  workspaceTabs?: WorkspaceTab[]
   /** Set to a session ID to show the "opened as main branch" banner */
   openedAsMainBranch?: string | null
   /** Whether uncommitted changes were stashed when opening as main */
@@ -105,14 +109,23 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
   })
 
   // Notification store — show visual variety
-  const statusMap = new Map<string, SessionStatus>()
+  const contextStatuses = new Map<string, Map<string, SessionStatus>>()
   const statuses = options.sessionStatuses ?? {
     'sess-1': 'running',
     'sess-2': 'attention',
     'sess-3': 'completed',
   }
   for (const [id, status] of Object.entries(statuses)) {
-    statusMap.set(id, status)
+    contextStatuses.set(id, new Map([['agent', status as SessionStatus]]))
+  }
+  if (options.contextStatuses) {
+    for (const [ctxId, tabs] of Object.entries(options.contextStatuses)) {
+      const tabMap = contextStatuses.get(ctxId) ?? new Map<string, SessionStatus>()
+      for (const [tabId, status] of Object.entries(tabs)) {
+        tabMap.set(tabId, status as SessionStatus)
+      }
+      contextStatuses.set(ctxId, tabMap)
+    }
   }
   const projectMap = new Map<string, string>()
   for (const sessions of Object.values(mockSessions)) {
@@ -121,9 +134,19 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     }
   }
   useNotificationStore.setState({
-    sessionStatuses: statusMap,
+    contextStatuses,
     sessionProjectMap: projectMap,
   })
+
+  // App.tsx has an auto-clear effect that wipes attention on the active session
+  // when it mounts. For Storybook screenshots we want the attention state to
+  // remain visible, so we re-apply the configured statuses after the effect
+  // has had a chance to run.
+  if (typeof window !== 'undefined') {
+    setTimeout(() => {
+      useNotificationStore.setState({ contextStatuses: new Map(contextStatuses) })
+    }, 200)
+  }
 
   // PR store
   usePRStore.setState({
@@ -213,14 +236,16 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
   // Workspace layout store — pre-populate saved layouts so SessionWorkspace
   // restores the correct active tab on mount
   const activeTab = options.activeWorkspaceTab ?? 'agent'
-  const tabs: WorkspaceTab[] = options.activePRNumber
-    ? ['pr', 'review']
-    : ['agent', 'git', 'pr', 'review']
+  const tabs: WorkspaceTab[] = options.workspaceTabs ?? (
+    options.activePRNumber
+      ? ['pr', 'review']
+      : ['agent', 'git', 'pr', 'review']
+  )
 
   const savedLayout = [{
     id: 'col-preset',
     tabs,
-    activeTab: activeTab as WorkspaceTab,
+    activeTab: (tabs.includes(activeTab as WorkspaceTab) ? activeTab : tabs[0]) as WorkspaceTab,
     flex: 1,
   }]
 
@@ -239,7 +264,7 @@ export function resetStores() {
   useProjectStore.setState({ projects: [], activeProjectId: null, claudeAccounts: [] })
   useSessionStore.setState({ sessions: [], staleSessions: [], currentProjectId: null, activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent' })
   useGitStore.setState({ commits: [], changedFiles: [], workingFiles: [], selectedCommitHash: null, selectedFilePath: null, filePatch: null, loading: false })
-  useNotificationStore.setState({ sessionStatuses: new Map(), sessionProjectMap: new Map() })
+  useNotificationStore.setState({ contextStatuses: new Map(), sessionProjectMap: new Map() })
   usePRStore.setState({ pullRequests: [], seenPRs: [], loading: false, hasLoaded: false })
   usePRReviewStore.setState({ prNumber: null, files: [], selectedFilePath: null, fullDiff: null, comments: [], detail: null, conversationComments: [], checks: [], commits: [] })
   useEditorStore.setState({ editorMode: false, openFiles: [], activeFilePath: null })

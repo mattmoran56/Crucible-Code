@@ -6,6 +6,7 @@ import {
   startNotificationServer,
   stopNotificationServer,
 } from './services/notification-server'
+import { setNotificationWindow } from './services/notification.service'
 import { killAllTerminals } from './services/terminal.service'
 import { stopAllWatching as stopAllPermissionWatching } from './services/permission-sync.service'
 
@@ -36,6 +37,7 @@ async function createWindow() {
 
   // Start the notification HTTP server before registering handlers
   await startNotificationServer(mainWindow)
+  setNotificationWindow(mainWindow)
 
   registerAllHandlers(mainWindow)
 

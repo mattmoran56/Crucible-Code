@@ -13,6 +13,7 @@ export interface Project {
 
 export type SessionStatus = 'running' | 'attention' | 'completed'
 export type HookType = 'prompt' | 'notification' | 'stop'
+export type ContextKind = 'session' | 'code' | 'pr'
 
 export interface Session {
   id: string

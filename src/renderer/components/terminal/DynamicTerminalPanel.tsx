@@ -11,6 +11,8 @@ interface Props {
   overrideCwd?: string
   /** Override session ID for editor mode */
   overrideSessionId?: string
+  /** Override context ID for hook routing (e.g. __code-editor__:projectId or __pr__:n) */
+  overrideContextId?: string
 }
 
 /**
@@ -18,7 +20,7 @@ interface Props {
  * Auto-spawns the terminal for the active session when it first becomes visible.
  * Renders all session terminals for this tab (so they persist across session switches).
  */
-export function DynamicTerminalPanel({ tabId, visible, overrideCwd, overrideSessionId }: Props) {
+export function DynamicTerminalPanel({ tabId, visible, overrideCwd, overrideSessionId, overrideContextId }: Props) {
   const { activeSessionId, sessions } = useSessionStore()
   const { terminals, spawnDynamicTerminal, getDynamicTerminal } = useTerminalStore()
 
@@ -31,10 +33,17 @@ export function DynamicTerminalPanel({ tabId, visible, overrideCwd, overrideSess
   // Spawn terminal for the active session if it doesn't exist yet
   useEffect(() => {
     if (overrideCwd && overrideSessionId) {
-      // Editor mode: use override values
+      // Editor / PR-only mode: use override values
       const existing = getDynamicTerminal(tabId, overrideSessionId)
       if (!existing) {
-        spawnDynamicTerminal(tabId, overrideSessionId, 'Code Editor', overrideCwd, mode)
+        spawnDynamicTerminal(
+          tabId,
+          overrideSessionId,
+          'Code Editor',
+          overrideCwd,
+          mode,
+          overrideContextId ?? overrideSessionId
+        )
       }
       return
     }
@@ -44,9 +53,16 @@ export function DynamicTerminalPanel({ tabId, visible, overrideCwd, overrideSess
 
     const existing = getDynamicTerminal(tabId, activeSession.id)
     if (!existing) {
-      spawnDynamicTerminal(tabId, activeSession.id, activeSession.name, activeSession.worktreePath, mode)
+      spawnDynamicTerminal(
+        tabId,
+        activeSession.id,
+        activeSession.name,
+        activeSession.worktreePath,
+        mode,
+        activeSession.id
+      )
     }
-  }, [effectiveSessionId, tabId, mode, sessions, getDynamicTerminal, spawnDynamicTerminal, overrideCwd, overrideSessionId])
+  }, [effectiveSessionId, tabId, mode, sessions, getDynamicTerminal, spawnDynamicTerminal, overrideCwd, overrideSessionId, overrideContextId])
 
   // Render all terminals for this dynamic tab (across sessions) so they never unmount
   const prefix = `dyn:${tabId}:`

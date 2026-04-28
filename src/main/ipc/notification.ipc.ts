@@ -4,8 +4,8 @@ import type { HookType } from '../../shared/types'
 import { showNotification } from '../services/notification.service'
 import {
   getNotificationServerPort,
-  registerSessionMapping,
-  removeSessionMapping,
+  registerContextMapping,
+  removeContextMapping,
   handleHookEvent,
   setBadgeCount,
 } from '../services/notification-server'
@@ -23,13 +23,13 @@ export function registerNotificationHandlers() {
     setBadgeCount(count)
   })
 
-  // Called by the renderer as a fallback trigger path
+  // Renderer fallback path. Caller passes contextId/tabId directly.
   ipcMain.handle(
     IPC.NOTIFICATION_HOOK_EVENT,
-    async (_e, sessionId: string, sessionName: string, hookType?: string) => {
-      handleHookEvent(sessionId, sessionName, (hookType || 'notification') as HookType)
+    async (_e, contextId: string, tabId: string, hookType?: string) => {
+      handleHookEvent(contextId, tabId || 'agent', (hookType || 'notification') as HookType)
     }
   )
 }
 
-export { registerSessionMapping, removeSessionMapping }
+export { registerContextMapping, removeContextMapping }

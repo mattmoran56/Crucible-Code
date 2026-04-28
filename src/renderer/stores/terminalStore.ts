@@ -10,13 +10,25 @@ interface TerminalInstance {
   sessionId: string
   sessionName: string
   mode: TerminalMode
+  /** Notification context this terminal belongs to (session/Code/PR). */
+  contextId: string
+  /** Workspace tab id (e.g. 'agent', 'agent:1', 'review'). */
+  tabId: string
 }
 
 interface TerminalState {
   // Keyed by `${sessionId}:${mode}` so each session can have both a claude and shell terminal
   // Dynamic terminals use `${tabId}:${sessionId}` keys
   terminals: Record<string, TerminalInstance>
-  spawnTerminal: (sessionId: string, sessionName: string, cwd: string, mode?: TerminalMode, resume?: boolean) => Promise<string>
+  spawnTerminal: (
+    sessionId: string,
+    sessionName: string,
+    cwd: string,
+    mode?: TerminalMode,
+    resume?: boolean,
+    contextId?: string,
+    tabId?: string
+  ) => Promise<string>
   killTerminal: (sessionId: string, mode?: TerminalMode) => Promise<void>
   getTerminal: (sessionId: string, mode?: TerminalMode) => TerminalInstance | undefined
 
@@ -26,7 +38,8 @@ interface TerminalState {
     sessionId: string,
     sessionName: string,
     cwd: string,
-    mode: TerminalMode
+    mode: TerminalMode,
+    contextId?: string
   ) => Promise<string>
 
   /** Kill a dynamic terminal by tab ID + session ID */
@@ -39,7 +52,7 @@ interface TerminalState {
   killDynamicTerminalAll: (tabId: string) => Promise<void>
 
   /** Register an externally-spawned terminal (e.g. from button execution) */
-  registerDynamicTerminal: (tabId: string, terminalId: string, sessionId: string, sessionName: string, mode: TerminalMode) => void
+  registerDynamicTerminal: (tabId: string, terminalId: string, sessionId: string, sessionName: string, mode: TerminalMode, contextId?: string) => void
 
   /** Kill all terminals (static + dynamic) for a given session */
   killAllForSession: (sessionId: string) => Promise<void>
@@ -78,7 +91,15 @@ const spawningTerminals = new Map<string, Promise<string>>()
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   terminals: {},
 
-  spawnTerminal: async (sessionId: string, sessionName: string, cwd: string, mode: TerminalMode = 'shell', resume = false) => {
+  spawnTerminal: async (
+    sessionId: string,
+    sessionName: string,
+    cwd: string,
+    mode: TerminalMode = 'shell',
+    resume = false,
+    contextId?: string,
+    tabId?: string
+  ) => {
     const key = terminalKey(sessionId, mode)
     const existing = get().terminals[key]
     if (existing) return existing.terminalId
@@ -89,13 +110,25 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const { claudeTheme } = useSettingsStore.getState()
     const claudeConfigDir = getActiveProjectConfigDir()
     const repoPath = getActiveProjectRepoPath()
+    const ctxId = contextId ?? sessionId
+    const resolvedTabId = tabId ?? (mode === 'review' ? 'review' : 'agent')
     const promise = (async () => {
       try {
-        const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath, resume)
+        const terminalId = await window.api.terminal.spawn(
+          sessionId,
+          cwd,
+          mode,
+          claudeTheme,
+          claudeConfigDir,
+          repoPath,
+          resume,
+          ctxId,
+          resolvedTabId
+        )
         set((state) => ({
           terminals: {
             ...state.terminals,
-            [key]: { terminalId, sessionId, sessionName, mode },
+            [key]: { terminalId, sessionId, sessionName, mode, contextId: ctxId, tabId: resolvedTabId },
           },
         }))
         return terminalId
@@ -125,7 +158,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     return get().terminals[key]
   },
 
-  spawnDynamicTerminal: async (tabId, sessionId, sessionName, cwd, mode) => {
+  spawnDynamicTerminal: async (tabId, sessionId, sessionName, cwd, mode, contextId) => {
     const key = dynamicKey(tabId, sessionId)
     const existing = get().terminals[key]
     if (existing) return existing.terminalId
@@ -136,13 +169,24 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const { claudeTheme } = useSettingsStore.getState()
     const claudeConfigDir = getActiveProjectConfigDir()
     const repoPath = getActiveProjectRepoPath()
+    const ctxId = contextId ?? sessionId
     const promise = (async () => {
       try {
-        const terminalId = await window.api.terminal.spawn(sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath)
+        const terminalId = await window.api.terminal.spawn(
+          sessionId,
+          cwd,
+          mode,
+          claudeTheme,
+          claudeConfigDir,
+          repoPath,
+          false,
+          ctxId,
+          tabId
+        )
         set((state) => ({
           terminals: {
             ...state.terminals,
-            [key]: { terminalId, sessionId, sessionName, mode },
+            [key]: { terminalId, sessionId, sessionName, mode, contextId: ctxId, tabId },
           },
         }))
         return terminalId
@@ -172,12 +216,19 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     return get().terminals[key]
   },
 
-  registerDynamicTerminal: (tabId, terminalId, sessionId, sessionName, mode) => {
+  registerDynamicTerminal: (tabId, terminalId, sessionId, sessionName, mode, contextId) => {
     const key = dynamicKey(tabId, sessionId)
     set((state) => ({
       terminals: {
         ...state.terminals,
-        [key]: { terminalId, sessionId, sessionName, mode },
+        [key]: {
+          terminalId,
+          sessionId,
+          sessionName,
+          mode,
+          contextId: contextId ?? sessionId,
+          tabId,
+        },
       },
     }))
   },
@@ -251,7 +302,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
           session.name,
           entry.cwd,
           entry.mode,
-          resume
+          resume,
+          entry.contextId,
+          entry.tabId
         )
       } catch {
         // Terminal recovery is best-effort

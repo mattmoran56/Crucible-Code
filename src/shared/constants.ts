@@ -49,6 +49,7 @@ export const IPC = {
   NOTIFICATION_CLEAR: 'notification:clear',
   NOTIFICATION_GET_PORT: 'notification:get-port',
   NOTIFICATION_SET_BADGE: 'notification:set-badge',
+  NOTIFICATION_FOCUS_REQUEST: 'notification:focus-request',
 
   // Projects (persisted via electron-store)
   PROJECT_LIST: 'project:list',
