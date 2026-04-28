@@ -184,6 +184,11 @@ export function SessionSidebar() {
     ].filter((g) => g.sessions.length > 0)
   }, [sortedSessions, groupBy, pullRequests])
 
+  const openPullRequests = useMemo(
+    () => pullRequests.filter((pr) => pr.state !== 'MERGED'),
+    [pullRequests]
+  )
+
   // Find sessions with merged PRs
   const mergedSessions = useMemo(() => {
     return sessions.filter((s) => {
@@ -270,7 +275,7 @@ export function SessionSidebar() {
     )
   }
 
-  const newPRCount = pullRequests.filter((pr) => !seenPRs.includes(pr.number)).length
+  const newPRCount = openPullRequests.filter((pr) => !seenPRs.includes(pr.number)).length
 
   const handleRefreshPRs = () => {
     if (!activeProject) return
@@ -464,12 +469,12 @@ export function SessionSidebar() {
               </IconButton>
             }
           >
-            {prsLoading && pullRequests.length === 0 ? (
+            {prsLoading && openPullRequests.length === 0 ? (
               <p className="text-text-muted text-xs text-center py-4">Loading...</p>
-            ) : pullRequests.length === 0 ? (
+            ) : openPullRequests.length === 0 ? (
               <p className="text-text-muted text-xs text-center py-4">No open PRs</p>
             ) : (
-              pullRequests.map((pr) => (
+              openPullRequests.map((pr) => (
                 <PRCard
                   key={pr.number}
                   pr={pr}

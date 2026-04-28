@@ -69,3 +69,14 @@ export const WithPR: Story = {
 export const WithDraftPR: Story = {
   args: { pr: { ...basePR, isDraft: true, title: 'WIP: Add code editor' } },
 }
+
+export const WithMergedPR: Story = {
+  args: {
+    pr: {
+      ...basePR,
+      state: 'MERGED' as const,
+      ciStatus: 'success' as const,
+      title: 'Add merged PR tracking',
+    },
+  },
+}

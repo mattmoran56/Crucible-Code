@@ -25,6 +25,7 @@
   --color-success: #9ece6a;
   --color-danger: #f7768e;
   --color-warning: #e0af68;
+  --color-merged: #bb9af7;
 }
 
 /* --- Light --- */
@@ -40,6 +41,7 @@
   --color-success: #22c55e;
   --color-danger: #ef4444;
   --color-warning: #f59e0b;
+  --color-merged: #a855f7;
 }
 
 /* --- Soft Light (cream/pastel) --- */
@@ -55,6 +57,7 @@
   --color-success: #6a9e6b;
   --color-danger: #c46a6a;
   --color-warning: #c4976a;
+  --color-merged: #9b86b8;
 }
 
 /* --- Ultra Dark --- */
@@ -70,6 +73,7 @@
   --color-success: #4ade80;
   --color-danger: #fb7185;
   --color-warning: #fbbf24;
+  --color-merged: #a78bfa;
 }
 
 /* Tailwind theme tokens — reference the CSS custom properties */
@@ -85,6 +89,7 @@
   --color-success: var(--color-success);
   --color-danger: var(--color-danger);
   --color-warning: var(--color-warning);
+  --color-merged: var(--color-merged);
 }
 
 * {

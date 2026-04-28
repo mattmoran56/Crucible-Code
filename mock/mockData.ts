@@ -244,6 +244,17 @@ export const mockPullRequests: PullRequest[] = [
     state: 'OPEN',
     ciStatus: 'failure',
   },
+  {
+    number: 31,
+    title: 'Add usage tracking panel with rate limits',
+    headRefName: 'session/usage-tracking',
+    baseRefName: 'main',
+    author: 'bob',
+    updatedAt: hoursAgo(6),
+    isDraft: false,
+    state: 'MERGED',
+    ciStatus: 'success',
+  },
 ]
 
 export const mockPRDetail: PRDetail = {
