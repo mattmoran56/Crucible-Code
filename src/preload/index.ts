@@ -2,6 +2,29 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
 import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode } from '../shared/types'
 
+// Multiplex many subscribers through a single ipcRenderer listener per channel.
+// Without this, each useTerminal/onData/onExit caller adds its own listener and
+// trips Node's MaxListenersExceededWarning once enough sessions are open.
+function makeMultiplex<Args extends unknown[]>(channel: string) {
+  const listeners = new Set<(...args: Args) => void>()
+  let installed = false
+  return (cb: (...args: Args) => void) => {
+    if (!installed) {
+      installed = true
+      ipcRenderer.on(channel, (_e, ...args) => {
+        for (const l of listeners) l(...(args as Args))
+      })
+    }
+    listeners.add(cb)
+    return () => {
+      listeners.delete(cb)
+    }
+  }
+}
+
+const onTerminalData = makeMultiplex<[string, string]>(IPC.TERMINAL_DATA)
+const onTerminalExit = makeMultiplex<[string, number]>(IPC.TERMINAL_EXIT)
+
 const api = {
   git: {
     status: (repoPath: string) => ipcRenderer.invoke(IPC.GIT_STATUS, repoPath),
@@ -80,17 +103,10 @@ const api = {
     killSession: (sessionId: string) => ipcRenderer.invoke(IPC.TERMINAL_KILL_SESSION, sessionId),
     getRecoveryList: (): Promise<Array<{ terminalId: string; sessionId: string; mode: 'shell' | 'claude' | 'review'; cwd: string; claudeTheme: string; claudeConfigDir?: string; repoPath?: string }>> =>
       ipcRenderer.invoke(IPC.TERMINAL_RECOVERY_LIST),
-    onData: (callback: (terminalId: string, data: string) => void) => {
-      const listener = (_e: any, terminalId: string, data: string) => callback(terminalId, data)
-      ipcRenderer.on(IPC.TERMINAL_DATA, listener)
-      return () => ipcRenderer.removeListener(IPC.TERMINAL_DATA, listener)
-    },
-    onExit: (callback: (terminalId: string, exitCode: number) => void) => {
-      const listener = (_e: any, terminalId: string, exitCode: number) =>
-        callback(terminalId, exitCode)
-      ipcRenderer.on(IPC.TERMINAL_EXIT, listener)
-      return () => ipcRenderer.removeListener(IPC.TERMINAL_EXIT, listener)
-    },
+    onData: (callback: (terminalId: string, data: string) => void) =>
+      onTerminalData(callback),
+    onExit: (callback: (terminalId: string, exitCode: number) => void) =>
+      onTerminalExit(callback),
   },
 
   notification: {
