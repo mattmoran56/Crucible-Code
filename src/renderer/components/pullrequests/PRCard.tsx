@@ -20,7 +20,10 @@ export function PRCard({ pr, isNew, isActive, onClick }: Props) {
     >
       <div className="flex items-center gap-1.5">
         <span
-          className={`shrink-0 w-1.5 h-1.5 rounded-full ${pr.isDraft ? 'bg-text-muted' : 'bg-success'}`}
+          title={pr.state === 'MERGED' ? 'Merged' : pr.isDraft ? 'Draft' : 'Open'}
+          className={`shrink-0 w-1.5 h-1.5 rounded-full ${
+            pr.state === 'MERGED' ? 'bg-merged' : pr.isDraft ? 'bg-text-muted' : 'bg-success'
+          }`}
         />
         <CIIndicator status={pr.ciStatus} />
         {isNew && (
