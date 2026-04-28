@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { INTERVENTION_PATTERNS } from '../../../shared/patterns'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useTerminalStore } from '../../stores/terminalStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { THEMES } from '../../../shared/themes'
 
@@ -97,11 +98,15 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
     // Send keystrokes to the pty and clear attention status (user is interacting)
     term.onData((data) => {
       window.api.terminal.write(terminalId, data)
-      if (sessionId) {
-        const store = useNotificationStore.getState()
-        const status = store.sessionStatuses.get(sessionId)
-        if (status === 'attention') {
-          store.clearStatus(sessionId)
+      if (terminalId) {
+        const terminals = useTerminalStore.getState().terminals
+        const instance = Object.values(terminals).find((t) => t.terminalId === terminalId)
+        if (instance) {
+          const store = useNotificationStore.getState()
+          const status = store.contextStatuses.get(instance.contextId)?.get(instance.tabId)
+          if (status === 'attention') {
+            store.clearTabStatus(instance.contextId, instance.tabId)
+          }
         }
       }
     })

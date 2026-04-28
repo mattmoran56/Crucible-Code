@@ -6,10 +6,11 @@ interface Props {
   pr: PullRequest
   isNew: boolean
   isActive: boolean
+  needsAttention?: boolean
   onClick: () => void
 }
 
-export function PRCard({ pr, isNew, isActive, onClick }: Props) {
+export function PRCard({ pr, isNew, isActive, needsAttention, onClick }: Props) {
   return (
     <button
       onClick={onClick}
@@ -29,6 +30,12 @@ export function PRCard({ pr, isNew, isActive, onClick }: Props) {
         <span className="font-medium truncate">
           #{pr.number} {pr.title}
         </span>
+        {needsAttention && (
+          <span
+            aria-label="Agent waiting for attention"
+            className="ml-auto shrink-0 w-2 h-2 rounded-full bg-warning"
+          />
+        )}
       </div>
       <div className="text-text-muted text-[10px] mt-1 truncate">
         {pr.headRefName} &rarr; {pr.baseRefName}

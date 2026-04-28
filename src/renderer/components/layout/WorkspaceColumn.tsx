@@ -118,6 +118,8 @@ export function ColumnPanel({
   onAddDynamicTab,
   onCloseDynamicTab,
   badge,
+  tabStatus,
+  onTabStatusClear,
 }: {
   column: WorkspaceColumnType
   canClose: boolean
@@ -130,6 +132,10 @@ export function ColumnPanel({
   onAddDynamicTab: (columnId: string, type: 'agent' | 'terminal') => void
   onCloseDynamicTab: (tab: WorkspaceTab) => void
   badge?: { tab: WorkspaceTab; count: number }
+  /** Per-tab status (attention/completed) for agent/review tabs. */
+  tabStatus?: (tab: WorkspaceTab) => 'attention' | 'completed' | undefined
+  /** Called when the user activates a tab that had a non-running status — used to clear it. */
+  onTabStatusClear?: (tab: WorkspaceTab) => void
 }) {
   const { setActiveTab, closeColumn, moveTab, reorderTab } = useWorkspaceLayoutStore()
   const tabBarRef = useRef<HTMLDivElement>(null)
@@ -280,7 +286,11 @@ export function ColumnPanel({
                 columnId={column.id}
                 closable={isDynamicTab(tab)}
                 badge={badge?.tab === tab ? badge.count : undefined}
-                onClick={() => setActiveTab(column.id, tab)}
+                status={tabStatus?.(tab)}
+                onClick={() => {
+                  setActiveTab(column.id, tab)
+                  onTabStatusClear?.(tab)
+                }}
                 onClose={() => onCloseDynamicTab(tab)}
               />
             </React.Fragment>
@@ -402,6 +412,7 @@ export function DraggableTab({
   columnId,
   closable,
   badge,
+  status,
   onClick,
   onClose,
 }: {
@@ -412,6 +423,7 @@ export function DraggableTab({
   columnId: string
   closable?: boolean
   badge?: number
+  status?: 'attention' | 'completed'
   onClick: () => void
   onClose?: () => void
 }) {
@@ -461,6 +473,26 @@ export function DraggableTab({
         <span className="min-w-[16px] h-[16px] rounded-full bg-warning/20 text-warning text-[10px] font-medium flex items-center justify-center leading-none" style={{ padding: '0 4px' }}>
           {badge}
         </span>
+      )}
+      {status === 'attention' && (
+        <span
+          aria-label="Agent waiting for attention"
+          className="shrink-0 w-2 h-2 rounded-full bg-warning"
+        />
+      )}
+      {status === 'completed' && (
+        <svg
+          aria-label="Agent finished"
+          className="shrink-0 w-3 h-3 text-success"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="3.5 8.5 6.5 11.5 12.5 4.5" />
+        </svg>
       )}
       {closable && (
         <span

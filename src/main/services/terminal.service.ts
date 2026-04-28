@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
-import { handleHookEvent, findSessionById } from './notification-server'
+import { handleHookEvent, findContextById } from './notification-server'
 import { getStorePath } from '../store-path'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
@@ -20,6 +20,10 @@ interface TerminalInstance {
   claudeConfigDir?: string
   commandString?: string
   repoPath?: string
+  /** Identifier of the workspace context (session id, code-editor synthetic id, or PR synthetic id) */
+  contextId: string
+  /** Workspace tab id (e.g. 'agent', 'agent:1', 'review'). Used for per-agent hook routing. */
+  tabId: string
 }
 
 export interface PersistedTerminal {
@@ -30,6 +34,8 @@ export interface PersistedTerminal {
   claudeTheme: string
   claudeConfigDir?: string
   repoPath?: string
+  contextId: string
+  tabId: string
 }
 
 const terminals = new Map<string, TerminalInstance>()
@@ -54,6 +60,8 @@ function persistTerminal(terminalId: string, instance: TerminalInstance): void {
     claudeTheme: instance.claudeTheme,
     claudeConfigDir: instance.claudeConfigDir,
     repoPath: instance.repoPath,
+    contextId: instance.contextId,
+    tabId: instance.tabId,
   })
 }
 
@@ -116,6 +124,11 @@ function spawnPty(
       : instance.claudeConfigDir
     env.CLAUDE_CONFIG_DIR = resolved
   }
+  // Identify the context + agent tab for hook routing. The hook curl uses
+  // ${CRUCIBLE_CONTEXT_ID}/${CRUCIBLE_TAB_ID} via shell expansion to attach
+  // these to the URL, so the notification server can resolve which tab fired.
+  env.CRUCIBLE_CONTEXT_ID = instance.contextId
+  env.CRUCIBLE_TAB_ID = instance.tabId
 
   const ptyProcess = pty.spawn(command, args, {
     name: 'xterm-256color',
@@ -146,9 +159,9 @@ function spawnPty(
       // The process exited — emit a definitive 'stop' event.
       // This is the ground truth that the task finished, even if the
       // Stop hook's curl call was swallowed or timed out.
-      const session = findSessionById(current.sessionId)
-      if (session) {
-        handleHookEvent(session.sessionId, session.sessionName, 'stop')
+      const ctx = findContextById(current.contextId)
+      if (ctx) {
+        handleHookEvent(ctx.contextId, current.tabId, 'stop')
       }
 
       // Auto-restart Claude Code after a brief pause
@@ -186,11 +199,24 @@ export function spawnTerminal(
   claudeConfigDir?: string,
   commandString?: string,
   repoPath?: string,
-  resume = false
+  resume = false,
+  contextId?: string,
+  tabId?: string
 ): string {
   const terminalId = `term-${++terminalCounter}`
 
-  const instanceBase = { sessionId, mode, cwd, window, claudeTheme, claudeConfigDir, commandString, repoPath }
+  const instanceBase = {
+    sessionId,
+    mode,
+    cwd,
+    window,
+    claudeTheme,
+    claudeConfigDir,
+    commandString,
+    repoPath,
+    contextId: contextId ?? sessionId,
+    tabId: tabId ?? (mode === 'review' ? 'review' : 'agent'),
+  }
   const ptyProcess = spawnPty(terminalId, instanceBase, resume)
 
   const instance = { ...instanceBase, pty: ptyProcess, stopped: false }

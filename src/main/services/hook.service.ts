@@ -17,9 +17,13 @@ export function writeClaudeHookSettings(worktreePath: string, claudeTheme = 'dar
     mkdirSync(claudeDir, { recursive: true })
   }
 
+  // The ${CRUCIBLE_CONTEXT_ID} / ${CRUCIBLE_TAB_ID} placeholders are shell-expanded
+  // by the shell that runs each hook; the env vars are inherited from the PTY so
+  // each agent terminal identifies itself uniquely without us having to write
+  // per-agent settings files (Claude Code reads a single settings.local.json).
   const makeHook = (type: string) => ({
     type: 'command' as const,
-    command: `curl -s -X POST "http://127.0.0.1:${port}/hook?type=${type}" -H 'Content-Type: application/json' -d "$(cat)" > /dev/null 2>&1 || true`,
+    command: `curl -s -X POST "http://127.0.0.1:${port}/hook?type=${type}&context=\${CRUCIBLE_CONTEXT_ID}&tab=\${CRUCIBLE_TAB_ID}" -H 'Content-Type: application/json' -d "$(cat)" > /dev/null 2>&1 || true`,
     timeout: 5,
   })
 

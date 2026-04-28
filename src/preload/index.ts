@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -93,15 +93,36 @@ const api = {
   },
 
   terminal: {
-    spawn: (sessionId: string, cwd: string, mode?: 'shell' | 'claude' | 'review', claudeTheme?: string, claudeConfigDir?: string, repoPath?: string, resume?: boolean): Promise<string> =>
-      ipcRenderer.invoke(IPC.TERMINAL_SPAWN, sessionId, cwd, mode, claudeTheme, claudeConfigDir, repoPath, resume),
+    spawn: (
+      sessionId: string,
+      cwd: string,
+      mode?: 'shell' | 'claude' | 'review',
+      claudeTheme?: string,
+      claudeConfigDir?: string,
+      repoPath?: string,
+      resume?: boolean,
+      contextId?: string,
+      tabId?: string
+    ): Promise<string> =>
+      ipcRenderer.invoke(
+        IPC.TERMINAL_SPAWN,
+        sessionId,
+        cwd,
+        mode,
+        claudeTheme,
+        claudeConfigDir,
+        repoPath,
+        resume,
+        contextId,
+        tabId
+      ),
     write: (terminalId: string, data: string) =>
       ipcRenderer.invoke(IPC.TERMINAL_WRITE, terminalId, data),
     resize: (terminalId: string, cols: number, rows: number) =>
       ipcRenderer.invoke(IPC.TERMINAL_RESIZE, terminalId, cols, rows),
     kill: (terminalId: string) => ipcRenderer.invoke(IPC.TERMINAL_KILL, terminalId),
     killSession: (sessionId: string) => ipcRenderer.invoke(IPC.TERMINAL_KILL_SESSION, sessionId),
-    getRecoveryList: (): Promise<Array<{ terminalId: string; sessionId: string; mode: 'shell' | 'claude' | 'review'; cwd: string; claudeTheme: string; claudeConfigDir?: string; repoPath?: string }>> =>
+    getRecoveryList: (): Promise<Array<{ terminalId: string; sessionId: string; mode: 'shell' | 'claude' | 'review'; cwd: string; claudeTheme: string; claudeConfigDir?: string; repoPath?: string; contextId?: string; tabId?: string }>> =>
       ipcRenderer.invoke(IPC.TERMINAL_RECOVERY_LIST),
     onData: (callback: (terminalId: string, data: string) => void) =>
       onTerminalData(callback),
@@ -113,28 +134,39 @@ const api = {
     show: (title: string, body: string) =>
       ipcRenderer.invoke(IPC.NOTIFICATION_SHOW, title, body),
     getPort: (): Promise<number | null> => ipcRenderer.invoke(IPC.NOTIFICATION_GET_PORT),
-    triggerForSession: (sessionId: string, sessionName: string, hookType?: string) =>
-      ipcRenderer.invoke(IPC.NOTIFICATION_HOOK_EVENT, sessionId, sessionName, hookType),
-    onSessionStatus: (callback: (sessionId: string, hookType: string) => void) => {
-      const listener = (_e: any, sessionId: string, hookType: string) => callback(sessionId, hookType)
+    triggerForSession: (contextId: string, tabId: string, hookType?: string) =>
+      ipcRenderer.invoke(IPC.NOTIFICATION_HOOK_EVENT, contextId, tabId, hookType),
+    onSessionStatus: (
+      callback: (contextId: string, tabId: string, hookType: string) => void
+    ) => {
+      const listener = (_e: any, contextId: string, tabId: string, hookType: string) =>
+        callback(contextId, tabId, hookType)
       ipcRenderer.on(IPC.NOTIFICATION_SESSION_STATUS, listener)
       return () => ipcRenderer.removeListener(IPC.NOTIFICATION_SESSION_STATUS, listener)
     },
+    onFocusRequest: (callback: (contextId: string, tabId: string) => void) => {
+      const listener = (_e: any, contextId: string, tabId: string) =>
+        callback(contextId, tabId)
+      ipcRenderer.on(IPC.NOTIFICATION_FOCUS_REQUEST, listener)
+      return () => ipcRenderer.removeListener(IPC.NOTIFICATION_FOCUS_REQUEST, listener)
+    },
     registerSession: (
-      sessionId: string,
-      sessionName: string,
+      contextId: string,
+      name: string,
       projectId: string,
-      worktreePath: string
+      worktreePath: string,
+      kind: ContextKind = 'session'
     ) =>
       ipcRenderer.invoke(
         'notification:register-session',
-        sessionId,
-        sessionName,
+        contextId,
+        name,
         projectId,
-        worktreePath
+        worktreePath,
+        kind
       ),
-    unregisterSession: (worktreePath: string) =>
-      ipcRenderer.invoke('notification:unregister-session', worktreePath),
+    unregisterSession: (contextId: string) =>
+      ipcRenderer.invoke('notification:unregister-session', contextId),
     setBadge: (count: number) =>
       ipcRenderer.invoke(IPC.NOTIFICATION_SET_BADGE, count),
   },

@@ -10,7 +10,18 @@ export function registerTerminalHandlers(window: BrowserWindow) {
 
   ipcMain.handle(
     IPC.TERMINAL_SPAWN,
-    async (_e, sessionId: string, cwd: string, mode?: TerminalMode, claudeTheme?: string, claudeConfigDir?: string, repoPath?: string, resume?: boolean) => {
+    async (
+      _e,
+      sessionId: string,
+      cwd: string,
+      mode?: TerminalMode,
+      claudeTheme?: string,
+      claudeConfigDir?: string,
+      repoPath?: string,
+      resume?: boolean,
+      contextId?: string,
+      tabId?: string
+    ) => {
       // Write Claude Code hook settings so notifications route to our server
       // and statusLine writes usage data for this session
       writeClaudeHookSettings(cwd, claudeTheme ?? 'dark', sessionId)
@@ -21,7 +32,19 @@ export function registerTerminalHandlers(window: BrowserWindow) {
         startWatching(repoPath, cwd)
       }
 
-      return terminalService.spawnTerminal(window, sessionId, cwd, mode || 'shell', claudeTheme ?? 'dark', claudeConfigDir, undefined, repoPath, resume ?? false)
+      return terminalService.spawnTerminal(
+        window,
+        sessionId,
+        cwd,
+        mode || 'shell',
+        claudeTheme ?? 'dark',
+        claudeConfigDir,
+        undefined,
+        repoPath,
+        resume ?? false,
+        contextId,
+        tabId
+      )
     }
   )
 

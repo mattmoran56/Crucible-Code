@@ -2,20 +2,22 @@ import http from 'node:http'
 import { URL } from 'node:url'
 import { app, BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
-import type { HookType } from '../../shared/types'
+import type { HookType, ContextKind } from '../../shared/types'
 import { showNotification } from './notification.service'
 
-interface SessionMapping {
-  sessionId: string
-  sessionName: string
+interface ContextMapping {
+  contextId: string
+  name: string
+  kind: ContextKind
   projectId: string
+  /** Path used as a fallback for hooks fired from older terminals without env-var routing */
   worktreePath: string
 }
 
 let server: http.Server | null = null
 let serverPort: number | null = null
 let mainWindow: BrowserWindow | null = null
-const sessionMappings = new Map<string, SessionMapping>()
+const contextMappings = new Map<string, ContextMapping>()
 
 export function getNotificationServerPort(): number | null {
   return serverPort
@@ -29,56 +31,81 @@ export function setBadgeCount(count: number) {
   }
 }
 
-export function registerSessionMapping(mapping: SessionMapping) {
-  // Normalize path: strip trailing slash for consistent matching
-  const normalizedPath = mapping.worktreePath.replace(/\/+$/, '')
-  sessionMappings.set(normalizedPath, mapping)
+export function registerContextMapping(mapping: ContextMapping) {
+  contextMappings.set(mapping.contextId, mapping)
 }
 
-export function removeSessionMapping(worktreePath: string) {
-  const normalizedPath = worktreePath.replace(/\/+$/, '')
-  sessionMappings.delete(normalizedPath)
+export function removeContextMapping(contextId: string) {
+  contextMappings.delete(contextId)
 }
 
-export function findSessionById(sessionId: string): SessionMapping | undefined {
-  for (const mapping of sessionMappings.values()) {
-    if (mapping.sessionId === sessionId) return mapping
-  }
-  return undefined
+export function findContextById(contextId: string): ContextMapping | undefined {
+  return contextMappings.get(contextId)
 }
 
-function findSessionByWorktreePath(cwd: string): SessionMapping | undefined {
+function findContextByWorktreePath(cwd: string): ContextMapping | undefined {
   const normalizedCwd = cwd.replace(/\/+$/, '')
   // Direct match first
-  if (sessionMappings.has(normalizedCwd)) {
-    return sessionMappings.get(normalizedCwd)
+  for (const mapping of contextMappings.values()) {
+    const normalizedPath = mapping.worktreePath.replace(/\/+$/, '')
+    if (normalizedPath === normalizedCwd) return mapping
   }
-  // Check if cwd is a subdirectory of any worktree
-  for (const [path, mapping] of sessionMappings) {
-    if (normalizedCwd.startsWith(path + '/')) {
-      return mapping
+  // Subdirectory match — prefer the longest matching worktree path so a session
+  // worktree wins over the repo-level Code context when both could match.
+  let best: ContextMapping | undefined
+  let bestLen = -1
+  for (const mapping of contextMappings.values()) {
+    const normalizedPath = mapping.worktreePath.replace(/\/+$/, '')
+    if (normalizedCwd.startsWith(normalizedPath + '/') && normalizedPath.length > bestLen) {
+      best = mapping
+      bestLen = normalizedPath.length
     }
   }
-  return undefined
+  return best
 }
 
-export function handleHookEvent(sessionId: string, sessionName: string, hookType: HookType) {
+function tabDisplayLabel(tabId: string): string {
+  if (tabId === 'agent') return 'Agent'
+  if (tabId === 'review') return 'Review'
+  if (tabId.startsWith('agent:')) return `Agent ${tabId.slice(6)}`
+  if (tabId.startsWith('terminal:')) return `Terminal ${tabId.slice(9)}`
+  return tabId
+}
+
+function contextDisplayPrefix(mapping: ContextMapping): string {
+  if (mapping.kind === 'session') return `Session "${mapping.name}"`
+  if (mapping.kind === 'code') return `Code — ${mapping.name}`
+  if (mapping.kind === 'pr') return mapping.name
+  return mapping.name
+}
+
+export function handleHookEvent(
+  contextId: string,
+  tabId: string,
+  hookType: HookType
+) {
   if (!mainWindow) return
 
   // Send typed status event to the renderer
-  mainWindow.webContents.send(IPC.NOTIFICATION_SESSION_STATUS, sessionId, hookType)
+  mainWindow.webContents.send(IPC.NOTIFICATION_SESSION_STATUS, contextId, tabId, hookType)
+
+  const mapping = contextMappings.get(contextId)
+  if (!mapping) return
 
   // OS notifications only for attention and completed — not for running
   if (hookType === 'notification') {
-    showNotification('Crucible Code', `Session "${sessionName}" needs your attention`)
+    showNotification(
+      'Crucible Code',
+      `${contextDisplayPrefix(mapping)} · ${tabDisplayLabel(tabId)} needs your attention`,
+      { contextId, tabId }
+    )
   } else if (hookType === 'stop') {
-    showNotification('Crucible Code', `Session "${sessionName}" is done`)
+    showNotification(
+      'Crucible Code',
+      `${contextDisplayPrefix(mapping)} · ${tabDisplayLabel(tabId)} is done`,
+      { contextId, tabId }
+    )
   }
-}
-
-// Keep legacy handler for fallback path (triggerForSession from renderer)
-export function handleNotificationForSession(sessionId: string, sessionName: string) {
-  handleHookEvent(sessionId, sessionName, 'notification')
 }
 
 export function startNotificationServer(window: BrowserWindow): Promise<number> {
@@ -86,7 +113,7 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
 
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
-      // New typed endpoint: POST /hook?type=prompt|notification|stop
+      // Typed endpoint: POST /hook?type=prompt|notification|stop&context=...&tab=...
       if (req.method === 'POST' && req.url?.startsWith('/hook')) {
         let body = ''
         req.on('data', (chunk: Buffer) => {
@@ -96,12 +123,20 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
           try {
             const data = JSON.parse(body)
             const cwd = data.cwd || ''
-            const session = findSessionByWorktreePath(cwd)
+            const url = new URL(req.url!, `http://127.0.0.1`)
+            const hookType = (url.searchParams.get('type') || 'notification') as HookType
+            const contextParam = url.searchParams.get('context') || ''
+            const tabParam = url.searchParams.get('tab') || 'agent'
 
-            if (session) {
-              const url = new URL(req.url!, `http://127.0.0.1`)
-              const hookType = (url.searchParams.get('type') || 'notification') as HookType
-              handleHookEvent(session.sessionId, session.sessionName, hookType)
+            // Prefer explicit context param (env-var-routed); fall back to cwd lookup
+            // for legacy terminals that started before the env vars were wired up.
+            let mapping = contextParam ? contextMappings.get(contextParam) : undefined
+            if (!mapping) {
+              mapping = findContextByWorktreePath(cwd)
+            }
+
+            if (mapping) {
+              handleHookEvent(mapping.contextId, tabParam, hookType)
             }
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -112,7 +147,7 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
           }
         })
       } else if (req.method === 'POST' && req.url === '/notification') {
-        // Legacy endpoint — treat as notification type
+        // Legacy endpoint — treat as notification type, route by cwd
         let body = ''
         req.on('data', (chunk: Buffer) => {
           body += chunk.toString()
@@ -121,12 +156,10 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
           try {
             const data = JSON.parse(body)
             const cwd = data.cwd || ''
-            const session = findSessionByWorktreePath(cwd)
-
-            if (session) {
-              handleHookEvent(session.sessionId, session.sessionName, 'notification')
+            const mapping = findContextByWorktreePath(cwd)
+            if (mapping) {
+              handleHookEvent(mapping.contextId, 'agent', 'notification')
             }
-
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ ok: true }))
           } catch {

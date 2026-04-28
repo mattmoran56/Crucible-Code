@@ -105,14 +105,14 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
   })
 
   // Notification store — show visual variety
-  const statusMap = new Map<string, SessionStatus>()
+  const contextStatuses = new Map<string, Map<string, SessionStatus>>()
   const statuses = options.sessionStatuses ?? {
     'sess-1': 'running',
     'sess-2': 'attention',
     'sess-3': 'completed',
   }
   for (const [id, status] of Object.entries(statuses)) {
-    statusMap.set(id, status)
+    contextStatuses.set(id, new Map([['agent', status as SessionStatus]]))
   }
   const projectMap = new Map<string, string>()
   for (const sessions of Object.values(mockSessions)) {
@@ -121,7 +121,7 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     }
   }
   useNotificationStore.setState({
-    sessionStatuses: statusMap,
+    contextStatuses,
     sessionProjectMap: projectMap,
   })
 
@@ -239,7 +239,7 @@ export function resetStores() {
   useProjectStore.setState({ projects: [], activeProjectId: null, claudeAccounts: [] })
   useSessionStore.setState({ sessions: [], staleSessions: [], currentProjectId: null, activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent' })
   useGitStore.setState({ commits: [], changedFiles: [], workingFiles: [], selectedCommitHash: null, selectedFilePath: null, filePatch: null, loading: false })
-  useNotificationStore.setState({ sessionStatuses: new Map(), sessionProjectMap: new Map() })
+  useNotificationStore.setState({ contextStatuses: new Map(), sessionProjectMap: new Map() })
   usePRStore.setState({ pullRequests: [], seenPRs: [], loading: false, hasLoaded: false })
   usePRReviewStore.setState({ prNumber: null, files: [], selectedFilePath: null, fullDiff: null, comments: [], detail: null, conversationComments: [], checks: [], commits: [] })
   useEditorStore.setState({ editorMode: false, openFiles: [], activeFilePath: null })

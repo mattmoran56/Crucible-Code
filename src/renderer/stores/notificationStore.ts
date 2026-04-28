@@ -1,61 +1,109 @@
 import { create } from 'zustand'
 import type { SessionStatus, HookType } from '../../shared/types'
 
-interface NotificationState {
-  /** Map of sessionId → current status (undefined = idle/no indicator) */
-  sessionStatuses: Map<string, SessionStatus>
+/**
+ * Status is tracked per (contextId, tabId). A "context" is a session, the per-project
+ * Code editor, or a PR sidebar item. The session/context-level indicator is the
+ * roll-up of every tab's status under that context.
+ */
+type TabStatusMap = Map<string, SessionStatus>
 
-  /** Map of sessionId → projectId (covers all projects, not just active) */
+interface NotificationState {
+  /** Map of contextId → (tabId → status) */
+  contextStatuses: Map<string, TabStatusMap>
+
+  /** Map of contextId → projectId (covers all projects, not just active) */
   sessionProjectMap: Map<string, string>
 
-  /** Sessions that received a stop event while in attention state */
+  /** (contextId|tabId) keys whose tab received a stop event while in attention state */
   stoppedWhileAttention: Set<string>
 
   /** Process a hook event and apply state transitions */
-  handleHookEvent: (sessionId: string, hookType: HookType) => void
+  handleHookEvent: (contextId: string, tabId: string, hookType: HookType) => void
 
-  /** Clear status for a session (e.g. when user clicks on it) */
-  clearStatus: (sessionId: string) => void
+  /** Clear status for a single tab in a context */
+  clearTabStatus: (contextId: string, tabId: string) => void
+
+  /** Clear all tab statuses in a context (used when user clicks the context's sidebar item) */
+  clearContextStatuses: (contextId: string) => void
+
+  /** Get rolled-up status for a context (worst of any tab: attention > completed > running) */
+  getContextStatus: (contextId: string) => SessionStatus | null
+
+  /** Get raw status for a single tab */
+  getTabStatus: (contextId: string, tabId: string) => SessionStatus | null
 
   /** Register sessions so we can map sessionId → projectId across all projects */
   registerSessions: (sessions: Array<{ id: string; projectId: string }>) => void
 
-  /** Get count of sessions needing user action for a given project (attention + completed) */
+  /** Get count of contexts in the given project that need user action (attention + completed) */
   getNotificationCountForProject: (projectId: string) => number
 }
 
-function getNotificationCount(statuses: Map<string, SessionStatus>, projectMap: Map<string, string>, projectId?: string): number {
+function rollupStatus(tabs: TabStatusMap | undefined): SessionStatus | null {
+  if (!tabs || tabs.size === 0) return null
+  let hasCompleted = false
+  let hasRunning = false
+  for (const status of tabs.values()) {
+    if (status === 'attention') return 'attention'
+    if (status === 'completed') hasCompleted = true
+    else if (status === 'running') hasRunning = true
+  }
+  if (hasCompleted) return 'completed'
+  if (hasRunning) return 'running'
+  return null
+}
+
+function getNotificationCount(
+  contextStatuses: Map<string, TabStatusMap>,
+  projectMap: Map<string, string>,
+  projectId?: string
+): number {
   let count = 0
-  for (const [sessionId, status] of statuses) {
+  for (const [contextId, tabs] of contextStatuses) {
+    const status = rollupStatus(tabs)
     if (status === 'attention' || status === 'completed') {
-      if (!projectId || projectMap.get(sessionId) === projectId) count++
+      if (!projectId || projectMap.get(contextId) === projectId) count++
     }
   }
   return count
 }
 
-function syncBadgeCount(statuses: Map<string, SessionStatus>, projectMap: Map<string, string>) {
-  const count = getNotificationCount(statuses, projectMap)
+function syncBadgeCount(
+  contextStatuses: Map<string, TabStatusMap>,
+  projectMap: Map<string, string>
+) {
+  const count = getNotificationCount(contextStatuses, projectMap)
   window.api.notification.setBadge(count)
 }
 
+function cloneContextStatuses(
+  src: Map<string, TabStatusMap>
+): Map<string, TabStatusMap> {
+  const next = new Map<string, TabStatusMap>()
+  for (const [k, v] of src) next.set(k, new Map(v))
+  return next
+}
+
+const stopKey = (contextId: string, tabId: string) => `${contextId}|${tabId}`
+
 export const useNotificationStore = create<NotificationState>((set, get) => ({
-  sessionStatuses: new Map(),
+  contextStatuses: new Map(),
   sessionProjectMap: new Map(),
   stoppedWhileAttention: new Set(),
 
-  handleHookEvent: (sessionId: string, hookType: HookType) => {
+  handleHookEvent: (contextId: string, tabId: string, hookType: HookType) => {
     set((state) => {
-      const current = state.sessionStatuses.get(sessionId)
+      const tabs = state.contextStatuses.get(contextId) ?? new Map<string, SessionStatus>()
+      const current = tabs.get(tabId)
+      const key = stopKey(contextId, tabId)
 
-      let next: SessionStatus
       const nextStopped = new Set(state.stoppedWhileAttention)
+      let next: SessionStatus
       switch (hookType) {
         case 'prompt':
-          // Short-circuit: if already running, no state change needed
           if (current === 'running') return state
-          // New prompt means Claude is working again — clear any stale stop flag
-          nextStopped.delete(sessionId)
+          nextStopped.delete(key)
           next = 'running'
           break
         case 'notification':
@@ -63,51 +111,105 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           break
         case 'stop':
           if (current === 'attention') {
-            // Claude stopped while we're showing attention — record it so
-            // clearStatus transitions to completed instead of back to running.
-            nextStopped.add(sessionId)
+            // Defer the transition to 'completed' until the user has cleared
+            // the attention state — otherwise we'd lose the visual cue that
+            // they had to act on something.
+            nextStopped.add(key)
             return { stoppedWhileAttention: nextStopped }
           }
-          nextStopped.delete(sessionId)
+          nextStopped.delete(key)
           next = 'completed'
           break
       }
 
-      const nextStatuses = new Map(state.sessionStatuses)
-      nextStatuses.set(sessionId, next)
-      syncBadgeCount(nextStatuses, state.sessionProjectMap)
-      return { sessionStatuses: nextStatuses, stoppedWhileAttention: nextStopped }
+      const nextContextStatuses = cloneContextStatuses(state.contextStatuses)
+      const nextTabs = new Map(tabs)
+      nextTabs.set(tabId, next)
+      nextContextStatuses.set(contextId, nextTabs)
+      syncBadgeCount(nextContextStatuses, state.sessionProjectMap)
+      return {
+        contextStatuses: nextContextStatuses,
+        stoppedWhileAttention: nextStopped,
+      }
     })
   },
 
-  clearStatus: (sessionId: string) => {
+  clearTabStatus: (contextId: string, tabId: string) => {
     set((state) => {
-      const current = state.sessionStatuses.get(sessionId)
+      const tabs = state.contextStatuses.get(contextId)
+      if (!tabs) return state
+      const current = tabs.get(tabId)
       if (!current) return state
 
-      const next = new Map(state.sessionStatuses)
+      const key = stopKey(contextId, tabId)
       const nextStopped = new Set(state.stoppedWhileAttention)
+      const nextContextStatuses = cloneContextStatuses(state.contextStatuses)
+      const nextTabs = nextContextStatuses.get(contextId)!
 
       if (current === 'attention') {
-        if (state.stoppedWhileAttention.has(sessionId)) {
-          // Stop already arrived — task is done, clear everything
-          next.delete(sessionId)
-          nextStopped.delete(sessionId)
+        if (state.stoppedWhileAttention.has(key)) {
+          nextTabs.delete(tabId)
+          nextStopped.delete(key)
         } else {
-          // Process is still running — restore spinner
-          next.set(sessionId, 'running')
+          nextTabs.set(tabId, 'running')
         }
       } else if (current === 'completed') {
-        next.delete(sessionId)
-        nextStopped.delete(sessionId)
+        nextTabs.delete(tabId)
+        nextStopped.delete(key)
       } else {
-        // 'running' — never clear the spinner via user interaction
+        // 'running' — never clear via user interaction
         return state
       }
 
-      syncBadgeCount(next, state.sessionProjectMap)
-      return { sessionStatuses: next, stoppedWhileAttention: nextStopped }
+      if (nextTabs.size === 0) nextContextStatuses.delete(contextId)
+      syncBadgeCount(nextContextStatuses, state.sessionProjectMap)
+      return {
+        contextStatuses: nextContextStatuses,
+        stoppedWhileAttention: nextStopped,
+      }
     })
+  },
+
+  clearContextStatuses: (contextId: string) => {
+    set((state) => {
+      const tabs = state.contextStatuses.get(contextId)
+      if (!tabs) return state
+
+      const nextStopped = new Set(state.stoppedWhileAttention)
+      const nextContextStatuses = cloneContextStatuses(state.contextStatuses)
+      const nextTabs = nextContextStatuses.get(contextId)!
+
+      for (const [tabId, status] of tabs) {
+        const key = stopKey(contextId, tabId)
+        if (status === 'attention') {
+          if (state.stoppedWhileAttention.has(key)) {
+            nextTabs.delete(tabId)
+            nextStopped.delete(key)
+          } else {
+            nextTabs.set(tabId, 'running')
+          }
+        } else if (status === 'completed') {
+          nextTabs.delete(tabId)
+          nextStopped.delete(key)
+        }
+        // running: leave alone
+      }
+
+      if (nextTabs.size === 0) nextContextStatuses.delete(contextId)
+      syncBadgeCount(nextContextStatuses, state.sessionProjectMap)
+      return {
+        contextStatuses: nextContextStatuses,
+        stoppedWhileAttention: nextStopped,
+      }
+    })
+  },
+
+  getContextStatus: (contextId: string) => {
+    return rollupStatus(get().contextStatuses.get(contextId))
+  },
+
+  getTabStatus: (contextId: string, tabId: string) => {
+    return get().contextStatuses.get(contextId)?.get(tabId) ?? null
   },
 
   registerSessions: (sessions) => {
@@ -121,7 +223,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   getNotificationCountForProject: (projectId: string): number => {
-    const { sessionStatuses, sessionProjectMap } = get()
-    return getNotificationCount(sessionStatuses, sessionProjectMap, projectId)
+    const { contextStatuses, sessionProjectMap } = get()
+    return getNotificationCount(contextStatuses, sessionProjectMap, projectId)
   },
 }))

@@ -54,7 +54,10 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     let sent = false
 
-    spawnTerminal(terminalSessionId, terminalName, cwd, 'review').then(
+    // For session-attached reviews, contextId is the session id; for PR-only mode
+    // it's the synthetic __pr__:<n> context that the sidebar registered.
+    const contextId = activeSessionId ?? `__pr__:${effectivePRNumber}`
+    spawnTerminal(terminalSessionId, terminalName, cwd, 'review', false, contextId, 'review').then(
       (terminalId) => {
         unsub = window.api.terminal.onData((tid, data) => {
           if (tid !== terminalId || sent) return

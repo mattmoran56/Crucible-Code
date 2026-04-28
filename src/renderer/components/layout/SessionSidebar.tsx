@@ -4,6 +4,7 @@ import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useEditorStore } from '../../stores/editorStore'
+import { editorContextIdFor } from '../editor/EditorWorkspace'
 import { useSessionViewStore } from '../../stores/sessionViewStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useTerminalStore } from '../../stores/terminalStore'
@@ -28,7 +29,7 @@ export function SessionSidebar() {
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, markSeen, clear: clearPRs } =
     usePRStore()
-  const { sessionStatuses, clearStatus, registerSessions } = useNotificationStore()
+  const { clearContextStatuses, getContextStatus, registerSessions } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showOpenBranch, setShowOpenBranch] = useState(false)
@@ -125,14 +126,35 @@ export function SessionSidebar() {
         session.id,
         session.name,
         session.projectId,
-        session.worktreePath
+        session.worktreePath,
+        'session'
       )
     }
     // Also register with the notification store for cross-project badge counts
     registerSessions(sessions)
   }, [sessions, registerSessions])
 
+  // Register PRs as contexts so agent terminals opened in PR-only mode can route
+  // their notifications back to the PR sidebar item that fired them.
+  useEffect(() => {
+    if (!activeProject) return
+    for (const pr of pullRequests) {
+      window.api.notification.registerSession(
+        `__pr__:${pr.number}`,
+        `PR #${pr.number} — ${pr.title}`,
+        activeProject.id,
+        activeProject.repoPath,
+        'pr'
+      )
+    }
+  }, [pullRequests, activeProject?.id, activeProject?.repoPath])
+
   const { editorMode, setEditorMode, currentBranch, loadBranch } = useEditorStore()
+
+  const codeContextStatus = activeProjectId
+    ? getContextStatus(editorContextIdFor(activeProjectId))
+    : null
+  const codeNeedsAttention = codeContextStatus === 'attention'
 
   // Load branch info for the Code nav item
   useEffect(() => {
@@ -143,6 +165,9 @@ export function SessionSidebar() {
 
   const handleCodeClick = () => {
     setEditorMode(true)
+    if (activeProjectId) {
+      clearContextStatuses(editorContextIdFor(activeProjectId))
+    }
   }
 
   const { sortBy, groupBy, collapsedGroups, toggleGroupCollapsed } = useSessionViewStore()
@@ -286,6 +311,7 @@ export function SessionSidebar() {
   const handlePRClick = async (pr: (typeof pullRequests)[0]) => {
     setEditorMode(false)
     markSeen(activeProject.id, pr.number)
+    clearContextStatuses(`__pr__:${pr.number}`)
     await openPR(activeProject.repoPath, pr)
   }
 
@@ -307,6 +333,12 @@ export function SessionSidebar() {
             <polyline points="8 6 2 12 8 18" />
           </svg>
           <span className="font-medium">Code</span>
+          {codeNeedsAttention && (
+            <span
+              aria-label="Agent waiting for attention"
+              className="shrink-0 w-2 h-2 rounded-full bg-warning"
+            />
+          )}
           {currentBranch && (
             <span className="ml-auto text-text-muted text-[10px] truncate" style={{ maxWidth: 80 }}>
               {currentBranch}
@@ -391,12 +423,12 @@ export function SessionSidebar() {
                       session={session}
                       isActive={!editorMode && session.id === activeSessionId}
                       isOpenedAsMain={session.id === openedAsMainBranch}
-                      status={sessionStatuses.get(session.id) ?? null}
+                      status={getContextStatus(session.id)}
                       pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
                       onClick={() => {
                         setEditorMode(false)
                         setActiveSession(session.id, activeProject.repoPath)
-                        clearStatus(session.id)
+                        clearContextStatuses(session.id)
                       }}
                       onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
                       onMarkStale={() => markStale(activeProject.id, session.id)}
@@ -475,6 +507,7 @@ export function SessionSidebar() {
                   pr={pr}
                   isNew={!seenPRs.includes(pr.number)}
                   isActive={!editorMode && activePRNumber === pr.number}
+                  needsAttention={getContextStatus(`__pr__:${pr.number}`) === 'attention'}
                   onClick={() => handlePRClick(pr)}
                 />
               ))
