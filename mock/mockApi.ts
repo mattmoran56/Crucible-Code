@@ -95,6 +95,8 @@ export const mockApi = {
         if (idx >= 0) terminalExitCallbacks.splice(idx, 1)
       }
     },
+    killSession: async () => {},
+    getRecoveryList: async () => [],
   },
 
   notification: {
@@ -102,6 +104,7 @@ export const mockApi = {
     getPort: async () => null,
     triggerForSession: async () => {},
     onSessionStatus: () => noop(),
+    onFocusRequest: () => noop(),
     registerSession: async () => {},
     unregisterSession: async () => {},
     setBadge: async () => {},
@@ -154,6 +157,8 @@ export const mockApi = {
       ...(mockStaleSessions[projectId] ?? []),
     ],
     save: async () => {},
+    saveContext: async () => {},
+    getContext: async () => null,
   },
 
   notes: {
