@@ -154,6 +154,10 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     seenPRs: [],
     loading: false,
     hasLoaded: true,
+    prCache: {},
+    seenCache: {},
+    currentRepoPath: null,
+    currentProjectId: null,
   })
 
   // PR review store (for PR review view)
@@ -265,7 +269,16 @@ export function resetStores() {
   useSessionStore.setState({ sessions: [], staleSessions: [], currentProjectId: null, activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent' })
   useGitStore.setState({ commits: [], changedFiles: [], workingFiles: [], selectedCommitHash: null, selectedFilePath: null, filePatch: null, loading: false })
   useNotificationStore.setState({ contextStatuses: new Map(), sessionProjectMap: new Map() })
-  usePRStore.setState({ pullRequests: [], seenPRs: [], loading: false, hasLoaded: false })
+  usePRStore.setState({
+    pullRequests: [],
+    seenPRs: [],
+    loading: false,
+    hasLoaded: false,
+    prCache: {},
+    seenCache: {},
+    currentRepoPath: null,
+    currentProjectId: null,
+  })
   usePRReviewStore.setState({ prNumber: null, files: [], selectedFilePath: null, fullDiff: null, comments: [], detail: null, conversationComments: [], checks: [], commits: [] })
   useEditorStore.setState({ editorMode: false, openFiles: [], activeFilePath: null })
   useUsageStore.setState({ sessionUsages: {}, stats: null, subscription: null })
