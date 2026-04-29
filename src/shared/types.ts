@@ -73,9 +73,24 @@ export interface PRComment {
   body: string
   path: string
   line: number | null
+  startLine?: number | null
   side: 'LEFT' | 'RIGHT'
   author: string
   createdAt: string
+  inReplyToId?: number | null
+}
+
+export type PRReviewState =
+  | 'APPROVED'
+  | 'CHANGES_REQUESTED'
+  | 'COMMENTED'
+  | 'PENDING'
+  | 'DISMISSED'
+
+export interface PRReviewSummary {
+  author: string
+  state: PRReviewState
+  submittedAt: string
 }
 
 export interface Note {
@@ -93,6 +108,15 @@ export interface PRDetail {
   createdAt: string
   baseRefName: string
   headRefName: string
+  baseRefOid?: string
+  headRefOid?: string
+  requestedReviewers: string[]
+  reviews: PRReviewSummary[]
+}
+
+export interface GitHubCollaborator {
+  login: string
+  avatarUrl?: string
 }
 
 export interface PRConversationComment {
@@ -113,9 +137,14 @@ export interface PRCheck {
 }
 
 export interface PRReviewThread {
+  id: string
   path: string
   line: number | null
+  startLine?: number | null
+  side?: 'LEFT' | 'RIGHT'
   isResolved: boolean
+  rootCommentId?: number | null
+  comments: PRComment[]
 }
 
 export type PRReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'

@@ -1,6 +1,8 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import { marked } from 'marked'
 import { usePRReviewStore } from '../../stores/prReviewStore'
+import { useProjectStore } from '../../stores/projectStore'
+import { ReviewersSection } from './ReviewersSection'
 import type { PRCheck, PRConversationComment, PRDetail } from '../../../shared/types'
 
 marked.setOptions({ breaks: true })
@@ -154,7 +156,18 @@ function PRBody({ detail }: { detail: PRDetail }) {
 }
 
 export function PRConversationTab() {
-  const { prNumber, detail, conversationComments, checks, checksPolling } = usePRReviewStore()
+  const {
+    prNumber, detail, conversationComments, checks, checksPolling,
+    collaborators, reviewerLoading, loadCollaborators, addReviewer, removeReviewer,
+  } = usePRReviewStore()
+  const { projects, activeProjectId } = useProjectStore()
+  const activeProject = projects.find((p) => p.id === activeProjectId)
+
+  useEffect(() => {
+    if (activeProject) {
+      loadCollaborators(activeProject.repoPath)
+    }
+  }, [activeProject?.id, loadCollaborators])
 
   return (
     <div className="flex-1 overflow-y-auto" style={{ padding: '12px 16px' }}>
@@ -178,6 +191,17 @@ export function PRConversationTab() {
 
       {/* PR description */}
       {detail && <PRBody detail={detail} />}
+
+      {/* Reviewers */}
+      {detail && activeProject && prNumber != null && (
+        <ReviewersSection
+          detail={detail}
+          collaborators={collaborators}
+          busy={reviewerLoading}
+          onAddReviewer={(login) => addReviewer(activeProject.repoPath, prNumber, login)}
+          onRemoveReviewer={(login) => removeReviewer(activeProject.repoPath, prNumber, login)}
+        />
+      )}
 
       {/* Checks */}
       <div style={{ marginBottom: '12px' }}>

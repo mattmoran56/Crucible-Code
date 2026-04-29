@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
-import { PRDiffViewer } from '../git/DiffViewer'
+import { PRDiffViewer, type PRDiffViewerProps } from '../git/DiffViewer'
 import { ImageDiffViewer, isImageFile } from '../git/ImageDiffViewer'
-import type { PRFile, PRComment } from '../../../shared/types'
+import type { PRFile, PRComment, PRReviewThread } from '../../../shared/types'
 import { DiffErrorBoundary } from '../ui/DiffErrorBoundary'
 import { extractFileDiff } from '../../lib/extractFileDiff'
 
@@ -17,21 +17,44 @@ const STATUS_LABELS: Record<string, string> = {
   deleted: 'D',
 }
 
+interface BlobCache {
+  [key: string]: { lines: string[]; promise?: Promise<string[] | null> }
+}
+
+interface ExpandedLinesMap {
+  [key: string]: Set<number>
+}
+
+type ExpandHandler = (filePath: string) => NonNullable<PRDiffViewerProps['onExpand']>
+
+type ApplySuggestionHandler = (filePath: string) => NonNullable<PRDiffViewerProps['onApplySuggestion']>
+
 interface PRScrollableDiffViewProps {
   files: PRFile[]
   fullDiff: string
   comments: PRComment[]
+  threads?: PRReviewThread[]
   viewedFiles: Set<string>
   onToggleViewed: (path: string) => void
   onAddComment: (path: string, startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => Promise<void>
   repoPath?: string
   beforeRef?: string
   selectedCommitHash?: string | null
+  blobCache?: BlobCache
+  expandedLines?: ExpandedLinesMap
+  onExpand?: ExpandHandler
+  expandEnabled?: boolean
+  onReplyThread?: PRDiffViewerProps['onReplyThread']
+  onResolveThread?: PRDiffViewerProps['onResolveThread']
+  onUnresolveThread?: PRDiffViewerProps['onUnresolveThread']
+  onApplySuggestion?: ApplySuggestionHandler
 }
 
 export function PRScrollableDiffView({
-  files, fullDiff, comments, viewedFiles, onToggleViewed, onAddComment,
+  files, fullDiff, comments, threads = [], viewedFiles, onToggleViewed, onAddComment,
   repoPath, beforeRef, selectedCommitHash,
+  blobCache, expandedLines, onExpand, expandEnabled,
+  onReplyThread, onResolveThread, onUnresolveThread, onApplySuggestion,
 }: PRScrollableDiffViewProps) {
   return (
     <div className="flex-1 overflow-y-auto">
@@ -41,6 +64,7 @@ export function PRScrollableDiffView({
           file={file}
           fullDiff={fullDiff}
           comments={comments.filter((c) => c.path === file.path)}
+          threads={threads.filter((t) => t.path === file.path)}
           isViewed={viewedFiles.has(file.path)}
           onToggleViewed={() => onToggleViewed(file.path)}
           onAddComment={(startLine, endLine, side, body) =>
@@ -49,6 +73,14 @@ export function PRScrollableDiffView({
           repoPath={repoPath}
           beforeRef={beforeRef}
           selectedCommitHash={selectedCommitHash}
+          blobLines={blobCache?.[`head:${file.path}`]?.lines ?? null}
+          expandedNewLines={expandedLines?.[`head:${file.path}`]}
+          onExpand={onExpand?.(file.path)}
+          expandEnabled={expandEnabled}
+          onReplyThread={onReplyThread}
+          onResolveThread={onResolveThread}
+          onUnresolveThread={onUnresolveThread}
+          onApplySuggestion={onApplySuggestion?.(file.path)}
         />
       ))}
     </div>
@@ -59,17 +91,28 @@ interface LazyFileSectionProps {
   file: PRFile
   fullDiff: string
   comments: PRComment[]
+  threads: PRReviewThread[]
   isViewed: boolean
   onToggleViewed: () => void
   onAddComment: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => Promise<void>
   repoPath?: string
   beforeRef?: string
   selectedCommitHash?: string | null
+  blobLines?: string[] | null
+  expandedNewLines?: Set<number>
+  onExpand?: PRDiffViewerProps['onExpand']
+  expandEnabled?: boolean
+  onReplyThread?: PRDiffViewerProps['onReplyThread']
+  onResolveThread?: PRDiffViewerProps['onResolveThread']
+  onUnresolveThread?: PRDiffViewerProps['onUnresolveThread']
+  onApplySuggestion?: PRDiffViewerProps['onApplySuggestion']
 }
 
 function LazyFileSection({
-  file, fullDiff, comments, isViewed, onToggleViewed, onAddComment,
+  file, fullDiff, comments, threads, isViewed, onToggleViewed, onAddComment,
   repoPath, beforeRef, selectedCommitHash,
+  blobLines, expandedNewLines, onExpand, expandEnabled,
+  onReplyThread, onResolveThread, onUnresolveThread, onApplySuggestion,
 }: LazyFileSectionProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
@@ -113,7 +156,6 @@ function LazyFileSection({
         className="sticky top-0 z-10 flex items-center gap-2 bg-bg-tertiary border-b border-border text-xs"
         style={{ padding: '6px 12px' }}
       >
-        {/* Collapse toggle on the left */}
         <button
           className="flex-shrink-0 text-text-muted hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
           onClick={() => setCollapsed(!collapsed)}
@@ -138,9 +180,7 @@ function LazyFileSection({
           {file.additions > 0 && <span className="text-success">+{file.additions}</span>}
           {file.deletions > 0 && <span className="text-danger">-{file.deletions}</span>}
         </span>
-        {/* Spacer to push checkbox to the right */}
         <div className="flex-1" />
-        {/* Viewed checkbox pinned right */}
         <label className="flex items-center gap-1 cursor-pointer select-none flex-shrink-0 text-[10px]">
           <input
             type="checkbox"
@@ -152,7 +192,6 @@ function LazyFileSection({
           <span className={isViewed ? 'text-accent' : 'text-text-muted'}>Viewed</span>
         </label>
       </div>
-      {/* Diff content — hidden when collapsed */}
       {!collapsed && (
         visible ? (
           repoPath && isImageFile(file.path) ? (
@@ -173,7 +212,16 @@ function LazyFileSection({
                 patch={fileDiff}
                 filePath={file.path}
                 comments={comments}
+                threads={threads}
                 onAddComment={onAddComment}
+                blobLines={blobLines}
+                expandedNewLines={expandedNewLines}
+                onExpand={onExpand}
+                expandEnabled={expandEnabled}
+                onReplyThread={onReplyThread}
+                onResolveThread={onResolveThread}
+                onUnresolveThread={onUnresolveThread}
+                onApplySuggestion={onApplySuggestion}
               />
             </DiffErrorBoundary>
           ) : (

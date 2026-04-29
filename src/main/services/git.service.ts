@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, unlink } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import simpleGit, { SimpleGit } from 'simple-git'
@@ -461,6 +461,40 @@ export async function getWorkingChangedFiles(repoPath: string): Promise<FileDiff
   }
 
   return files
+}
+
+// ── Per-file mutations (for context-menu actions) ─────────────────────────
+
+export async function discardFile(repoPath: string, filePath: string): Promise<void> {
+  const g = git(repoPath)
+  const status = await g.status()
+  const isUntracked = status.not_added.includes(filePath)
+  if (isUntracked) {
+    try {
+      await unlink(join(repoPath, filePath))
+    } catch {
+      // File may not exist anymore — ignore
+    }
+    return
+  }
+  // For tracked files, restore both staged and worktree copies
+  await g.raw(['restore', '--staged', '--worktree', '--', filePath])
+}
+
+export async function stageFile(repoPath: string, filePath: string): Promise<void> {
+  await git(repoPath).raw(['add', '--', filePath])
+}
+
+export async function unstageFile(repoPath: string, filePath: string): Promise<void> {
+  await git(repoPath).raw(['restore', '--staged', '--', filePath])
+}
+
+export async function stashFile(repoPath: string, filePath: string): Promise<void> {
+  await git(repoPath).raw([
+    'stash', 'push',
+    '-m', `codecrucible: ad-hoc stash of ${filePath}`,
+    '--', filePath,
+  ])
 }
 
 /** Read a file from a git ref as base64. Returns null if the file doesn't exist at that ref. */

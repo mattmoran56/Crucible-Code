@@ -1,8 +1,20 @@
 import { execFile } from 'child_process'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { promisify } from 'util'
-import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread, CIStatus } from '../../shared/types'
+import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread, CIStatus, PRReviewState, PRReviewSummary, GitHubCollaborator } from '../../shared/types'
 
 const execFileAsync = promisify(execFile)
+
+async function getRepoOwnerName(repoPath: string): Promise<{ owner: string; name: string }> {
+  const { stdout } = await execFileAsync(
+    'gh',
+    ['repo', 'view', '--json', 'owner,name'],
+    { cwd: repoPath }
+  )
+  const parsed = JSON.parse(stdout) as { owner: { login: string }; name: string }
+  return { owner: parsed.owner.login, name: parsed.name }
+}
 
 function deriveCIStatus(rollup: Array<{ status?: string | null; conclusion?: string | null }> | null | undefined): CIStatus {
   if (!rollup || rollup.length === 0) return 'none'
@@ -138,15 +150,10 @@ export async function getPRFiles(repoPath: string, prNumber: number): Promise<PR
 
 export async function getPRComments(repoPath: string, prNumber: number): Promise<PRComment[]> {
   try {
-    const { stdout: repoInfo } = await execFileAsync(
-      'gh',
-      ['repo', 'view', '--json', 'owner,name'],
-      { cwd: repoPath }
-    )
-    const { owner, name } = JSON.parse(repoInfo) as { owner: { login: string }; name: string }
+    const { owner, name } = await getRepoOwnerName(repoPath)
     const { stdout } = await execFileAsync(
       'gh',
-      ['api', `repos/${owner.login}/${name}/pulls/${prNumber}/comments`, '--paginate'],
+      ['api', `repos/${owner}/${name}/pulls/${prNumber}/comments`, '--paginate'],
       { cwd: repoPath, maxBuffer: 5 * 1024 * 1024 }
     )
     const raw = JSON.parse(stdout) as Array<{
@@ -154,18 +161,22 @@ export async function getPRComments(repoPath: string, prNumber: number): Promise
       body: string
       path: string
       line: number | null
+      start_line?: number | null
       side: 'LEFT' | 'RIGHT'
       user: { login: string }
       created_at: string
+      in_reply_to_id?: number | null
     }>
     return raw.map((c) => ({
       id: c.id,
       body: c.body,
       path: c.path,
       line: c.line,
+      startLine: c.start_line ?? null,
       side: c.side || 'RIGHT',
       author: c.user.login,
       createdAt: c.created_at,
+      inReplyToId: c.in_reply_to_id ?? null,
     }))
   } catch {
     return []
@@ -181,14 +192,8 @@ export async function createPRComment(
   startLine?: number,
   side?: 'LEFT' | 'RIGHT'
 ): Promise<PRComment> {
-  const { stdout: repoInfo } = await execFileAsync(
-    'gh',
-    ['repo', 'view', '--json', 'owner,name'],
-    { cwd: repoPath }
-  )
-  const { owner, name } = JSON.parse(repoInfo) as { owner: { login: string }; name: string }
+  const { owner, name } = await getRepoOwnerName(repoPath)
 
-  // Get the head commit SHA for this PR
   const { stdout: prInfo } = await execFileAsync(
     'gh',
     ['pr', 'view', String(prNumber), '--json', 'headRefOid'],
@@ -198,7 +203,7 @@ export async function createPRComment(
 
   const args = [
     'api',
-    `repos/${owner.login}/${name}/pulls/${prNumber}/comments`,
+    `repos/${owner}/${name}/pulls/${prNumber}/comments`,
     '-f', `body=${body}`,
     '-f', `path=${path}`,
     '-F', `line=${line}`,
@@ -216,18 +221,22 @@ export async function createPRComment(
     body: string
     path: string
     line: number | null
+    start_line?: number | null
     side: 'LEFT' | 'RIGHT'
     user: { login: string }
     created_at: string
+    in_reply_to_id?: number | null
   }
   return {
     id: c.id,
     body: c.body,
     path: c.path,
     line: c.line,
+    startLine: c.start_line ?? null,
     side: c.side || 'RIGHT',
     author: c.user.login,
     createdAt: c.created_at,
+    inReplyToId: c.in_reply_to_id ?? null,
   }
 }
 
@@ -266,9 +275,22 @@ export async function getPRMergeability(
 }
 
 export async function getPRDetail(repoPath: string, prNumber: number): Promise<PRDetail> {
+  const fields = [
+    'body',
+    'author',
+    'title',
+    'createdAt',
+    'baseRefName',
+    'headRefName',
+    'baseRefOid',
+    'headRefOid',
+    'reviewRequests',
+    'latestReviews',
+    'reviews',
+  ].join(',')
   const { stdout } = await execFileAsync(
     'gh',
-    ['pr', 'view', String(prNumber), '--json', 'body,author,title,createdAt,baseRefName,headRefName'],
+    ['pr', 'view', String(prNumber), '--json', fields],
     { cwd: repoPath }
   )
   const data = JSON.parse(stdout) as {
@@ -278,7 +300,40 @@ export async function getPRDetail(repoPath: string, prNumber: number): Promise<P
     createdAt: string
     baseRefName: string
     headRefName: string
+    baseRefOid?: string
+    headRefOid?: string
+    reviewRequests?: Array<{ login?: string; name?: string; __typename?: string }>
+    latestReviews?: Array<{ author: { login: string }; state: string; submittedAt: string }>
+    reviews?: Array<{ author: { login: string }; state: string; submittedAt: string }>
   }
+
+  const requestedReviewers = (data.reviewRequests || [])
+    .map((r) => r.login || r.name || '')
+    .filter(Boolean)
+
+  // Prefer latestReviews; fall back to dedup-by-author across all reviews
+  let reviews: PRReviewSummary[] = []
+  if (data.latestReviews && data.latestReviews.length > 0) {
+    reviews = data.latestReviews.map((r) => ({
+      author: r.author.login,
+      state: (r.state.toUpperCase() as PRReviewState),
+      submittedAt: r.submittedAt,
+    }))
+  } else if (data.reviews && data.reviews.length > 0) {
+    const byAuthor = new Map<string, PRReviewSummary>()
+    const sorted = [...data.reviews].sort((a, b) =>
+      a.submittedAt.localeCompare(b.submittedAt)
+    )
+    for (const r of sorted) {
+      byAuthor.set(r.author.login, {
+        author: r.author.login,
+        state: r.state.toUpperCase() as PRReviewState,
+        submittedAt: r.submittedAt,
+      })
+    }
+    reviews = [...byAuthor.values()]
+  }
+
   return {
     body: data.body,
     author: data.author.login,
@@ -286,6 +341,10 @@ export async function getPRDetail(repoPath: string, prNumber: number): Promise<P
     createdAt: data.createdAt,
     baseRefName: data.baseRefName,
     headRefName: data.headRefName,
+    baseRefOid: data.baseRefOid,
+    headRefOid: data.headRefOid,
+    requestedReviewers,
+    reviews,
   }
 }
 
@@ -398,21 +457,31 @@ export async function getCommitDiff(repoPath: string, commitHash: string): Promi
 
 export async function getPRReviewThreads(repoPath: string, prNumber: number): Promise<PRReviewThread[]> {
   try {
-    const { stdout: repoInfo } = await execFileAsync(
-      'gh',
-      ['repo', 'view', '--json', 'owner,name'],
-      { cwd: repoPath }
-    )
-    const { owner, name } = JSON.parse(repoInfo) as { owner: { login: string }; name: string }
+    const { owner, name } = await getRepoOwnerName(repoPath)
 
     const query = `query {
-      repository(owner: "${owner.login}", name: "${name}") {
+      repository(owner: "${owner}", name: "${name}") {
         pullRequest(number: ${prNumber}) {
           reviewThreads(first: 100) {
             nodes {
+              id
               isResolved
               path
               line
+              startLine
+              diffSide
+              comments(first: 100) {
+                nodes {
+                  databaseId
+                  body
+                  path
+                  line
+                  startLine
+                  author { login }
+                  createdAt
+                  replyTo { databaseId }
+                }
+              }
             }
           }
         }
@@ -429,18 +498,240 @@ export async function getPRReviewThreads(repoPath: string, prNumber: number): Pr
         repository: {
           pullRequest: {
             reviewThreads: {
-              nodes: Array<{ isResolved: boolean; path: string; line: number | null }>
+              nodes: Array<{
+                id: string
+                isResolved: boolean
+                path: string
+                line: number | null
+                startLine: number | null
+                diffSide: 'LEFT' | 'RIGHT' | null
+                comments: {
+                  nodes: Array<{
+                    databaseId: number
+                    body: string
+                    path: string
+                    line: number | null
+                    startLine: number | null
+                    author: { login: string } | null
+                    createdAt: string
+                    replyTo: { databaseId: number } | null
+                  }>
+                }
+              }>
             }
           }
         }
       }
     }
-    return data.data.repository.pullRequest.reviewThreads.nodes.map((t) => ({
-      path: t.path,
-      line: t.line,
-      isResolved: t.isResolved,
-    }))
+
+    return data.data.repository.pullRequest.reviewThreads.nodes.map((t) => {
+      const comments: PRComment[] = t.comments.nodes.map((c) => ({
+        id: c.databaseId,
+        body: c.body,
+        path: c.path,
+        line: c.line,
+        startLine: c.startLine ?? null,
+        side: (t.diffSide ?? 'RIGHT') as 'LEFT' | 'RIGHT',
+        author: c.author?.login ?? 'unknown',
+        createdAt: c.createdAt,
+        inReplyToId: c.replyTo?.databaseId ?? null,
+      }))
+      const root = comments[0]
+      return {
+        id: t.id,
+        path: t.path,
+        line: t.line,
+        startLine: t.startLine ?? null,
+        side: (t.diffSide ?? 'RIGHT') as 'LEFT' | 'RIGHT',
+        isResolved: t.isResolved,
+        rootCommentId: root?.id ?? null,
+        comments,
+      }
+    })
   } catch {
     return []
   }
+}
+
+// ── Reviewers ─────────────────────────────────────────────────────────────
+
+export async function addPRReviewer(repoPath: string, prNumber: number, login: string): Promise<void> {
+  await execFileAsync(
+    'gh',
+    ['pr', 'edit', String(prNumber), '--add-reviewer', login],
+    { cwd: repoPath }
+  )
+}
+
+export async function removePRReviewer(repoPath: string, prNumber: number, login: string): Promise<void> {
+  await execFileAsync(
+    'gh',
+    ['pr', 'edit', String(prNumber), '--remove-reviewer', login],
+    { cwd: repoPath }
+  )
+}
+
+export async function listCollaborators(repoPath: string): Promise<GitHubCollaborator[]> {
+  try {
+    const { owner, name } = await getRepoOwnerName(repoPath)
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['api', `repos/${owner}/${name}/collaborators`, '--paginate', '-q', '.[] | {login, avatar_url}'],
+      { cwd: repoPath, maxBuffer: 5 * 1024 * 1024 }
+    )
+    return stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const c = JSON.parse(line) as { login: string; avatar_url?: string }
+        return { login: c.login, avatarUrl: c.avatar_url }
+      })
+  } catch {
+    return []
+  }
+}
+
+// ── File blob (for diff context expansion) ─────────────────────────────────
+
+export async function getPRFileBlob(
+  repoPath: string,
+  ref: string,
+  filePath: string
+): Promise<string | null> {
+  try {
+    const { owner, name } = await getRepoOwnerName(repoPath)
+    const { stdout } = await execFileAsync(
+      'gh',
+      [
+        'api',
+        `repos/${owner}/${name}/contents/${filePath}?ref=${ref}`,
+        '-H', 'Accept: application/vnd.github.raw',
+      ],
+      { cwd: repoPath, maxBuffer: 10 * 1024 * 1024 }
+    )
+    return stdout
+  } catch {
+    // Try local git as a fallback (works for branches checked out anywhere)
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['show', `${ref}:${filePath}`],
+        { cwd: repoPath, maxBuffer: 10 * 1024 * 1024 }
+      )
+      return stdout
+    } catch {
+      return null
+    }
+  }
+}
+
+// ── Review threads: reply / resolve / unresolve ────────────────────────────
+
+export async function replyToReviewThread(
+  repoPath: string,
+  prNumber: number,
+  rootCommentId: number,
+  body: string
+): Promise<PRComment> {
+  const { owner, name } = await getRepoOwnerName(repoPath)
+  const { stdout } = await execFileAsync(
+    'gh',
+    [
+      'api',
+      `repos/${owner}/${name}/pulls/${prNumber}/comments`,
+      '-f', `body=${body}`,
+      '-F', `in_reply_to=${rootCommentId}`,
+    ],
+    { cwd: repoPath }
+  )
+  const c = JSON.parse(stdout) as {
+    id: number
+    body: string
+    path: string
+    line: number | null
+    start_line?: number | null
+    side: 'LEFT' | 'RIGHT'
+    user: { login: string }
+    created_at: string
+    in_reply_to_id?: number | null
+  }
+  return {
+    id: c.id,
+    body: c.body,
+    path: c.path,
+    line: c.line,
+    startLine: c.start_line ?? null,
+    side: c.side || 'RIGHT',
+    author: c.user.login,
+    createdAt: c.created_at,
+    inReplyToId: c.in_reply_to_id ?? rootCommentId,
+  }
+}
+
+async function runThreadMutation(repoPath: string, threadId: string, mutation: 'resolve' | 'unresolve'): Promise<void> {
+  const mutationName = mutation === 'resolve' ? 'resolveReviewThread' : 'unresolveReviewThread'
+  const query = `mutation { ${mutationName}(input: {threadId: "${threadId}"}) { thread { id isResolved } } }`
+  await execFileAsync(
+    'gh',
+    ['api', 'graphql', '-f', `query=${query}`],
+    { cwd: repoPath }
+  )
+}
+
+export async function resolveReviewThread(repoPath: string, threadId: string): Promise<void> {
+  await runThreadMutation(repoPath, threadId, 'resolve')
+}
+
+export async function unresolveReviewThread(repoPath: string, threadId: string): Promise<void> {
+  await runThreadMutation(repoPath, threadId, 'unresolve')
+}
+
+// ── Apply suggestion (write to local worktree + commit) ────────────────────
+
+export interface ApplySuggestionResult {
+  applied: boolean
+  reason?: string
+}
+
+export async function applySuggestion(
+  repoPath: string,
+  filePath: string,
+  startLine: number,
+  endLine: number,
+  newText: string,
+  author: string
+): Promise<ApplySuggestionResult> {
+  const absPath = join(repoPath, filePath)
+  let original: string
+  try {
+    original = await readFile(absPath, 'utf-8')
+  } catch {
+    return { applied: false, reason: 'File not found in worktree' }
+  }
+  const lines = original.split('\n')
+  if (startLine < 1 || endLine > lines.length) {
+    return { applied: false, reason: 'Line range is out of file bounds' }
+  }
+  const replacement = newText.split('\n')
+  // Drop a trailing empty element if newText ended with \n (split produces "")
+  if (replacement.length > 0 && replacement[replacement.length - 1] === '' && newText.endsWith('\n')) {
+    replacement.pop()
+  }
+  const before = lines.slice(0, startLine - 1)
+  const after = lines.slice(endLine)
+  const next = [...before, ...replacement, ...after].join('\n')
+  await writeFile(absPath, next, 'utf-8')
+  // Stage + commit
+  try {
+    await execFileAsync('git', ['add', '--', filePath], { cwd: repoPath })
+    await execFileAsync(
+      'git',
+      ['commit', '-m', `Apply suggestion from ${author}`, '--', filePath],
+      { cwd: repoPath }
+    )
+  } catch (err) {
+    return { applied: false, reason: err instanceof Error ? err.message : String(err) }
+  }
+  return { applied: true }
 }

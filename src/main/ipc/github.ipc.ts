@@ -109,4 +109,39 @@ export function registerGithubHandlers() {
   ipcMain.handle(IPC.PR_REVIEW_THREADS, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRReviewThreads(repoPath, prNumber)
   })
+
+  ipcMain.handle(IPC.PR_REVIEWER_ADD, async (_e, repoPath: string, prNumber: number, login: string) => {
+    return githubService.addPRReviewer(repoPath, prNumber, login)
+  })
+
+  ipcMain.handle(IPC.PR_REVIEWER_REMOVE, async (_e, repoPath: string, prNumber: number, login: string) => {
+    return githubService.removePRReviewer(repoPath, prNumber, login)
+  })
+
+  ipcMain.handle(IPC.PR_COLLABORATORS, async (_e, repoPath: string) => {
+    return githubService.listCollaborators(repoPath)
+  })
+
+  ipcMain.handle(IPC.PR_FILE_BLOB, async (_e, repoPath: string, ref: string, filePath: string) => {
+    return githubService.getPRFileBlob(repoPath, ref, filePath)
+  })
+
+  ipcMain.handle(IPC.PR_THREAD_REPLY, async (_e, repoPath: string, prNumber: number, rootCommentId: number, body: string) => {
+    return githubService.replyToReviewThread(repoPath, prNumber, rootCommentId, body)
+  })
+
+  ipcMain.handle(IPC.PR_THREAD_RESOLVE, async (_e, repoPath: string, threadId: string) => {
+    return githubService.resolveReviewThread(repoPath, threadId)
+  })
+
+  ipcMain.handle(IPC.PR_THREAD_UNRESOLVE, async (_e, repoPath: string, threadId: string) => {
+    return githubService.unresolveReviewThread(repoPath, threadId)
+  })
+
+  ipcMain.handle(
+    IPC.PR_APPLY_SUGGESTION,
+    async (_e, repoPath: string, filePath: string, startLine: number, endLine: number, newText: string, author: string) => {
+      return githubService.applySuggestion(repoPath, filePath, startLine, endLine, newText, author)
+    }
+  )
 }

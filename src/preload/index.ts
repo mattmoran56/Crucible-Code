@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -76,6 +76,16 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_SHOW_FILE_BASE64, repoPath, ref, filePath),
     fetchAndPull: (repoPath: string, branch: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GIT_FETCH_AND_PULL, repoPath, branch),
+    discardFile: (repoPath: string, filePath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_DISCARD_FILE, repoPath, filePath),
+    stageFile: (repoPath: string, filePath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_STAGE_FILE, repoPath, filePath),
+    unstageFile: (repoPath: string, filePath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_UNSTAGE_FILE, repoPath, filePath),
+    stashFile: (repoPath: string, filePath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_STASH_FILE, repoPath, filePath),
+    revealFile: (absolutePath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GIT_REVEAL_FILE, absolutePath),
   },
 
   worktree: {
@@ -257,6 +267,29 @@ const api = {
       ipcRenderer.invoke(IPC.PR_COMMIT_DIFF, repoPath, commitHash),
     getReviewThreads: (repoPath: string, prNumber: number): Promise<PRReviewThread[]> =>
       ipcRenderer.invoke(IPC.PR_REVIEW_THREADS, repoPath, prNumber),
+    addReviewer: (repoPath: string, prNumber: number, login: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_REVIEWER_ADD, repoPath, prNumber, login),
+    removeReviewer: (repoPath: string, prNumber: number, login: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_REVIEWER_REMOVE, repoPath, prNumber, login),
+    listCollaborators: (repoPath: string): Promise<GitHubCollaborator[]> =>
+      ipcRenderer.invoke(IPC.PR_COLLABORATORS, repoPath),
+    getFileBlob: (repoPath: string, ref: string, filePath: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.PR_FILE_BLOB, repoPath, ref, filePath),
+    replyThread: (repoPath: string, prNumber: number, rootCommentId: number, body: string): Promise<PRComment> =>
+      ipcRenderer.invoke(IPC.PR_THREAD_REPLY, repoPath, prNumber, rootCommentId, body),
+    resolveThread: (repoPath: string, threadId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_THREAD_RESOLVE, repoPath, threadId),
+    unresolveThread: (repoPath: string, threadId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_THREAD_UNRESOLVE, repoPath, threadId),
+    applySuggestion: (
+      repoPath: string,
+      filePath: string,
+      startLine: number,
+      endLine: number,
+      newText: string,
+      author: string
+    ): Promise<{ applied: boolean; reason?: string }> =>
+      ipcRenderer.invoke(IPC.PR_APPLY_SUGGESTION, repoPath, filePath, startLine, endLine, newText, author),
   },
 
   session: {

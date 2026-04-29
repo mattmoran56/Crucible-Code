@@ -1,6 +1,15 @@
 import { create } from 'zustand'
-import type { PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread } from '../../shared/types'
+import type { PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread, GitHubCollaborator } from '../../shared/types'
 import { useToastStore } from './toastStore'
+
+export type BlobSide = 'base' | 'head'
+
+interface BlobCacheEntry {
+  /** Full file content split into lines (without trailing empty element) */
+  lines: string[]
+  /** Loading promise so concurrent calls share work */
+  promise?: Promise<string[] | null>
+}
 
 interface PRReviewState {
   prNumber: number | null
@@ -37,6 +46,15 @@ interface PRReviewState {
   reviewThreads: PRReviewThread[]
   commentFilter: 'all' | 'unresolved'
 
+  // Reviewers
+  collaborators: GitHubCollaborator[]
+  reviewerLoading: boolean
+
+  // Expand-context: cache of fetched blobs and per-file expanded line numbers
+  // key for blob cache: `${side}:${path}`; expandedLines key: `${side}:${path}` -> Set<number>
+  blobCache: Record<string, BlobCacheEntry>
+  expandedLines: Record<string, Set<number>>
+
   loadPR: (repoPath: string, prNumber: number, projectId?: string) => Promise<void>
   selectFile: (filePath: string) => void
   selectNextFile: () => void
@@ -55,6 +73,36 @@ interface PRReviewState {
   pollChecks: (repoPath: string, prNumber: number) => void
   stopPollingChecks: () => void
   clear: () => void
+
+  // Reviewers
+  loadCollaborators: (repoPath: string) => Promise<void>
+  addReviewer: (repoPath: string, prNumber: number, login: string) => Promise<void>
+  removeReviewer: (repoPath: string, prNumber: number, login: string) => Promise<void>
+
+  // Threads
+  replyToThread: (repoPath: string, prNumber: number, rootCommentId: number, body: string) => Promise<void>
+  resolveThread: (repoPath: string, prNumber: number, threadId: string) => Promise<void>
+  unresolveThread: (repoPath: string, prNumber: number, threadId: string) => Promise<void>
+
+  // Expand-context
+  expandContext: (
+    repoPath: string,
+    filePath: string,
+    side: BlobSide,
+    fromLine: number,
+    toLine: number
+  ) => Promise<void>
+  resetExpandedLines: (filePath: string, side: BlobSide) => void
+
+  // Suggestion apply
+  applySuggestion: (
+    repoPath: string,
+    filePath: string,
+    startLine: number,
+    endLine: number,
+    newText: string,
+    author: string
+  ) => Promise<{ applied: boolean; reason?: string }>
 }
 
 let checksIntervalId: ReturnType<typeof setInterval> | null = null
@@ -83,6 +131,10 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
   viewMode: 'single',
   reviewThreads: [],
   commentFilter: 'all',
+  collaborators: [],
+  reviewerLoading: false,
+  blobCache: {},
+  expandedLines: {},
 
   loadPR: async (repoPath, prNumber, projectId) => {
     // Skip reload if this PR's data is already loaded
@@ -92,6 +144,7 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
       loading: true, prNumber, files: [], fullDiff: null, fileDiffCache: {}, fileDiffLoading: null,
       comments: [], mergeable: 'UNKNOWN', selectedFilePath: null,
       detail: null, conversationComments: [], checks: [], activeTab: 'conversation',
+      blobCache: {}, expandedLines: {},
     })
     try {
       const [files, fullDiff, comments, mergeabilityResult, detail, conversationComments, checks, viewedFilesArr, commits, reviewThreads] = await Promise.all([
@@ -303,6 +356,172 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
     set({ checksPolling: false })
   },
 
+  loadCollaborators: async (repoPath) => {
+    if (get().collaborators.length > 0) return
+    try {
+      const collaborators = await window.api.github.listCollaborators(repoPath)
+      set({ collaborators })
+    } catch {
+      // Non-critical
+    }
+  },
+
+  addReviewer: async (repoPath, prNumber, login) => {
+    const { addToast } = useToastStore.getState()
+    set({ reviewerLoading: true })
+    try {
+      await window.api.github.addReviewer(repoPath, prNumber, login)
+      const detail = await window.api.github.getDetail(repoPath, prNumber)
+      set({ detail })
+      addToast('success', `Requested review from ${login}`)
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+    } finally {
+      set({ reviewerLoading: false })
+    }
+  },
+
+  removeReviewer: async (repoPath, prNumber, login) => {
+    const { addToast } = useToastStore.getState()
+    set({ reviewerLoading: true })
+    try {
+      await window.api.github.removeReviewer(repoPath, prNumber, login)
+      const detail = await window.api.github.getDetail(repoPath, prNumber)
+      set({ detail })
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+    } finally {
+      set({ reviewerLoading: false })
+    }
+  },
+
+  replyToThread: async (repoPath, prNumber, rootCommentId, body) => {
+    const { addToast } = useToastStore.getState()
+    try {
+      const reply = await window.api.github.replyThread(repoPath, prNumber, rootCommentId, body)
+      // Append to comments list and to the matching thread
+      set({
+        comments: [...get().comments, reply],
+        reviewThreads: get().reviewThreads.map((t) =>
+          t.rootCommentId === rootCommentId
+            ? { ...t, comments: [...t.comments, reply] }
+            : t
+        ),
+      })
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+    }
+  },
+
+  resolveThread: async (repoPath, prNumber, threadId) => {
+    const { addToast } = useToastStore.getState()
+    try {
+      await window.api.github.resolveThread(repoPath, threadId)
+      set({
+        reviewThreads: get().reviewThreads.map((t) =>
+          t.id === threadId ? { ...t, isResolved: true } : t
+        ),
+      })
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+    }
+  },
+
+  unresolveThread: async (repoPath, prNumber, threadId) => {
+    const { addToast } = useToastStore.getState()
+    try {
+      await window.api.github.unresolveThread(repoPath, threadId)
+      set({
+        reviewThreads: get().reviewThreads.map((t) =>
+          t.id === threadId ? { ...t, isResolved: false } : t
+        ),
+      })
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+    }
+  },
+
+  expandContext: async (repoPath, filePath, side, fromLine, toLine) => {
+    const { detail } = get()
+    if (!detail) return
+    const ref = side === 'base' ? detail.baseRefOid : detail.headRefOid
+    if (!ref) return
+
+    const cacheKey = `${side}:${filePath}`
+    let entry = get().blobCache[cacheKey]
+
+    if (!entry || !entry.lines) {
+      const fetchPromise: Promise<string[] | null> = (async () => {
+        const raw = await window.api.github.getFileBlob(repoPath, ref, filePath)
+        if (raw == null) return null
+        const lines = raw.split('\n')
+        if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+        return lines
+      })()
+
+      // Reserve the entry to dedupe concurrent calls
+      set({
+        blobCache: {
+          ...get().blobCache,
+          [cacheKey]: { lines: [], promise: fetchPromise },
+        },
+      })
+
+      const lines = await fetchPromise
+      if (!lines) {
+        // Drop the placeholder so a future click can retry
+        const next = { ...get().blobCache }
+        delete next[cacheKey]
+        set({ blobCache: next })
+        return
+      }
+      entry = { lines }
+      set({
+        blobCache: { ...get().blobCache, [cacheKey]: entry },
+      })
+    } else if (entry.promise) {
+      const lines = await entry.promise
+      if (!lines) return
+    }
+
+    // Mark the requested range as expanded.
+    const lo = Math.max(1, Math.min(fromLine, toLine))
+    const hi = Math.max(fromLine, toLine)
+    const expandedKey = `${side}:${filePath}`
+    const existing = get().expandedLines[expandedKey] || new Set<number>()
+    const next = new Set(existing)
+    for (let n = lo; n <= hi; n++) next.add(n)
+    set({
+      expandedLines: { ...get().expandedLines, [expandedKey]: next },
+    })
+  },
+
+  resetExpandedLines: (filePath, side) => {
+    const key = `${side}:${filePath}`
+    const next = { ...get().expandedLines }
+    delete next[key]
+    set({ expandedLines: next })
+  },
+
+  applySuggestion: async (repoPath, filePath, startLine, endLine, newText, author) => {
+    const { addToast } = useToastStore.getState()
+    try {
+      const result = await window.api.github.applySuggestion(
+        repoPath, filePath, startLine, endLine, newText, author
+      )
+      if (result.applied) {
+        addToast('success', `Applied suggestion to ${filePath}`)
+      } else {
+        addToast('error', result.reason || 'Could not apply suggestion')
+      }
+      return result
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      addToast('error', reason)
+      return { applied: false, reason }
+    }
+  },
+
   clear: () => {
     get().stopPollingChecks()
     set({
@@ -328,6 +547,8 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
       commitDiff: null,
       reviewThreads: [],
       commentFilter: 'all',
+      blobCache: {},
+      expandedLines: {},
     })
   },
 }))
