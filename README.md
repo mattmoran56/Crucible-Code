@@ -199,8 +199,9 @@ Every session gets an embedded terminal (xterm.js + node-pty) that opens in the 
 Built-in git panel with commit history, changed files, and diff viewer.
 
 - **Commit log** — Scrollable list with polling for new commits
-- **Changed files** — Both committed and working-tree changes
+- **Changed files** — Both committed and working-tree changes, with right-click stage / unstage / stash / discard / reveal in Finder
 - **Syntax-highlighted diffs** — Inline diff viewer powered by Shiki with full language support
+- **Expand context & per-hunk collapse** — Same diff viewer powers PR review and the git tab; expand surrounding lines or fold whole hunks
 - **Commit status indicators** — Unpushed commits and new branches are marked
 - **Push & PR** — Push button, open PR button, and merge controls with conflict detection
 - **Working file diffs** — View uncommitted changes alongside commit diffs
@@ -210,17 +211,31 @@ Built-in git panel with commit history, changed files, and diff viewer.
 <details>
 <summary><strong>PR review</strong></summary>
 
-Full pull request review without leaving the IDE.
+Full pull request review without leaving the IDE — comparable to GitHub's web UI for the day-to-day review loop.
 
-- **Conversation tab** — PR description and timeline with markdown rendering
-- **Checks tab** — CI/CD status for all checks (pass/fail/pending/in-progress)
-- **Commits tab** — Individual commits in the PR with per-commit diffs
-- **File tree** — All changed files with viewed-file tracking (checkmarks)
-- **Scrollable diff view** — Optimized for large PRs (300+ files)
-- **Inline comments** — Create review comments on specific lines
-- **Submit reviews** — Approve, request changes, or comment
-- **Merge** — Merge/squash/rebase with mergeability checks
-- **Review threads** — View resolved and unresolved review threads
+- **Conversation tab** — PR description, timeline, and CI checks with markdown rendering
+- **Reviewers** — Approved / Changes requested / Awaiting review groupings, plus a typeahead "Request review" picker
+- **Header summary** — At-a-glance "X approved · Y changes requested · Z pending" pill in the toolbar
+- **Commits tab** — Per-commit diffs with prev/next navigation
+- **File tree** — Changed files with viewed-file tracking and unresolved-comment badges
+- **Scrollable diff view** — Lazy-loaded per file, optimised for very large PRs
+- **Expand context** — GitHub-style ↑20 / ↓20 / ⇕all buttons between hunks pull surrounding lines from the head SHA
+- **Per-hunk collapse** — Click any `@@` row to fold a hunk; "Collapse hunks" toggle in the diff header collapses every hunk in the file
+- **Inline threads** — Reply to and resolve / unresolve review threads inline; resolved threads collapse to one line
+- **Suggestion blocks** — `` ```suggestion `` blocks render as a side-by-side preview with an Apply button that writes to the worktree and creates a commit
+- **Submit reviews** — Approve, request changes, or leave a comment
+- **Merge** — Merge / squash / rebase with mergeability checks
+
+<table>
+<tr>
+<td><img src="docs/screenshots/pr-review-reviewers-mixed.png" alt="Reviewers section with mixed states" /></td>
+<td><img src="docs/screenshots/pr-review-inlinethread-open.png" alt="Inline review thread" /></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/pr-review-suggestion-multiline.png" alt="Suggestion block" /></td>
+<td><img src="docs/screenshots/pr-review-contextmenu-changedfiles.png" alt="Right-click context menu on changed files" /></td>
+</tr>
+</table>
 
 </details>
 
@@ -255,7 +270,9 @@ Monitor Claude Code usage and rate limits from the right panel.
 Built-in code editor for when you need to make quick edits without switching apps.
 
 - **CodeMirror 6** — Language support for JavaScript, TypeScript, Python, CSS, HTML, JSON, and Markdown
+- **Code folding** — Fold-gutter chevrons let you collapse functions, classes, and any other foldable region; `Cmd-Alt-[` / `Cmd-Alt-]` keymap supported
 - **File explorer** — Directory tree for any worktree, with file watching for external changes
+- **Right-click context menu** — Open, copy relative/absolute path, reveal in Finder, delete file
 - **Create and rename** — Create new files, rename existing ones from the explorer
 - **Toggle mode** — Switch between editor view and terminal view from the workspace
 

@@ -119,4 +119,24 @@ export function registerGitHandlers() {
   ipcMain.handle(IPC.GIT_FETCH_AND_PULL, async (_e, repoPath: string, branch: string) => {
     return gitService.fetchAndPull(repoPath, branch)
   })
+
+  ipcMain.handle(IPC.GIT_DISCARD_FILE, async (_e, repoPath: string, filePath: string) => {
+    return gitService.discardFile(repoPath, filePath)
+  })
+
+  ipcMain.handle(IPC.GIT_STAGE_FILE, async (_e, repoPath: string, filePath: string) => {
+    return gitService.stageFile(repoPath, filePath)
+  })
+
+  ipcMain.handle(IPC.GIT_UNSTAGE_FILE, async (_e, repoPath: string, filePath: string) => {
+    return gitService.unstageFile(repoPath, filePath)
+  })
+
+  ipcMain.handle(IPC.GIT_STASH_FILE, async (_e, repoPath: string, filePath: string) => {
+    return gitService.stashFile(repoPath, filePath)
+  })
+
+  ipcMain.handle(IPC.GIT_REVEAL_FILE, async (_e, absolutePath: string) => {
+    shell.showItemInFolder(absolutePath)
+  })
 }

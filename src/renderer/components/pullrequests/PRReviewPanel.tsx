@@ -32,10 +32,13 @@ export function PRReviewPanel() {
     files, selectedFilePath, fullDiff, fileDiffCache, fileDiffLoading, comments, loading, mergeable,
     reviewLoading, mergeLoading, activeTab, viewedFiles,
     commits, selectedCommitHash, commitDiff, viewMode,
-    reviewThreads, commentFilter,
+    reviewThreads, commentFilter, detail,
+    blobCache, expandedLines,
     loadPR, selectFile, selectNextFile, selectPrevFile, setViewMode, toggleFileViewed,
     selectCommit, nextCommit, prevCommit, setCommentFilter,
     loadFileDiff, addComment, submitReview, merge, setActiveTab, clear,
+    replyToThread, resolveThread, unresolveThread,
+    expandContext, applySuggestion,
   } = usePRReviewStore()
 
   const [showReviewDialog, setShowReviewDialog] = useState(false)
@@ -119,6 +122,16 @@ export function PRReviewPanel() {
     }
   }, [selectedFilePath, fullDiff, loading, prNumber, activeProject?.id])
 
+  const reviewerSummary = useMemo(() => {
+    if (!detail) return null
+    const approved = detail.reviews.filter((r) => r.state === 'APPROVED').length
+    const changes = detail.reviews.filter((r) => r.state === 'CHANGES_REQUESTED').length
+    const reviewedAuthors = new Set(detail.reviews.map((r) => r.author))
+    const pending = detail.requestedReviewers.filter((l) => !reviewedAuthors.has(l)).length
+    if (approved === 0 && changes === 0 && pending === 0) return null
+    return { approved, changes, pending }
+  }, [detail])
+
   if (!prNumber || !activeProject) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
@@ -156,6 +169,54 @@ export function PRReviewPanel() {
     await addComment(activeProject.repoPath, prNumber, body, selectedFilePath, startLine, endLine, side)
   }
 
+  const handleReplyThread = async (rootCommentId: number, body: string) => {
+    if (!prNumber || !activeProject) return
+    await replyToThread(activeProject.repoPath, prNumber, rootCommentId, body)
+  }
+
+  const handleResolveThread = async (threadId: string) => {
+    if (!prNumber || !activeProject) return
+    await resolveThread(activeProject.repoPath, prNumber, threadId)
+  }
+
+  const handleUnresolveThread = async (threadId: string) => {
+    if (!prNumber || !activeProject) return
+    await unresolveThread(activeProject.repoPath, prNumber, threadId)
+  }
+
+  const handleExpand =
+    (filePath: string) =>
+    async (
+      direction: 'up' | 'down' | 'all',
+      meta: { prevOldEnd: number; prevNewEnd: number; nextOldStart: number | null; nextNewStart: number | null; isTail?: boolean }
+    ) => {
+      if (!activeProject) return
+      const STEP = 20
+      const upper = meta.isTail
+        ? null
+        : (meta.nextNewStart != null ? meta.nextNewStart - 1 : meta.prevNewEnd)
+      let from: number, to: number
+      if (direction === 'up' && upper != null) {
+        to = upper
+        from = Math.max(meta.prevNewEnd + 1, upper - STEP + 1)
+      } else if (direction === 'all' && upper != null) {
+        from = meta.prevNewEnd + 1
+        to = upper
+      } else {
+        from = meta.prevNewEnd + 1
+        to = upper != null ? Math.min(upper, meta.prevNewEnd + STEP) : meta.prevNewEnd + STEP
+      }
+      if (to < from) return
+      await expandContext(activeProject.repoPath, filePath, 'head', from, to)
+    }
+
+  const handleApplySuggestion =
+    (filePath: string) =>
+    async (startLine: number, endLine: number, newText: string, author: string) => {
+      if (!activeProject) return
+      await applySuggestion(activeProject.repoPath, filePath, startLine, endLine, newText, author)
+    }
+
   const handleSubmitReview = async () => {
     await submitReview(activeProject.repoPath, prNumber, reviewEvent, reviewBody || undefined)
     setShowReviewDialog(false)
@@ -186,14 +247,34 @@ export function PRReviewPanel() {
         className="flex items-center justify-between bg-bg-tertiary border-b border-border"
         style={{ padding: '6px 12px' }}
       >
-        <span className="text-xs text-text-muted">
-          PR #{prNumber} &middot; {files.length} file{files.length !== 1 ? 's' : ''} &middot;{' '}
-          <span className="text-success">
-            +{files.reduce((s, f) => s + f.additions, 0)}
-          </span>{' '}
-          <span className="text-danger">
-            -{files.reduce((s, f) => s + f.deletions, 0)}
+        <span className="text-xs text-text-muted flex items-center gap-2">
+          <span>
+            PR #{prNumber} &middot; {files.length} file{files.length !== 1 ? 's' : ''} &middot;{' '}
+            <span className="text-success">
+              +{files.reduce((s, f) => s + f.additions, 0)}
+            </span>{' '}
+            <span className="text-danger">
+              -{files.reduce((s, f) => s + f.deletions, 0)}
+            </span>
           </span>
+          {reviewerSummary && (
+            <span className="flex items-center gap-1 text-[10px]">
+              <span className="text-text-muted">·</span>
+              {reviewerSummary.approved > 0 && (
+                <span className="text-success">{reviewerSummary.approved} approved</span>
+              )}
+              {reviewerSummary.changes > 0 && (
+                <span className="text-danger">
+                  {reviewerSummary.approved > 0 ? '· ' : ''}{reviewerSummary.changes} changes requested
+                </span>
+              )}
+              {reviewerSummary.pending > 0 && (
+                <span className="text-warning">
+                  {(reviewerSummary.approved > 0 || reviewerSummary.changes > 0) ? '· ' : ''}{reviewerSummary.pending} pending
+                </span>
+              )}
+            </span>
+          )}
         </span>
         <div className="flex gap-2">
           <Button
@@ -409,6 +490,7 @@ export function PRReviewPanel() {
                   files={filteredDisplayFiles}
                   fullDiff={activeDiff || ''}
                   comments={comments}
+                  threads={reviewThreads}
                   viewedFiles={viewedFiles}
                   onToggleViewed={(path) => {
                     if (activeProject && prNumber) {
@@ -421,6 +503,14 @@ export function PRReviewPanel() {
                   repoPath={activeProject?.repoPath}
                   beforeRef={prBaseRef}
                   selectedCommitHash={selectedCommitHash}
+                  blobCache={blobCache}
+                  expandedLines={expandedLines}
+                  onExpand={handleExpand}
+                  expandEnabled={!!detail?.headRefOid}
+                  onReplyThread={handleReplyThread}
+                  onResolveThread={handleResolveThread}
+                  onUnresolveThread={handleUnresolveThread}
+                  onApplySuggestion={handleApplySuggestion}
                 />
               ) : (
                 <>
@@ -471,7 +561,16 @@ export function PRReviewPanel() {
                       patch={fileDiff}
                       filePath={selectedFilePath}
                       comments={fileComments}
+                      threads={reviewThreads.filter((t) => t.path === selectedFilePath)}
                       onAddComment={handleAddComment}
+                      blobLines={blobCache[`head:${selectedFilePath}`]?.lines ?? null}
+                      expandedNewLines={expandedLines[`head:${selectedFilePath}`]}
+                      onExpand={handleExpand(selectedFilePath)}
+                      expandEnabled={!!detail?.headRefOid}
+                      onReplyThread={handleReplyThread}
+                      onResolveThread={handleResolveThread}
+                      onUnresolveThread={handleUnresolveThread}
+                      onApplySuggestion={handleApplySuggestion(selectedFilePath)}
                     />
                   ) : (
                     <div className="flex-1 flex items-center justify-center text-text-muted text-xs">

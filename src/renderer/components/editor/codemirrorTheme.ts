@@ -52,6 +52,21 @@ export function createEditorTheme() {
         backgroundColor: bgSecondary,
         border: `1px solid ${border}`,
         color: textMuted,
+        padding: '0 6px',
+        margin: '0 2px',
+        borderRadius: '3px',
+      },
+      '.cm-foldGutter': {
+        color: textMuted,
+        fontSize: '14px',
+        width: '14px',
+      },
+      '.cm-foldGutter .cm-gutterElement': {
+        padding: '0 2px',
+        cursor: 'pointer',
+      },
+      '.cm-foldGutter .cm-gutterElement:hover': {
+        color: accent,
       },
       '.cm-tooltip': {
         backgroundColor: bgSecondary,

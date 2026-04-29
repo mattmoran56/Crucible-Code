@@ -24,6 +24,8 @@ interface ScreenshotTarget {
   viewport?: { width: number; height: number }
   /** CSS selector to scroll into view before capture */
   scrollTo?: string
+  /** Right-click the demo container to trigger a context menu before capture. */
+  rightClickDemo?: boolean
 }
 
 /**
@@ -126,6 +128,76 @@ const targets: ScreenshotTarget[] = [
     storyId: 'app-full-layout--tab-attention',
     delay: 2000,
   },
+
+  // PR review enhancements
+  {
+    name: 'pr-review-reviewers-mixed',
+    storyId: 'pr-reviewerssection--mixed-states',
+    viewport: { width: 540, height: 360 },
+    delay: 600,
+  },
+  {
+    name: 'pr-review-reviewers-pending-only',
+    storyId: 'pr-reviewerssection--pending-only',
+    viewport: { width: 540, height: 240 },
+    delay: 600,
+  },
+  {
+    name: 'pr-review-reviewers-empty',
+    storyId: 'pr-reviewerssection--empty',
+    viewport: { width: 540, height: 200 },
+    delay: 600,
+  },
+  {
+    name: 'pr-review-suggestion-singleline',
+    storyId: 'pr-suggestionblock--single-line',
+    viewport: { width: 600, height: 200 },
+    delay: 600,
+  },
+  {
+    name: 'pr-review-suggestion-multiline',
+    storyId: 'pr-suggestionblock--multi-line',
+    viewport: { width: 600, height: 260 },
+    delay: 600,
+  },
+  {
+    name: 'pr-review-suggestion-disabled',
+    storyId: 'pr-suggestionblock--branch-not-checked-out',
+    viewport: { width: 600, height: 200 },
+    delay: 600,
+  },
+  {
+    name: 'pr-review-inlinethread-open',
+    storyId: 'pr-inlinethread--open',
+    viewport: { width: 720, height: 400 },
+    delay: 600,
+  },
+  {
+    name: 'pr-review-inlinethread-resolved',
+    storyId: 'pr-inlinethread--resolved',
+    viewport: { width: 720, height: 200 },
+    delay: 600,
+  },
+  {
+    name: 'pr-review-inlinethread-suggestion',
+    storyId: 'pr-inlinethread--with-suggestion',
+    viewport: { width: 720, height: 380 },
+    delay: 600,
+  },
+  {
+    name: 'pr-review-contextmenu-fileexplorer',
+    storyId: 'ui-contextmenu--file-explorer',
+    viewport: { width: 480, height: 360 },
+    delay: 600,
+    rightClickDemo: true,
+  },
+  {
+    name: 'pr-review-contextmenu-changedfiles',
+    storyId: 'ui-contextmenu--changed-files',
+    viewport: { width: 480, height: 420 },
+    delay: 600,
+    rightClickDemo: true,
+  },
 ]
 
 async function captureScreenshots() {
@@ -151,6 +223,18 @@ async function captureScreenshots() {
 
     if (target.delay) {
       await page.waitForTimeout(target.delay)
+    }
+
+    if (target.rightClickDemo) {
+      const demo = await page.$('div.bg-bg-secondary, div[class*="border-border"]')
+      if (demo) {
+        const box = await demo.boundingBox()
+        if (box) {
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+          await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' })
+          await page.waitForTimeout(150)
+        }
+      }
     }
 
     if (target.scrollTo) {

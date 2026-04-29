@@ -84,6 +84,21 @@ export const IPC = {
   PR_COMMITS: 'pr:commits',
   PR_COMMIT_DIFF: 'pr:commit:diff',
   PR_REVIEW_THREADS: 'pr:review:threads',
+  PR_REVIEWER_ADD: 'pr:reviewer:add',
+  PR_REVIEWER_REMOVE: 'pr:reviewer:remove',
+  PR_COLLABORATORS: 'pr:collaborators',
+  PR_FILE_BLOB: 'pr:file-blob',
+  PR_THREAD_REPLY: 'pr:thread:reply',
+  PR_THREAD_RESOLVE: 'pr:thread:resolve',
+  PR_THREAD_UNRESOLVE: 'pr:thread:unresolve',
+  PR_APPLY_SUGGESTION: 'pr:apply-suggestion',
+
+  // Git mutations
+  GIT_DISCARD_FILE: 'git:discard-file',
+  GIT_STAGE_FILE: 'git:stage-file',
+  GIT_UNSTAGE_FILE: 'git:unstage-file',
+  GIT_STASH_FILE: 'git:stash-file',
+  GIT_REVEAL_FILE: 'git:reveal-file',
 
   // Worktree (remote branch)
   WORKTREE_CREATE_FROM_BRANCH: 'worktree:create-from-branch',

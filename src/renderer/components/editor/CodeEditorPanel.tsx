@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { bracketMatching } from '@codemirror/language'
+import { bracketMatching, codeFolding, foldGutter, foldKeymap } from '@codemirror/language'
 import { marked } from 'marked'
 import { useEditorStore, type OpenFile } from '../../stores/editorStore'
 import { getLanguageExtension } from './languageMap'
@@ -236,9 +236,11 @@ function CodeMirrorEditor({
         history(),
         drawSelection(),
         bracketMatching(),
+        codeFolding(),
+        foldGutter(),
         highlightActiveLine(),
         highlightActiveLineGutter(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
         theme,
         updateListener,
         EditorView.lineWrapping,

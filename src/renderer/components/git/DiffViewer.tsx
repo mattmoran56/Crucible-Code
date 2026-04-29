@@ -2,57 +2,113 @@ import React, { useState, useCallback, useRef, useMemo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useGitStore, WORKING_CHANGES_HASH } from '../../stores/gitStore'
 import { ToggleGroup } from '../ui/ToggleGroup'
-import { Button } from '../ui/Button'
-import { marked } from 'marked'
 import { useDiffHighlighting, type TokenMap } from '../../hooks/useDiffHighlighting'
 import type { ThemedToken } from 'shiki'
-import type { PRComment } from '../../../shared/types'
+import type { PRComment, PRReviewThread } from '../../../shared/types'
 import { ImageDiffViewer, isImageFile } from './ImageDiffViewer'
 import { DiffErrorBoundary } from '../ui/DiffErrorBoundary'
-
-// Configure marked for inline rendering
-marked.setOptions({ breaks: true })
+import { InlineThread, OrphanComment } from '../pullrequests/InlineThread'
 
 // --- Patch parsing ---
 
-interface DiffLine {
-  type: 'header' | 'context' | 'add' | 'delete' | 'hunk'
+export interface ExpanderMeta {
+  prevOldEnd: number
+  prevNewEnd: number
+  nextOldStart: number | null
+  nextNewStart: number | null
+  /** True if this expander is positioned after the last hunk (file may extend further). */
+  isTail?: boolean
+}
+
+export interface DiffLine {
+  type: 'header' | 'context' | 'add' | 'delete' | 'hunk' | 'expander'
   content: string
   oldLine?: number
   newLine?: number
+  /** Sequential id of the hunk this line belongs to (hunk row included). */
+  hunkId?: number
+  /** Set on `expander` rows. */
+  expander?: ExpanderMeta
 }
 
 export function parsePatch(patch: string): DiffLine[] {
-  const lines = patch.split('\n')
+  const sourceLines = patch.split('\n')
   const result: DiffLine[] = []
 
   let oldLine = 0
   let newLine = 0
   let inDiff = false
+  let hunkId = -1
 
-  for (const line of lines) {
+  // Track the running end-of-hunk so we can synthesise expanders.
+  let lastOldEnd = 0
+  let lastNewEnd = 0
+  let lastHadHunk = false
+
+  for (const line of sourceLines) {
     if (line.startsWith('@@')) {
-      inDiff = true
-      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
-      if (match) {
-        oldLine = parseInt(match[1], 10)
-        newLine = parseInt(match[2], 10)
+      const match = line.match(/@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/)
+      const oldStart = match ? parseInt(match[1], 10) : 0
+      const oldCount = match ? parseInt(match[2] ?? '1', 10) : 0
+      const newStart = match ? parseInt(match[3], 10) : 0
+      const newCount = match ? parseInt(match[4] ?? '1', 10) : 0
+
+      // Emit an expander between the previous hunk (or file top) and this hunk.
+      const prevOldEnd = lastHadHunk ? lastOldEnd : 0
+      const prevNewEnd = lastHadHunk ? lastNewEnd : 0
+      const gap = newStart - 1 - prevNewEnd
+      if (gap > 0) {
+        result.push({
+          type: 'expander',
+          content: '',
+          expander: {
+            prevOldEnd,
+            prevNewEnd,
+            nextOldStart: oldStart,
+            nextNewStart: newStart,
+          },
+        })
       }
-      result.push({ type: 'hunk', content: line })
+
+      hunkId += 1
+      inDiff = true
+      oldLine = oldStart
+      newLine = newStart
+      lastOldEnd = oldStart + Math.max(oldCount, 1) - 1
+      lastNewEnd = newStart + Math.max(newCount, 1) - 1
+      lastHadHunk = true
+
+      result.push({ type: 'hunk', content: line, hunkId })
     } else if (!inDiff) {
       result.push({ type: 'header', content: line })
     } else if (line.startsWith('+')) {
-      result.push({ type: 'add', content: line.slice(1), newLine: newLine++ })
+      result.push({ type: 'add', content: line.slice(1), newLine: newLine++, hunkId })
     } else if (line.startsWith('-')) {
-      result.push({ type: 'delete', content: line.slice(1), oldLine: oldLine++ })
+      result.push({ type: 'delete', content: line.slice(1), oldLine: oldLine++, hunkId })
     } else {
       result.push({
         type: 'context',
         content: line.startsWith(' ') ? line.slice(1) : line,
         oldLine: oldLine++,
         newLine: newLine++,
+        hunkId,
       })
     }
+  }
+
+  // Tail expander after the last hunk so users can extend down into the file.
+  if (lastHadHunk) {
+    result.push({
+      type: 'expander',
+      content: '',
+      expander: {
+        prevOldEnd: lastOldEnd,
+        prevNewEnd: lastNewEnd,
+        nextOldStart: null,
+        nextNewStart: null,
+        isTail: true,
+      },
+    })
   }
 
   return result
@@ -72,7 +128,7 @@ function toSplitRows(lines: DiffLine[]): SplitRow[] {
   while (i < lines.length) {
     const line = lines[i]
 
-    if (line.type === 'header' || line.type === 'hunk') {
+    if (line.type === 'header' || line.type === 'hunk' || line.type === 'expander') {
       rows.push({ left: line, right: line })
       i++
     } else if (line.type === 'context') {
@@ -107,6 +163,74 @@ function toSplitRows(lines: DiffLine[]): SplitRow[] {
   return rows
 }
 
+// --- Display lines: splice in expanded context, drop collapsed hunks ---
+
+interface DisplayOptions {
+  expandedNewLines: Set<number> | undefined
+  blobLines: string[] | null
+  collapsedHunks: Set<number>
+}
+
+function buildDisplayLines(parsed: DiffLine[], opts: DisplayOptions): DiffLine[] {
+  const out: DiffLine[] = []
+  const { expandedNewLines, blobLines, collapsedHunks } = opts
+
+  for (const line of parsed) {
+    if (line.type === 'expander' && line.expander) {
+      const { prevOldEnd, prevNewEnd, nextNewStart, isTail } = line.expander
+      const upperBound = isTail
+        ? blobLines?.length ?? prevNewEnd
+        : (nextNewStart ?? prevNewEnd + 1) - 1
+
+      if (upperBound <= prevNewEnd) {
+        // Nothing to expand — shouldn't happen but bail out safely.
+        out.push(line)
+        continue
+      }
+
+      let cursor = prevNewEnd + 1
+      const isExpanded = (n: number) => expandedNewLines?.has(n)
+      while (cursor <= upperBound) {
+        if (isExpanded(cursor) && blobLines && cursor - 1 < blobLines.length) {
+          const newLine = cursor
+          const oldLine = prevOldEnd + (cursor - prevNewEnd)
+          out.push({
+            type: 'context',
+            content: blobLines[newLine - 1] ?? '',
+            oldLine,
+            newLine,
+          })
+          cursor++
+        } else {
+          // Find run of unexpanded lines
+          let runEnd = cursor
+          while (runEnd <= upperBound && !isExpanded(runEnd)) runEnd++
+          out.push({
+            type: 'expander',
+            content: '',
+            expander: {
+              prevOldEnd: prevOldEnd + (cursor - prevNewEnd - 1),
+              prevNewEnd: cursor - 1,
+              nextOldStart: isTail ? null : line.expander.nextOldStart,
+              nextNewStart: isTail ? null : runEnd, // first not-yet-expanded boundary
+              isTail,
+            },
+          })
+          cursor = runEnd
+        }
+      }
+      continue
+    }
+
+    if (line.hunkId != null && line.type !== 'hunk' && collapsedHunks.has(line.hunkId)) {
+      continue
+    }
+    out.push(line)
+  }
+
+  return out
+}
+
 // --- Styles ---
 
 const LINE_STYLES: Record<string, string> = {
@@ -115,6 +239,7 @@ const LINE_STYLES: Record<string, string> = {
   context: '',
   add: 'bg-success/10',
   delete: 'bg-danger/10',
+  expander: 'bg-bg-tertiary',
 }
 
 const INDICATOR_STYLES: Record<string, string> = {
@@ -182,7 +307,6 @@ function useLineDrag(onAddComment?: (startLine: number, endLine: number, side: '
   }, [])
 
   const rangePosition = useCallback((lineNum: number, side: 'LEFT' | 'RIGHT'): 'none' | 'first' | 'middle' | 'last' | 'only' => {
-    // Check active drag first, then settled comment range
     let lo: number, hi: number, rangeSide: 'LEFT' | 'RIGHT'
     if (dragRange) {
       lo = Math.min(dragRange.start, dragRange.end)
@@ -203,10 +327,6 @@ function useLineDrag(onAddComment?: (startLine: number, endLine: number, side: '
     return 'middle'
   }, [dragRange, commentRange])
 
-  const isInRange = useCallback((lineNum: number, side: 'LEFT' | 'RIGHT') => {
-    return rangePosition(lineNum, side) !== 'none'
-  }, [rangePosition])
-
   const cancelComment = useCallback(() => {
     setCommentRange(null)
   }, [])
@@ -217,7 +337,7 @@ function useLineDrag(onAddComment?: (startLine: number, endLine: number, side: '
     setCommentRange(null)
   }, [commentRange, onAddComment])
 
-  return { dragRange, commentRange, startDrag, extendDrag, isInRange, rangePosition, cancelComment, submitComment }
+  return { dragRange, commentRange, startDrag, extendDrag, rangePosition, cancelComment, submitComment }
 }
 
 // --- Plus button gutter ---
@@ -249,7 +369,6 @@ function GutterButton({
       onMouseEnter={() => onMouseEnter(lineNum, side)}
       title="Add comment (drag to select range)"
     >
-      {/* Vertical selection bar */}
       {(rangePos === 'first' || rangePos === 'middle' || rangePos === 'last') && (
         <span
           className="absolute left-[9px] bg-accent"
@@ -306,86 +425,164 @@ function InlineCommentForm({
           }}
         />
         <div className="flex flex-col gap-1.5">
-          <Button
-            variant="primary"
-            size="sm"
+          <button
+            className="bg-accent text-white text-xs rounded hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            style={{ padding: '4px 10px' }}
             onClick={() => {
               if (text.trim()) onSubmit(text.trim())
             }}
           >
             Comment
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onCancel}>
+          </button>
+          <button
+            className="text-text-muted text-xs rounded hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            style={{ padding: '4px 10px' }}
+            onClick={onCancel}
+          >
             Cancel
-          </Button>
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
-// --- Inline comment display ---
+// --- Expander row ---
 
-function formatTime(dateStr: string): string {
-  const d = new Date(dateStr)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-    ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+interface ExpanderRowProps {
+  meta: ExpanderMeta
+  onExpand: (direction: 'up' | 'down' | 'all', meta: ExpanderMeta) => void
+  enabled: boolean
 }
 
-function InlineComment({ comment }: { comment: PRComment }) {
-  const html = useMemo(() => marked.parse(comment.body) as string, [comment.body])
+function ExpanderRow({ meta, onExpand, enabled }: ExpanderRowProps) {
+  const hasUpper = meta.nextNewStart != null && !meta.isTail
+  const lo = meta.prevNewEnd + 1
+  const hi = hasUpper ? meta.nextNewStart! - 1 : Infinity
+  const gap = Number.isFinite(hi) ? Math.max(0, hi - lo + 1) : null
+  const label = gap != null
+    ? `Show ${gap} unchanged ${gap === 1 ? 'line' : 'lines'}`
+    : 'Show more lines below'
+
+  const baseBtn =
+    'flex items-center justify-center gap-1 text-text-muted hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent rounded'
 
   return (
-    <div className="px-3 py-2 bg-bg-secondary border-y border-border" style={{ marginLeft: '20px' }}>
-      <div className="flex items-center gap-2 text-[10px] text-text-muted mb-2">
-        <span className="font-semibold text-text">{comment.author}</span>
-        <span>&middot;</span>
-        <span>{formatTime(comment.createdAt)}</span>
+    <div
+      className="flex items-center px-2 leading-5 bg-bg-tertiary border-y border-border text-[10px] text-text-muted select-none"
+      style={{ minHeight: 24 }}
+      title={enabled ? label : 'Loading file content needed to expand context…'}
+    >
+      <div className="flex items-center gap-1 mr-3">
+        {hasUpper && (
+          <button
+            className={baseBtn}
+            style={{ padding: '2px 6px' }}
+            disabled={!enabled}
+            onClick={() => onExpand('up', meta)}
+            aria-label="Expand 20 lines up"
+            title="Expand 20 lines up"
+          >
+            ↑ 20
+          </button>
+        )}
+        <button
+          className={baseBtn}
+          style={{ padding: '2px 6px' }}
+          disabled={!enabled}
+          onClick={() => onExpand('down', meta)}
+          aria-label="Expand 20 lines down"
+          title="Expand 20 lines down"
+        >
+          ↓ 20
+        </button>
+        {hasUpper && (
+          <button
+            className={baseBtn}
+            style={{ padding: '2px 6px' }}
+            disabled={!enabled}
+            onClick={() => onExpand('all', meta)}
+            aria-label="Expand all unchanged lines"
+            title="Expand all unchanged lines"
+          >
+            ⇕ all
+          </button>
+        )}
       </div>
-      <div
-        className="markdown-body"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      <span className="truncate">{label}</span>
     </div>
   )
 }
 
-// --- Comment lookup helper ---
+// --- Comment / thread lookup ---
 
-function useCommentLookup(comments: PRComment[], filePath: string | null) {
+interface ThreadLookup {
+  threadByLine: Map<string, PRReviewThread>
+  /** Comments not associated with a thread (e.g. older REST comments before threads loaded). */
+  orphansByLine: Map<string, PRComment[]>
+}
+
+function useThreadLookup(
+  comments: PRComment[],
+  threads: PRReviewThread[],
+  filePath: string | null,
+): ThreadLookup {
   return useMemo(() => {
-    const map = new Map<string, PRComment[]>()
-    if (!filePath) return map
-    for (const c of comments) {
-      if (c.path !== filePath) continue
-      const key = `${c.line}:${c.side || 'RIGHT'}`
-      const arr = map.get(key)
-      if (arr) arr.push(c)
-      else map.set(key, [c])
+    const threadByLine = new Map<string, PRReviewThread>()
+    const orphansByLine = new Map<string, PRComment[]>()
+    const claimedIds = new Set<number>()
+
+    if (!filePath) return { threadByLine, orphansByLine }
+
+    for (const t of threads) {
+      if (t.path !== filePath || t.line == null) continue
+      const side = t.side ?? 'RIGHT'
+      threadByLine.set(`${t.line}:${side}`, t)
+      for (const c of t.comments) claimedIds.add(c.id)
     }
-    return map
-  }, [comments, filePath])
+
+    for (const c of comments) {
+      if (c.path !== filePath || c.line == null) continue
+      if (claimedIds.has(c.id)) continue
+      const key = `${c.line}:${c.side || 'RIGHT'}`
+      const arr = orphansByLine.get(key)
+      if (arr) arr.push(c)
+      else orphansByLine.set(key, [c])
+    }
+
+    return { threadByLine, orphansByLine }
+  }, [comments, threads, filePath])
 }
 
 // --- Unified diff view ---
 
-function UnifiedView({
-  lines,
-  comments,
-  filePath,
-  tokenMap,
-  onAddComment,
-  scrollContainerRef,
-}: {
+interface ViewProps {
   lines: DiffLine[]
   comments: PRComment[]
+  threads: PRReviewThread[]
   filePath: string | null
   tokenMap: TokenMap | null
   onAddComment?: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
+  onExpand?: (direction: 'up' | 'down' | 'all', meta: ExpanderMeta) => void
+  expandEnabled?: boolean
+  collapsedHunks: Set<number>
+  onToggleHunk: (id: number) => void
+  onReplyThread?: (rootCommentId: number, body: string) => void | Promise<void>
+  onResolveThread?: (threadId: string) => void | Promise<void>
+  onUnresolveThread?: (threadId: string) => void | Promise<void>
+  onApplySuggestion?: (startLine: number, endLine: number, newText: string, author: string) => void | Promise<void>
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
-}) {
+}
+
+function UnifiedView({
+  lines, comments, threads, filePath, tokenMap, onAddComment,
+  onExpand, expandEnabled,
+  collapsedHunks, onToggleHunk,
+  onReplyThread, onResolveThread, onUnresolveThread, onApplySuggestion,
+  scrollContainerRef,
+}: ViewProps) {
   const { commentRange, startDrag, extendDrag, rangePosition, cancelComment, submitComment } = useLineDrag(onAddComment)
-  const commentsByLine = useCommentLookup(comments, filePath)
+  const { threadByLine, orphansByLine } = useThreadLookup(comments, threads, filePath)
 
   const virtualizer = useVirtualizer({
     count: lines.length,
@@ -400,13 +597,31 @@ function UnifiedView({
       {virtualizer.getVirtualItems().map((virtualRow) => {
         const i = virtualRow.index
         const line = lines[i]
+
+        if (line.type === 'expander' && line.expander) {
+          return (
+            <div
+              key={i}
+              ref={virtualizer.measureElement}
+              data-index={i}
+              style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
+            >
+              <ExpanderRow meta={line.expander} onExpand={onExpand ?? (() => {})} enabled={!!onExpand && !!expandEnabled} />
+            </div>
+          )
+        }
+
+        const isHunkRow = line.type === 'hunk'
         const lineNum = line.newLine ?? line.oldLine
         const canComment = onAddComment && lineNum != null && (line.type === 'add' || line.type === 'delete' || line.type === 'context')
         const side: 'LEFT' | 'RIGHT' = line.type === 'delete' ? 'LEFT' : 'RIGHT'
         const rangePos = lineNum != null ? rangePosition(lineNum, side) : 'none' as const
         const highlighted = rangePos !== 'none'
-        const lineComments = lineNum != null ? (commentsByLine.get(`${lineNum}:${side}`) ?? []) : []
+        const lineKey = lineNum != null ? `${lineNum}:${side}` : ''
+        const thread = lineKey ? threadByLine.get(lineKey) : undefined
+        const orphans = lineKey ? orphansByLine.get(lineKey) ?? [] : []
         const showForm = commentRange && lineNum === commentRange.endLine && commentRange.side === side
+        const isCollapsed = isHunkRow && line.hunkId != null && collapsedHunks.has(line.hunkId)
 
         return (
           <div
@@ -416,10 +631,16 @@ function UnifiedView({
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
           >
             <div
-              className={`group flex px-2 leading-5 ${LINE_STYLES[line.type] || ''} ${highlighted ? 'bg-accent/15' : ''}`}
+              className={`group flex px-2 leading-5 ${LINE_STYLES[line.type] || ''} ${highlighted ? 'bg-accent/15' : ''} ${isHunkRow ? 'cursor-pointer hover:bg-accent/10' : ''}`}
               onMouseEnter={() => lineNum != null && extendDrag(lineNum, side)}
+              onClick={isHunkRow && line.hunkId != null ? () => onToggleHunk(line.hunkId!) : undefined}
+              title={isHunkRow ? (isCollapsed ? 'Expand hunk' : 'Collapse hunk') : undefined}
             >
-              {canComment ? (
+              {isHunkRow ? (
+                <span className="w-5 shrink-0 text-text-muted text-center select-none">
+                  {isCollapsed ? '▸' : '▾'}
+                </span>
+              ) : canComment ? (
                 <GutterButton lineNum={lineNum!} side={side} rangePos={rangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
               ) : (
                 <span className="w-5 shrink-0" />
@@ -437,8 +658,17 @@ function UnifiedView({
                 <HighlightedCode tokens={tokenMap?.get(i)} fallback={line.content} />
               </pre>
             </div>
-            {lineComments.map((c) => (
-              <InlineComment key={c.id} comment={c} />
+            {thread && (
+              <InlineThread
+                thread={thread}
+                onReply={onReplyThread}
+                onResolve={onResolveThread}
+                onUnresolve={onUnresolveThread}
+                onApplySuggestion={onApplySuggestion}
+              />
+            )}
+            {orphans.map((c) => (
+              <OrphanComment key={c.id} comment={c} />
             ))}
             {showForm && (
               <InlineCommentForm
@@ -458,25 +688,16 @@ function UnifiedView({
 // --- Split diff view ---
 
 function SplitView({
-  lines,
-  comments,
-  filePath,
-  tokenMap,
-  onAddComment,
+  lines, comments, threads, filePath, tokenMap, onAddComment,
+  onExpand, expandEnabled,
+  collapsedHunks, onToggleHunk,
+  onReplyThread, onResolveThread, onUnresolveThread, onApplySuggestion,
   scrollContainerRef,
-}: {
-  lines: DiffLine[]
-  comments: PRComment[]
-  filePath: string | null
-  tokenMap: TokenMap | null
-  onAddComment?: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>
-}) {
+}: ViewProps) {
   const rows = useMemo(() => toSplitRows(lines), [lines])
   const { commentRange, startDrag, extendDrag, rangePosition, cancelComment, submitComment } = useLineDrag(onAddComment)
-  const commentsByLine = useCommentLookup(comments, filePath)
+  const { threadByLine, orphansByLine } = useThreadLookup(comments, threads, filePath)
 
-  // Map DiffLine references back to original indices for token lookup
   const lineToIndex = useMemo(() => {
     const map = new Map<DiffLine, number>()
     lines.forEach((line, i) => map.set(line, i))
@@ -502,6 +723,23 @@ function SplitView({
       {virtualizer.getVirtualItems().map((virtualRow) => {
         const i = virtualRow.index
         const row = rows[i]
+
+        if (row.left?.type === 'expander' && row.left.expander) {
+          return (
+            <div
+              key={i}
+              ref={virtualizer.measureElement}
+              data-index={i}
+              style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
+            >
+              <ExpanderRow meta={row.left.expander} onExpand={onExpand ?? (() => {})} enabled={!!onExpand && !!expandEnabled} />
+            </div>
+          )
+        }
+
+        const isHunkRow = row.left?.type === 'hunk'
+        const hunkId = row.left?.hunkId
+        const isCollapsed = isHunkRow && hunkId != null && collapsedHunks.has(hunkId)
         const leftLineNum = row.left?.oldLine
         const rightLineNum = row.right?.newLine
         const canCommentLeft = onAddComment && leftLineNum != null && row.left && (row.left.type === 'delete' || row.left.type === 'context')
@@ -511,8 +749,12 @@ function SplitView({
         const leftHighlighted = leftRangePos !== 'none'
         const rightHighlighted = rightRangePos !== 'none'
 
-        const leftComments = leftLineNum != null ? (commentsByLine.get(`${leftLineNum}:LEFT`) ?? []) : []
-        const rightComments = rightLineNum != null ? (commentsByLine.get(`${rightLineNum}:RIGHT`) ?? []) : []
+        const leftKey = leftLineNum != null ? `${leftLineNum}:LEFT` : ''
+        const rightKey = rightLineNum != null ? `${rightLineNum}:RIGHT` : ''
+        const leftThread = leftKey ? threadByLine.get(leftKey) : undefined
+        const rightThread = rightKey ? threadByLine.get(rightKey) : undefined
+        const leftOrphans = leftKey ? orphansByLine.get(leftKey) ?? [] : []
+        const rightOrphans = rightKey ? orphansByLine.get(rightKey) ?? [] : []
 
         const showLeftForm = commentRange && commentRange.side === 'LEFT' && leftLineNum === commentRange.endLine
         const showRightForm = commentRange && commentRange.side === 'RIGHT' && rightLineNum === commentRange.endLine
@@ -524,13 +766,20 @@ function SplitView({
             data-index={i}
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
           >
-            <div className="group flex leading-5">
-              {/* Left side */}
+            <div
+              className={`group flex leading-5 ${isHunkRow ? 'cursor-pointer' : ''}`}
+              onClick={isHunkRow && hunkId != null ? () => onToggleHunk(hunkId) : undefined}
+              title={isHunkRow ? (isCollapsed ? 'Expand hunk' : 'Collapse hunk') : undefined}
+            >
               <div
-                className={`flex w-1/2 border-r border-border px-2 ${cellStyle(row.left, leftHighlighted)}`}
+                className={`flex w-1/2 border-r border-border px-2 ${cellStyle(row.left, leftHighlighted)} ${isHunkRow ? 'hover:bg-accent/10' : ''}`}
                 onMouseEnter={() => leftLineNum != null && extendDrag(leftLineNum, 'LEFT')}
               >
-                {canCommentLeft ? (
+                {isHunkRow ? (
+                  <span className="w-5 shrink-0 text-text-muted text-center select-none">
+                    {isCollapsed ? '▸' : '▾'}
+                  </span>
+                ) : canCommentLeft ? (
                   <GutterButton lineNum={leftLineNum!} side="LEFT" rangePos={leftRangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
                 ) : (
                   <span className="w-5 shrink-0" />
@@ -548,12 +797,13 @@ function SplitView({
                   />
                 </pre>
               </div>
-              {/* Right side */}
               <div
-                className={`flex w-1/2 px-2 ${cellStyle(row.right, rightHighlighted)}`}
+                className={`flex w-1/2 px-2 ${cellStyle(row.right, rightHighlighted)} ${isHunkRow ? 'hover:bg-accent/10' : ''}`}
                 onMouseEnter={() => rightLineNum != null && extendDrag(rightLineNum, 'RIGHT')}
               >
-                {canCommentRight ? (
+                {isHunkRow ? (
+                  <span className="w-5 shrink-0" />
+                ) : canCommentRight ? (
                   <GutterButton lineNum={rightLineNum!} side="RIGHT" rangePos={rightRangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
                 ) : (
                   <span className="w-5 shrink-0" />
@@ -572,12 +822,20 @@ function SplitView({
                 </pre>
               </div>
             </div>
-            {/* Left-side comments/form */}
-            {(leftComments.length > 0 || showLeftForm) && (
+            {(leftThread || leftOrphans.length > 0 || showLeftForm) && (
               <div className="flex">
                 <div className="w-1/2 border-r border-border">
-                  {leftComments.map((c) => (
-                    <InlineComment key={c.id} comment={c} />
+                  {leftThread && (
+                    <InlineThread
+                      thread={leftThread}
+                      onReply={onReplyThread}
+                      onResolve={onResolveThread}
+                      onUnresolve={onUnresolveThread}
+                      onApplySuggestion={onApplySuggestion}
+                    />
+                  )}
+                  {leftOrphans.map((c) => (
+                    <OrphanComment key={c.id} comment={c} />
                   ))}
                   {showLeftForm && (
                     <InlineCommentForm
@@ -591,13 +849,21 @@ function SplitView({
                 <div className="w-1/2" />
               </div>
             )}
-            {/* Right-side comments/form */}
-            {(rightComments.length > 0 || showRightForm) && (
+            {(rightThread || rightOrphans.length > 0 || showRightForm) && (
               <div className="flex">
                 <div className="w-1/2 border-r border-border" />
                 <div className="w-1/2">
-                  {rightComments.map((c) => (
-                    <InlineComment key={c.id} comment={c} />
+                  {rightThread && (
+                    <InlineThread
+                      thread={rightThread}
+                      onReply={onReplyThread}
+                      onResolve={onResolveThread}
+                      onUnresolve={onUnresolveThread}
+                      onApplySuggestion={onApplySuggestion}
+                    />
+                  )}
+                  {rightOrphans.map((c) => (
+                    <OrphanComment key={c.id} comment={c} />
                   ))}
                   {showRightForm && (
                     <InlineCommentForm
@@ -628,15 +894,31 @@ function DiffHeader({
   filePath,
   mode,
   onModeChange,
+  onCollapseAll,
+  collapseAllLabel,
 }: {
   filePath: string
   mode: DiffMode
   onModeChange: (m: DiffMode) => void
+  onCollapseAll?: () => void
+  collapseAllLabel?: string
 }) {
   return (
     <div className="bg-bg-tertiary border-b border-border flex items-center justify-between" style={{ padding: '6px 12px' }}>
       <span className="text-xs text-text-muted truncate mr-3">{filePath}</span>
-      <ToggleGroup options={DIFF_MODE_OPTIONS} value={mode} onChange={onModeChange} />
+      <div className="flex items-center gap-2">
+        {onCollapseAll && (
+          <button
+            className="text-[10px] text-text-muted hover:text-text rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            style={{ padding: '2px 6px' }}
+            onClick={onCollapseAll}
+            title={collapseAllLabel}
+          >
+            {collapseAllLabel}
+          </button>
+        )}
+        <ToggleGroup options={DIFF_MODE_OPTIONS} value={mode} onChange={onModeChange} />
+      </div>
     </div>
   )
 }
@@ -647,8 +929,28 @@ export function DiffViewer({ repoPath }: { repoPath?: string }) {
   const { filePatch, selectedFilePath, selectedCommitHash, changedFiles } = useGitStore()
   const [mode, setMode] = useState<DiffMode>('unified')
   const scrollRef = useRef<HTMLDivElement>(null)
-  const lines = useMemo(() => (filePatch ? parsePatch(filePatch) : []), [filePatch])
-  const tokenMap = useDiffHighlighting(lines, selectedFilePath)
+  const parsedLines = useMemo(() => (filePatch ? parsePatch(filePatch) : []), [filePatch])
+  const [collapsedHunks, setCollapsedHunks] = useState<Set<number>>(new Set())
+  const displayLines = useMemo(
+    () => buildDisplayLines(parsedLines, { expandedNewLines: undefined, blobLines: null, collapsedHunks }),
+    [parsedLines, collapsedHunks]
+  )
+  const tokenMap = useDiffHighlighting(displayLines, selectedFilePath)
+  const onToggleHunk = useCallback((id: number) => {
+    setCollapsedHunks((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+  const onCollapseAll = useCallback(() => {
+    const all = new Set<number>()
+    for (const l of parsedLines) {
+      if (l.type === 'hunk' && l.hunkId != null) all.add(l.hunkId)
+    }
+    setCollapsedHunks(collapsedHunks.size === all.size ? new Set() : all)
+  }, [parsedLines, collapsedHunks])
 
   if (!selectedFilePath) {
     return (
@@ -666,7 +968,6 @@ export function DiffViewer({ repoPath }: { repoPath?: string }) {
     )
   }
 
-  // Image files: show visual preview instead of text diff
   if (repoPath && selectedFilePath && isImageFile(selectedFilePath) && selectedCommitHash) {
     const fileStatus = changedFiles.find((f) => f.filePath === selectedFilePath)?.status || 'modified'
     const isWorking = selectedCommitHash === WORKING_CHANGES_HASH
@@ -686,13 +987,37 @@ export function DiffViewer({ repoPath }: { repoPath?: string }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <DiffHeader filePath={selectedFilePath} mode={mode} onModeChange={setMode} />
+      <DiffHeader
+        filePath={selectedFilePath}
+        mode={mode}
+        onModeChange={setMode}
+        onCollapseAll={onCollapseAll}
+        collapseAllLabel={collapsedHunks.size > 0 ? 'Expand all hunks' : 'Collapse hunks'}
+      />
       <div ref={scrollRef} className="flex-1 overflow-auto font-mono text-xs">
         <DiffErrorBoundary filePath={selectedFilePath}>
           {mode === 'unified' ? (
-            <UnifiedView lines={lines} comments={[]} filePath={null} tokenMap={tokenMap} scrollContainerRef={scrollRef} />
+            <UnifiedView
+              lines={displayLines}
+              comments={[]}
+              threads={[]}
+              filePath={null}
+              tokenMap={tokenMap}
+              collapsedHunks={collapsedHunks}
+              onToggleHunk={onToggleHunk}
+              scrollContainerRef={scrollRef}
+            />
           ) : (
-            <SplitView lines={lines} comments={[]} filePath={null} tokenMap={tokenMap} scrollContainerRef={scrollRef} />
+            <SplitView
+              lines={displayLines}
+              comments={[]}
+              threads={[]}
+              filePath={null}
+              tokenMap={tokenMap}
+              collapsedHunks={collapsedHunks}
+              onToggleHunk={onToggleHunk}
+              scrollContainerRef={scrollRef}
+            />
           )}
         </DiffErrorBoundary>
       </div>
@@ -700,33 +1025,121 @@ export function DiffViewer({ repoPath }: { repoPath?: string }) {
   )
 }
 
-// --- PR DiffViewer (with comments and add-comment support) ---
+// --- PR DiffViewer (with comments, threads, expand-context, suggestions) ---
+
+export interface PRDiffViewerProps {
+  patch: string
+  filePath: string
+  comments: PRComment[]
+  threads?: PRReviewThread[]
+  onAddComment: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
+  blobLines?: string[] | null
+  expandedNewLines?: Set<number>
+  onExpand?: (direction: 'up' | 'down' | 'all', meta: ExpanderMeta) => void | Promise<void>
+  expandEnabled?: boolean
+  onReplyThread?: (rootCommentId: number, body: string) => void | Promise<void>
+  onResolveThread?: (threadId: string) => void | Promise<void>
+  onUnresolveThread?: (threadId: string) => void | Promise<void>
+  onApplySuggestion?: (startLine: number, endLine: number, newText: string, author: string) => void | Promise<void>
+  initialMode?: DiffMode
+}
 
 export function PRDiffViewer({
   patch,
   filePath,
   comments,
+  threads = [],
   onAddComment,
-}: {
-  patch: string
-  filePath: string
-  comments: PRComment[]
-  onAddComment: (startLine: number, endLine: number, side: 'LEFT' | 'RIGHT', body: string) => void
-}) {
-  const [mode, setMode] = useState<DiffMode>('split')
+  blobLines,
+  expandedNewLines,
+  onExpand,
+  expandEnabled,
+  onReplyThread,
+  onResolveThread,
+  onUnresolveThread,
+  onApplySuggestion,
+  initialMode = 'split',
+}: PRDiffViewerProps) {
+  const [mode, setMode] = useState<DiffMode>(initialMode)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const lines = useMemo(() => parsePatch(patch), [patch])
-  const tokenMap = useDiffHighlighting(lines, filePath)
+  const parsedLines = useMemo(() => parsePatch(patch), [patch])
+  const [collapsedHunks, setCollapsedHunks] = useState<Set<number>>(new Set())
+
+  const displayLines = useMemo(
+    () => buildDisplayLines(parsedLines, {
+      expandedNewLines,
+      blobLines: blobLines ?? null,
+      collapsedHunks,
+    }),
+    [parsedLines, expandedNewLines, blobLines, collapsedHunks]
+  )
+
+  const tokenMap = useDiffHighlighting(displayLines, filePath)
+
+  const onToggleHunk = useCallback((id: number) => {
+    setCollapsedHunks((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const onCollapseAll = useCallback(() => {
+    const all = new Set<number>()
+    for (const l of parsedLines) {
+      if (l.type === 'hunk' && l.hunkId != null) all.add(l.hunkId)
+    }
+    setCollapsedHunks(collapsedHunks.size === all.size ? new Set() : all)
+  }, [parsedLines, collapsedHunks])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <DiffHeader filePath={filePath} mode={mode} onModeChange={setMode} />
+      <DiffHeader
+        filePath={filePath}
+        mode={mode}
+        onModeChange={setMode}
+        onCollapseAll={onCollapseAll}
+        collapseAllLabel={collapsedHunks.size > 0 ? 'Expand all hunks' : 'Collapse hunks'}
+      />
       <div ref={scrollRef} className="flex-1 overflow-auto font-mono text-xs">
         <DiffErrorBoundary filePath={filePath}>
           {mode === 'unified' ? (
-            <UnifiedView lines={lines} comments={comments} filePath={filePath} tokenMap={tokenMap} onAddComment={onAddComment} scrollContainerRef={scrollRef} />
+            <UnifiedView
+              lines={displayLines}
+              comments={comments}
+              threads={threads}
+              filePath={filePath}
+              tokenMap={tokenMap}
+              onAddComment={onAddComment}
+              onExpand={onExpand}
+              expandEnabled={expandEnabled}
+              collapsedHunks={collapsedHunks}
+              onToggleHunk={onToggleHunk}
+              onReplyThread={onReplyThread}
+              onResolveThread={onResolveThread}
+              onUnresolveThread={onUnresolveThread}
+              onApplySuggestion={onApplySuggestion}
+              scrollContainerRef={scrollRef}
+            />
           ) : (
-            <SplitView lines={lines} comments={comments} filePath={filePath} tokenMap={tokenMap} onAddComment={onAddComment} scrollContainerRef={scrollRef} />
+            <SplitView
+              lines={displayLines}
+              comments={comments}
+              threads={threads}
+              filePath={filePath}
+              tokenMap={tokenMap}
+              onAddComment={onAddComment}
+              onExpand={onExpand}
+              expandEnabled={expandEnabled}
+              collapsedHunks={collapsedHunks}
+              onToggleHunk={onToggleHunk}
+              onReplyThread={onReplyThread}
+              onResolveThread={onResolveThread}
+              onUnresolveThread={onUnresolveThread}
+              onApplySuggestion={onApplySuggestion}
+              scrollContainerRef={scrollRef}
+            />
           )}
         </DiffErrorBoundary>
       </div>

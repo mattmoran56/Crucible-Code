@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditorStore } from '../../stores/editorStore'
 import { useToastStore } from '../../stores/toastStore'
 import { IconButton } from '../ui/IconButton'
+import { useContextMenu, type ContextMenuItem } from '../ui/ContextMenu'
 import type { FileEntry } from '../../../shared/types'
 
 const DRAG_MIME = 'application/x-file-tree'
@@ -193,6 +194,57 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
     return undefined
   }
 
+  const { onContextMenu, menu } = useContextMenu()
+
+  const buildItemsFor = useCallback(
+    (entry: FileEntry): ContextMenuItem[] => {
+      const { addToast } = useToastStore.getState()
+      const items: ContextMenuItem[] = []
+      if (!entry.isDirectory) {
+        items.push({ label: 'Open', onClick: () => handleFileClick(entry.path) })
+      } else {
+        items.push({
+          label: 'New file in folder',
+          onClick: () => handleStartCreate(entry.path),
+        })
+      }
+      const relativePath = entry.path.startsWith(repoPath + '/')
+        ? entry.path.slice(repoPath.length + 1)
+        : entry.path
+      items.push({
+        label: 'Copy relative path',
+        onClick: () => navigator.clipboard.writeText(relativePath),
+      })
+      items.push({
+        label: 'Copy absolute path',
+        onClick: () => navigator.clipboard.writeText(entry.path),
+        separatorAfter: true,
+      })
+      items.push({
+        label: 'Reveal in Finder',
+        onClick: () => window.api.git.revealFile(entry.path),
+      })
+      if (!entry.isDirectory) {
+        items.push({
+          label: 'Delete file',
+          variant: 'danger',
+          onClick: async () => {
+            if (!confirm(`Delete ${relativePath}?`)) return
+            try {
+              await window.api.git.discardFile(repoPath, relativePath)
+              const dir = entry.path.substring(0, entry.path.lastIndexOf('/'))
+              await loadDirectory(dir || repoPath)
+            } catch (err) {
+              addToast('error', err instanceof Error ? err.message : String(err))
+            }
+          },
+        })
+      }
+      return items
+    },
+    [repoPath, handleFileClick, handleStartCreate, loadDirectory]
+  )
+
   const rootEntries = entries.get(repoPath) ?? []
 
   return (
@@ -243,6 +295,7 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
             onCancelCreate={handleCancelCreate}
             onDrop={handleDrop}
             onDragOverDir={setDragOverDir}
+            onNodeContextMenu={(e, entry) => onContextMenu(e, buildItemsFor(entry))}
           />
         ))}
         {/* Inline creation for root */}
@@ -256,6 +309,7 @@ export function FileExplorer({ repoPath }: FileExplorerProps) {
           />
         )}
       </div>
+      {menu}
     </div>
   )
 }
@@ -329,6 +383,7 @@ function TreeNode({
   onCancelCreate,
   onDrop,
   onDragOverDir,
+  onNodeContextMenu,
 }: {
   entry: FileEntry
   depth: number
@@ -347,6 +402,7 @@ function TreeNode({
   onCancelCreate: () => void
   onDrop: (targetDir: string, sourcePath: string) => void
   onDragOverDir: (dir: string | null) => void
+  onNodeContextMenu: (e: React.MouseEvent, entry: FileEntry) => void
 }) {
   const isExpanded = expandedDirs.has(entry.path)
   const isSelected = selectedPath === entry.path
@@ -394,6 +450,7 @@ function TreeNode({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDropOnDir}
+        onContextMenu={(e) => onNodeContextMenu(e, entry)}
         className={`flex items-center gap-1 cursor-pointer select-none group
           hover:bg-bg-tertiary transition-colors
           ${isActive ? 'bg-accent/15 text-accent' : isSelected ? 'bg-bg-tertiary text-text' : 'text-text'}
@@ -515,6 +572,7 @@ function TreeNode({
               onCancelCreate={onCancelCreate}
               onDrop={onDrop}
               onDragOverDir={onDragOverDir}
+              onNodeContextMenu={onNodeContextMenu}
             />
           ))}
           {children.length === 0 && creatingInDir !== entry.path && (
