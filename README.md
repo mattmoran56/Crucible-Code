@@ -280,6 +280,15 @@ Built-in code editor for when you need to make quick edits without switching app
 - **Right-click context menu** — Open, copy relative/absolute path, reveal in Finder, delete file
 - **Create and rename** — Create new files, rename existing ones from the explorer
 - **Toggle mode** — Switch between editor view and terminal view from the workspace
+- **Branch picker** — Click the branch label next to **Code** in the sidebar to search and switch branches. Branches with open PRs show a `#N` badge and a status dot (open / draft / merged). Switching with uncommitted changes prompts to either stash them or carry them onto the new branch.
+- **Worktree tab** — The same commit log + working changes + diff viewer the session worktrees get, but pointed at the main repo so you can dig through history and uncommitted changes for whichever branch you have checked out.
+
+<table>
+<tr>
+<td><img src="docs/screenshots/editor-branch-picker.png" alt="Branch picker dropdown showing branches with PR badges" /></td>
+<td><img src="docs/screenshots/editor-worktree.png" alt="Worktree tab in Code mode showing commits, changed files, and diff viewer" /></td>
+</tr>
+</table>
 
 </details>
 

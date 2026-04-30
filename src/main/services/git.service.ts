@@ -82,14 +82,17 @@ export interface CheckoutResult {
   error?: string
 }
 
+export type CheckoutMode = 'stash' | 'carry'
+
 export async function checkoutBranch(
   repoPath: string,
-  branch: string
+  branch: string,
+  mode: CheckoutMode = 'stash'
 ): Promise<CheckoutResult> {
   const g = git(repoPath)
   const gc = gitNoLFS(repoPath)
 
-  // Stash any uncommitted changes
+  // Stash any uncommitted changes (unless caller asked to carry them)
   const status = await g.status()
   const dirty =
     status.modified.length > 0 ||
@@ -99,7 +102,7 @@ export async function checkoutBranch(
     status.staged.length > 0
   let stashed = false
 
-  if (dirty) {
+  if (dirty && mode === 'stash') {
     await g.raw([
       'stash',
       'push',

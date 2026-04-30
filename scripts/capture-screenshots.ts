@@ -87,6 +87,16 @@ const targets: ScreenshotTarget[] = [
     delay: 2000,
   },
   {
+    name: 'editor-branch-picker',
+    storyId: 'app-full-layout--editor-branch-picker',
+    delay: 2500,
+  },
+  {
+    name: 'editor-worktree',
+    storyId: 'app-full-layout--editor-worktree-view',
+    delay: 2000,
+  },
+  {
     name: 'settings',
     storyId: 'app-full-layout--settings',
     delay: 1000,
