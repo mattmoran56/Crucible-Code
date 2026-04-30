@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { DynamicTerminalPanel } from '../terminal/DynamicTerminalPanel'
 import { EditorPanel } from './EditorPanel'
+import { GitPanelView } from '../git/GitPanelView'
 import { ResizeHandle } from '../ui'
 import { useProjectStore } from '../../stores/projectStore'
 import { useTerminalStore } from '../../stores/terminalStore'
@@ -63,7 +64,7 @@ export function EditorWorkspace() {
     if (prevContextRef.current && prevContextRef.current !== editorContextId) {
       saveLayout(prevContextRef.current)
     }
-    resetLayout(['code'], 'code', editorContextId)
+    resetLayout(['code', 'git'], 'code', editorContextId)
     prevContextRef.current = editorContextId
   }, [editorContextId, resetLayout, saveLayout])
 
@@ -193,6 +194,15 @@ export function EditorWorkspace() {
     codePanelTarget.current = div
   }
 
+  // Core panel portal target for the 'git' (Worktree) tab
+  const gitPanelTarget = useRef<HTMLDivElement | null>(null)
+  if (!gitPanelTarget.current) {
+    const div = document.createElement('div')
+    div.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;min-height:0'
+    div.dataset.panelTarget = 'git'
+    gitPanelTarget.current = div
+  }
+
   // Dynamic portal targets
   const dynamicPanelTargets = useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -227,14 +237,17 @@ export function EditorWorkspace() {
   // Move portal targets into columns
   useEffect(() => {
     const codeTarget = codePanelTarget.current!
+    const gitTarget = gitPanelTarget.current!
     const dynTargets = dynamicPanelTargets.current
     const container = columnsRef.current
     if (!container) return
 
-    // Hide code target first
-    codeTarget.style.visibility = 'hidden'
-    codeTarget.style.pointerEvents = 'none'
-    codeTarget.style.zIndex = '0'
+    // Hide core targets first
+    for (const t of [codeTarget, gitTarget]) {
+      t.style.visibility = 'hidden'
+      t.style.pointerEvents = 'none'
+      t.style.zIndex = '0'
+    }
 
     for (const [, div] of dynTargets) {
       div.style.visibility = 'hidden'
@@ -252,6 +265,8 @@ export function EditorWorkspace() {
         let target: HTMLDivElement | undefined
         if (tab === 'code') {
           target = codeTarget
+        } else if (tab === 'git') {
+          target = gitTarget
         } else if (isDynamicTab(tab)) {
           target = dynTargets.get(tab)
         }
@@ -312,6 +327,14 @@ export function EditorWorkspace() {
       </div>
       {/* Code panel portal */}
       {createPortal(<EditorPanel repoPath={repoPath} />, codePanelTarget.current)}
+      {/* Worktree (Git) panel portal */}
+      {createPortal(
+        <GitPanelView
+          repoPath={repoPath}
+          visible={columns.some((c) => c.activeTab === 'git')}
+        />,
+        gitPanelTarget.current
+      )}
       {/* Dynamic terminal panels */}
       {[...allDynamicTabs].map((tab) => {
         const target = dynamicPanelTargets.current.get(tab)

@@ -34,8 +34,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_DIFF, repoPath, commitHash),
     fileDiff: (repoPath: string, commitHash: string, filePath: string): Promise<string> =>
       ipcRenderer.invoke(IPC.GIT_FILE_DIFF, repoPath, commitHash, filePath),
-    checkout: (repoPath: string, branch: string): Promise<{ stashed: boolean; detachedWorktree?: string; error?: string }> =>
-      ipcRenderer.invoke(IPC.GIT_CHECKOUT, repoPath, branch),
+    checkout: (repoPath: string, branch: string, mode?: 'stash' | 'carry'): Promise<{ stashed: boolean; detachedWorktree?: string; error?: string }> =>
+      ipcRenderer.invoke(IPC.GIT_CHECKOUT, repoPath, branch, mode),
     restoreWorktree: (worktreePath: string, branch: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GIT_RESTORE_WORKTREE, worktreePath, branch),
     workingFiles: (repoPath: string): Promise<FileDiff[]> =>
