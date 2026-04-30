@@ -15,6 +15,9 @@ import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
 import { ImportWorktreeDialog } from '../sessions/ImportWorktreeDialog'
 import { OpenBranchDialog } from '../sessions/OpenBranchDialog'
 import { PRCard } from '../pullrequests/PRCard'
+import { CodeBranchPicker } from './CodeBranchPicker'
+import { DirtyCheckoutDialog } from './DirtyCheckoutDialog'
+import { useToastStore } from '../../stores/toastStore'
 import { Sidebar, SidebarSection } from '../ui/Sidebar'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu } from '../ui/DropdownMenu'
@@ -174,6 +177,76 @@ export function SessionSidebar() {
     }
   }
 
+  // Branch-switch flow for the Code nav picker.
+  const [pendingBranch, setPendingBranch] = useState<string | null>(null)
+  const [checkoutBusy, setCheckoutBusy] = useState(false)
+
+  const refreshOpenFiles = useCallback(async (repoPath: string) => {
+    const { openFiles, handleExternalChange } = useEditorStore.getState()
+    await Promise.all(
+      openFiles.map((f) => handleExternalChange(f.path, repoPath))
+    )
+  }, [])
+
+  const performCheckout = useCallback(async (
+    repoPath: string,
+    branch: string,
+    mode: 'stash' | 'carry'
+  ) => {
+    const { addToast } = useToastStore.getState()
+    setCheckoutBusy(true)
+    try {
+      const result = await window.api.git.checkout(repoPath, branch, mode)
+      if (result.error) {
+        addToast('error', result.error)
+        return false
+      }
+      if (result.stashed) {
+        addToast('info', `Stashed local changes before switching to ${branch}`)
+      }
+      if (result.detachedWorktree) {
+        addToast('info', `Detached worktree at ${result.detachedWorktree} to free this branch`)
+      }
+      addToast('success', `Switched to ${branch}`)
+      await loadBranch(repoPath)
+      await refreshOpenFiles(repoPath)
+      return true
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+      return false
+    } finally {
+      setCheckoutBusy(false)
+    }
+  }, [loadBranch, refreshOpenFiles])
+
+  const handleBranchSelect = useCallback(async (branch: string) => {
+    if (!activeProject) return
+    const repoPath = activeProject.repoPath
+    try {
+      const workingFiles = await window.api.git.workingFiles(repoPath)
+      if (workingFiles.length > 0) {
+        setPendingBranch(branch)
+        return
+      }
+      await performCheckout(repoPath, branch, 'stash')
+    } catch (err) {
+      const { addToast } = useToastStore.getState()
+      addToast('error', err instanceof Error ? err.message : String(err))
+    }
+  }, [activeProject, performCheckout])
+
+  const handleDialogLeave = useCallback(async () => {
+    if (!activeProject || !pendingBranch) return
+    const ok = await performCheckout(activeProject.repoPath, pendingBranch, 'stash')
+    if (ok) setPendingBranch(null)
+  }, [activeProject, pendingBranch, performCheckout])
+
+  const handleDialogCarry = useCallback(async () => {
+    if (!activeProject || !pendingBranch) return
+    const ok = await performCheckout(activeProject.repoPath, pendingBranch, 'carry')
+    if (ok) setPendingBranch(null)
+  }, [activeProject, pendingBranch, performCheckout])
+
   const { sortBy, groupBy, collapsedGroups, toggleGroupCollapsed } = useSessionViewStore()
 
   const sortedSessions = useMemo(() => {
@@ -328,14 +401,22 @@ export function SessionSidebar() {
     <Sidebar>
       {/* Code editor nav item — sibling of the panels container so its height
           doesn't have to be hard-coded into the resize math */}
-      <button
-        className={`flex-shrink-0 flex items-center gap-2 w-full text-left text-xs transition-colors border-b border-border
+      <div
+        role="button"
+        tabIndex={0}
+        className={`flex-shrink-0 flex items-center gap-2 w-full text-left text-xs transition-colors border-b border-border cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent
           ${editorMode
             ? 'bg-accent/15 text-accent'
             : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
           }`}
         style={{ padding: '10px 12px' }}
         onClick={handleCodeClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            handleCodeClick()
+          }
+        }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="16 18 22 12 16 6" />
@@ -348,12 +429,26 @@ export function SessionSidebar() {
             className="shrink-0 w-2 h-2 rounded-full bg-warning"
           />
         )}
-        {currentBranch && (
-          <span className="ml-auto text-text-muted text-[10px] truncate" style={{ maxWidth: 80 }}>
-            {currentBranch}
-          </span>
+        {currentBranch && activeProject && (
+          <CodeBranchPicker
+            repoPath={activeProject.repoPath}
+            currentBranch={currentBranch}
+            onSelect={handleBranchSelect}
+          />
         )}
-      </button>
+      </div>
+
+      {activeProject && currentBranch && (
+        <DirtyCheckoutDialog
+          open={pendingBranch != null}
+          fromBranch={currentBranch}
+          targetBranch={pendingBranch ?? ''}
+          busy={checkoutBusy}
+          onCancel={() => setPendingBranch(null)}
+          onLeave={handleDialogLeave}
+          onCarry={handleDialogCarry}
+        />
+      )}
 
       <div ref={setPanelsContainerEl} className="flex flex-col flex-1 min-h-0">
         {/* Sessions section */}

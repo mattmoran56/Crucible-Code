@@ -44,6 +44,8 @@ interface StorySetupOptions {
   activeWorkspaceTab?: 'agent' | 'git' | 'pr'
   activePRNumber?: number | null
   editorMode?: boolean
+  /** Active tab inside the Code (editor) workspace. Defaults to 'code'. */
+  editorActiveTab?: 'code' | 'git'
   settingsOpen?: boolean
   /** Session statuses to show in sidebar — shorthand for default 'agent' tab in each context */
   sessionStatuses?: Record<string, SessionStatus>
@@ -258,9 +260,23 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     ? `pr-${options.activePRNumber}`
     : sessionId
 
+  // Also pre-save the Code workspace layout so EditorWorkspace restores the
+  // chosen active tab (e.g. the Worktree tab) when editorMode is enabled.
+  const editorContextId = `code-editor:${projectId}`
+  const editorActiveTab = options.editorActiveTab ?? 'code'
+  const editorLayout = [{
+    id: 'col-editor-preset',
+    tabs: ['code', 'git'] as WorkspaceTab[],
+    activeTab: editorActiveTab as WorkspaceTab,
+    flex: 1,
+  }]
+
   useWorkspaceLayoutStore.setState({
-    columns: savedLayout,
-    savedLayouts: { [contextId]: savedLayout },
+    columns: options.editorMode ? editorLayout : savedLayout,
+    savedLayouts: {
+      [contextId]: savedLayout,
+      [editorContextId]: editorLayout,
+    },
   })
 }
 

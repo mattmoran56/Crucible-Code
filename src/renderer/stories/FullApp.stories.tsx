@@ -60,6 +60,46 @@ export const EditorView: Story = {
   ],
 }
 
+/** Auto-clicks the Code-nav branch picker after mount so the dropdown is open. */
+function OpenBranchPickerAfterMount() {
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const trigger = document.querySelector<HTMLButtonElement>(
+        '[aria-haspopup="listbox"][aria-expanded]'
+      )
+      trigger?.click()
+    }, 200)
+    return () => clearTimeout(id)
+  }, [])
+  return null
+}
+
+export const EditorBranchPicker: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ editorMode: true })
+      return (
+        <>
+          <OpenBranchPickerAfterMount />
+          <Story />
+        </>
+      )
+    },
+  ],
+}
+
+export const EditorWorktreeView: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({
+        editorMode: true,
+        editorActiveTab: 'git',
+      })
+      return <Story />
+    },
+  ],
+}
+
 export const Settings: Story = {
   decorators: [
     (Story) => {
