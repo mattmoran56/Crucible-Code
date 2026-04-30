@@ -6,6 +6,20 @@ import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDe
 
 const execFileAsync = promisify(execFile)
 
+export async function getCurrentGitHubUser(repoPath: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['api', 'user', '--jq', '.login'],
+      { cwd: repoPath }
+    )
+    const login = stdout.trim()
+    return login || null
+  } catch {
+    return null
+  }
+}
+
 async function getRepoOwnerName(repoPath: string): Promise<{ owner: string; name: string }> {
   const { stdout } = await execFileAsync(
     'gh',
@@ -32,7 +46,7 @@ function deriveCIStatus(rollup: Array<{ status?: string | null; conclusion?: str
 }
 
 export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
-  const fields = 'number,title,headRefName,baseRefName,author,updatedAt,isDraft,state,statusCheckRollup'
+  const fields = 'number,title,headRefName,baseRefName,author,assignees,reviewRequests,createdAt,updatedAt,isDraft,state,statusCheckRollup'
 
   async function fetchPRs(state: string): Promise<PullRequest[]> {
     try {
@@ -48,6 +62,9 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         headRefName: string
         baseRefName: string
         author: { login: string }
+        assignees?: Array<{ login: string }>
+        reviewRequests?: Array<{ login?: string; name?: string }>
+        createdAt: string
         updatedAt: string
         isDraft: boolean
         state: string
@@ -60,6 +77,11 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         headRefName: pr.headRefName,
         baseRefName: pr.baseRefName,
         author: pr.author.login,
+        assignees: (pr.assignees || []).map((a) => a.login).filter(Boolean),
+        requestedReviewers: (pr.reviewRequests || [])
+          .map((r) => r.login || r.name || '')
+          .filter(Boolean),
+        createdAt: pr.createdAt,
         updatedAt: pr.updatedAt,
         isDraft: pr.isDraft,
         state: pr.state === 'MERGED' ? 'MERGED' as const : 'OPEN' as const,

@@ -131,6 +131,7 @@ export const mockApi = {
 
   github: {
     listPRs: async () => mockPullRequests,
+    getCurrentUser: async () => 'alice',
     getSeenPRs: async () => [],
     markPRSeen: async () => {},
     getDiff: async () => mockUnifiedDiff,
@@ -222,5 +223,6 @@ export const mockApi = {
     onStatus: () => noop(),
     onLog: () => noop(),
     apply: async () => {},
+    getBuiltCommit: async () => 'mock-commit-sha',
   },
 }

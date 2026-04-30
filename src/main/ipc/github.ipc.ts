@@ -22,6 +22,10 @@ export function registerGithubHandlers() {
     return githubService.listOpenPRs(repoPath)
   })
 
+  ipcMain.handle(IPC.PR_CURRENT_USER, async (_e, repoPath: string) => {
+    return githubService.getCurrentGitHubUser(repoPath)
+  })
+
   ipcMain.handle(IPC.PR_SEEN_GET, async (_e, projectId: string) => {
     return store.get(`seenPRs.${projectId}`, [])
   })

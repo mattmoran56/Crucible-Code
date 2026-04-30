@@ -218,6 +218,8 @@ const api = {
   github: {
     listPRs: (repoPath: string): Promise<PullRequest[]> =>
       ipcRenderer.invoke(IPC.PR_LIST, repoPath),
+    getCurrentUser: (repoPath: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.PR_CURRENT_USER, repoPath),
     getSeenPRs: (projectId: string): Promise<number[]> =>
       ipcRenderer.invoke(IPC.PR_SEEN_GET, projectId),
     markPRSeen: (projectId: string, prNumber: number): Promise<void> =>

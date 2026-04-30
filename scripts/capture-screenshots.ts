@@ -208,6 +208,26 @@ const targets: ScreenshotTarget[] = [
     delay: 600,
     rightClickDemo: true,
   },
+
+  // PR sidebar sort & filter menu
+  {
+    name: 'pr-sort-filter-menu',
+    storyId: 'pr-prsortfiltermenu--open',
+    viewport: { width: 360, height: 540 },
+    delay: 600,
+  },
+  {
+    name: 'pr-sort-filter-menu-active',
+    storyId: 'pr-prsortfiltermenu--filters-active',
+    viewport: { width: 360, height: 580 },
+    delay: 600,
+  },
+  {
+    name: 'pr-sort-filter-menu-people',
+    storyId: 'pr-prsortfiltermenu--person-picker',
+    viewport: { width: 360, height: 460 },
+    delay: 700,
+  },
 ]
 
 async function captureScreenshots() {
@@ -225,7 +245,14 @@ async function captureScreenshots() {
     const storyUrl = `${STORYBOOK_URL}/iframe.html?id=${target.storyId}&viewMode=story`
     console.log(`Capturing: ${target.name} (${target.storyId})`)
 
-    await page.goto(storyUrl, { waitUntil: 'networkidle' })
+    try {
+      await page.goto(storyUrl, { waitUntil: 'networkidle', timeout: 15000 })
+    } catch {
+      // Fall back to a less strict wait — some stories never reach networkidle
+      // because of HMR / polling mocks. The per-target `delay` covers render time.
+      await page.goto(storyUrl, { waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(2000)
+    }
 
     if (target.theme) {
       await applyTheme(page, target.theme)
@@ -296,7 +323,11 @@ async function captureScreenshots() {
     const storyUrl = `${STORYBOOK_URL}/iframe.html?id=app-full-layout--default&viewMode=story`
     console.log(`Capturing theme: ${themeKey}`)
 
-    await page.goto(storyUrl, { waitUntil: 'networkidle' })
+    try {
+      await page.goto(storyUrl, { waitUntil: 'networkidle', timeout: 15000 })
+    } catch {
+      await page.goto(storyUrl, { waitUntil: 'domcontentloaded' })
+    }
     await page.waitForTimeout(2000) // Wait for initial render + terminal output
 
     // Use the exposed setTheme function to sync both data-theme AND terminal colors

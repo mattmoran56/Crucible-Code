@@ -66,6 +66,7 @@ export const IPC = {
 
   // Pull Requests
   PR_LIST: 'pr:list',
+  PR_CURRENT_USER: 'pr:current-user',
   PR_SEEN_GET: 'pr:seen:get',
   PR_SEEN_SET: 'pr:seen:set',
   PR_DIFF: 'pr:diff',
