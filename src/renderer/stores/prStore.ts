@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PullRequest } from '../../shared/types'
+import type { PullRequest, GitHubCollaborator } from '../../shared/types'
 
 interface PRState {
   // Per-repo / per-project caches so toggling between projects shows the
@@ -7,6 +7,7 @@ interface PRState {
   // returns. Keys: prCache[repoPath], seenCache[projectId].
   prCache: Record<string, PullRequest[]>
   seenCache: Record<string, number[]>
+  collaboratorsCache: Record<string, GitHubCollaborator[]>
   // Tracks which repo/project the visible state belongs to, so a slow
   // background fetch can't overwrite the displayed PRs after the user has
   // already switched to a different project.
@@ -16,8 +17,11 @@ interface PRState {
   seenPRs: number[]
   loading: boolean
   hasLoaded: boolean
+  currentUser: string | null
   loadPRs: (repoPath: string) => Promise<void>
   loadSeenPRs: (projectId: string) => Promise<void>
+  loadCurrentUser: (repoPath: string) => Promise<void>
+  loadCollaborators: (repoPath: string) => Promise<GitHubCollaborator[]>
   markSeen: (projectId: string, prNumber: number) => void
   clear: () => void
 }
@@ -25,12 +29,14 @@ interface PRState {
 export const usePRStore = create<PRState>((set, get) => ({
   prCache: {},
   seenCache: {},
+  collaboratorsCache: {},
   currentRepoPath: null,
   currentProjectId: null,
   pullRequests: [],
   seenPRs: [],
   loading: false,
   hasLoaded: false,
+  currentUser: null,
 
   loadPRs: async (repoPath: string) => {
     const state = get()
@@ -68,6 +74,20 @@ export const usePRStore = create<PRState>((set, get) => ({
     if (get().currentProjectId === projectId) {
       set({ seenPRs: fresh })
     }
+  },
+
+  loadCurrentUser: async (repoPath: string) => {
+    if (get().currentUser) return
+    const login = await window.api.github.getCurrentUser(repoPath)
+    if (login) set({ currentUser: login })
+  },
+
+  loadCollaborators: async (repoPath: string) => {
+    const cached = get().collaboratorsCache[repoPath]
+    if (cached) return cached
+    const fresh = await window.api.github.listCollaborators(repoPath)
+    set((s) => ({ collaboratorsCache: { ...s.collaboratorsCache, [repoPath]: fresh } }))
+    return fresh
   },
 
   markSeen: (projectId: string, prNumber: number) => {

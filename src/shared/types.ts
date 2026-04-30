@@ -55,6 +55,9 @@ export interface PullRequest {
   headRefName: string
   baseRefName: string
   author: string
+  assignees: string[]
+  requestedReviewers: string[]
+  createdAt: string
   updatedAt: string
   isDraft: boolean
   state: 'OPEN' | 'MERGED'

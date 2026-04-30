@@ -15,6 +15,8 @@ import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
 import { ImportWorktreeDialog } from '../sessions/ImportWorktreeDialog'
 import { OpenBranchDialog } from '../sessions/OpenBranchDialog'
 import { PRCard } from '../pullrequests/PRCard'
+import { PRSortFilterMenu } from '../pullrequests/PRSortFilterMenu'
+import { usePRViewStore, DEFAULT_PR_VIEW, isDefaultView, type PersonFilter } from '../../stores/prViewStore'
 import { Sidebar, SidebarSection } from '../ui/Sidebar'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu } from '../ui/DropdownMenu'
@@ -27,8 +29,10 @@ export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
   const { sessions, staleSessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, markStale, openPR, openAsMainBranch, checkStaleness, reactivateSession } =
     useSessionStore()
-  const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, markSeen, clear: clearPRs } =
+  const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, loadCurrentUser, markSeen, clear: clearPRs, currentUser } =
     usePRStore()
+  const prViewByRepo = usePRViewStore((s) => s.byRepo)
+  const resetPRView = usePRViewStore((s) => s.reset)
   const { clearContextStatuses, getContextStatus, registerSessions } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
@@ -108,6 +112,7 @@ export function SessionSidebar() {
 
     loadPRs(activeProject.repoPath)
     loadSeenPRs(activeProject.id)
+    loadCurrentUser(activeProject.repoPath)
 
     const startPolling = () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
@@ -213,10 +218,48 @@ export function SessionSidebar() {
     ].filter((g) => g.sessions.length > 0)
   }, [sortedSessions, groupBy, pullRequests])
 
-  const openPullRequests = useMemo(
+  const nonMergedPullRequests = useMemo(
     () => pullRequests.filter((pr) => pr.state !== 'MERGED'),
     [pullRequests]
   )
+
+  const prRepoView = useMemo(
+    () => (activeProject ? prViewByRepo[activeProject.repoPath] ?? DEFAULT_PR_VIEW : DEFAULT_PR_VIEW),
+    [prViewByRepo, activeProject?.repoPath]
+  )
+
+  const openPullRequests = useMemo(() => {
+    const matchPerson = (filter: PersonFilter, candidates: string[]): boolean => {
+      if (filter.kind === 'anyone') return true
+      if (filter.kind === 'me') return currentUser != null && candidates.includes(currentUser)
+      return candidates.includes(filter.login)
+    }
+
+    const filtered = nonMergedPullRequests.filter((pr) => {
+      if (pr.isDraft && !prRepoView.status.draft) return false
+      if (!pr.isDraft && !prRepoView.status.ready) return false
+      if (!prRepoView.ci[pr.ciStatus]) return false
+      if (prRepoView.unseenOnly && seenPRs.includes(pr.number)) return false
+      if (!matchPerson(prRepoView.assignee, pr.assignees)) return false
+      if (!matchPerson(prRepoView.author, [pr.author])) return false
+      if (!matchPerson(prRepoView.reviewer, pr.requestedReviewers)) return false
+      return true
+    })
+
+    const sorted = [...filtered]
+    switch (prRepoView.sortBy) {
+      case 'number':
+        sorted.sort((a, b) => b.number - a.number)
+        break
+      case 'updated':
+        sorted.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        break
+      case 'created':
+        sorted.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        break
+    }
+    return sorted
+  }, [nonMergedPullRequests, prRepoView, currentUser, seenPRs])
 
   // Find sessions with merged PRs
   const mergedSessions = useMemo(() => {
@@ -304,7 +347,7 @@ export function SessionSidebar() {
     )
   }
 
-  const newPRCount = openPullRequests.filter((pr) => !seenPRs.includes(pr.number)).length
+  const newPRCount = nonMergedPullRequests.filter((pr) => !seenPRs.includes(pr.number)).length
 
   const handleRefreshPRs = () => {
     if (!activeProject) return
@@ -493,23 +536,38 @@ export function SessionSidebar() {
             onToggle={() => setPRCollapsed((c) => !c)}
             badge={newPRCount}
             action={
-              <IconButton
-                aria-label="Refresh pull requests"
-                size="sm"
-                onClick={handleRefreshPRs}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="23 4 23 10 17 10" />
-                  <polyline points="1 20 1 14 7 14" />
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                </svg>
-              </IconButton>
+              <div className="flex items-center gap-1">
+                <PRSortFilterMenu repoPath={activeProject.repoPath} />
+                <IconButton
+                  aria-label="Refresh pull requests"
+                  size="sm"
+                  onClick={handleRefreshPRs}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" />
+                    <polyline points="1 20 1 14 7 14" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                </IconButton>
+              </div>
             }
           >
-            {prsLoading && openPullRequests.length === 0 ? (
+            {prsLoading && nonMergedPullRequests.length === 0 ? (
               <p className="text-text-muted text-xs text-center py-4">Loading...</p>
-            ) : openPullRequests.length === 0 ? (
+            ) : nonMergedPullRequests.length === 0 ? (
               <p className="text-text-muted text-xs text-center py-4">No open PRs</p>
+            ) : openPullRequests.length === 0 ? (
+              <div className="text-text-muted text-xs text-center py-4">
+                <p>No PRs match filters</p>
+                {!isDefaultView(prRepoView) && (
+                  <button
+                    onClick={() => resetPRView(activeProject.repoPath)}
+                    className="text-accent hover:underline mt-1"
+                  >
+                    Reset filters
+                  </button>
+                )}
+              </div>
             ) : (
               openPullRequests.map((pr) => (
                 <PRCard

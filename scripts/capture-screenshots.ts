@@ -198,6 +198,26 @@ const targets: ScreenshotTarget[] = [
     delay: 600,
     rightClickDemo: true,
   },
+
+  // PR sidebar sort & filter menu
+  {
+    name: 'pr-sort-filter-menu',
+    storyId: 'pr-prsortfiltermenu--open',
+    viewport: { width: 360, height: 540 },
+    delay: 600,
+  },
+  {
+    name: 'pr-sort-filter-menu-active',
+    storyId: 'pr-prsortfiltermenu--filters-active',
+    viewport: { width: 360, height: 580 },
+    delay: 600,
+  },
+  {
+    name: 'pr-sort-filter-menu-people',
+    storyId: 'pr-prsortfiltermenu--person-picker',
+    viewport: { width: 360, height: 460 },
+    delay: 700,
+  },
 ]
 
 async function captureScreenshots() {

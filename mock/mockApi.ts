@@ -131,6 +131,7 @@ export const mockApi = {
 
   github: {
     listPRs: async () => mockPullRequests,
+    getCurrentUser: async () => 'alice',
     getSeenPRs: async () => [],
     markPRSeen: async () => {},
     getDiff: async () => mockUnifiedDiff,

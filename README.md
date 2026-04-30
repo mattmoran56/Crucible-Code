@@ -225,6 +225,7 @@ Full pull request review without leaving the IDE — comparable to GitHub's web 
 - **Suggestion blocks** — `` ```suggestion `` blocks render as a side-by-side preview with an Apply button that writes to the worktree and creates a commit
 - **Submit reviews** — Approve, request changes, or leave a comment
 - **Merge** — Merge / squash / rebase with mergeability checks
+- **Sidebar sort & filter** — Per-repo sort (PR number, recently updated, recently created) and filters (status, assignee, author, review-requested, CI status, unseen-only). "Me" pinned at the top of every person picker so the common case is one click
 
 <table>
 <tr>
@@ -234,6 +235,10 @@ Full pull request review without leaving the IDE — comparable to GitHub's web 
 <tr>
 <td><img src="docs/screenshots/pr-review-suggestion-multiline.png" alt="Suggestion block" /></td>
 <td><img src="docs/screenshots/pr-review-contextmenu-changedfiles.png" alt="Right-click context menu on changed files" /></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/pr-sort-filter-menu.png" alt="Sidebar PR sort and filter menu" /></td>
+<td><img src="docs/screenshots/pr-sort-filter-menu-people.png" alt="Sidebar PR person filter picker" /></td>
 </tr>
 </table>
 

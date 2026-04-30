@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { SessionCard } from './SessionCard'
+import type { PullRequest } from '../../../shared/types'
 
 const baseSession = {
   id: 'sess-1',
@@ -12,14 +13,19 @@ const baseSession = {
   baseBranch: 'main',
 }
 
-const basePR = {
+const basePR: PullRequest = {
   number: 42,
   title: 'Add PR review panel with conversation and checks',
   headRefName: 'session/add-pr-review',
   baseRefName: 'main',
   author: 'alice',
+  assignees: ['alice'],
+  requestedReviewers: ['bob'],
+  createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   isDraft: false,
+  state: 'OPEN',
+  ciStatus: 'success',
 }
 
 const noop = () => {}

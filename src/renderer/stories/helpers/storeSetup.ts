@@ -3,6 +3,7 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { useGitStore } from '../../stores/gitStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { usePRStore } from '../../stores/prStore'
+import { usePRViewStore } from '../../stores/prViewStore'
 import { usePRReviewStore } from '../../stores/prReviewStore'
 import { useEditorStore } from '../../stores/editorStore'
 import { useUsageStore } from '../../stores/usageStore'
@@ -149,6 +150,7 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
   }
 
   // PR store
+  const repoPath = mockProjects[0]?.repoPath ?? '/mock/repo'
   usePRStore.setState({
     pullRequests: mockPullRequests,
     seenPRs: [],
@@ -156,8 +158,18 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     hasLoaded: true,
     prCache: {},
     seenCache: {},
+    collaboratorsCache: {
+      [repoPath]: [
+        { login: 'alice' },
+        { login: 'bob' },
+        { login: 'carol' },
+        { login: 'dave' },
+        { login: 'mattmoran' },
+      ],
+    },
     currentRepoPath: null,
     currentProjectId: null,
+    currentUser: 'mattmoran',
   })
 
   // PR review store (for PR review view)
@@ -276,9 +288,12 @@ export function resetStores() {
     hasLoaded: false,
     prCache: {},
     seenCache: {},
+    collaboratorsCache: {},
     currentRepoPath: null,
     currentProjectId: null,
+    currentUser: null,
   })
+  usePRViewStore.setState({ byRepo: {} })
   usePRReviewStore.setState({ prNumber: null, files: [], selectedFilePath: null, fullDiff: null, comments: [], detail: null, conversationComments: [], checks: [], commits: [] })
   useEditorStore.setState({ editorMode: false, openFiles: [], activeFilePath: null })
   useUsageStore.setState({ sessionUsages: {}, stats: null, subscription: null })
