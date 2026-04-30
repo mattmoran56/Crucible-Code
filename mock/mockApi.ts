@@ -223,5 +223,6 @@ export const mockApi = {
     onStatus: () => noop(),
     onLog: () => noop(),
     apply: async () => {},
+    getBuiltCommit: async () => 'mock-commit-sha',
   },
 }
