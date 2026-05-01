@@ -224,6 +224,12 @@ export const mockPullRequests: PullRequest[] = [
     isDraft: false,
     state: 'OPEN',
     ciStatus: 'pending',
+    labels: [
+      { name: 'enhancement', color: 'a2eeef' },
+      { name: 'needs-review', color: 'd4c5f9' },
+    ],
+    commentsCount: 4,
+    reviews: [],
   },
   {
     number: 38,
@@ -238,6 +244,9 @@ export const mockPullRequests: PullRequest[] = [
     isDraft: false,
     state: 'OPEN',
     ciStatus: 'success',
+    labels: [{ name: 'bug', color: 'd73a4a' }],
+    commentsCount: 2,
+    reviews: [{ author: 'carol', state: 'APPROVED', submittedAt: hoursAgo(4) }],
   },
   {
     number: 35,
@@ -252,6 +261,9 @@ export const mockPullRequests: PullRequest[] = [
     isDraft: true,
     state: 'OPEN',
     ciStatus: 'failure',
+    labels: [{ name: 'wip', color: 'fbca04' }],
+    commentsCount: 0,
+    reviews: [],
   },
   {
     number: 31,
@@ -266,6 +278,9 @@ export const mockPullRequests: PullRequest[] = [
     isDraft: false,
     state: 'MERGED',
     ciStatus: 'success',
+    labels: [],
+    commentsCount: 8,
+    reviews: [{ author: 'alice', state: 'APPROVED', submittedAt: hoursAgo(7) }],
   },
 ]
 

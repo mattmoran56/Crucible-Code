@@ -11,6 +11,7 @@ import { IconButton } from '../ui/IconButton'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { Input } from '../ui/Input'
 import { ButtonSettings } from './ButtonSettings'
+import { PRListDisplaySettings } from './PRListDisplaySettings'
 
 const LIGHT_THEMES = THEMES.filter((t) => !t.isDark)
 const DARK_THEMES = THEMES.filter((t) => t.isDark)
@@ -718,6 +719,8 @@ export function SettingsPage() {
               </div>
             </div>
           )}
+
+          <PRListDisplaySettings projects={projects} />
 
           <ButtonSettings />
 

@@ -26,6 +26,9 @@ const basePR: PullRequest = {
   isDraft: false,
   state: 'OPEN',
   ciStatus: 'success',
+  labels: [],
+  commentsCount: 0,
+  reviews: [],
 }
 
 const noop = () => {}

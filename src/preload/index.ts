@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -292,6 +292,8 @@ const api = {
       author: string
     ): Promise<{ applied: boolean; reason?: string }> =>
       ipcRenderer.invoke(IPC.PR_APPLY_SUGGESTION, repoPath, filePath, startLine, endLine, newText, author),
+    listRepoLabels: (repoPath: string): Promise<PRLabel[]> =>
+      ipcRenderer.invoke(IPC.PR_REPO_LABELS, repoPath),
   },
 
   session: {

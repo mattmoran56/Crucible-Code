@@ -93,6 +93,7 @@ export const IPC = {
   PR_THREAD_RESOLVE: 'pr:thread:resolve',
   PR_THREAD_UNRESOLVE: 'pr:thread:unresolve',
   PR_APPLY_SUGGESTION: 'pr:apply-suggestion',
+  PR_REPO_LABELS: 'pr:repo-labels',
 
   // Git mutations
   GIT_DISCARD_FILE: 'git:discard-file',
