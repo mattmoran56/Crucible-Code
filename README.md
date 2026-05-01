@@ -226,6 +226,7 @@ Full pull request review without leaving the IDE — comparable to GitHub's web 
 - **Submit reviews** — Approve, request changes, or leave a comment
 - **Merge** — Merge / squash / rebase with mergeability checks
 - **Sidebar sort & filter** — Per-repo sort (PR number, recently updated, recently created) and filters (status, assignee, author, review-requested, CI status, unseen-only). "Me" pinned at the top of every person picker so the common case is one click
+- **Sidebar display options** — Per-project control over which fields each PR card shows. Toggle the existing fields (state, CI, badges, branches, author) plus labels (with all/only-selected filter), requested reviewers, reviewer states, assignees, comments count, and updated time. An editable default applies to projects without overrides; per-project cards show a "Customized" pill and a Reset to default button
 
 <table>
 <tr>
@@ -239,6 +240,10 @@ Full pull request review without leaving the IDE — comparable to GitHub's web 
 <tr>
 <td><img src="docs/screenshots/pr-sort-filter-menu.png" alt="Sidebar PR sort and filter menu" /></td>
 <td><img src="docs/screenshots/pr-sort-filter-menu-people.png" alt="Sidebar PR person filter picker" /></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/pr-card-all-fields.png" alt="PR card with all display fields enabled" /></td>
+<td><img src="docs/screenshots/pr-display-settings-full.png" alt="Per-project PR list display settings" /></td>
 </tr>
 </table>
 
