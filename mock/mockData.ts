@@ -18,6 +18,7 @@ import type {
   ClaudeAccount,
   CustomButton,
   CustomButtonGroup,
+  StartupPrompt,
 } from '../src/shared/types'
 
 // --- Accounts ---
@@ -610,3 +611,31 @@ export const mockButtonGroups: CustomButtonGroup[] = [
     order: 1,
   },
 ]
+
+// --- Startup Prompts ---
+
+export const mockStartupPrompts: Record<string, StartupPrompt[]> = {
+  'proj-1': [
+    {
+      id: 'sp-1',
+      label: 'Notion Ticket',
+      command: '/notion-ticket {{input}}',
+      inputLabel: 'Ticket URL or ID',
+      inputPlaceholder: 'https://notion.so/…',
+      order: 0,
+    },
+    {
+      id: 'sp-2',
+      label: 'Plan first',
+      command: 'Take a moment to plan before you start coding. Read the relevant files and outline the approach.',
+      order: 1,
+    },
+    {
+      id: 'sp-3',
+      label: 'Run tests',
+      command: '/run-tests',
+      order: 2,
+    },
+  ],
+  'proj-2': [],
+}

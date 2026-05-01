@@ -40,8 +40,12 @@ interface SessionState {
   detachedWorktree: DetachedWorktreeInfo | null
   openedAsMainBranch: string | null
   previousMainBranch: string | null
+  /** A startup command queued by createSession, consumed by the agent terminal once it spawns. */
+  pendingStartup: { sessionId: string; command: string } | null
+  /** A session whose agent xterm should auto-focus on first attach, consumed by useTerminal. */
+  pendingFocusSessionId: string | null
   loadSessions: (projectId: string) => Promise<void>
-  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string) => Promise<void>
+  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string) => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
   setActiveSession: (id: string, repoPath?: string) => Promise<void>
   setActiveWorkspaceTab: (tab: WorkspaceTab) => void
@@ -55,6 +59,8 @@ interface SessionState {
   reactivateSession: (projectId: string, sessionId: string) => Promise<void>
   openBranch: (projectId: string, repoPath: string, branch: string, sessionName: string) => Promise<void>
   importWorktree: (projectId: string, worktree: WorktreeInfo) => Promise<void>
+  consumePendingStartup: (sessionId: string) => string | null
+  consumePendingFocus: (sessionId: string) => boolean
 }
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
@@ -85,6 +91,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   detachedWorktree: null,
   openedAsMainBranch: null,
   previousMainBranch: null,
+  pendingStartup: null,
+  pendingFocusSessionId: null,
 
   loadSessions: async (projectId: string) => {
     // Save current context for the project we're leaving
@@ -164,7 +172,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  createSession: async (projectId, repoPath, name, baseBranch) => {
+  createSession: async (projectId, repoPath, name, baseBranch, startupCommand) => {
     const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch)
     const session: Session = {
       id: crypto.randomUUID(),
@@ -181,8 +189,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
-    set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
+    set({
+      sessions,
+      activeSessionId: session.id,
+      activePRNumber: null,
+      activeWorkspaceTab: 'agent',
+      detachedWorktree: null,
+      pendingStartup: startupCommand ? { sessionId: session.id, command: startupCommand } : null,
+      pendingFocusSessionId: session.id,
+    })
     saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+  },
+
+  consumePendingStartup: (sessionId: string) => {
+    const pending = get().pendingStartup
+    if (!pending || pending.sessionId !== sessionId) return null
+    set({ pendingStartup: null })
+    return pending.command
+  },
+
+  consumePendingFocus: (sessionId: string) => {
+    if (get().pendingFocusSessionId !== sessionId) return false
+    set({ pendingFocusSessionId: null })
+    return true
   },
 
   removeSession: async (projectId, repoPath, sessionId) => {

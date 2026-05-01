@@ -202,3 +202,96 @@ export const TabAttention: Story = {
     },
   ],
 }
+
+/** Dispatches the in-app "create-session" event so the New Session dialog opens. */
+function OpenNewSessionDialogAfterMount() {
+  useEffect(() => {
+    const id = setTimeout(() => {
+      window.dispatchEvent(new Event('app:create-session'))
+    }, 200)
+    return () => clearTimeout(id)
+  }, [])
+  return null
+}
+
+/** Opens the dialog and clicks the chip with the given label so the input field appears. */
+function PickStartupPromptAfterMount({ label }: { label: string }) {
+  useEffect(() => {
+    const id = setTimeout(() => {
+      window.dispatchEvent(new Event('app:create-session'))
+      setTimeout(() => {
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
+        if (!dialog) return
+        const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button'))
+        const chip = buttons.find((b) => b.textContent?.trim() === label)
+        chip?.click()
+      }, 250)
+    }, 200)
+    return () => clearTimeout(id)
+  }, [label])
+  return null
+}
+
+export const NewSessionDialog: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory()
+      return (
+        <>
+          <OpenNewSessionDialogAfterMount />
+          <Story />
+        </>
+      )
+    },
+  ],
+}
+
+export const NewSessionDialogWithInput: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory()
+      return (
+        <>
+          <PickStartupPromptAfterMount label="Notion Ticket" />
+          <Story />
+        </>
+      )
+    },
+  ],
+}
+
+export const StartupPromptSettings: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ settingsOpen: true })
+      return <Story />
+    },
+  ],
+}
+
+/** Opens settings and clicks "+ Add prompt" on the first project so the editor dialog is shown. */
+function OpenStartupPromptEditorAfterMount() {
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      const addBtn = buttons.find((b) => b.textContent?.trim() === '+ Add prompt')
+      addBtn?.click()
+    }, 600)
+    return () => clearTimeout(id)
+  }, [])
+  return null
+}
+
+export const StartupPromptEditor: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ settingsOpen: true })
+      return (
+        <>
+          <OpenStartupPromptEditorAfterMount />
+          <Story />
+        </>
+      )
+    },
+  ],
+}

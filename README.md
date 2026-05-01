@@ -27,6 +27,7 @@
 - **Code editor** — CodeMirror editor with file explorer for editing files in any worktree
 - **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
+- **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
 ## Visual Tour
@@ -172,11 +173,30 @@ Open multiple git repositories as projects. Each project gets its own tab in the
 Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<repo>/<session>/` with its own branch (`session/<name>`).
 
 - **Create from scratch** — New branch from any base branch
+- **Cmd+N shortcut** — Opens the New Session dialog from anywhere in the app
+- **Auto-focus the new agent** — Once the session is created, the agent terminal grabs focus so you can start typing immediately
 - **Import existing worktree** — Bring in worktrees created outside CodeCrucible
 - **Open remote branch** — Create a session from a remote branch with autocomplete
 - **Open as main branch** — Temporarily check out a session's branch on the main repo (useful for builds that need the real repo path)
 - **Stale detection** — Sessions whose branches are merged and inactive for 24+ hours are automatically detected and moved to a collapsible "Stale" section
 - **Manual stale/reactivate** — Mark sessions as stale or bring them back
+
+</details>
+
+<details>
+<summary><strong>Session startup prompts</strong></summary>
+
+Configure per-project prompts that can be optionally auto-run in a new session's agent terminal. Pick one when creating a session — it's typed into the agent as soon as Claude is ready.
+
+- **Per-project list** — Each project gets its own set of prompts, configured in Settings → Session Startup Prompts
+- **Slash commands or freeform** — Use Claude slash commands (`/notion-ticket`, `/run-tests`) or any freeform prompt
+- **Optional input** — Use `{{input}}` in the command to ask the user for a value (e.g. a ticket URL) when creating the session
+- **None by default** — Picking nothing keeps the existing behavior; the dialog only shows the picker when prompts are configured for the project
+
+![New Session dialog with startup prompts](docs/screenshots/new-session-dialog.png)
+![Picking a prompt that takes input](docs/screenshots/new-session-dialog-with-input.png)
+![Per-project startup prompt settings](docs/screenshots/startup-prompt-settings.png)
+![Adding a startup prompt](docs/screenshots/startup-prompt-editor.png)
 
 </details>
 

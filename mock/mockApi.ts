@@ -26,6 +26,7 @@ import {
   mockTerminalOutput,
   mockButtons,
   mockButtonGroups,
+  mockStartupPrompts,
 } from './mockData'
 
 // Collect terminal.onData callbacks so we can push fake output
@@ -206,6 +207,11 @@ export const mockApi = {
     groupList: async () => mockButtonGroups,
     groupSave: async () => {},
     execute: async () => `mock-btn-term-${++terminalCounter}`,
+  },
+
+  startupPrompt: {
+    list: async (projectId: string) => mockStartupPrompts[projectId] ?? [],
+    save: async () => {},
   },
 
   config: {

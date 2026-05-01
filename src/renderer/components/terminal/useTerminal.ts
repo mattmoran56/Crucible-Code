@@ -6,6 +6,7 @@ import { INTERVENTION_PATTERNS } from '../../../shared/patterns'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useSessionStore } from '../../stores/sessionStore'
 import { THEMES } from '../../../shared/themes'
 
 interface UseTerminalOptions {
@@ -181,6 +182,11 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       const { cols, rows } = term
       window.api.terminal.resize(terminalId, cols, rows)
       term.scrollToBottom()
+
+      // Auto-focus newly-created session terminals once their xterm is mounted.
+      if (sessionId && useSessionStore.getState().consumePendingFocus(sessionId)) {
+        term.focus()
+      }
     })
 
     // Never dispose — terminal lives for the lifetime of the app
