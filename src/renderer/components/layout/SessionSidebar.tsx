@@ -54,6 +54,29 @@ export function SessionSidebar() {
     return () => window.removeEventListener('app:create-session', handler)
   }, [])
 
+  // Cmd/Ctrl+N opens the New Session dialog when there's an active project.
+  // Suppressed while the user is typing into an input/textarea or another
+  // dialog already has focus, so it doesn't hijack normal text entry.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+      if (e.key.toLowerCase() !== 'n') return
+      if (!activeProjectId) return
+      const target = e.target as HTMLElement | null
+      if (target) {
+        const tag = target.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+        if (target.isContentEditable) return
+        // Skip if focus is inside an open modal/dialog.
+        if (target.closest('[role="dialog"]')) return
+      }
+      e.preventDefault()
+      setShowCreate(true)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [activeProjectId])
+
   const activeProject = projects.find((p) => p.id === activeProjectId)
 
   // Measure the panels container directly (sections + handles) so panel sizing

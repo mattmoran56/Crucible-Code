@@ -282,3 +282,18 @@ export interface CustomButtonGroup {
   scope: ButtonScope
   order: number
 }
+
+// Session Startup Prompts
+//
+// A prompt that can be optionally selected in the New Session dialog and is
+// auto-typed into the agent terminal once Claude is ready. The presence of
+// `{{input}}` in `command` is what tells the dialog to render an input field.
+
+export interface StartupPrompt {
+  id: string
+  label: string
+  command: string
+  inputLabel?: string
+  inputPlaceholder?: string
+  order: number
+}

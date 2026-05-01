@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -401,6 +401,13 @@ const api = {
       sessionId: string
     ): Promise<string> =>
       ipcRenderer.invoke(IPC.BUTTON_EXECUTE, resolvedCommand, cwd, actionType, executionMode, sessionId),
+  },
+
+  startupPrompt: {
+    list: (projectId: string): Promise<StartupPrompt[]> =>
+      ipcRenderer.invoke(IPC.STARTUP_PROMPT_LIST, projectId),
+    save: (projectId: string, prompts: StartupPrompt[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.STARTUP_PROMPT_SAVE, projectId, prompts),
   },
 
 }

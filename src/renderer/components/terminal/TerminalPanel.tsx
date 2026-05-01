@@ -8,6 +8,28 @@ interface Props {
   visible?: boolean
 }
 
+// Wait for Claude's prompt indicator on the freshly-spawned PTY, then write the
+// startup command. Mirrors the prompt-detection-then-write trick used by custom
+// buttons in foreground 'claude' mode.
+function writeStartupCommandWhenReady(terminalId: string, command: string) {
+  let sent = false
+  const finish = () => {
+    if (sent) return
+    sent = true
+    unsub()
+    window.api.terminal.write(terminalId, command + '\r')
+  }
+  const unsub = window.api.terminal.onData((tid: string, data: string) => {
+    if (tid !== terminalId || sent) return
+    if (data.includes('>') || data.includes('$')) {
+      sent = true
+      unsub()
+      setTimeout(() => window.api.terminal.write(terminalId, command + '\r'), 100)
+    }
+  })
+  setTimeout(finish, 10000)
+}
+
 export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
   const { activeSessionId, sessions } = useSessionStore()
   const { terminals, spawnTerminal, getTerminal } = useTerminalStore()
@@ -18,17 +40,22 @@ export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
     if (!activeSession) return
 
     const existing = getTerminal(activeSession.id, mode)
-    if (!existing) {
-      spawnTerminal(
-        activeSession.id,
-        activeSession.name,
-        activeSession.worktreePath,
-        mode,
-        false,
-        activeSession.id,
-        'agent'
-      )
-    }
+    if (existing) return
+
+    const sessionId = activeSession.id
+    spawnTerminal(
+      sessionId,
+      activeSession.name,
+      activeSession.worktreePath,
+      mode,
+      false,
+      sessionId,
+      'agent'
+    ).then((terminalId) => {
+      if (mode !== 'claude') return
+      const command = useSessionStore.getState().consumePendingStartup(sessionId)
+      if (command) writeStartupCommandWhenReady(terminalId, command)
+    })
   }, [activeSessionId, mode, sessions, getTerminal, spawnTerminal])
 
   // Render only PRIMARY (non-dynamic) terminals of this mode across all projects

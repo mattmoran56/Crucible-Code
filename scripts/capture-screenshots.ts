@@ -124,6 +124,28 @@ const targets: ScreenshotTarget[] = [
     scrollTo: 'Custom Buttons',
   },
   {
+    name: 'new-session-dialog',
+    storyId: 'app-full-layout--new-session-dialog',
+    delay: 1500,
+  },
+  {
+    name: 'new-session-dialog-with-input',
+    storyId: 'app-full-layout--new-session-dialog-with-input',
+    delay: 1500,
+  },
+  {
+    name: 'startup-prompt-settings',
+    storyId: 'app-full-layout--startup-prompt-settings',
+    delay: 2000,
+    scrollTo: 'Session Startup Prompts',
+  },
+  {
+    name: 'startup-prompt-editor',
+    storyId: 'app-full-layout--startup-prompt-editor',
+    delay: 2000,
+    scrollTo: 'Session Startup Prompts',
+  },
+  {
     name: 'code-attention',
     storyId: 'app-full-layout--code-attention',
     delay: 2000,

@@ -12,6 +12,7 @@ import { registerUsageHandlers } from './usage.ipc'
 import { registerFileHandlers } from './file.ipc'
 import { registerPermissionsHandlers } from './permissions.ipc'
 import { registerButtonHandlers } from './button.ipc'
+import { registerStartupPromptHandlers } from './startup-prompt.ipc'
 import {
   registerContextMapping,
   removeContextMapping,
@@ -31,6 +32,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerFileHandlers(window)
   registerPermissionsHandlers()
   registerButtonHandlers(window)
+  registerStartupPromptHandlers()
 
   // Context mapping management for notification routing.
   // The renderer registers sessions, the Code editor (per-project) and individual

@@ -155,4 +155,8 @@ export const IPC = {
   BUTTON_GROUP_LIST: 'button-group:list',
   BUTTON_GROUP_SAVE: 'button-group:save',
   BUTTON_EXECUTE: 'button:execute',
+
+  // Session Startup Prompts (per-project)
+  STARTUP_PROMPT_LIST: 'startup-prompt:list',
+  STARTUP_PROMPT_SAVE: 'startup-prompt:save',
 } as const
