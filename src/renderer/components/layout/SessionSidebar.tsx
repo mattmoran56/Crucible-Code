@@ -17,6 +17,7 @@ import { OpenBranchDialog } from '../sessions/OpenBranchDialog'
 import { PRCard } from '../pullrequests/PRCard'
 import { PRSortFilterMenu } from '../pullrequests/PRSortFilterMenu'
 import { usePRViewStore, DEFAULT_PR_VIEW, isDefaultView, type PersonFilter } from '../../stores/prViewStore'
+import { usePRListDisplayStore } from '../../stores/prListDisplayStore'
 import { CodeBranchPicker } from './CodeBranchPicker'
 import { DirtyCheckoutDialog } from './DirtyCheckoutDialog'
 import { useToastStore } from '../../stores/toastStore'
@@ -36,6 +37,8 @@ export function SessionSidebar() {
     usePRStore()
   const prViewByRepo = usePRViewStore((s) => s.byRepo)
   const resetPRView = usePRViewStore((s) => s.reset)
+  const prListDisplayDefault = usePRListDisplayStore((s) => s.default)
+  const prListDisplayByRepo = usePRListDisplayStore((s) => s.byRepo)
   const { clearContextStatuses, getContextStatus, registerSessions } = useNotificationStore()
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
@@ -671,6 +674,7 @@ export function SessionSidebar() {
                   isNew={!seenPRs.includes(pr.number)}
                   isActive={!editorMode && activePRNumber === pr.number}
                   needsAttention={getContextStatus(`__pr__:${pr.number}`) === 'attention'}
+                  display={prListDisplayByRepo[activeProject.repoPath] ?? prListDisplayDefault}
                   onClick={() => handlePRClick(pr)}
                 />
               ))

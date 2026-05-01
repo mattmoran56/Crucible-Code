@@ -2,7 +2,7 @@ import { execFile } from 'child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'util'
-import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread, CIStatus, PRReviewState, PRReviewSummary, GitHubCollaborator } from '../../shared/types'
+import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread, CIStatus, PRReviewState, PRReviewSummary, GitHubCollaborator, PRLabel } from '../../shared/types'
 
 const execFileAsync = promisify(execFile)
 
@@ -30,6 +30,34 @@ async function getRepoOwnerName(repoPath: string): Promise<{ owner: string; name
   return { owner: parsed.owner.login, name: parsed.name }
 }
 
+function summarizeLatestReviews(
+  latestReviews: Array<{ author: { login: string }; state: string; submittedAt: string }> | null | undefined,
+  reviews: Array<{ author: { login: string }; state: string; submittedAt: string }> | null | undefined
+): PRReviewSummary[] {
+  if (latestReviews && latestReviews.length > 0) {
+    return latestReviews.map((r) => ({
+      author: r.author.login,
+      state: r.state.toUpperCase() as PRReviewState,
+      submittedAt: r.submittedAt,
+    }))
+  }
+  if (reviews && reviews.length > 0) {
+    const byAuthor = new Map<string, PRReviewSummary>()
+    const sorted = [...reviews].sort((a, b) =>
+      a.submittedAt.localeCompare(b.submittedAt)
+    )
+    for (const r of sorted) {
+      byAuthor.set(r.author.login, {
+        author: r.author.login,
+        state: r.state.toUpperCase() as PRReviewState,
+        submittedAt: r.submittedAt,
+      })
+    }
+    return [...byAuthor.values()]
+  }
+  return []
+}
+
 function deriveCIStatus(rollup: Array<{ status?: string | null; conclusion?: string | null }> | null | undefined): CIStatus {
   if (!rollup || rollup.length === 0) return 'none'
   const isPending = rollup.some((c) => {
@@ -46,14 +74,14 @@ function deriveCIStatus(rollup: Array<{ status?: string | null; conclusion?: str
 }
 
 export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
-  const fields = 'number,title,headRefName,baseRefName,author,assignees,reviewRequests,createdAt,updatedAt,isDraft,state,statusCheckRollup'
+  const fields = 'number,title,headRefName,baseRefName,author,assignees,reviewRequests,createdAt,updatedAt,isDraft,state,statusCheckRollup,labels,latestReviews,comments'
 
   async function fetchPRs(state: string): Promise<PullRequest[]> {
     try {
       const { stdout } = await execFileAsync(
         'gh',
         ['pr', 'list', '--state', state, '--json', fields, '--limit', '50'],
-        { cwd: repoPath }
+        { cwd: repoPath, maxBuffer: 10 * 1024 * 1024 }
       )
 
       const raw = JSON.parse(stdout) as Array<{
@@ -69,6 +97,9 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         isDraft: boolean
         state: string
         statusCheckRollup?: Array<{ status?: string | null; conclusion?: string | null }> | null
+        labels?: Array<{ name: string; color: string; description?: string }>
+        latestReviews?: Array<{ author: { login: string }; state: string; submittedAt: string }>
+        comments?: Array<unknown>
       }>
 
       return raw.map((pr) => ({
@@ -86,6 +117,13 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         isDraft: pr.isDraft,
         state: pr.state === 'MERGED' ? 'MERGED' as const : 'OPEN' as const,
         ciStatus: deriveCIStatus(pr.statusCheckRollup),
+        labels: (pr.labels || []).map((l) => ({
+          name: l.name,
+          color: l.color,
+          description: l.description,
+        })),
+        commentsCount: (pr.comments || []).length,
+        reviews: summarizeLatestReviews(pr.latestReviews, undefined),
       }))
     } catch {
       return []
@@ -98,6 +136,37 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
   ])
 
   return [...open, ...merged]
+}
+
+export async function listRepoLabels(repoPath: string): Promise<PRLabel[]> {
+  try {
+    const { owner, name } = await getRepoOwnerName(repoPath)
+    const { stdout } = await execFileAsync(
+      'gh',
+      [
+        'api',
+        `repos/${owner}/${name}/labels`,
+        '--paginate',
+        '-q',
+        '.[] | {name, color, description}',
+      ],
+      { cwd: repoPath, maxBuffer: 5 * 1024 * 1024 }
+    )
+    return stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const l = JSON.parse(line) as { name: string; color: string; description?: string | null }
+        return {
+          name: l.name,
+          color: l.color,
+          description: l.description ?? undefined,
+        }
+      })
+  } catch {
+    return []
+  }
 }
 
 export async function getPRDiff(repoPath: string, prNumber: number): Promise<string | null> {
@@ -333,28 +402,7 @@ export async function getPRDetail(repoPath: string, prNumber: number): Promise<P
     .map((r) => r.login || r.name || '')
     .filter(Boolean)
 
-  // Prefer latestReviews; fall back to dedup-by-author across all reviews
-  let reviews: PRReviewSummary[] = []
-  if (data.latestReviews && data.latestReviews.length > 0) {
-    reviews = data.latestReviews.map((r) => ({
-      author: r.author.login,
-      state: (r.state.toUpperCase() as PRReviewState),
-      submittedAt: r.submittedAt,
-    }))
-  } else if (data.reviews && data.reviews.length > 0) {
-    const byAuthor = new Map<string, PRReviewSummary>()
-    const sorted = [...data.reviews].sort((a, b) =>
-      a.submittedAt.localeCompare(b.submittedAt)
-    )
-    for (const r of sorted) {
-      byAuthor.set(r.author.login, {
-        author: r.author.login,
-        state: r.state.toUpperCase() as PRReviewState,
-        submittedAt: r.submittedAt,
-      })
-    }
-    reviews = [...byAuthor.values()]
-  }
+  const reviews = summarizeLatestReviews(data.latestReviews, data.reviews)
 
   return {
     body: data.body,

@@ -148,4 +148,8 @@ export function registerGithubHandlers() {
       return githubService.applySuggestion(repoPath, filePath, startLine, endLine, newText, author)
     }
   )
+
+  ipcMain.handle(IPC.PR_REPO_LABELS, async (_e, repoPath: string) => {
+    return githubService.listRepoLabels(repoPath)
+  })
 }

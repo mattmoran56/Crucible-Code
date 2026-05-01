@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { PRDetail, PRReviewSummary, GitHubCollaborator } from '../../../shared/types'
+import { Avatar } from '../ui/Avatar'
 
 const STATE_LABEL: Record<PRReviewSummary['state'], string> = {
   APPROVED: 'Approved',
@@ -16,19 +17,6 @@ const STATE_COLOR: Record<PRReviewSummary['state'], string> = {
   COMMENTED: 'text-text-muted',
   PENDING: 'text-warning',
   DISMISSED: 'text-text-muted',
-}
-
-function Avatar({ login }: { login: string }) {
-  const initials = login.slice(0, 2).toUpperCase()
-  return (
-    <span
-      className="inline-flex items-center justify-center rounded-full bg-bg-tertiary text-text text-[10px] font-semibold"
-      style={{ width: 20, height: 20 }}
-      title={login}
-    >
-      {initials}
-    </span>
-  )
 }
 
 interface ReviewerRowProps {

@@ -49,6 +49,12 @@ export interface WorktreeInfo {
 
 export type CIStatus = 'success' | 'failure' | 'pending' | 'none'
 
+export interface PRLabel {
+  name: string
+  color: string
+  description?: string
+}
+
 export interface PullRequest {
   number: number
   title: string
@@ -62,6 +68,9 @@ export interface PullRequest {
   isDraft: boolean
   state: 'OPEN' | 'MERGED'
   ciStatus: CIStatus
+  labels: PRLabel[]
+  commentsCount: number
+  reviews: PRReviewSummary[]
 }
 
 export interface PRFile {
