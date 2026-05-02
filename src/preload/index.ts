@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -408,6 +408,30 @@ const api = {
       ipcRenderer.invoke(IPC.STARTUP_PROMPT_LIST, projectId),
     save: (projectId: string, prompts: StartupPrompt[]): Promise<void> =>
       ipcRenderer.invoke(IPC.STARTUP_PROMPT_SAVE, projectId, prompts),
+  },
+
+  reviewLoop: {
+    getSettings: (): Promise<ReviewLoopSettings> =>
+      ipcRenderer.invoke(IPC.REVIEW_LOOP_SETTINGS_GET),
+    setSettings: (settings: ReviewLoopSettings): Promise<void> =>
+      ipcRenderer.invoke(IPC.REVIEW_LOOP_SETTINGS_SET, settings),
+    start: (opts: {
+      sessionId: string
+      worktreePath: string
+      branch: string
+      baseBranch: string
+      config: ReviewLoopConfig
+      prNumber?: number
+    }): Promise<void> => ipcRenderer.invoke(IPC.REVIEW_LOOP_START, opts),
+    cancel: (sessionId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.REVIEW_LOOP_CANCEL, sessionId),
+    getState: (sessionId: string): Promise<ReviewLoopState | null> =>
+      ipcRenderer.invoke(IPC.REVIEW_LOOP_STATE_GET, sessionId),
+    onStateUpdate: (callback: (state: ReviewLoopState) => void) => {
+      const listener = (_e: unknown, state: ReviewLoopState) => callback(state)
+      ipcRenderer.on(IPC.REVIEW_LOOP_STATE_UPDATE, listener)
+      return () => ipcRenderer.removeListener(IPC.REVIEW_LOOP_STATE_UPDATE, listener)
+    },
   },
 
 }

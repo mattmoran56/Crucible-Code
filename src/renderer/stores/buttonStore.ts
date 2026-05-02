@@ -9,6 +9,7 @@ import { useSessionStore } from './sessionStore'
 import { useProjectStore } from './projectStore'
 import { useTerminalStore } from './terminalStore'
 import { useWorkspaceLayoutStore } from './workspaceLayoutStore'
+import { useReviewLoopStore } from './reviewLoopStore'
 import { getAppAction } from './appActions'
 
 interface ButtonRunState {
@@ -64,6 +65,42 @@ function resolveTemplateVars(
     .replace(/\{\{projectName\}\}/g, context.projectName ?? '')
 }
 
+/**
+ * Built-in buttons seeded into a fresh workspace. Identified by a stable id so
+ * we can avoid re-seeding if the user has deleted them. Each one is a regular
+ * CustomButton the user can edit/move/remove like any other.
+ */
+const BUILT_IN_REVIEW_LOOP_BUTTON_ID = 'built-in:review-loop:start'
+
+function seedBuiltInButtons(buttons: CustomButton[]): CustomButton[] {
+  // Already seeded (or user deleted) — leave alone.
+  if (buttons.some((b) => b.id === BUILT_IN_REVIEW_LOOP_BUTTON_ID)) return buttons
+  // Distinguish "fresh install" from "user removed it" by a sentinel flag in
+  // localStorage; once we've seeded once, don't bring it back.
+  const SEEDED_KEY = 'codecrucible.builtin-buttons.seeded'
+  if (typeof localStorage !== 'undefined' && localStorage.getItem(SEEDED_KEY) === '1') {
+    return buttons
+  }
+
+  const reviewLoopButton: CustomButton = {
+    id: BUILT_IN_REVIEW_LOOP_BUTTON_ID,
+    label: 'Review Loop',
+    icon: 'RefreshCw',
+    placement: 'session-toolbar',
+    actionType: 'app-action',
+    executionMode: 'background',
+    command: 'review-loop:start',
+    scope: { type: 'global' },
+    order: 1000,
+  }
+
+  const next = [...buttons, reviewLoopButton]
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(SEEDED_KEY, '1')
+  }
+  return next
+}
+
 function matchesScope(button: { scope: CustomButton['scope'] }, projectId: string | null): boolean {
   if (button.scope.type === 'global') return true
   if (button.scope.type === 'all-projects') return projectId !== null
@@ -81,7 +118,11 @@ export const useButtonStore = create<ButtonState>()((set, get) => ({
   loadButtons: async () => {
     try {
       const buttons = await window.api.button.list()
-      set({ buttons })
+      const seeded = seedBuiltInButtons(buttons)
+      if (seeded !== buttons) {
+        await window.api.button.save(seeded)
+      }
+      set({ buttons: seeded })
     } catch (err: any) {
       useToastStore.getState().addToast('error', err.message)
     }
@@ -324,8 +365,15 @@ export const useButtonStore = create<ButtonState>()((set, get) => ({
   },
 
   getButtonsForPlacement: (placement, projectId) => {
+    const reviewLoopEnabled = useReviewLoopStore.getState().effectiveConfig(projectId).enabled
     return get()
-      .buttons.filter((b) => b.placement === placement && matchesScope(b, projectId))
+      .buttons.filter((b) => {
+        if (b.placement !== placement) return false
+        if (!matchesScope(b, projectId)) return false
+        // Hide built-in review-loop button when disabled for the active project.
+        if (b.id === BUILT_IN_REVIEW_LOOP_BUTTON_ID && !reviewLoopEnabled) return false
+        return true
+      })
       .sort((a, b) => a.order - b.order)
   },
 

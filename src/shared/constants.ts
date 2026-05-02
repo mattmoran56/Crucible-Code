@@ -159,4 +159,12 @@ export const IPC = {
   // Session Startup Prompts (per-project)
   STARTUP_PROMPT_LIST: 'startup-prompt:list',
   STARTUP_PROMPT_SAVE: 'startup-prompt:save',
+
+  // Review Loop
+  REVIEW_LOOP_SETTINGS_GET: 'review-loop:settings:get',
+  REVIEW_LOOP_SETTINGS_SET: 'review-loop:settings:set',
+  REVIEW_LOOP_START: 'review-loop:start',
+  REVIEW_LOOP_CANCEL: 'review-loop:cancel',
+  REVIEW_LOOP_STATE_GET: 'review-loop:state:get',
+  REVIEW_LOOP_STATE_UPDATE: 'review-loop:state:update',
 } as const

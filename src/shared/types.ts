@@ -251,6 +251,10 @@ export type AppAction =
   | 'app:toggle-notes'
   | 'app:toggle-usage'
   | 'app:toggle-permissions'
+  // Review loop
+  | 'review-loop:start'
+  | 'review-loop:cancel'
+  | 'review-loop:toggle-tab'
 export type ButtonExecutionMode = 'terminal' | 'background'
 
 export type ButtonScope =
@@ -296,4 +300,100 @@ export interface StartupPrompt {
   inputLabel?: string
   inputPlaceholder?: string
   order: number
+}
+
+// Review Loop ────────────────────────────────────────────────────────────────
+
+export type ReviewLoopPhase =
+  | 'idle'
+  | 'review'
+  | 'triage'
+  | 'fix'
+  | 'pr-update'
+  | 'cooldown'
+
+export type ReviewLoopStatus =
+  | 'idle'
+  | 'running'
+  | 'completed'
+  | 'cancelled'
+  | 'error'
+
+export type ReviewLoopStopReason =
+  | 'converged'
+  | 'maxIterations'
+  | 'costCap'
+  | 'cancelled'
+  | 'error'
+
+export type ReviewLoopDecision = 'fix' | 'skip' | 'defer' | 'noop'
+
+export interface ReviewLoopIssue {
+  id: string
+  title: string
+  description: string
+  file?: string
+  line?: number
+  category?: string
+}
+
+export interface ReviewLoopTriagedIssue extends ReviewLoopIssue {
+  introducedInPR: boolean
+  decision: ReviewLoopDecision
+  justification: string
+}
+
+export interface ReviewLoopRound {
+  index: number
+  startedAt: string
+  endedAt?: string
+  phase: ReviewLoopPhase
+  rawIssues: ReviewLoopIssue[]
+  triaged: ReviewLoopTriagedIssue[]
+  costUsd: number
+  log: string[]
+  errorMessage?: string
+}
+
+export interface ReviewLoopState {
+  sessionId: string
+  branch: string
+  baseBranch: string
+  worktreePath: string
+  status: ReviewLoopStatus
+  currentPhase: ReviewLoopPhase
+  iteration: number
+  rounds: ReviewLoopRound[]
+  cumulativeCostUsd: number
+  startedAt?: string
+  endedAt?: string
+  stopReason?: ReviewLoopStopReason
+  errorMessage?: string
+  skippedIssues: ReviewLoopTriagedIssue[]
+}
+
+export interface ReviewLoopConfig {
+  enabled: boolean
+  maxIterations: number
+  consecutiveCleanRounds: number
+  costCapUsd: number
+}
+
+export interface ReviewLoopProjectOverride {
+  enabled?: boolean
+  maxIterations?: number
+  consecutiveCleanRounds?: number
+  costCapUsd?: number
+}
+
+export interface ReviewLoopSettings {
+  workspace: ReviewLoopConfig
+  projectOverrides: Record<string, ReviewLoopProjectOverride>
+}
+
+export const DEFAULT_REVIEW_LOOP_CONFIG: ReviewLoopConfig = {
+  enabled: true,
+  maxIterations: 5,
+  consecutiveCleanRounds: 2,
+  costCapUsd: 5,
 }
