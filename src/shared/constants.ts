@@ -167,4 +167,7 @@ export const IPC = {
   REVIEW_LOOP_CANCEL: 'review-loop:cancel',
   REVIEW_LOOP_STATE_GET: 'review-loop:state:get',
   REVIEW_LOOP_STATE_UPDATE: 'review-loop:state:update',
+
+  // Claude Web Sessions
+  CLAUDE_WEB_LIST_SESSIONS: 'claude-web:list-sessions',
 } as const

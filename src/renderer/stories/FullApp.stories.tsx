@@ -321,7 +321,25 @@ export const ReviewLoopCompleted: Story = {
   ],
 }
 
+export const ClaudeWebSessions: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory()
+      return <Story />
+    },
+  ],
+}
+
 export const ReviewLoopSettings: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ settingsOpen: true })
+      return <Story />
+    },
+  ],
+}
+
+export const ClaudeWebSettings: Story = {
   decorators: [
     (Story) => {
       setupStoresForStory({ settingsOpen: true })

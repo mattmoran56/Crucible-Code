@@ -33,7 +33,7 @@ export const mockAccounts: ClaudeAccount[] = [
 // --- Projects ---
 
 export const mockProjects: Project[] = [
-  { id: 'proj-1', name: 'CodeCrucible', repoPath: '/Users/dev/repos/CodeCrucible', claudeAccountId: 'acc-1' },
+  { id: 'proj-1', name: 'CodeCrucible', repoPath: '/Users/dev/repos/CodeCrucible', claudeAccountId: 'acc-1', claudeWebEnabled: true },
   { id: 'proj-2', name: 'my-api-service', repoPath: '/Users/dev/repos/my-api-service', claudeAccountId: 'acc-2' },
   { id: 'proj-3', name: 'design-system', repoPath: '/Users/dev/repos/design-system' },
 ]

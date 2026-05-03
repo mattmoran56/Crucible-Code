@@ -29,6 +29,7 @@
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
 - **Review loop** — One-click review → triage → fix cycle on a branch with stop conditions (clean rounds, iteration cap, cost cap) and a sticky PR comment for skipped findings
+- **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
 ## Visual Tour
@@ -267,6 +268,24 @@ Full pull request review without leaving the IDE — comparable to GitHub's web 
 <td><img src="docs/screenshots/pr-display-settings-full.png" alt="Per-project PR list display settings" /></td>
 </tr>
 </table>
+
+</details>
+
+<details>
+<summary><strong>Claude Web sessions</strong></summary>
+
+If you also drive Claude Code from [claude.ai/code](https://claude.com/product/claude-code), this surfaces **your** active web sessions in the sidebar so you can pull them down locally without scrolling through every `claude/*` branch in the repo.
+
+- **Per-project, off by default** — Settings → Claude Web Sessions has an Enable toggle and a Branch prefix (defaults to `claude/`). Nothing renders until you opt in
+- **Only your branches** — `claude/*` branches whose latest commit was authored by you. Identity matches against `git config user.email` *or* the GitHub noreply pattern (`<id>+<login>@users.noreply.github.com`) using your `gh` login
+- **Hides finished work** — Branches whose PR is merged are excluded automatically; only branches with no PR, an open PR, or a draft PR show up
+- **Click to open** — Tap a card to fetch + create the worktree. If the branch is already checked out in the main repo, the conflicting worktree is auto-detached so the new worktree can claim it
+- **Stays under Claude Web** — Once opened, the session keeps living under the Claude Web section (not the Sessions list) so the two contexts stay separate
+- **Polls every 30 seconds** — Piggy-backs on the existing PR poll; new commits and new sessions appear within ~30 s
+
+![Claude Web sidebar section](docs/screenshots/claude-web-sidebar.png)
+![Claude Web project settings](docs/screenshots/claude-web-settings.png)
+![Claude Web session card](docs/screenshots/claude-web-card.png)
 
 </details>
 

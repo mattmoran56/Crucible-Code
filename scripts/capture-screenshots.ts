@@ -247,6 +247,26 @@ const targets: ScreenshotTarget[] = [
     rightClickDemo: true,
   },
 
+  // Claude Web sessions
+  {
+    name: 'claude-web-sidebar',
+    storyId: 'app-full-layout--claude-web-sessions',
+    delay: 2000,
+    viewport: { width: 320, height: 1100 },
+  },
+  {
+    name: 'claude-web-settings',
+    storyId: 'app-full-layout--claude-web-settings',
+    delay: 2000,
+    scrollTo: 'Claude Web Sessions',
+  },
+  {
+    name: 'claude-web-card',
+    storyId: 'sessions-claudewebsessioncard--with-open-pr',
+    viewport: { width: 380, height: 110 },
+    delay: 600,
+  },
+
   // PR sidebar sort & filter menu
   {
     name: 'pr-sort-filter-menu',

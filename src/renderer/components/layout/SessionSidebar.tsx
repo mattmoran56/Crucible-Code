@@ -14,6 +14,8 @@ import { SessionSortMenu } from '../sessions/SessionSortMenu'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
 import { ImportWorktreeDialog } from '../sessions/ImportWorktreeDialog'
 import { OpenBranchDialog } from '../sessions/OpenBranchDialog'
+import { ClaudeWebSessionCardContainer } from '../sessions/ClaudeWebSessionCard'
+import { useClaudeWebStore } from '../../stores/claudeWebStore'
 import { PRCard } from '../pullrequests/PRCard'
 import { PRSortFilterMenu } from '../pullrequests/PRSortFilterMenu'
 import { usePRViewStore, DEFAULT_PR_VIEW, isDefaultView, type PersonFilter } from '../../stores/prViewStore'
@@ -31,8 +33,12 @@ const PR_POLL_INTERVAL = 30_000
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, staleSessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, markStale, openPR, openAsMainBranch, checkStaleness, reactivateSession } =
+  const { sessions, staleSessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, markStale, openPR, openAsMainBranch, checkStaleness, reactivateSession, openBranch } =
     useSessionStore()
+  const claudeWebSessions = useClaudeWebStore((s) => s.sessions)
+  const claudeWebLoading = useClaudeWebStore((s) => s.loading)
+  const loadClaudeWebSessions = useClaudeWebStore((s) => s.loadSessions)
+  const clearClaudeWebSessions = useClaudeWebStore((s) => s.clear)
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, loadCurrentUser, markSeen, clear: clearPRs, currentUser } =
     usePRStore()
   const prViewByRepo = usePRViewStore((s) => s.byRepo)
@@ -45,6 +51,7 @@ export function SessionSidebar() {
   const [showOpenBranch, setShowOpenBranch] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
   const [staleCollapsed, setStaleCollapsed] = useState(true)
+  const [claudeWebCollapsed, setClaudeWebCollapsed] = useState(false)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Listen for app-action create-session events from custom buttons
@@ -97,19 +104,32 @@ export function SessionSidebar() {
     return () => observer.disconnect()
   }, [panelsContainerEl])
 
+  const claudeWebEnabled = !!activeProject?.claudeWebEnabled
+
+  // Layout: 3 panels normally, 4 when Claude Web is enabled (inserted between
+  // Stale Sessions and Pull Requests). The two configs use a different number
+  // of panels, so the panels container is keyed on the toggle to remount the
+  // resize hook with fresh refs when it flips.
   const collapsedPanels = React.useMemo(
-    () => [false, staleCollapsed, prCollapsed],
-    [staleCollapsed, prCollapsed]
+    () =>
+      claudeWebEnabled
+        ? [false, staleCollapsed, claudeWebCollapsed, prCollapsed]
+        : [false, staleCollapsed, prCollapsed],
+    [claudeWebEnabled, staleCollapsed, claudeWebCollapsed, prCollapsed]
   )
 
-  // Subtract two resize handles (3px each) so panel sizes sum to fill the
+  const minSizes = claudeWebEnabled ? [60, 60, 60, 60] : [60, 60, 60]
+  const initialRatios = claudeWebEnabled ? [0.45, 0.2, 0.15, 0.2] : [0.5, 0.25, 0.25]
+  const handleCount = claudeWebEnabled ? 3 : 2
+
+  // Subtract resize handles (3px each) so panel sizes sum to fill the
   // remaining space exactly.
-  const panelSpace = Math.max(0, panelsHeight - 6)
+  const panelSpace = Math.max(0, panelsHeight - handleCount * 3)
 
   const { sizes, onHandleMouseDown } = useMultiPanelResize({
     containerSize: panelSpace,
-    minSizes: [60, 60, 60],
-    initialRatios: [0.5, 0.25, 0.25],
+    minSizes,
+    initialRatios,
     collapsedPanels,
     collapsedSize: 37,
   })
@@ -156,6 +176,23 @@ export function SessionSidebar() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     }
   }, [activeProject?.id])
+
+  // Claude Web sessions: load + poll on the same cadence when the project has
+  // the feature enabled. Re-fires when currentUser arrives so the first list
+  // isn't empty just because the GitHub login resolved after mount.
+  useEffect(() => {
+    if (!activeProject || !claudeWebEnabled) {
+      clearClaudeWebSessions()
+      return
+    }
+    const repoPath = activeProject.repoPath
+    const prefix = activeProject.claudeWebBranchPrefix
+    loadClaudeWebSessions(repoPath, prefix, currentUser)
+    const interval = setInterval(() => {
+      loadClaudeWebSessions(repoPath, prefix, currentUser)
+    }, PR_POLL_INTERVAL)
+    return () => clearInterval(interval)
+  }, [activeProject?.id, activeProject?.repoPath, activeProject?.claudeWebBranchPrefix, claudeWebEnabled, currentUser, loadClaudeWebSessions, clearClaudeWebSessions])
 
   // Register all sessions with the main process for notification routing
   useEffect(() => {
@@ -280,8 +317,26 @@ export function SessionSidebar() {
 
   const { sortBy, groupBy, collapsedGroups, toggleGroupCollapsed } = useSessionViewStore()
 
+  // Sessions whose branch matches the project's Claude Web prefix get
+  // categorized under the Claude Web section instead of the regular Sessions
+  // list. When the toggle is off, all sessions stay under Sessions.
+  const normalizedClaudeWebPrefix = useMemo(() => {
+    const raw = (activeProject?.claudeWebBranchPrefix ?? 'claude/').trim() || 'claude/'
+    return raw.endsWith('/') ? raw : `${raw}/`
+  }, [activeProject?.claudeWebBranchPrefix])
+
+  const claudeWebActiveSessions = useMemo(() => {
+    if (!claudeWebEnabled) return []
+    return sessions.filter((s) => s.branchName.startsWith(normalizedClaudeWebPrefix))
+  }, [claudeWebEnabled, sessions, normalizedClaudeWebPrefix])
+
+  const regularSessions = useMemo(() => {
+    if (!claudeWebEnabled) return sessions
+    return sessions.filter((s) => !s.branchName.startsWith(normalizedClaudeWebPrefix))
+  }, [claudeWebEnabled, sessions, normalizedClaudeWebPrefix])
+
   const sortedSessions = useMemo(() => {
-    const sorted = [...sessions]
+    const sorted = [...regularSessions]
     switch (sortBy) {
       case 'created':
         sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -291,7 +346,13 @@ export function SessionSidebar() {
         break
     }
     return sorted
-  }, [sessions, sortBy])
+  }, [regularSessions, sortBy])
+
+  const sortedClaudeWebActiveSessions = useMemo(() => {
+    return [...claudeWebActiveSessions].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+  }, [claudeWebActiveSessions])
 
   const groupedSessions = useMemo(() => {
     if (groupBy === 'none') return [{ label: null as string | null, sessions: sortedSessions }]
@@ -321,6 +382,19 @@ export function SessionSidebar() {
     () => pullRequests.filter((pr) => pr.state !== 'MERGED'),
     [pullRequests]
   )
+
+  // Filter out Claude Web entries that are already opened locally or whose PR
+  // is merged (those sessions are done — surfacing them would just clutter).
+  const visibleClaudeWebSessions = useMemo(() => {
+    if (!claudeWebEnabled) return []
+    const activeBranchNames = new Set(sessions.map((s) => s.branchName))
+    return claudeWebSessions.filter((c) => {
+      if (activeBranchNames.has(c.branchName)) return false
+      const pr = pullRequests.find((p) => p.headRefName === c.branchName)
+      if (pr?.state === 'MERGED') return false
+      return true
+    })
+  }, [claudeWebEnabled, claudeWebSessions, sessions, pullRequests])
 
   const prRepoView = useMemo(
     () => (activeProject ? prViewByRepo[activeProject.repoPath] ?? DEFAULT_PR_VIEW : DEFAULT_PR_VIEW),
@@ -519,7 +593,11 @@ export function SessionSidebar() {
         />
       )}
 
-      <div ref={setPanelsContainerEl} className="flex flex-col flex-1 min-h-0">
+      <div
+        ref={setPanelsContainerEl}
+        key={claudeWebEnabled ? 'panels-cw' : 'panels'}
+        className="flex flex-col flex-1 min-h-0"
+      >
         {/* Sessions section */}
         <div style={{ height: sizes[0], flexShrink: 0 }} className="min-h-0 overflow-hidden">
           <SidebarSection
@@ -612,7 +690,7 @@ export function SessionSidebar() {
                 </React.Fragment>
               )
             })}
-            {sessions.length === 0 && (
+            {regularSessions.length === 0 && (
               <p className="text-text-muted text-xs text-center py-4">No sessions yet</p>
             )}
           </SidebarSection>
@@ -645,11 +723,94 @@ export function SessionSidebar() {
           </SidebarSection>
         </div>
 
-        {/* Resize handle: Stale Sessions ↔ Pull Requests */}
-        <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(1)} />
+        {claudeWebEnabled && (
+          <>
+            {/* Resize handle: Stale Sessions ↔ Claude Web */}
+            <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(1)} />
+
+            {/* Claude Web section */}
+            <div style={{ height: sizes[2], flexShrink: 0 }} className="min-h-0 overflow-hidden">
+              <SidebarSection
+                title="Claude Web"
+                collapsible
+                collapsed={claudeWebCollapsed}
+                onToggle={() => setClaudeWebCollapsed((c) => !c)}
+                badge={visibleClaudeWebSessions.length + sortedClaudeWebActiveSessions.length}
+                action={
+                  <IconButton
+                    label="Refresh Claude Web sessions"
+                    size="sm"
+                    onClick={() => {
+                      if (!activeProject) return
+                      loadClaudeWebSessions(
+                        activeProject.repoPath,
+                        activeProject.claudeWebBranchPrefix,
+                        currentUser
+                      )
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="23 4 23 10 17 10" />
+                      <polyline points="1 20 1 14 7 14" />
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                  </IconButton>
+                }
+              >
+                {sortedClaudeWebActiveSessions.map((session) => (
+                  <SessionCard
+                    key={session.id}
+                    session={session}
+                    isActive={!editorMode && session.id === activeSessionId}
+                    isOpenedAsMain={session.id === openedAsMainBranch}
+                    status={getContextStatus(session.id)}
+                    pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
+                    onClick={() => {
+                      setEditorMode(false)
+                      setActiveSession(session.id, activeProject.repoPath)
+                      clearContextStatuses(session.id)
+                    }}
+                    onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
+                    onMarkStale={() => markStale(activeProject.id, session.id)}
+                    onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
+                  />
+                ))}
+                {claudeWebLoading && visibleClaudeWebSessions.length === 0 && sortedClaudeWebActiveSessions.length === 0 ? (
+                  <p className="text-text-muted text-xs text-center py-4">Loading...</p>
+                ) : !currentUser && sortedClaudeWebActiveSessions.length === 0 ? (
+                  <p className="text-text-muted text-xs text-center py-4">
+                    Sign in with <code>gh</code> to discover your Claude web sessions
+                  </p>
+                ) : visibleClaudeWebSessions.length === 0 && sortedClaudeWebActiveSessions.length === 0 ? (
+                  <p className="text-text-muted text-xs text-center py-4">No Claude web sessions</p>
+                ) : (
+                  visibleClaudeWebSessions.map((cw) => (
+                    <ClaudeWebSessionCardContainer
+                      key={cw.branchName}
+                      session={cw}
+                      pr={pullRequests.find((p) => p.headRefName === cw.branchName)}
+                      onOpen={async () => {
+                        const sessionName = cw.branchName.replace(/\//g, '-')
+                        await openBranch(
+                          activeProject.id,
+                          activeProject.repoPath,
+                          cw.branchName,
+                          sessionName
+                        )
+                      }}
+                    />
+                  ))
+                )}
+              </SidebarSection>
+            </div>
+          </>
+        )}
+
+        {/* Resize handle: ↔ Pull Requests */}
+        <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(claudeWebEnabled ? 2 : 1)} />
 
         {/* Pull Requests section */}
-        <div style={{ height: sizes[2], flexShrink: 0 }} className="min-h-0 overflow-hidden">
+        <div style={{ height: sizes[claudeWebEnabled ? 3 : 2], flexShrink: 0 }} className="min-h-0 overflow-hidden">
           <SidebarSection
             title="Pull Requests"
             collapsible

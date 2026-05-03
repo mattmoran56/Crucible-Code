@@ -89,6 +89,25 @@ export function SettingsPage() {
     })
   }
 
+  const handleClaudeWebEnabledChange = async (projectId: string, enabled: boolean) => {
+    const project = projects.find((p) => p.id === projectId)
+    if (!project) return
+    await updateProject({
+      ...project,
+      claudeWebEnabled: enabled || undefined,
+    })
+  }
+
+  const handleClaudeWebPrefixChange = async (projectId: string, prefix: string) => {
+    const project = projects.find((p) => p.id === projectId)
+    if (!project) return
+    const trimmed = prefix.trim()
+    await updateProject({
+      ...project,
+      claudeWebBranchPrefix: trimmed || undefined,
+    })
+  }
+
   const handleSaveAndLogin = async () => {
     if (!editingAccount?.label || !editingAccount?.configDir) return
     const newAccount: ClaudeAccount = {
@@ -715,6 +734,72 @@ export function SettingsPage() {
                           {status.orgName && <span> — {status.orgName}</span>}
                         </p>
                       )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ─── Claude Web Sessions ─── */}
+          {projects.length > 0 && (
+            <div style={{ marginTop: 40 }}>
+              <h1 className="text-lg font-semibold text-text" style={{ marginBottom: 4 }}>
+                Claude Web Sessions
+              </h1>
+              <p className="text-xs text-text-muted" style={{ marginBottom: 20 }}>
+                Surface your Claude Code web sessions in the sidebar so you can
+                open them locally with one click. Off by default — enable per
+                project.
+              </p>
+
+              <div className="flex flex-col gap-2">
+                {projects.map((project) => {
+                  const enabled = !!project.claudeWebEnabled
+                  const prefix = project.claudeWebBranchPrefix ?? ''
+                  return (
+                    <div
+                      key={project.id}
+                      className="border border-border rounded-md"
+                      style={{ padding: '10px 14px' }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-text">{project.name}</p>
+                          <p className="text-[10px] text-text-muted truncate">{project.repoPath}</p>
+                        </div>
+                        <label className="flex items-center gap-2 shrink-0 text-xs text-text cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            onChange={(e) => handleClaudeWebEnabledChange(project.id, e.target.checked)}
+                            className="cursor-pointer"
+                          />
+                          Enable
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <label
+                          htmlFor={`claude-web-prefix-${project.id}`}
+                          className={`text-[11px] shrink-0 ${enabled ? 'text-text-muted' : 'text-text-muted opacity-50'}`}
+                        >
+                          Branch prefix
+                        </label>
+                        <input
+                          id={`claude-web-prefix-${project.id}`}
+                          type="text"
+                          disabled={!enabled}
+                          defaultValue={prefix}
+                          placeholder="claude/"
+                          onBlur={(e) => {
+                            if (e.target.value.trim() !== prefix) {
+                              handleClaudeWebPrefixChange(project.id, e.target.value)
+                            }
+                          }}
+                          className={`flex-1 bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent ${enabled ? '' : 'opacity-50 cursor-not-allowed'}`}
+                          style={{ padding: '4px 10px' }}
+                        />
+                      </div>
                     </div>
                   )
                 })}

@@ -233,6 +233,29 @@ export const mockApi = {
     onStateUpdate: () => noop(),
   },
 
+  claudeWeb: {
+    listSessions: async () => [
+      {
+        branchName: 'claude/zen-mendeleev',
+        headSha: 'aaa1111',
+        lastCommitDate: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        authorName: 'Matt Moran',
+      },
+      {
+        branchName: 'claude/eager-darwin',
+        headSha: 'bbb2222',
+        lastCommitDate: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+        authorName: 'Matt Moran',
+      },
+      {
+        branchName: 'claude/wise-curie',
+        headSha: 'ccc3333',
+        lastCommitDate: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
+        authorName: 'Matt Moran',
+      },
+    ],
+  },
+
   config: {
     list: async () => [],
     getContent: async () => null,
