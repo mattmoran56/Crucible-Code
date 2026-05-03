@@ -383,9 +383,11 @@ For EACH issue, spawn a sub-agent (Task tool) that:
 2. Determines whether the issue was introduced by this branch (vs. pre-existing on ${o.baseBranch}).
 3. Decides one of:
    - "fix"   — should be fixed in this branch now
-   - "defer" — real but out of scope for this branch
-   - "skip"  — not a real problem (false positive) or an accepted trade-off
-   - "noop"  — duplicate / stale; ignore
+   - "defer" — real issue, but out of scope for this branch (will be mentioned on the PR)
+   - "skip"  — real issue or trade-off we are deliberately choosing not to fix in this branch
+               (e.g. accepted limitation, conscious design decision, scope cut). Will be mentioned on the PR.
+   - "noop"  — NOT a real problem: false positive, duplicate, stale, pre-existing on the base branch,
+               or you cannot confirm it is real. These are NOT mentioned on the PR.
 4. Writes a short justification (1-3 sentences).
 
 Aggregate the sub-agent verdicts and write the result as a JSON array to "${o.triagePath}" using this schema:
@@ -406,8 +408,13 @@ Aggregate the sub-agent verdicts and write the result as a JSON array to "${o.tr
 
 Rules:
 - Output a single valid JSON array, no markdown wrapper.
-- If an issue has decision "skip" or "defer", the justification MUST explain why (it will be posted on the PR).
-- Be conservative: if you cannot confirm an issue was introduced by this branch and is real, mark it "skip" with a justification.
+- The PR comment will list ONLY "skip" and "defer" items — these are explicit decisions or recognised
+  trade-offs reviewers should be aware of. Do NOT use "skip"/"defer" for false positives or unconfirmed
+  issues; use "noop" instead so they are excluded from the PR comment.
+- If decision is "skip" or "defer", the justification MUST clearly explain the trade-off / why we are
+  consciously not fixing it (it will be posted on the PR).
+- Be conservative: if you cannot confirm an issue was introduced by this branch and is real, mark it
+  "noop" (not "skip"), with a brief justification.
 - Write the file before exiting.`
 }
 
