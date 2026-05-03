@@ -159,4 +159,7 @@ export const IPC = {
   // Session Startup Prompts (per-project)
   STARTUP_PROMPT_LIST: 'startup-prompt:list',
   STARTUP_PROMPT_SAVE: 'startup-prompt:save',
+
+  // Claude Web Sessions
+  CLAUDE_WEB_LIST_SESSIONS: 'claude-web:list-sessions',
 } as const

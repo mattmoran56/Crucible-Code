@@ -295,3 +295,21 @@ export const StartupPromptEditor: Story = {
     },
   ],
 }
+
+export const ClaudeWebSessions: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory()
+      return <Story />
+    },
+  ],
+}
+
+export const ClaudeWebSettings: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ settingsOpen: true })
+      return <Story />
+    },
+  ],
+}

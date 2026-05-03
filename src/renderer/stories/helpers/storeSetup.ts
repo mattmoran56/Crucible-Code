@@ -14,6 +14,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { useWorkspaceLayoutStore, type WorkspaceTab } from '../../stores/workspaceLayoutStore'
 import { useButtonStore } from '../../stores/buttonStore'
 import { useStartupPromptStore } from '../../stores/startupPromptStore'
+import { useClaudeWebStore } from '../../stores/claudeWebStore'
 import type { SessionStatus } from '../../../shared/types'
 
 import {
@@ -254,6 +255,32 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     loadingProjects: new Set(),
   })
 
+  // Claude Web store — three remote claude/* branches authored by the current
+  // user, sorted newest first. Mirrors what the IPC handler would return.
+  useClaudeWebStore.setState({
+    sessions: [
+      {
+        branchName: 'claude/zen-mendeleev',
+        headSha: 'aaa1111',
+        lastCommitDate: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        authorName: 'Matt Moran',
+      },
+      {
+        branchName: 'claude/eager-darwin',
+        headSha: 'bbb2222',
+        lastCommitDate: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+        authorName: 'Matt Moran',
+      },
+      {
+        branchName: 'claude/wise-curie',
+        headSha: 'ccc3333',
+        lastCommitDate: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
+        authorName: 'Matt Moran',
+      },
+    ],
+    loading: false,
+  })
+
   // Settings store
   if (options.settingsOpen) {
     useSettingsStore.setState({ isOpen: true })
@@ -328,5 +355,6 @@ export function resetStores() {
   useSettingsStore.setState({ isOpen: false })
   useButtonStore.setState({ buttons: [], groups: [], runningButtons: {} })
   useStartupPromptStore.setState({ byProject: {}, loadingProjects: new Set() })
+  useClaudeWebStore.setState({ sessions: [], loading: false })
   useWorkspaceLayoutStore.setState({ columns: [], savedLayouts: {} })
 }
