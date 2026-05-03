@@ -8,6 +8,36 @@ function worktreeDir(repoPath: string): string {
   return join(dirname(repoPath), '.codecrucible-worktrees', repoName)
 }
 
+// If `branch` is currently checked out in some worktree, detach that worktree
+// (HEAD becomes detached at the same commit) so we can add a new worktree
+// claiming the branch. Returns the path that was detached, or null.
+async function detachConflictingWorktree(
+  repoPath: string,
+  branch: string
+): Promise<string | null> {
+  const g = simpleGit(repoPath)
+  let wtOutput: string
+  try {
+    wtOutput = await g.raw(['worktree', 'list', '--porcelain'])
+  } catch {
+    return null
+  }
+  let wtPath = ''
+  for (const line of wtOutput.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      wtPath = line.slice('worktree '.length)
+    } else if (
+      line.startsWith('branch refs/heads/') &&
+      line.slice('branch refs/heads/'.length) === branch
+    ) {
+      const wtGit = simpleGit(wtPath)
+      await wtGit.raw(['-c', 'core.hooksPath=/dev/null', 'checkout', '--detach'])
+      return wtPath
+    }
+  }
+  return null
+}
+
 export async function createWorktree(
   repoPath: string,
   sessionName: string,
@@ -86,6 +116,13 @@ export async function createWorktreeFromBranch(
     localExists = false
   }
 
+  // If the branch is already checked out in another worktree (typically the
+  // main repo), git refuses to add a new worktree for it. Detach the
+  // conflicting worktree first so HEAD is freed.
+  if (localExists) {
+    await detachConflictingWorktree(repoPath, remoteBranch)
+  }
+
   try {
     if (localExists) {
       await g.raw(['worktree', 'add', wtPath, remoteBranch])
@@ -94,8 +131,14 @@ export async function createWorktreeFromBranch(
     }
   } catch (err) {
     // If the worktree path exists the add succeeded — the error came from a
-    // post-checkout hook (e.g. git-lfs not installed). Ignore it.
-    await access(wtPath)
+    // post-checkout hook (e.g. git-lfs not installed). Ignore it. Otherwise
+    // surface the real git error instead of the misleading ENOENT from access.
+    try {
+      await access(wtPath)
+    } catch {
+      const message = err instanceof Error ? err.message : String(err)
+      throw new Error(`git worktree add failed: ${message}`)
+    }
   }
 
   return { path: wtPath, branch: remoteBranch }

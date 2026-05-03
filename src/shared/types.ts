@@ -9,6 +9,15 @@ export interface Project {
   name: string
   repoPath: string
   claudeAccountId?: string
+  claudeWebEnabled?: boolean
+  claudeWebBranchPrefix?: string
+}
+
+export interface ClaudeWebSession {
+  branchName: string
+  headSha: string
+  lastCommitDate: string
+  authorName: string
 }
 
 export type SessionStatus = 'running' | 'attention' | 'completed'
