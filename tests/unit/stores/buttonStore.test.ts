@@ -21,6 +21,24 @@ beforeEach(() => {
   ;(window as any).api = { button: buttonApi, terminal: terminalApi }
   useButtonStore.setState({ buttons: [], groups: [], runningButtons: {} } as any)
   useToastStore.setState({ toasts: [] })
+  // loadButtons seeds built-in buttons (e.g. Review Loop) on first run; mark
+  // the workspace as already seeded so these tests assert against the API
+  // result alone, not the merged seed list. Use a try/catch since some test
+  // envs stub localStorage without a real setItem.
+  try {
+    globalThis.localStorage?.setItem('codecrucible.builtin-buttons.seeded', '1')
+  } catch {
+    // jsdom localStorage missing — fall back to a stub for this test.
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (k: string) => (k === 'codecrucible.builtin-buttons.seeded' ? '1' : null),
+        setItem: () => {},
+        removeItem: () => {},
+        clear: () => {},
+      },
+    })
+  }
 })
 
 const B = (overrides: Partial<{ id: string; placement: string; order: number; groupId?: string; scope: any }> = {}) => ({
