@@ -803,7 +803,7 @@ export const mockReviewLoopCompleted: ReviewLoopState = {
   status: 'completed',
   currentPhase: 'idle',
   iteration: 3,
-  cumulativeCostUsd: 2.07,
+  cumulativeCostUsd: 1.64,
   endedAt: new Date(baseTime + 240_000).toISOString(),
   stopReason: 'converged',
   rounds: [

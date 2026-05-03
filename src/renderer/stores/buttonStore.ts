@@ -110,22 +110,30 @@ function matchesScope(button: { scope: CustomButton['scope'] }, projectId: strin
   return false
 }
 
+let loadButtonsInFlight: Promise<void> | null = null
+
 export const useButtonStore = create<ButtonState>()((set, get) => ({
   buttons: [],
   groups: [],
   runningButtons: {},
 
   loadButtons: async () => {
-    try {
-      const buttons = await window.api.button.list()
-      const seeded = seedBuiltInButtons(buttons)
-      if (seeded !== buttons) {
-        await window.api.button.save(seeded)
+    if (loadButtonsInFlight) return loadButtonsInFlight
+    loadButtonsInFlight = (async () => {
+      try {
+        const buttons = await window.api.button.list()
+        const seeded = seedBuiltInButtons(buttons)
+        if (seeded !== buttons) {
+          await window.api.button.save(seeded)
+        }
+        set({ buttons: seeded })
+      } catch (err: any) {
+        useToastStore.getState().addToast('error', err.message)
+      } finally {
+        loadButtonsInFlight = null
       }
-      set({ buttons: seeded })
-    } catch (err: any) {
-      useToastStore.getState().addToast('error', err.message)
-    }
+    })()
+    return loadButtonsInFlight
   },
 
   loadGroups: async () => {

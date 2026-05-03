@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import { useReviewLoopStore } from '../../stores/reviewLoopStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
@@ -117,14 +117,21 @@ function EmptyState() {
 }
 
 function LoopStateView({ state }: { state: ReviewLoopState }) {
+  const reversed = [...state.rounds].reverse()
+  const latestIndex = reversed[0]?.index
   return (
     <div className="flex flex-col gap-3">
       <SummaryBar state={state} />
       {state.rounds.length === 0 && state.status === 'running' && (
         <p className="text-xs text-text-muted">Starting first round…</p>
       )}
-      {[...state.rounds].reverse().map((round) => (
-        <RoundCard key={round.index} round={round} />
+      {reversed.map((round) => (
+        <RoundCard
+          key={round.index}
+          round={round}
+          isLatest={round.index === latestIndex}
+          loopRunning={state.status === 'running'}
+        />
       ))}
     </div>
   )
@@ -207,11 +214,21 @@ function stopReasonLabel(r: ReviewLoopStopReason): string {
   }
 }
 
-function RoundCard({ round }: { round: ReviewLoopRound }) {
+function RoundCard({
+  round,
+  isLatest,
+  loopRunning,
+}: {
+  round: ReviewLoopRound
+  isLatest: boolean
+  loopRunning: boolean
+}) {
   const fixCount = round.triaged.filter((t) => t.decision === 'fix').length
   const skipCount = round.triaged.filter(
     (t) => t.decision === 'skip' || t.decision === 'defer'
   ).length
+  const transcript = round.transcript ?? []
+  const isActiveRound = isLatest && loopRunning
 
   return (
     <div className="border border-border rounded-md" style={{ padding: '10px 12px' }}>
@@ -238,6 +255,15 @@ function RoundCard({ round }: { round: ReviewLoopRound }) {
         </div>
       )}
 
+      {transcript.length > 0 && (
+        <LiveTranscript
+          lines={transcript}
+          defaultOpen={isActiveRound}
+          autoScroll={isActiveRound}
+          label={isActiveRound ? `Live output (${transcript.length})` : `Output (${transcript.length})`}
+        />
+      )}
+
       {round.log.length > 0 && (
         <details style={{ marginTop: 8 }}>
           <summary className="text-[11px] text-text-muted cursor-pointer">Log</summary>
@@ -250,6 +276,40 @@ function RoundCard({ round }: { round: ReviewLoopRound }) {
         </details>
       )}
     </div>
+  )
+}
+
+function LiveTranscript({
+  lines,
+  defaultOpen,
+  autoScroll,
+  label,
+}: {
+  lines: string[]
+  defaultOpen: boolean
+  autoScroll: boolean
+  label: string
+}) {
+  const preRef = useRef<HTMLPreElement | null>(null)
+
+  useEffect(() => {
+    if (!autoScroll) return
+    const el = preRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [lines, autoScroll])
+
+  return (
+    <details open={defaultOpen} style={{ marginTop: 8 }}>
+      <summary className="text-[11px] text-text-muted cursor-pointer">{label}</summary>
+      <pre
+        ref={preRef}
+        className="text-[11px] text-text whitespace-pre-wrap font-mono bg-bg-tertiary rounded"
+        style={{ marginTop: 4, maxHeight: 280, overflowY: 'auto', padding: '6px 8px' }}
+      >
+        {lines.join('\n')}
+      </pre>
+    </details>
   )
 }
 

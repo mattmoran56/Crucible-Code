@@ -352,6 +352,8 @@ export interface ReviewLoopRound {
   triaged: ReviewLoopTriagedIssue[]
   costUsd: number
   log: string[]
+  /** Live human-readable lines from each claude subprocess (assistant text, tool calls, errors). */
+  transcript: string[]
   errorMessage?: string
 }
 

@@ -179,6 +179,7 @@ function startRound(loop: ActiveLoop): ReviewLoopRound {
     triaged: [],
     costUsd: 0,
     log: [],
+    transcript: [],
   }
   loop.state.rounds.push(round)
   emitState(loop)
@@ -198,7 +199,7 @@ async function runReviewPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
     issuesPath,
   })
 
-  const result = await runClaude(loop, prompt)
+  const result = await runClaude(loop, round, prompt)
   round.costUsd += result.costUsd
   loop.state.cumulativeCostUsd += result.costUsd
 
@@ -235,7 +236,7 @@ async function runTriagePhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
   })
 
   pushLog(round, `Triaging ${round.rawIssues.length} ${round.rawIssues.length === 1 ? 'issue' : 'issues'} (one sub-agent each)…`)
-  const result = await runClaude(loop, prompt)
+  const result = await runClaude(loop, round, prompt)
   round.costUsd += result.costUsd
   loop.state.cumulativeCostUsd += result.costUsd
 
@@ -265,7 +266,7 @@ async function runFixPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise<bo
   })
 
   pushLog(round, 'Applying fixes, committing, and pushing…')
-  const result = await runClaude(loop, prompt)
+  const result = await runClaude(loop, round, prompt)
   round.costUsd += result.costUsd
   loop.state.cumulativeCostUsd += result.costUsd
 
@@ -368,18 +369,112 @@ interface ClaudeResult {
 
 /**
  * Run claude in headless mode with the given prompt piped on stdin.
- * Captures the final JSON object to extract cost. Streams text to the renderer
- * as log lines so users can watch progress live.
+ * Uses --output-format stream-json so each assistant message and tool call
+ * arrives as an NDJSON event; we parse them into human-readable transcript
+ * lines on the round so the UI can show live progress.
  */
-function runClaude(loop: ActiveLoop, prompt: string): Promise<ClaudeResult> {
+function runClaude(loop: ActiveLoop, round: ReviewLoopRound, prompt: string): Promise<ClaudeResult> {
   return new Promise((resolve) => {
-    let stdoutBuf = ''
+    const MAX_BUF_BYTES = 5 * 1024 * 1024
     let stderrBuf = ''
+    let lineBuf = ''
     let costUsd = 0
+    let lastEmit = 0
+    let pendingEmit: NodeJS.Timeout | null = null
+    let bufferOverflow = false
+
+    const scheduleEmit = () => {
+      const now = Date.now()
+      const elapsed = now - lastEmit
+      if (elapsed >= 200) {
+        lastEmit = now
+        emitState(loop)
+        return
+      }
+      if (pendingEmit) return
+      pendingEmit = setTimeout(() => {
+        pendingEmit = null
+        lastEmit = Date.now()
+        emitState(loop)
+      }, 200 - elapsed)
+    }
+
+    const pushTranscript = (line: string) => {
+      const trimmed = line.replace(/\s+$/g, '')
+      if (!trimmed) return
+      round.transcript.push(`[${new Date().toISOString().slice(11, 19)}] ${trimmed}`)
+      scheduleEmit()
+    }
+
+    const handleEvent = (evt: any) => {
+      if (!evt || typeof evt !== 'object') return
+      switch (evt.type) {
+        case 'system':
+          if (evt.subtype === 'init') {
+            pushTranscript(`▶ session ${evt.session_id ?? ''} started${evt.model ? ` (${evt.model})` : ''}`)
+          }
+          break
+        case 'assistant': {
+          const content = evt.message?.content
+          if (!Array.isArray(content)) return
+          for (const block of content) {
+            if (block.type === 'text' && typeof block.text === 'string') {
+              for (const line of block.text.split('\n')) pushTranscript(line)
+            } else if (block.type === 'tool_use') {
+              const name = block.name ?? 'tool'
+              const summary = summarizeToolInput(block.input)
+              pushTranscript(`🔧 ${name}${summary ? ` ${summary}` : ''}`)
+            }
+          }
+          break
+        }
+        case 'user': {
+          const content = evt.message?.content
+          if (!Array.isArray(content)) return
+          for (const block of content) {
+            if (block.type === 'tool_result' && block.is_error) {
+              const text = typeof block.content === 'string'
+                ? block.content
+                : Array.isArray(block.content)
+                  ? block.content.map((c: any) => c?.text ?? '').join(' ')
+                  : ''
+              pushTranscript(`⚠ tool error: ${text.slice(0, 300)}`)
+            }
+          }
+          break
+        }
+        case 'result':
+          if (typeof evt.total_cost_usd === 'number') costUsd = evt.total_cost_usd
+          else if (typeof evt.cost === 'number') costUsd = evt.cost
+          break
+      }
+    }
+
+    const consumeStdout = (chunk: Buffer) => {
+      if (bufferOverflow) return
+      lineBuf += chunk.toString('utf-8')
+      let nlIdx: number
+      while ((nlIdx = lineBuf.indexOf('\n')) >= 0) {
+        const line = lineBuf.slice(0, nlIdx).trim()
+        lineBuf = lineBuf.slice(nlIdx + 1)
+        if (!line) continue
+        try {
+          handleEvent(JSON.parse(line))
+        } catch {
+          pushTranscript(line)
+        }
+      }
+      if (lineBuf.length > MAX_BUF_BYTES) {
+        bufferOverflow = true
+        lineBuf = ''
+        pushTranscript(`✖ stdout exceeded ${MAX_BUF_BYTES} bytes without a newline — terminating`)
+        try { child.kill('SIGTERM') } catch { /* already exiting */ }
+      }
+    }
 
     const child = spawn(
       'claude',
-      ['--print', '--output-format', 'json', '--dangerously-skip-permissions'],
+      ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
       {
         cwd: loop.state.worktreePath,
         env: { ...process.env },
@@ -387,33 +482,44 @@ function runClaude(loop: ActiveLoop, prompt: string): Promise<ClaudeResult> {
     )
     loop.child = child
 
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdoutBuf += chunk.toString('utf-8')
-    })
+    child.stdout.on('data', consumeStdout)
     child.stderr.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf-8')
-      stderrBuf += text
+      if (stderrBuf.length < MAX_BUF_BYTES) {
+        stderrBuf = (stderrBuf + text).slice(-MAX_BUF_BYTES)
+      }
+      for (const line of text.split('\n')) {
+        if (line.trim()) pushTranscript(`stderr: ${line.trim()}`)
+      }
     })
     child.on('error', (err) => {
+      pushTranscript(`✖ ${err.message}`)
+      if (pendingEmit) clearTimeout(pendingEmit)
+      emitState(loop)
       resolve({ ok: false, costUsd, error: err.message })
     })
     child.on('exit', (code, signal) => {
       loop.child = undefined
 
-      // Parse the final JSON for cost data; CLI prints a single JSON object in
-      // --output-format json mode containing total_cost_usd.
-      const trimmed = stdoutBuf.trim()
-      if (trimmed) {
+      // Drain any trailing partial line.
+      if (lineBuf.trim()) {
         try {
-          const parsed = JSON.parse(trimmed) as { total_cost_usd?: number; cost?: number }
-          costUsd = parsed.total_cost_usd ?? parsed.cost ?? 0
+          handleEvent(JSON.parse(lineBuf.trim()))
         } catch {
-          // Non-JSON output — nothing to extract.
+          pushTranscript(lineBuf.trim())
         }
+        lineBuf = ''
       }
 
+      if (pendingEmit) clearTimeout(pendingEmit)
+      emitState(loop)
+
       if (signal === 'SIGTERM') {
-        resolve({ ok: false, costUsd, error: 'cancelled' })
+        resolve({
+          ok: false,
+          costUsd,
+          error: bufferOverflow ? 'stdout buffer exceeded' : 'cancelled',
+        })
         return
       }
       if (code !== 0) {
@@ -430,6 +536,25 @@ function runClaude(loop: ActiveLoop, prompt: string): Promise<ClaudeResult> {
     child.stdin.write(prompt)
     child.stdin.end()
   })
+}
+
+function summarizeToolInput(input: unknown): string {
+  if (!input || typeof input !== 'object') return ''
+  const obj = input as Record<string, unknown>
+  // Prefer common identifying fields for the user-facing summary.
+  for (const key of ['file_path', 'path', 'command', 'pattern', 'description', 'subagent_type']) {
+    const val = obj[key]
+    if (typeof val === 'string' && val.trim()) return truncate(val.trim(), 120)
+  }
+  try {
+    return truncate(JSON.stringify(obj), 120)
+  } catch {
+    return ''
+  }
+}
+
+function truncate(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, max - 1)}…`
 }
 
 /* ── State helpers ──────────────────────────────────────────────────────── */
@@ -542,11 +667,6 @@ function renderStickyComment(state: ReviewLoopState): string {
   const byId = new Map<string, ReviewLoopTriagedIssue>()
   for (const issue of state.skippedIssues) byId.set(issue.id, issue)
   const skipped = [...byId.values()]
-
-  if (skipped.length === 0) {
-    lines.push('No issues were skipped — every flagged item was either fixed or determined to be a no-op.')
-    return lines.join('\n')
-  }
 
   lines.push(
     `The loop ran for ${state.iteration} ${state.iteration === 1 ? 'round' : 'rounds'} and chose not to fix the following ${skipped.length} ${skipped.length === 1 ? 'item' : 'items'}:`,
