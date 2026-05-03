@@ -42,12 +42,39 @@ npm run test:screenshots:update
 
 Then commit the new files in `tests/screenshots/storybook.spec.ts-snapshots/`.
 
-## CI / sandbox notes
+## CI
+
+GitHub Actions runs all three suites on every push to `main` and every PR
+(`.github/workflows/tests.yml`). Three parallel jobs:
+
+- **Unit / component** — `npm run test:coverage`, uploads the HTML coverage
+  report as an artifact.
+- **E2E (mock app)** — `npm run test:e2e`, uploads Playwright traces on
+  failure.
+- **Visual regression** — `npm run test:screenshots`, uploads the diff PNGs
+  on failure so a reviewer can eyeball what changed.
+
+Playwright browsers are cached in `~/.cache/ms-playwright` keyed on
+`package-lock.json` to keep runs fast.
+
+### Screenshot baseline platform pinning
+
+Baselines are generated with the chromium that ships with the installed
+Playwright version. If CI fails on screenshots after a Playwright bump (or
+when first wiring CI up against an existing baseline set), download the
+`screenshot-diffs` artifact, sanity-check the visual differences, then
+regenerate locally and commit:
+
+```sh
+npm run test:screenshots:update
+```
+
+## Sandbox / local notes
 
 The Playwright config will use `/opt/pw-browsers/chromium` if it exists
-(matches our sandbox image). Override with `PLAYWRIGHT_CHROMIUM_PATH` or
-disable with `PLAYWRIGHT_CHROMIUM_DISABLE=1`. Otherwise Playwright falls back
-to its bundled browser (run `npx playwright install chromium` first).
+(matches our local sandbox image). Override with `PLAYWRIGHT_CHROMIUM_PATH`
+or disable with `PLAYWRIGHT_CHROMIUM_DISABLE=1`. Otherwise Playwright falls
+back to its bundled browser (`npx playwright install chromium`).
 
 The Playwright `webServer` block boots Storybook (port 6006) and the mock
 Vite server (port 5199) automatically.
