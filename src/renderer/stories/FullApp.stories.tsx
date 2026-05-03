@@ -4,6 +4,7 @@ import App from '../App'
 import { setupStoresForStory, resetStores } from './helpers/storeSetup'
 import { useNotificationStore } from '../stores/notificationStore'
 import type { SessionStatus } from '../../shared/types'
+import { mockReviewLoopRunning, mockReviewLoopCompleted } from '@mock/mockData'
 
 const meta: Meta<typeof App> = {
   title: 'App/Full Layout',
@@ -296,10 +297,43 @@ export const StartupPromptEditor: Story = {
   ],
 }
 
+export const ReviewLoopRunning: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({
+        activeWorkspaceTab: 'review-loop',
+        reviewLoopState: mockReviewLoopRunning,
+      })
+      return <Story />
+    },
+  ],
+}
+
+export const ReviewLoopCompleted: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({
+        activeWorkspaceTab: 'review-loop',
+        reviewLoopState: mockReviewLoopCompleted,
+      })
+      return <Story />
+    },
+  ],
+}
+
 export const ClaudeWebSessions: Story = {
   decorators: [
     (Story) => {
       setupStoresForStory()
+      return <Story />
+    },
+  ],
+}
+
+export const ReviewLoopSettings: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ settingsOpen: true })
       return <Story />
     },
   ],

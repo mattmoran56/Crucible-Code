@@ -19,6 +19,8 @@ import type {
   CustomButton,
   CustomButtonGroup,
   StartupPrompt,
+  ReviewLoopState,
+  ReviewLoopSettings,
 } from '../src/shared/types'
 
 // --- Accounts ---
@@ -639,3 +641,205 @@ export const mockStartupPrompts: Record<string, StartupPrompt[]> = {
   ],
   'proj-2': [],
 }
+
+// --- Review loop ---
+
+export const mockReviewLoopSettings: ReviewLoopSettings = {
+  workspace: {
+    enabled: true,
+    maxIterations: 5,
+    consecutiveCleanRounds: 2,
+    costCapUsd: 5,
+  },
+  projectOverrides: {
+    'proj-2': { enabled: false },
+  },
+}
+
+const baseTime = Date.parse('2026-04-30T13:00:00Z')
+
+/**
+ * A representative "running" review loop snapshot — round 1 has finished
+ * (with 2 fixes applied + 1 deferred), round 2 is mid-triage. Designed to
+ * exercise every UI element in the panel: status pill, cost, decisions,
+ * skipped/deferred summary, log.
+ */
+export const mockReviewLoopRunning: ReviewLoopState = {
+  sessionId: 'sess-1',
+  branch: 'session/add-pr-review',
+  baseBranch: 'main',
+  worktreePath: '/Users/dev/.codecrucible-worktrees/CodeCrucible/add-pr-review',
+  status: 'running',
+  currentPhase: 'triage',
+  iteration: 2,
+  cumulativeCostUsd: 1.42,
+  startedAt: new Date(baseTime).toISOString(),
+  skippedIssues: [
+    {
+      id: 'r1-3',
+      title: 'Duplicate retry logic in pr.service vs git.service',
+      description: 'Both files re-implement exponential backoff. Could be extracted but is pre-existing code.',
+      file: 'src/main/services/pr.service.ts',
+      line: 88,
+      category: 'style',
+      introducedInPR: false,
+      decision: 'defer',
+      justification: 'Pre-existing duplication on main; out of scope for this PR. File a follow-up to extract a shared backoff helper.',
+    },
+  ],
+  rounds: [
+    {
+      index: 1,
+      startedAt: new Date(baseTime + 1_000).toISOString(),
+      endedAt: new Date(baseTime + 92_000).toISOString(),
+      phase: 'idle',
+      costUsd: 0.84,
+      log: [
+        '[2026-04-30T13:00:01Z] Reviewing diff between session/add-pr-review and main…',
+        '[2026-04-30T13:00:34Z] Review found 3 candidate issues.',
+        '[2026-04-30T13:00:34Z] Triaging 3 issues (one sub-agent each)…',
+        '[2026-04-30T13:01:18Z] Triage complete: 2 to fix, 1 skipped/deferred.',
+        '[2026-04-30T13:01:18Z] Applying fixes, committing, and pushing…',
+        '[2026-04-30T13:01:32Z] Fix phase complete.',
+      ],
+      rawIssues: [
+        {
+          id: 'r1-1',
+          title: 'Race condition between PR list refresh and selection',
+          description: 'When refresh fires while the user is mid-click, the previous selection can land on a removed PR.',
+          file: 'src/renderer/stores/prStore.ts',
+          line: 142,
+          category: 'bug',
+        },
+        {
+          id: 'r1-2',
+          title: 'Missing await on github.markPRSeen',
+          description: 'Promise rejection silently swallowed; seen state never persists if the API errors.',
+          file: 'src/renderer/components/pullrequests/PRListItem.tsx',
+          line: 56,
+          category: 'bug',
+        },
+        {
+          id: 'r1-3',
+          title: 'Duplicate retry logic in pr.service vs git.service',
+          description: 'Both files re-implement exponential backoff. Could be extracted but is pre-existing code.',
+          file: 'src/main/services/pr.service.ts',
+          line: 88,
+          category: 'style',
+        },
+      ],
+      triaged: [
+        {
+          id: 'r1-1',
+          title: 'Race condition between PR list refresh and selection',
+          description: 'When refresh fires while the user is mid-click, the previous selection can land on a removed PR.',
+          file: 'src/renderer/stores/prStore.ts',
+          line: 142,
+          category: 'bug',
+          introducedInPR: true,
+          decision: 'fix',
+          justification: 'Real bug introduced by the new refresh polling. Guard the selection update against the in-flight click.',
+        },
+        {
+          id: 'r1-2',
+          title: 'Missing await on github.markPRSeen',
+          description: 'Promise rejection silently swallowed; seen state never persists if the API errors.',
+          file: 'src/renderer/components/pullrequests/PRListItem.tsx',
+          line: 56,
+          category: 'bug',
+          introducedInPR: true,
+          decision: 'fix',
+          justification: 'Confirmed missing await — added in this PR. Awaiting and surfacing the error keeps state consistent.',
+        },
+        {
+          id: 'r1-3',
+          title: 'Duplicate retry logic in pr.service vs git.service',
+          description: 'Both files re-implement exponential backoff. Could be extracted but is pre-existing code.',
+          file: 'src/main/services/pr.service.ts',
+          line: 88,
+          category: 'style',
+          introducedInPR: false,
+          decision: 'defer',
+          justification: 'Pre-existing duplication on main; out of scope for this PR. File a follow-up to extract a shared backoff helper.',
+        },
+      ],
+    },
+    {
+      index: 2,
+      startedAt: new Date(baseTime + 95_000).toISOString(),
+      phase: 'triage',
+      costUsd: 0.58,
+      log: [
+        '[2026-04-30T13:01:35Z] Reviewing diff between session/add-pr-review and main…',
+        '[2026-04-30T13:02:03Z] Review found 2 candidate issues.',
+        '[2026-04-30T13:02:03Z] Triaging 2 issues (one sub-agent each)…',
+      ],
+      rawIssues: [
+        {
+          id: 'r2-1',
+          title: 'PR review thread loader leaks listener on unmount',
+          description: 'effect adds an event listener but the cleanup is keyed off the wrong dependency.',
+          file: 'src/renderer/components/pullrequests/PRReviewPanel.tsx',
+          line: 211,
+          category: 'bug',
+        },
+        {
+          id: 'r2-2',
+          title: 'Inline thread CSS class typo',
+          description: '`text-sucess` should be `text-success`; falls back to default colour.',
+          file: 'src/renderer/components/pullrequests/InlineThread.tsx',
+          line: 47,
+          category: 'style',
+        },
+      ],
+      triaged: [],
+    },
+  ],
+}
+
+/** A "completed" snapshot — converged after 2 clean rounds following round 1. */
+export const mockReviewLoopCompleted: ReviewLoopState = {
+  ...mockReviewLoopRunning,
+  status: 'completed',
+  currentPhase: 'idle',
+  iteration: 3,
+  cumulativeCostUsd: 1.64,
+  endedAt: new Date(baseTime + 240_000).toISOString(),
+  stopReason: 'converged',
+  rounds: [
+    // Reuse round 1 from the running mock (with its 2 fixes + 1 defer)…
+    mockReviewLoopRunning.rounds[0],
+    // …then two clean rounds that triggered the converged stop.
+    {
+      index: 2,
+      startedAt: new Date(baseTime + 95_000).toISOString(),
+      endedAt: new Date(baseTime + 165_000).toISOString(),
+      phase: 'idle',
+      costUsd: 0.41,
+      log: [
+        '[2026-04-30T13:01:35Z] Reviewing diff between session/add-pr-review and main…',
+        '[2026-04-30T13:02:08Z] Review found 0 candidate issues.',
+        '[2026-04-30T13:02:08Z] No issues to triage; skipping.',
+        '[2026-04-30T13:02:08Z] No fixable issues in this round (1 clean round so far).',
+      ],
+      rawIssues: [],
+      triaged: [],
+    },
+    {
+      index: 3,
+      startedAt: new Date(baseTime + 170_000).toISOString(),
+      endedAt: new Date(baseTime + 240_000).toISOString(),
+      phase: 'idle',
+      costUsd: 0.39,
+      log: [
+        '[2026-04-30T13:02:50Z] Reviewing diff between session/add-pr-review and main…',
+        '[2026-04-30T13:03:24Z] Review found 0 candidate issues.',
+        '[2026-04-30T13:03:24Z] No issues to triage; skipping.',
+        '[2026-04-30T13:03:24Z] No fixable issues in this round (2 clean rounds so far).',
+      ],
+      rawIssues: [],
+      triaged: [],
+    },
+  ],
+}
+

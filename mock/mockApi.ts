@@ -27,6 +27,8 @@ import {
   mockButtons,
   mockButtonGroups,
   mockStartupPrompts,
+  mockReviewLoopSettings,
+  mockReviewLoopRunning,
 } from './mockData'
 
 // Collect terminal.onData callbacks so we can push fake output
@@ -212,6 +214,23 @@ export const mockApi = {
   startupPrompt: {
     list: async (projectId: string) => mockStartupPrompts[projectId] ?? [],
     save: async () => {},
+  },
+
+  reviewLoop: {
+    getSettings: async () => mockReviewLoopSettings,
+    setSettings: async () => {},
+    start: async () => {},
+    cancel: async () => {},
+    /**
+     * Stories can override the returned state by setting
+     * `(window as any).__mockReviewLoopState = state` before mount.
+     * Falls back to the running snapshot.
+     */
+    getState: async () => {
+      const override = (globalThis as any).__mockReviewLoopState
+      return override ?? mockReviewLoopRunning
+    },
+    onStateUpdate: () => noop(),
   },
 
   claudeWeb: {

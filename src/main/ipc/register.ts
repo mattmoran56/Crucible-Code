@@ -13,6 +13,7 @@ import { registerFileHandlers } from './file.ipc'
 import { registerPermissionsHandlers } from './permissions.ipc'
 import { registerButtonHandlers } from './button.ipc'
 import { registerStartupPromptHandlers } from './startup-prompt.ipc'
+import { registerReviewLoopHandlers } from './review-loop.ipc'
 import { registerClaudeWebHandlers } from './claudeWeb.ipc'
 import {
   registerContextMapping,
@@ -34,6 +35,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerPermissionsHandlers()
   registerButtonHandlers(window)
   registerStartupPromptHandlers()
+  registerReviewLoopHandlers(window)
   registerClaudeWebHandlers()
 
   // Context mapping management for notification routing.

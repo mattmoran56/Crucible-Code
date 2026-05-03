@@ -14,8 +14,9 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { useWorkspaceLayoutStore, type WorkspaceTab } from '../../stores/workspaceLayoutStore'
 import { useButtonStore } from '../../stores/buttonStore'
 import { useStartupPromptStore } from '../../stores/startupPromptStore'
+import { useReviewLoopStore } from '../../stores/reviewLoopStore'
 import { useClaudeWebStore } from '../../stores/claudeWebStore'
-import type { SessionStatus } from '../../../shared/types'
+import type { ReviewLoopState, SessionStatus } from '../../../shared/types'
 
 import {
   mockProjects,
@@ -42,12 +43,14 @@ import {
   mockButtons,
   mockButtonGroups,
   mockStartupPrompts,
+  mockReviewLoopSettings,
+  mockReviewLoopRunning,
 } from '@mock/mockData'
 
 interface StorySetupOptions {
   activeProjectId?: string
   activeSessionId?: string
-  activeWorkspaceTab?: 'agent' | 'git' | 'pr'
+  activeWorkspaceTab?: 'agent' | 'git' | 'pr' | 'review-loop'
   activePRNumber?: number | null
   editorMode?: boolean
   /** Active tab inside the Code (editor) workspace. Defaults to 'code'. */
@@ -63,6 +66,8 @@ interface StorySetupOptions {
   openedAsMainBranch?: string | null
   /** Whether uncommitted changes were stashed when opening as main */
   didStash?: boolean
+  /** Pre-populate the review-loop store for the active session */
+  reviewLoopState?: ReviewLoopState
 }
 
 export function setupStoresForStory(options: StorySetupOptions = {}) {
@@ -255,6 +260,25 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     loadingProjects: new Set(),
   })
 
+  // Review loop store — settings always seeded so per-project toggles render;
+  // optional state seeded for stories that show the running panel. Also pin
+  // the mockApi override so the panel's on-mount refreshState doesn't clobber
+  // the seeded value with the default running mock.
+  const reviewLoopStates: Record<string, ReviewLoopState> = {}
+  if (options.reviewLoopState) {
+    reviewLoopStates[options.reviewLoopState.sessionId] = options.reviewLoopState
+    if (typeof window !== 'undefined') {
+      (window as any).__mockReviewLoopState = options.reviewLoopState
+    }
+  } else if (typeof window !== 'undefined') {
+    delete (window as any).__mockReviewLoopState
+  }
+  useReviewLoopStore.setState({
+    settings: mockReviewLoopSettings,
+    loaded: true,
+    states: reviewLoopStates,
+  })
+
   // Claude Web store — three remote claude/* branches authored by the current
   // user, sorted newest first. Mirrors what the IPC handler would return.
   useClaudeWebStore.setState({
@@ -294,7 +318,7 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
   const tabs: WorkspaceTab[] = options.workspaceTabs ?? (
     options.activePRNumber
       ? ['pr', 'review']
-      : ['agent', 'git', 'pr', 'review']
+      : ['agent', 'git', 'pr', 'review', 'review-loop']
   )
 
   const savedLayout = [{
@@ -355,6 +379,11 @@ export function resetStores() {
   useSettingsStore.setState({ isOpen: false })
   useButtonStore.setState({ buttons: [], groups: [], runningButtons: {} })
   useStartupPromptStore.setState({ byProject: {}, loadingProjects: new Set() })
+  useReviewLoopStore.setState({
+    settings: mockReviewLoopSettings,
+    loaded: false,
+    states: {},
+  })
   useClaudeWebStore.setState({ sessions: [], loading: false })
   useWorkspaceLayoutStore.setState({ columns: [], savedLayouts: {} })
 }

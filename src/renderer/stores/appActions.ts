@@ -3,6 +3,9 @@ import { useSessionStore } from './sessionStore'
 import { useProjectStore } from './projectStore'
 import { useWorkspaceLayoutStore } from './workspaceLayoutStore'
 import { useSettingsStore } from './settingsStore'
+import { useReviewLoopStore } from './reviewLoopStore'
+import { usePRStore } from './prStore'
+import { useToastStore } from './toastStore'
 
 export interface AppActionDef {
   id: AppAction
@@ -268,6 +271,71 @@ export function getAppActions(): AppActionDef[] {
       validPlacements: ['session-toolbar', 'project-tabs', 'right-activity-bar'],
       execute: () => {
         window.dispatchEvent(new CustomEvent('app:toggle-panel', { detail: { panel: 'permissions' } }))
+      },
+    },
+
+    // ── Review Loop ──────────────────────────────────────────
+    {
+      id: 'review-loop:start',
+      label: 'Start Review Loop',
+      group: 'Review Loop',
+      icon: 'RefreshCw',
+      validPlacements: ['session-toolbar'],
+      requiresActiveSession: true,
+      requiresActiveProject: true,
+      execute: async () => {
+        const { activeSessionId, sessions } = useSessionStore.getState()
+        const { projects, activeProjectId } = useProjectStore.getState()
+        const session = sessions.find((s) => s.id === activeSessionId)
+        const project = projects.find((p) => p.id === activeProjectId)
+        if (!session || !project) return
+
+        const { pullRequests } = usePRStore.getState()
+        const sessionPR = pullRequests.find((pr) => pr.headRefName === session.branchName)
+        const baseBranch = session.baseBranch ?? sessionPR?.baseRefName ?? 'main'
+
+        // Switch focus to the Review Loop tab so users see what's happening.
+        const { columns, setActiveTab } = useWorkspaceLayoutStore.getState()
+        const colWithTab = columns.find((c) => c.tabs.includes('review-loop'))
+        if (colWithTab) setActiveTab(colWithTab.id, 'review-loop')
+
+        await useReviewLoopStore.getState().start({
+          sessionId: session.id,
+          worktreePath: session.worktreePath,
+          branch: session.branchName,
+          baseBranch,
+          projectId: project.id,
+          prNumber: sessionPR?.number ?? session.prNumber,
+        })
+      },
+    },
+    {
+      id: 'review-loop:cancel',
+      label: 'Cancel Review Loop',
+      group: 'Review Loop',
+      icon: 'X',
+      validPlacements: ['session-toolbar'],
+      requiresActiveSession: true,
+      execute: async () => {
+        const { activeSessionId } = useSessionStore.getState()
+        if (!activeSessionId) return
+        await useReviewLoopStore.getState().cancel(activeSessionId)
+      },
+    },
+    {
+      id: 'review-loop:toggle-tab',
+      label: 'Open Review Loop Tab',
+      group: 'Review Loop',
+      icon: 'RefreshCw',
+      validPlacements: ['session-toolbar'],
+      execute: () => {
+        const { columns, setActiveTab } = useWorkspaceLayoutStore.getState()
+        const col = columns.find((c) => c.tabs.includes('review-loop'))
+        if (col) {
+          setActiveTab(col.id, 'review-loop')
+        } else {
+          useToastStore.getState().addToast('info', 'Review Loop tab is only available with an active session')
+        }
       },
     },
   ]

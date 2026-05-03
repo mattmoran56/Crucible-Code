@@ -28,6 +28,7 @@
 - **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
+- **Review loop** — One-click review → triage → fix cycle on a branch with stop conditions (clean rounds, iteration cap, cost cap) and a sticky PR comment for skipped findings
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
@@ -359,6 +360,33 @@ Create configurable action buttons that run shell commands or Claude prompts fro
 - **Keyboard shortcuts** — Assign Electron accelerator shortcuts (e.g. `Cmd+Shift+T`)
 - **Confirmation dialogs** — Optional confirmation prompt before executing destructive actions
 - **Icon picker** — 35+ built-in Lucide icons plus custom emoji support
+
+</details>
+
+<details>
+<summary><strong>Review loop</strong></summary>
+
+Automate the review → triage → fix cycle on a branch. Each round runs three phases against the branch's diff vs. its base:
+
+1. **Review** — A fresh Claude reviews the diff and writes structured findings to `.crucible/review-loop/round-N-issues.json`.
+2. **Triage** — Another Claude reads those findings and fans out a sub-agent per issue. Each sub-agent decides `fix` / `skip` / `defer` / `noop` and writes a short justification.
+3. **Fix** — Claude applies the fixes, commits, and pushes.
+
+The loop stops on the first of: N consecutive clean rounds (default 2), iteration cap (default 5), cost cap (default $5), or manual cancel. Workspace defaults and per-project overrides for all four live in **Settings → Review Loop**, including a per-project toggle that hides the toolbar button and prevents the loop from running for that scope.
+
+Skipped or deferred items get summarised in a single sticky comment on the open PR (using a hidden marker so subsequent rounds update the same comment instead of re-posting). That gives reviewers a record of what was knowingly left undone and why.
+
+The Review Loop tab in the session workspace shows live progress: status pill, current phase, cumulative cost, per-round triage decisions, and a per-round log.
+
+<table>
+<tr>
+<td><img src="docs/screenshots/review-loop-running.png" alt="Review Loop tab while a loop is mid-triage" /></td>
+<td><img src="docs/screenshots/review-loop-completed.png" alt="Review Loop tab after the loop converged" /></td>
+</tr>
+<tr>
+<td colspan="2"><img src="docs/screenshots/review-loop-settings.png" alt="Workspace defaults and per-project overrides for the review loop" /></td>
+</tr>
+</table>
 
 </details>
 

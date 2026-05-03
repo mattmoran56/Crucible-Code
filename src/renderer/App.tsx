@@ -23,6 +23,7 @@ import { useSettingsStore } from './stores/settingsStore'
 import { LoadingScreen } from './components/LoadingScreen'
 import { useButtonStore } from './stores/buttonStore'
 import { useButtonShortcuts } from './hooks/useButtonShortcuts'
+import { useReviewLoopStore } from './stores/reviewLoopStore'
 
 export default function App() {
   const { loadProjects, loadAccounts, projects } = useProjectStore()
@@ -31,6 +32,8 @@ export default function App() {
   const { handleHookEvent, registerSessions, clearContextStatuses } = useNotificationStore()
   const { isOpen: settingsOpen } = useSettingsStore()
   const { loadButtons, loadGroups } = useButtonStore()
+  const loadReviewLoopSettings = useReviewLoopStore((s) => s.loadSettings)
+  const applyReviewLoopState = useReviewLoopStore((s) => s.applyState)
 
   useButtonShortcuts()
 
@@ -54,12 +57,26 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    Promise.all([loadProjects(), loadAccounts(), loadButtons(), loadGroups()]).finally(() => {
+    Promise.all([
+      loadProjects(),
+      loadAccounts(),
+      loadButtons(),
+      loadGroups(),
+      loadReviewLoopSettings(),
+    ]).finally(() => {
       setLoading(false)
       // Unmount after fade-out transition (500ms)
       setTimeout(() => setShowLoader(false), 520)
     })
-  }, [loadProjects, loadAccounts])
+  }, [loadProjects, loadAccounts, loadButtons, loadGroups, loadReviewLoopSettings])
+
+  // Stream review-loop progress events from the main process into the store.
+  useEffect(() => {
+    const remove = window.api.reviewLoop.onStateUpdate((state) => {
+      applyReviewLoopState(state)
+    })
+    return remove
+  }, [applyReviewLoopState])
 
   // Register sessions from all projects with the notification store for cross-project badges
   // and recover any terminals that were running before a crash/restart

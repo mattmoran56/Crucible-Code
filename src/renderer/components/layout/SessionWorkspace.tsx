@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { GitPanel } from '../git/GitPanel'
 import { TerminalPanel } from '../terminal/TerminalPanel'
 import { ReviewTerminalPanel } from '../terminal/ReviewTerminalPanel'
+import { ReviewLoopPanel } from '../review-loop/ReviewLoopPanel'
 import { DynamicTerminalPanel } from '../terminal/DynamicTerminalPanel'
 import { PRReviewPanel } from '../pullrequests/PRReviewPanel'
 import { ResizeHandle } from '../ui'
@@ -80,8 +81,8 @@ export function SessionWorkspace() {
         resetLayout(['pr', 'review'], 'pr', contextId)
       } else if (activeSessionId) {
         const sessionTabs: WorkspaceTab[] = sessionPR
-          ? ['agent', 'git', 'pr', 'review']
-          : ['agent', 'git', 'review']
+          ? ['agent', 'git', 'pr', 'review', 'review-loop']
+          : ['agent', 'git', 'review', 'review-loop']
         resetLayout(sessionTabs, 'agent', activeSessionId)
       } else {
         resetLayout([])
@@ -217,7 +218,7 @@ export function SessionWorkspace() {
   // Stable portal target elements for core tabs — created once, never destroyed.
   const corePanelTargets = useRef<Record<CoreTab, HTMLDivElement> | null>(null)
   if (!corePanelTargets.current) {
-    const allCoreTabs: CoreTab[] = ['agent', 'git', 'pr', 'review']
+    const allCoreTabs: CoreTab[] = ['agent', 'git', 'pr', 'review', 'review-loop']
     corePanelTargets.current = {} as Record<CoreTab, HTMLDivElement>
     for (const tab of allCoreTabs) {
       const div = document.createElement('div')
@@ -307,6 +308,7 @@ export function SessionWorkspace() {
   // Compute visibility for terminal panels
   const agentVisible = columns.some((c) => c.activeTab === 'agent')
   const reviewVisible = columns.some((c) => c.activeTab === 'review')
+  const reviewLoopVisible = columns.some((c) => c.activeTab === 'review-loop')
 
   const isPausedForMain = openedAsMainBranch != null && openedAsMainBranch === activeSessionId
   const pausedSession = isPausedForMain
@@ -402,6 +404,7 @@ export function SessionWorkspace() {
       {/* Core panel mounting — panels never unmount, just get portaled between columns */}
       {createPortal(<TerminalPanel mode="claude" visible={agentVisible} />, corePanelTargets.current.agent)}
       {createPortal(<ReviewTerminalPanel visible={reviewVisible} />, corePanelTargets.current.review)}
+      {createPortal(<ReviewLoopPanel visible={reviewLoopVisible} />, corePanelTargets.current['review-loop'])}
       {createPortal(<GitPanel />, corePanelTargets.current.git)}
       {createPortal(<PRReviewPanel />, corePanelTargets.current.pr)}
       {/* Dynamic panel mounting */}

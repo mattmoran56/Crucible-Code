@@ -2,6 +2,7 @@ import React from 'react'
 import type { ButtonPlacement } from '../../../shared/types'
 import { useButtonStore } from '../../stores/buttonStore'
 import { useProjectStore } from '../../stores/projectStore'
+import { useReviewLoopStore } from '../../stores/reviewLoopStore'
 import { CustomButtonRenderer, ButtonGroupRenderer } from './CustomButtonRenderer'
 
 interface CustomButtonBarProps {
@@ -11,6 +12,8 @@ interface CustomButtonBarProps {
 export function CustomButtonBar({ placement }: CustomButtonBarProps) {
   const { activeProjectId } = useProjectStore()
   const { getGroupedButtons } = useButtonStore()
+  // Subscribe to review-loop settings so per-project toggle updates re-render the bar.
+  useReviewLoopStore((s) => s.settings)
   const { ungrouped, groups } = getGroupedButtons(placement, activeProjectId)
 
   const hasContent = ungrouped.length > 0 || groups.length > 0

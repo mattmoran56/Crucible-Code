@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type CoreTab = 'agent' | 'git' | 'pr' | 'review' | 'code'
+export type CoreTab = 'agent' | 'git' | 'pr' | 'review' | 'review-loop' | 'code'
 export type WorkspaceTab = CoreTab | `agent:${string}` | `terminal:${string}`
 
 /** Check if a tab is a dynamic (closable) instance */
@@ -21,6 +21,7 @@ export function getTabLabel(tab: WorkspaceTab): string {
   if (tab === 'git') return 'Worktree'
   if (tab === 'pr') return 'PR'
   if (tab === 'review') return 'Review'
+  if (tab === 'review-loop') return 'Review Loop'
   if (tab === 'code') return 'Code'
   if (tab.startsWith('agent:')) return `Agent ${tab.split(':')[1]}`
   if (tab.startsWith('terminal:')) return `Terminal ${tab.split(':')[1]}`

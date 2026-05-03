@@ -143,8 +143,14 @@ test.describe('Settings page', () => {
 
   test('Match System toggle reveals the Light/Dark theme selectors', async ({ page }) => {
     await page.locator('button[title="Settings"]').click()
-    // ToggleGroup uses role="radio" for its options
-    await page.getByRole('radio', { name: 'On', exact: true }).click()
+    // Other settings sections (e.g. Review Loop) also render On/Off ToggleGroups,
+    // so scope the click to the row that holds the Match System toggle by walking
+    // up from the unique label to its sibling toggle.
+    const matchSystemRow = page
+      .getByText('Match System', { exact: true })
+      .locator('..')
+      .locator('..')
+    await matchSystemRow.getByRole('radio', { name: 'On', exact: true }).click()
     await expect(page.getByText('Light theme', { exact: true })).toBeVisible()
     await expect(page.getByText('Dark theme', { exact: true })).toBeVisible()
   })

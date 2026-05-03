@@ -146,6 +146,22 @@ const targets: ScreenshotTarget[] = [
     scrollTo: 'Session Startup Prompts',
   },
   {
+    name: 'review-loop-running',
+    storyId: 'app-full-layout--review-loop-running',
+    delay: 2000,
+  },
+  {
+    name: 'review-loop-completed',
+    storyId: 'app-full-layout--review-loop-completed',
+    delay: 2000,
+  },
+  {
+    name: 'review-loop-settings',
+    storyId: 'app-full-layout--review-loop-settings',
+    delay: 2000,
+    scrollTo: 'Review Loop',
+  },
+  {
     name: 'code-attention',
     storyId: 'app-full-layout--code-attention',
     delay: 2000,
@@ -275,7 +291,11 @@ const targets: ScreenshotTarget[] = [
 async function captureScreenshots() {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
-  const browser = await chromium.launch()
+  const launchOptions: Parameters<typeof chromium.launch>[0] = {}
+  if (process.env.CHROME_BIN) {
+    launchOptions.executablePath = process.env.CHROME_BIN
+  }
+  const browser = await chromium.launch(launchOptions)
 
   // Capture main targets
   for (const target of targets) {
