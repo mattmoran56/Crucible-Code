@@ -5,3 +5,8 @@ dist-electron/
 .DS_Store
 *.log
 storybook-static/
+
+# Test artefacts
+playwright-report/
+test-results/
+coverage/

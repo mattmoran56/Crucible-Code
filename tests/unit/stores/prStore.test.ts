@@ -1,0 +1,155 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { usePRStore } from '../../../src/renderer/stores/prStore'
+
+const listPRs = vi.fn()
+const getSeenPRs = vi.fn()
+const markPRSeen = vi.fn()
+const getCurrentUser = vi.fn()
+const listCollaborators = vi.fn()
+
+beforeEach(() => {
+  for (const fn of [listPRs, getSeenPRs, markPRSeen, getCurrentUser, listCollaborators]) fn.mockReset()
+  ;(window as any).api = {
+    github: { listPRs, getSeenPRs, markPRSeen, getCurrentUser, listCollaborators },
+  }
+  usePRStore.setState({
+    prCache: {},
+    seenCache: {},
+    collaboratorsCache: {},
+    currentRepoPath: null,
+    currentProjectId: null,
+    pullRequests: [],
+    seenPRs: [],
+    loading: false,
+    hasLoaded: false,
+    currentUser: null,
+  })
+})
+
+const PR = (n: number) => ({ number: n } as any)
+
+describe('prStore.loadPRs', () => {
+  it('shows empty + loading when first opening a repo, then fills with results', async () => {
+    listPRs.mockResolvedValue([PR(1), PR(2)])
+    const promise = usePRStore.getState().loadPRs('/repo/a')
+    expect(usePRStore.getState().loading).toBe(true)
+    expect(usePRStore.getState().pullRequests).toEqual([])
+    await promise
+    expect(usePRStore.getState().loading).toBe(false)
+    expect(usePRStore.getState().hasLoaded).toBe(true)
+    expect(usePRStore.getState().pullRequests).toHaveLength(2)
+  })
+
+  it('shows the cached value immediately when re-opening a repo', async () => {
+    usePRStore.setState({ prCache: { '/repo/a': [PR(7)] } })
+    listPRs.mockResolvedValue([PR(7), PR(8)])
+    const promise = usePRStore.getState().loadPRs('/repo/a')
+    expect(usePRStore.getState().pullRequests).toEqual([PR(7)])
+    expect(usePRStore.getState().loading).toBe(false)
+    await promise
+    expect(usePRStore.getState().pullRequests).toHaveLength(2)
+  })
+
+  it('discards stale fetches that finish after the user switched repos', async () => {
+    let resolveA: (v: any) => void = () => {}
+    listPRs.mockImplementationOnce(() => new Promise((r) => { resolveA = r }))
+    const aPromise = usePRStore.getState().loadPRs('/repo/a')
+    // Switch to repo b before a resolves
+    listPRs.mockResolvedValueOnce([PR(99)])
+    await usePRStore.getState().loadPRs('/repo/b')
+    // Now resolve a
+    resolveA([PR(1)])
+    await aPromise
+    // Visible state should still be repo b
+    expect(usePRStore.getState().currentRepoPath).toBe('/repo/b')
+    expect(usePRStore.getState().pullRequests).toEqual([PR(99)])
+    // But the cache should now have entries for both
+    expect(usePRStore.getState().prCache['/repo/a']).toEqual([PR(1)])
+    expect(usePRStore.getState().prCache['/repo/b']).toEqual([PR(99)])
+  })
+})
+
+describe('prStore.loadSeenPRs', () => {
+  it('caches per-project and switches view on project change', async () => {
+    getSeenPRs.mockResolvedValueOnce([1, 2])
+    await usePRStore.getState().loadSeenPRs('p1')
+    expect(usePRStore.getState().seenPRs).toEqual([1, 2])
+    getSeenPRs.mockResolvedValueOnce([99])
+    await usePRStore.getState().loadSeenPRs('p2')
+    expect(usePRStore.getState().seenPRs).toEqual([99])
+    expect(usePRStore.getState().seenCache).toEqual({ p1: [1, 2], p2: [99] })
+  })
+})
+
+describe('prStore.loadCurrentUser', () => {
+  it('sets the user once and skips subsequent calls', async () => {
+    getCurrentUser.mockResolvedValue('alice')
+    await usePRStore.getState().loadCurrentUser('/repo')
+    await usePRStore.getState().loadCurrentUser('/repo')
+    expect(getCurrentUser).toHaveBeenCalledTimes(1)
+    expect(usePRStore.getState().currentUser).toBe('alice')
+  })
+
+  it('does not set user if api returns falsy', async () => {
+    getCurrentUser.mockResolvedValue(null)
+    await usePRStore.getState().loadCurrentUser('/repo')
+    expect(usePRStore.getState().currentUser).toBeNull()
+  })
+})
+
+describe('prStore.loadCollaborators', () => {
+  it('returns cached value without re-fetching', async () => {
+    usePRStore.setState({ collaboratorsCache: { '/repo': [{ login: 'x' } as any] } })
+    const result = await usePRStore.getState().loadCollaborators('/repo')
+    expect(result).toEqual([{ login: 'x' }])
+    expect(listCollaborators).not.toHaveBeenCalled()
+  })
+
+  it('fetches and caches when not in cache', async () => {
+    listCollaborators.mockResolvedValue([{ login: 'a' } as any])
+    const result = await usePRStore.getState().loadCollaborators('/repo')
+    expect(result).toEqual([{ login: 'a' }])
+    expect(usePRStore.getState().collaboratorsCache['/repo']).toEqual([{ login: 'a' }])
+  })
+})
+
+describe('prStore.markSeen', () => {
+  it('appends a new pr number and persists via api', () => {
+    usePRStore.setState({ seenPRs: [1] })
+    usePRStore.getState().markSeen('p1', 2)
+    expect(usePRStore.getState().seenPRs).toEqual([1, 2])
+    expect(usePRStore.getState().seenCache.p1).toEqual([1, 2])
+    expect(markPRSeen).toHaveBeenCalledWith('p1', 2)
+  })
+
+  it('is a no-op for already-seen prs', () => {
+    usePRStore.setState({ seenPRs: [1, 2] })
+    usePRStore.getState().markSeen('p1', 2)
+    expect(usePRStore.getState().seenPRs).toEqual([1, 2])
+    expect(markPRSeen).toHaveBeenCalled() // current behavior: still notifies api
+  })
+})
+
+describe('prStore.clear', () => {
+  it('clears the visible state but preserves caches', () => {
+    usePRStore.setState({
+      prCache: { '/repo/a': [PR(1)] },
+      seenCache: { p1: [1] },
+      collaboratorsCache: { '/repo/a': [{ login: 'x' } as any] },
+      pullRequests: [PR(1)],
+      seenPRs: [1],
+      currentRepoPath: '/repo/a',
+      currentProjectId: 'p1',
+      hasLoaded: true,
+    })
+    usePRStore.getState().clear()
+    const s = usePRStore.getState()
+    expect(s.pullRequests).toEqual([])
+    expect(s.seenPRs).toEqual([])
+    expect(s.currentRepoPath).toBeNull()
+    expect(s.currentProjectId).toBeNull()
+    expect(s.hasLoaded).toBe(false)
+    expect(s.prCache).toEqual({ '/repo/a': [PR(1)] })
+    expect(s.seenCache).toEqual({ p1: [1] })
+  })
+})
