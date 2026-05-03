@@ -68,7 +68,7 @@ export default function App() {
       // Unmount after fade-out transition (500ms)
       setTimeout(() => setShowLoader(false), 520)
     })
-  }, [loadProjects, loadAccounts])
+  }, [loadProjects, loadAccounts, loadButtons, loadGroups, loadReviewLoopSettings])
 
   // Stream review-loop progress events from the main process into the store.
   useEffect(() => {

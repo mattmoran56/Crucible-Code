@@ -9,7 +9,7 @@
  */
 import { spawn, ChildProcessWithoutNullStreams, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
@@ -28,6 +28,32 @@ import {
 const execFileAsync = promisify(execFile)
 
 const STICKY_MARKER = '<!-- crucible-review-loop -->'
+
+// Wall-clock cap for a single claude phase. If a subprocess produces no exit
+// after this long it is killed and the phase fails so the loop self-heals
+// instead of wedging indefinitely.
+const PHASE_TIMEOUT_MS = 30 * 60 * 1000
+
+/**
+ * Kill a spawned claude child *and* its descendant sub-agents.
+ *
+ * The child is launched with `detached: true` on POSIX, which puts it in its
+ * own process group; signalling the negative pid signals the whole group so
+ * gh, sub-shells, and Task-tool sub-agents are torn down too. On Windows we
+ * fall back to the default tree-kill semantics of child.kill().
+ */
+function killChildTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals = 'SIGTERM'): void {
+  if (!child || child.killed || child.pid == null) return
+  try {
+    if (process.platform !== 'win32') {
+      process.kill(-child.pid, signal)
+    } else {
+      child.kill(signal)
+    }
+  } catch {
+    // Already exited.
+  }
+}
 
 interface ActiveLoop {
   sessionId: string
@@ -58,13 +84,7 @@ export function cancelReviewLoop(sessionId: string): void {
   const loop = activeLoops.get(sessionId)
   if (!loop || loop.state.status !== 'running') return
   loop.cancelled = true
-  if (loop.child && !loop.child.killed) {
-    try {
-      loop.child.kill('SIGTERM')
-    } catch {
-      // Already exited
-    }
-  }
+  if (loop.child) killChildTree(loop.child)
 }
 
 export interface StartReviewLoopOptions {
@@ -120,13 +140,19 @@ export async function startReviewLoop(opts: StartReviewLoopOptions): Promise<voi
 async function runLoop(loop: ActiveLoop): Promise<void> {
   let consecutiveClean = 0
 
+  // Re-check the cost cap between phases so a round that starts under the
+  // cap can't blow several dollars past it across review→triage→fix before
+  // the next loop iteration runs.
+  const costCapTripped = (): boolean =>
+    loop.state.cumulativeCostUsd >= loop.config.costCapUsd
+
   while (true) {
     if (loop.cancelled) return finalize(loop, 'cancelled')
 
     if (loop.state.iteration >= loop.config.maxIterations) {
       return finalize(loop, 'maxIterations')
     }
-    if (loop.state.cumulativeCostUsd >= loop.config.costCapUsd) {
+    if (costCapTripped()) {
       return finalize(loop, 'costCap')
     }
 
@@ -135,10 +161,12 @@ async function runLoop(loop: ActiveLoop): Promise<void> {
     const reviewOk = await runReviewPhase(loop, round)
     if (!reviewOk) return // finalize already called by phase
     if (loop.cancelled) return finalize(loop, 'cancelled')
+    if (costCapTripped()) return finalize(loop, 'costCap')
 
     const triageOk = await runTriagePhase(loop, round)
     if (!triageOk) return
     if (loop.cancelled) return finalize(loop, 'cancelled')
+    if (costCapTripped()) return finalize(loop, 'costCap')
 
     const actionable = round.triaged.filter((i) => i.decision === 'fix').length
 
@@ -147,6 +175,7 @@ async function runLoop(loop: ActiveLoop): Promise<void> {
       const fixOk = await runFixPhase(loop, round)
       if (!fixOk) return
       if (loop.cancelled) return finalize(loop, 'cancelled')
+      if (costCapTripped()) return finalize(loop, 'costCap')
     } else {
       consecutiveClean += 1
       pushLog(round, `No fixable issues in this round (${consecutiveClean} clean ${consecutiveClean === 1 ? 'round' : 'rounds'} so far).`)
@@ -193,6 +222,17 @@ async function runReviewPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
   pushLog(round, `Reviewing diff between ${loop.state.branch} and ${loop.state.baseBranch}…`)
 
   const issuesPath = join(loop.loopDir, `round-${round.index}-issues.json`)
+
+  // Remove any stale issues file from a prior run before invoking claude so we
+  // can later assert that this run actually wrote it. Otherwise a model
+  // refusal / silent tool error / partial output produces an empty array that
+  // is indistinguishable from a clean review and drives a false 'converged'.
+  try {
+    await unlink(issuesPath)
+  } catch {
+    // Not present — fine.
+  }
+
   const prompt = buildReviewPrompt({
     branch: loop.state.branch,
     baseBranch: loop.state.baseBranch,
@@ -206,6 +246,15 @@ async function runReviewPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
   if (loop.cancelled) return false
   if (!result.ok) {
     round.errorMessage = result.error ?? 'review phase failed'
+    pushLog(round, `Review phase failed: ${round.errorMessage}`)
+    finalize(loop, 'error', round.errorMessage)
+    return false
+  }
+
+  // The claude run must have produced the issues file; an empty array is a
+  // legitimate outcome only when the file exists.
+  if (!existsSync(issuesPath)) {
+    round.errorMessage = 'review phase did not write issues file'
     pushLog(round, `Review phase failed: ${round.errorMessage}`)
     finalize(loop, 'error', round.errorMessage)
     return false
@@ -260,9 +309,23 @@ async function runTriagePhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
 async function runFixPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise<boolean> {
   setPhase(loop, round, 'fix')
   const triagePath = join(loop.loopDir, `round-${round.index}-triage.json`)
+
+  // Restrict the fix prompt to only the files flagged for fixing in this
+  // round's triage. The fix phase runs with --dangerously-skip-permissions
+  // and auto-pushes, so without this scope an over-eager run could ship
+  // collateral edits upstream.
+  const allowedFiles = Array.from(
+    new Set(
+      round.triaged
+        .filter((t) => t.decision === 'fix' && typeof t.file === 'string' && t.file.trim())
+        .map((t) => t.file as string)
+    )
+  )
+
   const prompt = buildFixPrompt({
     branch: loop.state.branch,
     triagePath,
+    allowedFiles,
   })
 
   pushLog(round, 'Applying fixes, committing, and pushing…')
@@ -348,8 +411,16 @@ Rules:
 - Write the file before exiting.`
 }
 
-function buildFixPrompt(o: { branch: string; triagePath: string }): string {
+function buildFixPrompt(o: { branch: string; triagePath: string; allowedFiles: string[] }): string {
+  const fileList = o.allowedFiles.length > 0
+    ? o.allowedFiles.map((f) => `  - ${f}`).join('\n')
+    : '  (none — exit without changes)'
   return `Apply the fixes listed in "${o.triagePath}" (only those with decision === "fix").
+
+You may ONLY modify files in this allowlist (the exact set the triage flagged for fixing this round):
+${fileList}
+
+If a fix cannot be applied without editing a file outside the allowlist, leave that fix unapplied and continue with the rest. Do NOT touch any other file (including .crucible/, lockfiles, settings, screenshots, or unrelated source). The single commit produced by this phase must contain only edits to allowlisted paths.
 
 For each fix:
 1. Make the necessary code changes in the worktree.
@@ -468,7 +539,7 @@ function runClaude(loop: ActiveLoop, round: ReviewLoopRound, prompt: string): Pr
         bufferOverflow = true
         lineBuf = ''
         pushTranscript(`✖ stdout exceeded ${MAX_BUF_BYTES} bytes without a newline — terminating`)
-        try { child.kill('SIGTERM') } catch { /* already exiting */ }
+        killChildTree(child)
       }
     }
 
@@ -478,9 +549,21 @@ function runClaude(loop: ActiveLoop, round: ReviewLoopRound, prompt: string): Pr
       {
         cwd: loop.state.worktreePath,
         env: { ...process.env },
+        // detached on POSIX puts the child in its own process group so we can
+        // signal the whole subtree (gh, sub-agents, sub-shells) on cancel/timeout.
+        detached: process.platform !== 'win32',
       }
     )
     loop.child = child
+
+    // Per-phase wall-clock timeout. Kills the subtree and surfaces a phase
+    // error so the loop can finalize cleanly when the underlying CLI hangs.
+    let timedOut = false
+    const phaseTimer = setTimeout(() => {
+      timedOut = true
+      pushTranscript(`✖ phase timed out after ${Math.round(PHASE_TIMEOUT_MS / 60000)}m — terminating`)
+      killChildTree(child)
+    }, PHASE_TIMEOUT_MS)
 
     child.stdout.on('data', consumeStdout)
     child.stderr.on('data', (chunk: Buffer) => {
@@ -494,12 +577,14 @@ function runClaude(loop: ActiveLoop, round: ReviewLoopRound, prompt: string): Pr
     })
     child.on('error', (err) => {
       pushTranscript(`✖ ${err.message}`)
+      clearTimeout(phaseTimer)
       if (pendingEmit) clearTimeout(pendingEmit)
       emitState(loop)
       resolve({ ok: false, costUsd, error: err.message })
     })
     child.on('exit', (code, signal) => {
       loop.child = undefined
+      clearTimeout(phaseTimer)
 
       // Drain any trailing partial line.
       if (lineBuf.trim()) {
@@ -515,11 +600,12 @@ function runClaude(loop: ActiveLoop, round: ReviewLoopRound, prompt: string): Pr
       emitState(loop)
 
       if (signal === 'SIGTERM') {
-        resolve({
-          ok: false,
-          costUsd,
-          error: bufferOverflow ? 'stdout buffer exceeded' : 'cancelled',
-        })
+        const error = timedOut
+          ? `phase timed out after ${Math.round(PHASE_TIMEOUT_MS / 60000)}m`
+          : bufferOverflow
+            ? 'stdout buffer exceeded'
+            : 'cancelled'
+        resolve({ ok: false, costUsd, error })
         return
       }
       if (code !== 0) {
@@ -599,6 +685,12 @@ function finalize(loop: ActiveLoop, reason: ReviewLoopStopReason, errorMessage?:
   if (errorMessage) loop.state.errorMessage = errorMessage
   emitState(loop)
 
+  // Drop the loop from the active-set so completed runs don't accumulate
+  // (rounds, transcripts, raw issues) in memory for the lifetime of the app.
+  // The renderer already received the final state via emitState above and
+  // caches it locally; refreshState handles a missing entry gracefully.
+  activeLoops.delete(loop.sessionId)
+
   // Best-effort PR comment for skipped/deferred issues.
   void writeStickyPRComment(loop).catch(() => {
     // Non-fatal — already finalized.
@@ -663,9 +755,19 @@ function renderStickyComment(state: ReviewLoopState): string {
     '',
   ]
 
-  // De-dupe by id, keeping the most recent decision/justification.
+  // De-dupe by id with a precedence rule: 'defer' (real but out of scope)
+  // outranks 'skip' (false positive / accepted), so a later 'skip' for the
+  // same id never overwrites an earlier 'defer'. For equal precedence the
+  // most recent occurrence wins so the latest justification surfaces.
+  const rank = (d: ReviewLoopTriagedIssue['decision']): number =>
+    d === 'defer' ? 2 : d === 'skip' ? 1 : 0
   const byId = new Map<string, ReviewLoopTriagedIssue>()
-  for (const issue of state.skippedIssues) byId.set(issue.id, issue)
+  for (const issue of state.skippedIssues) {
+    const existing = byId.get(issue.id)
+    if (!existing || rank(issue.decision) >= rank(existing.decision)) {
+      byId.set(issue.id, issue)
+    }
+  }
   const skipped = [...byId.values()]
 
   lines.push(

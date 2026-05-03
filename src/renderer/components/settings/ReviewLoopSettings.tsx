@@ -1,5 +1,5 @@
 import React from 'react'
-import type { Project, ReviewLoopConfig } from '../../../shared/types'
+import type { Project, ReviewLoopConfig, ReviewLoopProjectOverride } from '../../../shared/types'
 import { useReviewLoopStore } from '../../stores/reviewLoopStore'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { Button } from '../ui/Button'
@@ -51,12 +51,12 @@ export function ReviewLoopSettings({ projects }: Props) {
                   // override of the same value is still fine but we collapse
                   // when nothing differs.
                   const ws = settings.workspace
-                  const delta: Record<string, number | boolean> = {}
+                  const delta: Partial<ReviewLoopProjectOverride> = {}
                   if (next.enabled !== ws.enabled) delta.enabled = next.enabled
                   if (next.maxIterations !== ws.maxIterations) delta.maxIterations = next.maxIterations
                   if (next.consecutiveCleanRounds !== ws.consecutiveCleanRounds) delta.consecutiveCleanRounds = next.consecutiveCleanRounds
                   if (next.costCapUsd !== ws.costCapUsd) delta.costCapUsd = next.costCapUsd
-                  setProjectOverride(project.id, Object.keys(delta).length === 0 ? undefined : delta as any)
+                  setProjectOverride(project.id, Object.keys(delta).length === 0 ? undefined : delta)
                 }}
               />
             )
