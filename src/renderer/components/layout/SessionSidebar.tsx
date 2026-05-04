@@ -64,6 +64,9 @@ export function SessionSidebar() {
   // Cmd/Ctrl+N opens the New Session dialog when there's an active project.
   // Suppressed while the user is typing into an input/textarea or another
   // dialog already has focus, so it doesn't hijack normal text entry.
+  // xterm renders a hidden .xterm-helper-textarea to capture keystrokes —
+  // treat that as a terminal, not a real text input, so the shortcut works
+  // when an agent terminal has focus.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
@@ -72,8 +75,11 @@ export function SessionSidebar() {
       const target = e.target as HTMLElement | null
       if (target) {
         const tag = target.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-        if (target.isContentEditable) return
+        const isXtermInput = target.classList.contains('xterm-helper-textarea') || !!target.closest('.xterm')
+        if (!isXtermInput) {
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+          if (target.isContentEditable) return
+        }
         // Skip if focus is inside an open modal/dialog.
         if (target.closest('[role="dialog"]')) return
       }
