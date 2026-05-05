@@ -73,38 +73,6 @@ export function getAppActions(): AppActionDef[] {
       },
     },
     {
-      id: 'session:mark-stale',
-      label: 'Mark as Stale',
-      group: 'Session',
-      icon: 'Clock',
-      validPlacements: ['session-toolbar'],
-      requiresActiveSession: true,
-      requiresActiveProject: true,
-      execute: () => {
-        const { activeSessionId } = useSessionStore.getState()
-        const { activeProjectId } = useProjectStore.getState()
-        if (activeProjectId && activeSessionId) {
-          return useSessionStore.getState().markStale(activeProjectId, activeSessionId)
-        }
-      },
-    },
-    {
-      id: 'session:reactivate',
-      label: 'Reactivate Session',
-      group: 'Session',
-      icon: 'RefreshCw',
-      validPlacements: ['session-toolbar'],
-      requiresActiveSession: true,
-      requiresActiveProject: true,
-      execute: () => {
-        const { activeSessionId } = useSessionStore.getState()
-        const { activeProjectId } = useProjectStore.getState()
-        if (activeProjectId && activeSessionId) {
-          return useSessionStore.getState().reactivateSession(activeProjectId, activeSessionId)
-        }
-      },
-    },
-    {
       id: 'session:create',
       label: 'Create Session',
       group: 'Session',

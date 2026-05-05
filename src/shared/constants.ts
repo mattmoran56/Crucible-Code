@@ -15,7 +15,6 @@ export const IPC = {
   GIT_LIST_BRANCHES: 'git:list-branches',
   GIT_MERGE_CHECK: 'git:merge-check',
   GIT_MERGE: 'git:merge',
-  GIT_IS_MERGED: 'git:is-merged',
   GIT_DEFAULT_BRANCH: 'git:default-branch',
   GIT_COMPARE_COMMITS: 'git:compare-commits',
   GIT_COMPARE_FILES: 'git:compare-files',
