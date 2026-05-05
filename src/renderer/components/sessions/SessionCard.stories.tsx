@@ -45,7 +45,6 @@ const meta: Meta<typeof SessionCard> = {
     status: null,
     onClick: noop,
     onOpenAsMainBranch: noop,
-    onMarkStale: noop,
     onDelete: noop,
   },
 }

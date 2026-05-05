@@ -314,39 +314,6 @@ export async function getWorkingDiff(repoPath: string): Promise<string> {
   return [staged, unstaged].filter(Boolean).join('\n')
 }
 
-export async function isBranchMerged(
-  worktreePath: string,
-  baseBranch: string
-): Promise<boolean> {
-  const g = git(worktreePath)
-  try {
-    await g.raw(['fetch', 'origin', baseBranch, '--quiet'])
-  } catch {
-    // If fetch fails, fall back to local state
-  }
-  try {
-    // Uncommitted changes mean active work — not stale
-    const status = await g.status()
-    const dirty =
-      status.modified.length > 0 ||
-      status.not_added.length > 0 ||
-      status.created.length > 0 ||
-      status.deleted.length > 0 ||
-      status.staged.length > 0
-    if (dirty) return false
-
-    // Commits on HEAD not in base — if any exist, session has work in progress
-    const aheadOut = await g.raw(['rev-list', '--count', `origin/${baseBranch}..HEAD`])
-    const ahead = parseInt(aheadOut.trim(), 10)
-    if (ahead > 0) return false
-
-    // No local commits and no uncommitted changes — stale (merged or never started)
-    return true
-  } catch {
-    return false
-  }
-}
-
 // ── Branch comparison (PR preview) ─────────────────────────────────────────
 
 const STATUS_MAP: Record<string, string> = {

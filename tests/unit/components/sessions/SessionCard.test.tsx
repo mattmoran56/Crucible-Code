@@ -21,7 +21,6 @@ const baseProps = {
   pr: undefined,
   onClick: () => {},
   onOpenAsMainBranch: () => {},
-  onMarkStale: () => {},
   onDelete: () => {},
 } as const
 
@@ -60,15 +59,6 @@ describe('SessionCard', () => {
       />
     )
     expect(screen.getByText(/#42 Add foo/)).toBeInTheDocument()
-  })
-
-  it('"Mark as stale" menu item triggers onMarkStale', async () => {
-    const user = userEvent.setup()
-    const onMarkStale = vi.fn()
-    render(<SessionCard {...baseProps} onMarkStale={onMarkStale} />)
-    await user.click(screen.getByRole('button', { name: /Actions for feat\/x/ }))
-    await user.click(screen.getByRole('menuitem', { name: 'Mark as stale' }))
-    expect(onMarkStale).toHaveBeenCalled()
   })
 
   it('Delete shows a confirmation dialog and only fires onDelete after confirming', async () => {

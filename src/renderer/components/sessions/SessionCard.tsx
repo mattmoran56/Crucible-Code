@@ -14,7 +14,6 @@ interface Props {
   pr?: PullRequest
   onClick: () => void
   onOpenAsMainBranch: () => void
-  onMarkStale: () => void
   onDelete: () => void
 }
 
@@ -48,7 +47,7 @@ function StatusIndicator({ status }: { status: SessionStatus | null }) {
   }
 }
 
-export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onMarkStale, onDelete }: Props) {
+export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onDelete }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
 
   return (
@@ -99,7 +98,6 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
           <DropdownMenu
             items={[
               ...(!isOpenedAsMain ? [{ label: 'Open as main branch', onClick: onOpenAsMainBranch }] : []),
-              { label: 'Mark as stale', onClick: onMarkStale },
               { label: 'Delete', variant: 'danger' as const, onClick: () => setShowConfirm(true) },
             ]}
           >

@@ -62,7 +62,7 @@ Review pull requests with conversation, checks, file tree, and inline comments.
 
 **Session management**
 
-Sessions show live status: running (spinner), needs attention (dot), completed (check), or stale.
+Sessions show live status: running (spinner), needs attention (dot), or completed (check).
 
 ![Sessions](docs/screenshots/sessions.png)
 
@@ -180,8 +180,6 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 - **Import existing worktree** — Bring in worktrees created outside CodeCrucible
 - **Open remote branch** — Create a session from a remote branch with autocomplete
 - **Open as main branch** — Temporarily check out a session's branch on the main repo (useful for builds that need the real repo path)
-- **Stale detection** — Sessions whose branches are merged and inactive for 24+ hours are automatically detected and moved to a collapsible "Stale" section
-- **Manual stale/reactivate** — Mark sessions as stale or bring them back
 
 </details>
 

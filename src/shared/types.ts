@@ -34,7 +34,6 @@ export interface Session {
   lastActiveAt?: string
   prNumber?: number
   baseBranch?: string
-  staleAt?: string
 }
 
 export interface Commit {
@@ -240,8 +239,6 @@ export type AppAction =
   | 'session:open-as-main'
   | 'session:return-to-worktree'
   | 'session:delete'
-  | 'session:mark-stale'
-  | 'session:reactivate'
   | 'session:create'
   // Tab actions
   | 'tab:open-agent'

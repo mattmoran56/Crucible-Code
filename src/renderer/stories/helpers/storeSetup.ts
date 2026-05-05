@@ -22,7 +22,6 @@ import {
   mockProjects,
   mockAccounts,
   mockSessions,
-  mockStaleSessions,
   mockCommits,
   mockFileDiffs,
   mockWorkingFiles,
@@ -85,7 +84,6 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
   const activeSessionForStore = options.activePRNumber ? null : sessionId
   useSessionStore.setState({
     sessions: mockSessions[projectId] ?? [],
-    staleSessions: mockStaleSessions[projectId] ?? [],
     currentProjectId: projectId,
     activeSessionId: activeSessionForStore,
     activePRNumber: options.activePRNumber ?? null,
@@ -355,7 +353,7 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
 
 export function resetStores() {
   useProjectStore.setState({ projects: [], activeProjectId: null, claudeAccounts: [] })
-  useSessionStore.setState({ sessions: [], staleSessions: [], currentProjectId: null, activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent' })
+  useSessionStore.setState({ sessions: [], currentProjectId: null, activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent' })
   useGitStore.setState({ commits: [], changedFiles: [], workingFiles: [], selectedCommitHash: null, selectedFilePath: null, filePatch: null, loading: false })
   useNotificationStore.setState({ contextStatuses: new Map(), sessionProjectMap: new Map() })
   usePRStore.setState({
