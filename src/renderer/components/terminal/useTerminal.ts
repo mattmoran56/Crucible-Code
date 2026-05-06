@@ -8,6 +8,7 @@ import { useTerminalStore } from '../../stores/terminalStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { THEMES } from '../../../shared/themes'
+import { attachSmartScroll, type SmartScrollController } from './smartScroll'
 
 interface UseTerminalOptions {
   terminalId: string | null
@@ -19,7 +20,7 @@ interface UseTerminalOptions {
 // Global registry — keeps xterm instances alive for the lifetime of the app
 const terminalInstances = new Map<
   string,
-  { term: Terminal; fitAddon: FitAddon; attached: boolean; visible: boolean; anchoredToBottom: boolean; unsubData: (() => void) | null; unsubExit: (() => void) | null; cleanupWheel: (() => void) | null }
+  { term: Terminal; fitAddon: FitAddon; attached: boolean; visible: boolean; smartScroll: SmartScrollController; unsubData: (() => void) | null; unsubExit: (() => void) | null }
 >()
 
 /** Force the xterm viewport scrollbar to sync with the buffer position */
@@ -40,7 +41,7 @@ export function destroyTerminal(terminalId: string): void {
   if (!instance) return
   instance.unsubData?.()
   instance.unsubExit?.()
-  instance.cleanupWheel?.()
+  instance.smartScroll.dispose()
   instance.term.dispose()
   terminalInstances.delete(terminalId)
 }
@@ -112,44 +113,16 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       }
     })
 
-    // Track user-initiated scrolls only (wheel/keyboard), not programmatic ones
-    // anchoredToBottom is stored on the instance object so the visibility effect can read it
-    let userScrolling = false
-
-    const el = containerRef.current!
-    const wheelHandler = () => {
-      userScrolling = true
-      requestAnimationFrame(() => {
-        const buf = term.buffer.active
-        const inst = terminalInstances.get(terminalId)
-        if (inst) inst.anchoredToBottom = buf.viewportY >= buf.baseY - 3
-        userScrolling = false
-      })
-    }
-    el.addEventListener('wheel', wheelHandler)
-
-    // Also catch keyboard scrolling (Shift+PageUp/Down etc)
-    term.onKey(({ domEvent }) => {
-      if (domEvent.key === 'PageUp' || domEvent.key === 'PageDown' ||
-          (domEvent.shiftKey && (domEvent.key === 'ArrowUp' || domEvent.key === 'ArrowDown'))) {
-        requestAnimationFrame(() => {
-          const buf = term.buffer.active
-          const inst = terminalInstances.get(terminalId)
-          if (inst) inst.anchoredToBottom = buf.viewportY >= buf.baseY - 3
-        })
-      }
+    // Smart scroll: see smartScroll.ts. The controller intercepts writes to
+    // preserve the user's scroll position when they have scrolled up.
+    const smartScroll = attachSmartScroll(term, () => {
+      return terminalInstances.get(terminalId)?.visible ?? false
     })
 
     // Receive data from pty — always active, even when hidden
     const unsubData = window.api.terminal.onData((id, data) => {
       if (id !== terminalId) return
-      term.write(data)
-
-      // Only scroll while visible — scrollToBottom on a hidden element desyncs the scrollbar
-      const inst = terminalInstances.get(terminalId)
-      if (inst?.visible && inst.anchoredToBottom && !userScrolling) {
-        term.scrollToBottom()
-      }
+      smartScroll.write(data)
 
       // Intervention detection
       lineBuffer.current += data
@@ -173,8 +146,7 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       term.writeln(`\r\n[Process exited with code ${code}]`)
     })
 
-    const cleanupWheel = () => el.removeEventListener('wheel', wheelHandler)
-    terminalInstances.set(terminalId, { term, fitAddon, attached: true, visible: true, anchoredToBottom: true, unsubData, unsubExit, cleanupWheel })
+    terminalInstances.set(terminalId, { term, fitAddon, attached: true, visible: true, smartScroll, unsubData, unsubExit })
 
     // Initial fit + scroll to bottom
     requestAnimationFrame(() => {
@@ -213,7 +185,7 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       const { cols, rows } = instance.term
       window.api.terminal.resize(terminalId, cols, rows)
 
-      if (instance.anchoredToBottom) {
+      if (instance.smartScroll.isAnchored()) {
         instance.term.scrollToBottom()
         // Force the viewport scrollbar to match — scrollToBottom alone can desync
         // when the terminal received writes while hidden

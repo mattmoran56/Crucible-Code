@@ -124,22 +124,6 @@ export const mockSessions: Record<string, Session[]> = {
   ],
 }
 
-export const mockStaleSessions: Record<string, Session[]> = {
-  'proj-1': [
-    {
-      id: 'sess-stale-1',
-      name: 'old-sidebar-refactor',
-      branchName: 'session/old-sidebar-refactor',
-      worktreePath: '/Users/dev/.codecrucible-worktrees/CodeCrucible/old-sidebar-refactor',
-      projectId: 'proj-1',
-      createdAt: daysAgo(14),
-      lastActiveAt: daysAgo(10),
-      staleAt: daysAgo(7),
-      baseBranch: 'main',
-    },
-  ],
-}
-
 // --- Commits ---
 
 export const mockCommits: Commit[] = [
@@ -150,7 +134,6 @@ export const mockCommits: Commit[] = [
   { hash: 'q3r4s5t', message: 'Add syntax highlighting to diff viewer', author: 'Bob', date: hoursAgo(12) },
   { hash: 'u6v7w8x', message: 'Implement session status indicators', author: 'Alice', date: daysAgo(1) },
   { hash: 'y9z0a1b', message: 'Add notification badge to project tabs', author: 'Alice', date: daysAgo(1) },
-  { hash: 'c2d3e4f', message: 'Add stale session detection and cleanup', author: 'Bob', date: daysAgo(2) },
   { hash: 'g5h6i7j', message: 'Fix terminal theme sync on settings change', author: 'Alice', date: daysAgo(2) },
   { hash: 'k8l9m0n', message: 'Add worktree creation from remote branch', author: 'Bob', date: daysAgo(3) },
   { hash: 'o1p2q3r', message: 'Implement draggable project tabs', author: 'Alice', date: daysAgo(3) },

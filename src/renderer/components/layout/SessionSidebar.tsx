@@ -9,7 +9,6 @@ import { useSessionViewStore } from '../../stores/sessionViewStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { SessionCard } from '../sessions/SessionCard'
-import { StaleSessionCard } from '../sessions/StaleSessionCard'
 import { ScheduledSessionsPanel } from '../sessions/ScheduledSessionsPanel'
 import { SessionSortMenu } from '../sessions/SessionSortMenu'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
@@ -34,7 +33,7 @@ const PR_POLL_INTERVAL = 30_000
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, staleSessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, markStale, openPR, openAsMainBranch, checkStaleness, reactivateSession, openBranch } =
+  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, openPR, openAsMainBranch, openBranch } =
     useSessionStore()
   const claudeWebSessions = useClaudeWebStore((s) => s.sessions)
   const claudeWebLoading = useClaudeWebStore((s) => s.loading)
@@ -51,7 +50,6 @@ export function SessionSidebar() {
   const [showImport, setShowImport] = useState(false)
   const [showOpenBranch, setShowOpenBranch] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
-  const [staleCollapsed, setStaleCollapsed] = useState(true)
   const [claudeWebCollapsed, setClaudeWebCollapsed] = useState(false)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -65,6 +63,9 @@ export function SessionSidebar() {
   // Cmd/Ctrl+N opens the New Session dialog when there's an active project.
   // Suppressed while the user is typing into an input/textarea or another
   // dialog already has focus, so it doesn't hijack normal text entry.
+  // xterm renders a hidden .xterm-helper-textarea to capture keystrokes —
+  // treat that as a terminal, not a real text input, so the shortcut works
+  // when an agent terminal has focus.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
@@ -73,8 +74,11 @@ export function SessionSidebar() {
       const target = e.target as HTMLElement | null
       if (target) {
         const tag = target.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-        if (target.isContentEditable) return
+        const isXtermInput = target.classList.contains('xterm-helper-textarea') || !!target.closest('.xterm')
+        if (!isXtermInput) {
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+          if (target.isContentEditable) return
+        }
         // Skip if focus is inside an open modal/dialog.
         if (target.closest('[role="dialog"]')) return
       }
@@ -107,21 +111,20 @@ export function SessionSidebar() {
 
   const claudeWebEnabled = !!activeProject?.claudeWebEnabled
 
-  // Layout: 3 panels normally, 4 when Claude Web is enabled (inserted between
-  // Stale Sessions and Pull Requests). The two configs use a different number
-  // of panels, so the panels container is keyed on the toggle to remount the
-  // resize hook with fresh refs when it flips.
+  // Layout: 2 panels normally (Sessions ↔ PRs), 3 when Claude Web is enabled
+  // (Sessions ↔ Claude Web ↔ PRs). The panels container is keyed on the toggle
+  // to remount the resize hook with fresh refs when it flips.
   const collapsedPanels = React.useMemo(
     () =>
       claudeWebEnabled
-        ? [false, staleCollapsed, claudeWebCollapsed, prCollapsed]
-        : [false, staleCollapsed, prCollapsed],
-    [claudeWebEnabled, staleCollapsed, claudeWebCollapsed, prCollapsed]
+        ? [false, claudeWebCollapsed, prCollapsed]
+        : [false, prCollapsed],
+    [claudeWebEnabled, claudeWebCollapsed, prCollapsed]
   )
 
-  const minSizes = claudeWebEnabled ? [60, 60, 60, 60] : [60, 60, 60]
-  const initialRatios = claudeWebEnabled ? [0.45, 0.2, 0.15, 0.2] : [0.5, 0.25, 0.25]
-  const handleCount = claudeWebEnabled ? 3 : 2
+  const minSizes = claudeWebEnabled ? [60, 60, 60] : [60, 60]
+  const initialRatios = claudeWebEnabled ? [0.6, 0.2, 0.2] : [0.7, 0.3]
+  const handleCount = claudeWebEnabled ? 2 : 1
 
   // Subtract resize handles (3px each) so panel sizes sum to fill the
   // remaining space exactly.
@@ -135,25 +138,13 @@ export function SessionSidebar() {
     collapsedSize: 37,
   })
 
-  // Load sessions then immediately check staleness (chained to avoid race condition)
   useEffect(() => {
-    let cancelled = false
-    if (activeProjectId && activeProject) {
-      loadSessions(activeProjectId).then(() => {
-        if (!cancelled) checkStaleness(activeProject.repoPath)
-      })
+    if (activeProjectId) {
+      loadSessions(activeProjectId)
     }
-    return () => { cancelled = true }
   }, [activeProjectId])
 
-  // Auto-expand stale sessions when there are some
-  useEffect(() => {
-    if (staleSessions.length > 0) {
-      setStaleCollapsed(false)
-    }
-  }, [staleSessions.length])
-
-  // Load and poll PRs + staleness
+  // Load and poll PRs
   useEffect(() => {
     if (!activeProject) {
       clearPRs()
@@ -168,7 +159,6 @@ export function SessionSidebar() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
       pollIntervalRef.current = setInterval(() => {
         loadPRs(activeProject.repoPath)
-        checkStaleness(activeProject.repoPath)
       }, PR_POLL_INTERVAL)
     }
     startPolling()
@@ -530,7 +520,6 @@ export function SessionSidebar() {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     pollIntervalRef.current = setInterval(() => {
       loadPRs(activeProject.repoPath)
-      checkStaleness(activeProject.repoPath)
     }, PR_POLL_INTERVAL)
   }
 
@@ -686,7 +675,6 @@ export function SessionSidebar() {
                         clearContextStatuses(session.id)
                       }}
                       onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
-                      onMarkStale={() => markStale(activeProject.id, session.id)}
                       onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
                     />
                   ))}
@@ -699,40 +687,13 @@ export function SessionSidebar() {
           </SidebarSection>
         </div>
 
-        {/* Resize handle: Sessions ↔ Stale Sessions */}
-        <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(0)} />
-
-        {/* Stale Sessions section */}
-        <div style={{ height: sizes[1], flexShrink: 0 }} className="min-h-0 overflow-hidden">
-          <SidebarSection
-            title="Stale Sessions"
-            collapsible
-            collapsed={staleCollapsed}
-            onToggle={() => setStaleCollapsed((c) => !c)}
-          >
-            {staleSessions.map((session) => (
-              <StaleSessionCard
-                key={session.id}
-                session={session}
-                isActive={!editorMode && session.id === activeSessionId}
-                onClick={() => { setEditorMode(false); setActiveSession(session.id, activeProject.repoPath) }}
-                onReactivate={() => reactivateSession(activeProject.id, session.id)}
-                onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
-              />
-            ))}
-            {staleSessions.length === 0 && (
-              <p className="text-text-muted text-xs text-center py-4">No stale sessions</p>
-            )}
-          </SidebarSection>
-        </div>
-
         {claudeWebEnabled && (
           <>
-            {/* Resize handle: Stale Sessions ↔ Claude Web */}
-            <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(1)} />
+            {/* Resize handle: Sessions ↔ Claude Web */}
+            <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(0)} />
 
             {/* Claude Web section */}
-            <div style={{ height: sizes[2], flexShrink: 0 }} className="min-h-0 overflow-hidden">
+            <div style={{ height: sizes[1], flexShrink: 0 }} className="min-h-0 overflow-hidden">
               <SidebarSection
                 title="Claude Web"
                 collapsible
@@ -774,7 +735,6 @@ export function SessionSidebar() {
                       clearContextStatuses(session.id)
                     }}
                     onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
-                    onMarkStale={() => markStale(activeProject.id, session.id)}
                     onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
                   />
                 ))}
@@ -810,10 +770,10 @@ export function SessionSidebar() {
         )}
 
         {/* Resize handle: ↔ Pull Requests */}
-        <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(claudeWebEnabled ? 2 : 1)} />
+        <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(claudeWebEnabled ? 1 : 0)} />
 
         {/* Pull Requests section */}
-        <div style={{ height: sizes[claudeWebEnabled ? 3 : 2], flexShrink: 0 }} className="min-h-0 overflow-hidden">
+        <div style={{ height: sizes[claudeWebEnabled ? 2 : 1], flexShrink: 0 }} className="min-h-0 overflow-hidden">
           <SidebarSection
             title="Pull Requests"
             collapsible

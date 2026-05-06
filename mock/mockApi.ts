@@ -2,7 +2,6 @@ import {
   mockProjects,
   mockAccounts,
   mockSessions,
-  mockStaleSessions,
   mockCommits,
   mockFileDiffs,
   mockWorkingFiles,
@@ -131,7 +130,6 @@ export const mockApi = {
     defaultBranch: async () => 'main',
     mergeCheck: async () => ({ hasConflicts: false }),
     merge: async () => {},
-    isMerged: async () => false,
   },
 
   worktree: {
@@ -233,10 +231,7 @@ export const mockApi = {
   },
 
   session: {
-    list: async (projectId: string) => [
-      ...(mockSessions[projectId] ?? []),
-      ...(mockStaleSessions[projectId] ?? []),
-    ],
+    list: async (projectId: string) => mockSessions[projectId] ?? [],
     save: async () => {},
     saveContext: async () => {},
     getContext: async () => null,

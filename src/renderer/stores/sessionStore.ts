@@ -31,7 +31,6 @@ async function getLastActiveContext(projectId: string): Promise<PerProjectContex
 
 interface SessionState {
   sessions: Session[]
-  staleSessions: Session[]
   currentProjectId: string | null
   activeSessionId: string | null
   activePRNumber: number | null
@@ -54,9 +53,6 @@ interface SessionState {
   openAsMainBranch: (repoPath: string, sessionId: string) => Promise<void>
   returnToWorktree: (repoPath: string) => Promise<void>
   clearActiveContext: () => Promise<void>
-  checkStaleness: (repoPath: string) => Promise<void>
-  markStale: (projectId: string, sessionId: string) => Promise<void>
-  reactivateSession: (projectId: string, sessionId: string) => Promise<void>
   openBranch: (projectId: string, repoPath: string, branch: string, sessionName: string) => Promise<void>
   importWorktree: (projectId: string, worktree: WorktreeInfo) => Promise<void>
   consumePendingStartup: (sessionId: string) => string | null
@@ -83,7 +79,6 @@ let loadSessionsRequestId = 0
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
-  staleSessions: [],
   currentProjectId: null,
   activeSessionId: null,
   activePRNumber: null,
@@ -161,7 +156,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     set({
       sessions,
-      staleSessions: [],
       currentProjectId: projectId,
       activeSessionId,
       activePRNumber,
@@ -220,8 +214,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   removeSession: async (projectId, repoPath, sessionId) => {
-    const allSessions = [...get().sessions, ...get().staleSessions]
-    const session = allSessions.find((s) => s.id === sessionId)
+    const session = get().sessions.find((s) => s.id === sessionId)
     if (session) {
       try {
         await window.api.worktree.remove(repoPath, session.worktreePath)
@@ -235,81 +228,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.api.terminal.killSession(sessionId)
 
     const sessions = get().sessions.filter((s) => s.id !== sessionId)
-    const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)
-    await window.api.session.save(projectId, [...sessions, ...staleSessions])
+    await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
 
     set({
       sessions,
-      staleSessions,
       activeSessionId:
         get().activeSessionId === sessionId
           ? (sessions[0]?.id ?? null)
           : get().activeSessionId,
     })
-  },
-
-  checkStaleness: async (_repoPath: string) => {
-    const { sessions, staleSessions } = get()
-    const allSessions = [...sessions, ...staleSessions]
-    const active: Session[] = []
-    const stale: Session[] = []
-    const oneDayMs = 24 * 60 * 60 * 1000
-
-    await Promise.all(
-      allSessions.map(async (session) => {
-        // Manually staled sessions stay stale
-        if (session.staleAt) {
-          stale.push(session)
-          return
-        }
-        const withinOneDay = session.lastActiveAt
-          ? Date.now() - new Date(session.lastActiveAt).getTime() < oneDayMs
-          : false
-        if (withinOneDay) {
-          active.push(session)
-          return
-        }
-        const merged = await window.api.git.isMerged(session.worktreePath, session.baseBranch ?? 'main')
-        if (merged) {
-          stale.push({ ...session, staleAt: session.staleAt ?? new Date().toISOString() })
-        } else {
-          active.push(session)
-        }
-      })
-    )
-
-    stale.sort((a, b) => new Date(b.staleAt!).getTime() - new Date(a.staleAt!).getTime())
-    set({ sessions: sortByCreatedAtDesc(active), staleSessions: stale })
-  },
-
-  markStale: async (projectId: string, sessionId: string) => {
-    const session = get().sessions.find((s) => s.id === sessionId)
-    if (!session) return
-    const staled = { ...session, staleAt: new Date().toISOString() }
-    const sessions = get().sessions.filter((s) => s.id !== sessionId)
-    const staleSessions = [staled, ...get().staleSessions]
-    await window.api.session.save(projectId, [...sessions, ...staleSessions])
-    if (get().currentProjectId !== projectId) return
-    set({
-      sessions,
-      staleSessions,
-      activeSessionId:
-        get().activeSessionId === sessionId
-          ? (sessions[0]?.id ?? null)
-          : get().activeSessionId,
-    })
-  },
-
-  reactivateSession: async (projectId: string, sessionId: string) => {
-    const session = get().staleSessions.find((s) => s.id === sessionId)
-    if (!session) return
-    const reactivated = { ...session, lastActiveAt: new Date().toISOString(), staleAt: undefined }
-    const staleSessions = get().staleSessions.filter((s) => s.id !== sessionId)
-    const sessions = sortByCreatedAtDesc([...get().sessions, reactivated])
-    await window.api.session.save(projectId, [...sessions, ...staleSessions])
-    if (get().currentProjectId !== projectId) return
-    set({ sessions, staleSessions })
   },
 
   openBranch: async (projectId, repoPath, branch, sessionName) => {

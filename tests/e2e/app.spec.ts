@@ -64,9 +64,8 @@ test.describe('Session sidebar', () => {
     }
   })
 
-  test('shows the Sessions, Stale Sessions and Pull Requests sections', async ({ page }) => {
+  test('shows the Sessions and Pull Requests sections', async ({ page }) => {
     await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('Stale Sessions')).toBeVisible()
     await expect(page.getByText('Pull Requests')).toBeVisible()
   })
 

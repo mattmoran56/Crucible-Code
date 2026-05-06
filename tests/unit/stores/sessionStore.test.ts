@@ -9,7 +9,6 @@ const sessionApi = {
 }
 const gitApi = {
   status: vi.fn(),
-  isMerged: vi.fn(),
   checkout: vi.fn(),
   restoreWorktree: vi.fn(),
 }
@@ -34,7 +33,6 @@ beforeEach(() => {
   }
   useSessionStore.setState({
     sessions: [],
-    staleSessions: [],
     currentProjectId: null,
     activeSessionId: null,
     activePRNumber: null,
@@ -79,31 +77,5 @@ describe('sessionStore.setActiveWorkspaceTab', () => {
   it('sets the active workspace tab', () => {
     useSessionStore.getState().setActiveWorkspaceTab('git' as any)
     expect(useSessionStore.getState().activeWorkspaceTab).toBe('git')
-  })
-})
-
-describe('sessionStore.markStale', () => {
-  it('moves a session from active to stale and persists', async () => {
-    sessionApi.save.mockResolvedValue(undefined)
-    useSessionStore.setState({
-      sessions: [
-        { id: 's1', name: 'a', branchName: 'a', worktreePath: '/a', projectId: 'p1', createdAt: 't', lastActiveAt: 't' } as any,
-      ],
-      staleSessions: [],
-      currentProjectId: 'p1',
-    } as any)
-    await useSessionStore.getState().markStale('p1', 's1')
-    const s = useSessionStore.getState()
-    expect(s.sessions).toHaveLength(0)
-    expect(s.staleSessions).toHaveLength(1)
-    expect(s.staleSessions[0].id).toBe('s1')
-    expect(s.staleSessions[0].staleAt).toBeTruthy()
-  })
-
-  it('is a no-op when the session does not exist', async () => {
-    sessionApi.save.mockResolvedValue(undefined)
-    await useSessionStore.getState().markStale('p1', 'missing')
-    expect(useSessionStore.getState().sessions).toHaveLength(0)
-    expect(useSessionStore.getState().staleSessions).toHaveLength(0)
   })
 })

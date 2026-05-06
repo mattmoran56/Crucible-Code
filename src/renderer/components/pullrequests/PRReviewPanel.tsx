@@ -18,7 +18,7 @@ import type { PRReviewEvent, PRFile, PullRequest } from '../../../shared/types'
 import { extractFileDiff } from '../../lib/extractFileDiff'
 
 export function PRReviewPanel() {
-  const { activePRNumber, activeSessionId, sessions, didStash, checkStaleness, clearActiveContext } = useSessionStore()
+  const { activePRNumber, activeSessionId, sessions, didStash, clearActiveContext } = useSessionStore()
   const { pullRequests, loadPRs } = usePRStore()
   const { projects, activeProjectId } = useProjectStore()
 
@@ -237,7 +237,6 @@ export function PRReviewPanel() {
     }
     await clearActiveContext()
     loadPRs(activeProject.repoPath)
-    checkStaleness(activeProject.repoPath)
   }
 
   return (

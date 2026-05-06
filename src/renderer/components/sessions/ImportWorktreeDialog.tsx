@@ -17,7 +17,7 @@ export function ImportWorktreeDialog({ open, project, onClose }: Props) {
   const [loading, setLoading] = useState(false)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
-  const { sessions, staleSessions, importWorktree } = useSessionStore()
+  const { sessions, importWorktree } = useSessionStore()
 
   useEffect(() => {
     if (!open) return
@@ -25,9 +25,7 @@ export function ImportWorktreeDialog({ open, project, onClose }: Props) {
     setLoading(true)
 
     window.api.worktree.list(project.repoPath).then((all) => {
-      const sessionPaths = new Set(
-        [...sessions, ...staleSessions].map((s) => s.worktreePath)
-      )
+      const sessionPaths = new Set(sessions.map((s) => s.worktreePath))
       // Filter out the main worktree (bare repo) and any already-tracked sessions
       const untracked = all.filter(
         (wt) => !sessionPaths.has(wt.path) && wt.path !== project.repoPath
@@ -35,7 +33,7 @@ export function ImportWorktreeDialog({ open, project, onClose }: Props) {
       setWorktrees(untracked)
       setLoading(false)
     })
-  }, [open, project.repoPath, sessions, staleSessions])
+  }, [open, project.repoPath, sessions])
 
   const handleImport = async () => {
     const wt = worktrees.find((w) => w.path === selectedPath)

@@ -149,7 +149,6 @@ beforeEach(() => {
   } as any)
   useSessionStore.setState({
     sessions: [],
-    staleSessions: [],
     currentProjectId: null,
     activeSessionId: null,
     activePRNumber: null,
