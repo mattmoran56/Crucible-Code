@@ -24,6 +24,8 @@ import { LoadingScreen } from './components/LoadingScreen'
 import { useButtonStore } from './stores/buttonStore'
 import { useButtonShortcuts } from './hooks/useButtonShortcuts'
 import { useReviewLoopStore } from './stores/reviewLoopStore'
+import { useSchedulerBootstrap } from './hooks/useSchedulerBootstrap'
+import { UsageLimitToast } from './components/usage/UsageLimitToast'
 
 export default function App() {
   const { loadProjects, loadAccounts, projects } = useProjectStore()
@@ -36,6 +38,7 @@ export default function App() {
   const applyReviewLoopState = useReviewLoopStore((s) => s.applyState)
 
   useButtonShortcuts()
+  useSchedulerBootstrap()
 
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
   const rightPanel = useResizable({ direction: 'horizontal', initialSize: 300, minSize: 200, maxSize: 600, inverted: true })
@@ -227,6 +230,7 @@ export default function App() {
           <RightActivityBar activePanel={activeRightPanel} onToggle={toggleRightPanel} />
         </div>
       </div>
+      <UsageLimitToast />
       <ToastContainer />
     </div>
   )

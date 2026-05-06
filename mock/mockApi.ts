@@ -38,6 +38,81 @@ let terminalCounter = 0
 
 function noop() { return () => {} }
 
+// Scheduler mock state. Mirrors src/main/services/scheduler.service.ts but
+// simpler: stores in-memory, broadcasts via callbacks, fires via setTimeout.
+// Exposed on window for Playwright assertions.
+type QueuedSession = {
+  id: string
+  projectId: string
+  name: string
+  baseBranch?: string
+  startupPrompt: string
+  scheduledFor: number
+  createdAt: string
+}
+type QueuedMessage = {
+  id: string
+  sessionId: string
+  message: string
+  scheduledFor: number
+  createdAt: string
+  reason: 'usage-reset' | 'manual'
+}
+const queuedSessions: QueuedSession[] = []
+const queuedMessages: QueuedMessage[] = []
+const sessionsUpdateListeners: Array<(list: QueuedSession[]) => void> = []
+const messagesUpdateListeners: Array<(list: QueuedMessage[]) => void> = []
+const fireSessionListeners: Array<(item: QueuedSession) => void> = []
+const fireMessageListeners: Array<(item: QueuedMessage) => void> = []
+const sessionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const messageTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function broadcastQueuedSessions() {
+  for (const cb of sessionsUpdateListeners) cb([...queuedSessions])
+}
+function broadcastQueuedMessages() {
+  for (const cb of messagesUpdateListeners) cb([...queuedMessages])
+}
+function scheduleSessionFire(item: QueuedSession) {
+  const t = sessionTimers.get(item.id)
+  if (t) clearTimeout(t)
+  const delay = Math.max(0, item.scheduledFor - Date.now())
+  sessionTimers.set(
+    item.id,
+    setTimeout(() => {
+      const idx = queuedSessions.findIndex((s) => s.id === item.id)
+      if (idx < 0) return
+      const [fired] = queuedSessions.splice(idx, 1)
+      sessionTimers.delete(item.id)
+      broadcastQueuedSessions()
+      for (const cb of fireSessionListeners) cb(fired)
+    }, delay)
+  )
+}
+function scheduleMessageFire(item: QueuedMessage) {
+  const t = messageTimers.get(item.id)
+  if (t) clearTimeout(t)
+  const delay = Math.max(0, item.scheduledFor - Date.now())
+  messageTimers.set(
+    item.id,
+    setTimeout(() => {
+      const idx = queuedMessages.findIndex((m) => m.id === item.id)
+      if (idx < 0) return
+      const [fired] = queuedMessages.splice(idx, 1)
+      messageTimers.delete(item.id)
+      broadcastQueuedMessages()
+      for (const cb of fireMessageListeners) cb(fired)
+    }, delay)
+  )
+}
+
+// Surface terminal write calls to Playwright for assertions on prompt
+// injection. Keys by terminalId; arrays append in arrival order.
+const terminalWrites: Array<{ terminalId: string; data: string }> = []
+;(window as any).__terminalWrites = terminalWrites
+;(window as any).__queuedSessions = queuedSessions
+;(window as any).__queuedMessages = queuedMessages
+
 // Build the mock window.api matching src/preload/index.ts
 export const mockApi = {
   git: {
@@ -81,7 +156,9 @@ export const mockApi = {
       }, 300)
       return terminalId
     },
-    write: async () => {},
+    write: async (terminalId: string, data: string) => {
+      terminalWrites.push({ terminalId, data })
+    },
     resize: async () => {},
     kill: async () => {},
     onData: (callback: (terminalId: string, data: string) => void) => {
@@ -176,6 +253,7 @@ export const mockApi = {
     getStats: async () => mockUsageStats,
     getSubscription: async () => mockSubscription,
     onSessionUpdate: () => noop(),
+    onLimitReached: () => noop(),
   },
 
   file: {
@@ -208,7 +286,22 @@ export const mockApi = {
     save: async () => {},
     groupList: async () => mockButtonGroups,
     groupSave: async () => {},
-    execute: async () => `mock-btn-term-${++terminalCounter}`,
+    execute: async () => {
+      const terminalId = `mock-btn-term-${++terminalCounter}`
+      // Mirror the real terminal.spawn behaviour — emit fake output so the
+      // renderer's `>`-detection-then-write helper sees a prompt and fires.
+      // Used by both custom buttons and the queued-session fire flow.
+      setTimeout(() => {
+        for (let i = 0; i < mockTerminalOutput.length; i++) {
+          setTimeout(() => {
+            for (const cb of terminalDataCallbacks) {
+              cb(terminalId, mockTerminalOutput[i])
+            }
+          }, i * 80)
+        }
+      }, 300)
+      return terminalId
+    },
   },
 
   startupPrompt: {
@@ -272,5 +365,122 @@ export const mockApi = {
     onLog: () => noop(),
     apply: async () => {},
     getBuiltCommit: async () => 'mock-commit-sha',
+  },
+
+  scheduler: {
+    listQueuedSessions: async () => [...queuedSessions],
+    addQueuedSession: async (item: QueuedSession) => {
+      const idx = queuedSessions.findIndex((s) => s.id === item.id)
+      if (idx >= 0) queuedSessions.splice(idx, 1)
+      queuedSessions.push(item)
+      broadcastQueuedSessions()
+      scheduleSessionFire(item)
+      return [...queuedSessions]
+    },
+    cancelQueuedSession: async (id: string) => {
+      const idx = queuedSessions.findIndex((s) => s.id === id)
+      if (idx >= 0) queuedSessions.splice(idx, 1)
+      const t = sessionTimers.get(id)
+      if (t) {
+        clearTimeout(t)
+        sessionTimers.delete(id)
+      }
+      broadcastQueuedSessions()
+      return [...queuedSessions]
+    },
+    rescheduleQueuedSession: async (id: string, scheduledFor: number) => {
+      const item = queuedSessions.find((s) => s.id === id)
+      if (item) {
+        item.scheduledFor = scheduledFor
+        scheduleSessionFire(item)
+        broadcastQueuedSessions()
+      }
+      return [...queuedSessions]
+    },
+    fireQueuedSessionNow: async (id: string) => {
+      const item = queuedSessions.find((s) => s.id === id)
+      if (!item) return
+      const t = sessionTimers.get(id)
+      if (t) clearTimeout(t)
+      sessionTimers.delete(id)
+      const idx = queuedSessions.findIndex((s) => s.id === id)
+      queuedSessions.splice(idx, 1)
+      broadcastQueuedSessions()
+      for (const cb of fireSessionListeners) cb(item)
+    },
+    onQueuedSessionsUpdate: (cb: (list: QueuedSession[]) => void) => {
+      sessionsUpdateListeners.push(cb)
+      return () => {
+        const idx = sessionsUpdateListeners.indexOf(cb)
+        if (idx >= 0) sessionsUpdateListeners.splice(idx, 1)
+      }
+    },
+    onFireQueuedSession: (cb: (item: QueuedSession) => void) => {
+      fireSessionListeners.push(cb)
+      return () => {
+        const idx = fireSessionListeners.indexOf(cb)
+        if (idx >= 0) fireSessionListeners.splice(idx, 1)
+      }
+    },
+
+    listQueuedMessages: async () => [...queuedMessages],
+    addQueuedMessage: async (item: QueuedMessage) => {
+      const filtered = queuedMessages.filter(
+        (m) => m.sessionId !== item.sessionId && m.id !== item.id
+      )
+      queuedMessages.length = 0
+      queuedMessages.push(...filtered, item)
+      broadcastQueuedMessages()
+      scheduleMessageFire(item)
+      return [...queuedMessages]
+    },
+    cancelQueuedMessage: async (id: string) => {
+      const idx = queuedMessages.findIndex((m) => m.id === id)
+      if (idx >= 0) queuedMessages.splice(idx, 1)
+      const t = messageTimers.get(id)
+      if (t) {
+        clearTimeout(t)
+        messageTimers.delete(id)
+      }
+      broadcastQueuedMessages()
+      return [...queuedMessages]
+    },
+    onQueuedMessagesUpdate: (cb: (list: QueuedMessage[]) => void) => {
+      messagesUpdateListeners.push(cb)
+      return () => {
+        const idx = messagesUpdateListeners.indexOf(cb)
+        if (idx >= 0) messagesUpdateListeners.splice(idx, 1)
+      }
+    },
+    onFireQueuedMessage: (cb: (item: QueuedMessage) => void) => {
+      fireMessageListeners.push(cb)
+      return () => {
+        const idx = fireMessageListeners.indexOf(cb)
+        if (idx >= 0) fireMessageListeners.splice(idx, 1)
+      }
+    },
+    spawnAgentWithPrompt: async (
+      sessionId: string,
+      _cwd: string,
+      prompt: string,
+    ): Promise<string> => {
+      const terminalId = `mock-sched-term-${++terminalCounter}-${sessionId}`
+      // Record the prompt as the first "write" so e2e tests can assert
+      // injection happened — even though the heredoc-pipe path doesn't
+      // technically go through window.api.terminal.write.
+      terminalWrites.push({ terminalId, data: prompt + '\r' })
+      // Emit a friendly bit of fake terminal output so xterm has something
+      // to render (and any prompt-detection-style assertions still pass).
+      setTimeout(() => {
+        for (let i = 0; i < mockTerminalOutput.length; i++) {
+          setTimeout(() => {
+            for (const cb of terminalDataCallbacks) {
+              cb(terminalId, mockTerminalOutput[i])
+            }
+          }, i * 80)
+        }
+      }, 300)
+      return terminalId
+    },
   },
 }

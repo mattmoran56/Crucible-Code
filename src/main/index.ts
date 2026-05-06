@@ -9,6 +9,7 @@ import {
 import { setNotificationWindow } from './services/notification.service'
 import { killAllTerminals } from './services/terminal.service'
 import { stopAllWatching as stopAllPermissionWatching } from './services/permission-sync.service'
+import { stopScheduler } from './services/scheduler.service'
 
 // When launched from Finder/Dock, process.env.PATH is the minimal macOS default
 // and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
@@ -54,12 +55,14 @@ app.on('before-quit', () => {
   killAllTerminals()
   stopAllPermissionWatching()
   stopNotificationServer()
+  stopScheduler()
 })
 
 app.on('window-all-closed', () => {
   killAllTerminals()
   stopAllPermissionWatching()
   stopNotificationServer()
+  stopScheduler()
   app.quit()
 })
 

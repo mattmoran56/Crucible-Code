@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -327,6 +327,72 @@ const api = {
       const listener = (_e: unknown, usage: SessionUsage) => callback(usage)
       ipcRenderer.on(IPC.USAGE_SESSION_UPDATE, listener)
       return () => ipcRenderer.removeListener(IPC.USAGE_SESSION_UPDATE, listener)
+    },
+    onLimitReached: (callback: (event: UsageLimitEvent) => void) => {
+      const listener = (_e: unknown, event: UsageLimitEvent) => callback(event)
+      ipcRenderer.on(IPC.USAGE_LIMIT_REACHED, listener)
+      return () => ipcRenderer.removeListener(IPC.USAGE_LIMIT_REACHED, listener)
+    },
+  },
+
+  scheduler: {
+    listQueuedSessions: (): Promise<QueuedSession[]> =>
+      ipcRenderer.invoke(IPC.SCHEDULER_LIST_QUEUED_SESSIONS),
+    addQueuedSession: (item: QueuedSession): Promise<QueuedSession[]> =>
+      ipcRenderer.invoke(IPC.SCHEDULER_ADD_QUEUED_SESSION, item),
+    cancelQueuedSession: (id: string): Promise<QueuedSession[]> =>
+      ipcRenderer.invoke(IPC.SCHEDULER_CANCEL_QUEUED_SESSION, id),
+    rescheduleQueuedSession: (id: string, scheduledFor: number): Promise<QueuedSession[]> =>
+      ipcRenderer.invoke(IPC.SCHEDULER_RESCHEDULE_QUEUED_SESSION, id, scheduledFor),
+    fireQueuedSessionNow: (id: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.SCHEDULER_FIRE_QUEUED_SESSION_NOW, id),
+    spawnAgentWithPrompt: (
+      sessionId: string,
+      cwd: string,
+      prompt: string,
+      claudeTheme: string,
+      claudeConfigDir: string | undefined,
+      repoPath: string | undefined,
+      contextId: string,
+      tabId: string
+    ): Promise<string> =>
+      ipcRenderer.invoke(
+        IPC.SCHEDULER_SPAWN_AGENT_WITH_PROMPT,
+        sessionId,
+        cwd,
+        prompt,
+        claudeTheme,
+        claudeConfigDir,
+        repoPath,
+        contextId,
+        tabId
+      ),
+    onQueuedSessionsUpdate: (callback: (list: QueuedSession[]) => void) => {
+      const listener = (_e: unknown, list: QueuedSession[]) => callback(list)
+      ipcRenderer.on(IPC.SCHEDULER_QUEUED_SESSIONS_UPDATE, listener)
+      return () => ipcRenderer.removeListener(IPC.SCHEDULER_QUEUED_SESSIONS_UPDATE, listener)
+    },
+    onFireQueuedSession: (callback: (item: QueuedSession) => void) => {
+      const listener = (_e: unknown, item: QueuedSession) => callback(item)
+      ipcRenderer.on(IPC.SCHEDULER_FIRE_QUEUED_SESSION, listener)
+      return () => ipcRenderer.removeListener(IPC.SCHEDULER_FIRE_QUEUED_SESSION, listener)
+    },
+
+    listQueuedMessages: (): Promise<QueuedMessage[]> =>
+      ipcRenderer.invoke(IPC.SCHEDULER_LIST_QUEUED_MESSAGES),
+    addQueuedMessage: (item: QueuedMessage): Promise<QueuedMessage[]> =>
+      ipcRenderer.invoke(IPC.SCHEDULER_ADD_QUEUED_MESSAGE, item),
+    cancelQueuedMessage: (id: string): Promise<QueuedMessage[]> =>
+      ipcRenderer.invoke(IPC.SCHEDULER_CANCEL_QUEUED_MESSAGE, id),
+    onQueuedMessagesUpdate: (callback: (list: QueuedMessage[]) => void) => {
+      const listener = (_e: unknown, list: QueuedMessage[]) => callback(list)
+      ipcRenderer.on(IPC.SCHEDULER_QUEUED_MESSAGES_UPDATE, listener)
+      return () => ipcRenderer.removeListener(IPC.SCHEDULER_QUEUED_MESSAGES_UPDATE, listener)
+    },
+    onFireQueuedMessage: (callback: (item: QueuedMessage) => void) => {
+      const listener = (_e: unknown, item: QueuedMessage) => callback(item)
+      ipcRenderer.on(IPC.SCHEDULER_FIRE_QUEUED_MESSAGE, listener)
+      return () => ipcRenderer.removeListener(IPC.SCHEDULER_FIRE_QUEUED_MESSAGE, listener)
     },
   },
 

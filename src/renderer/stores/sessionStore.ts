@@ -61,6 +61,7 @@ interface SessionState {
   importWorktree: (projectId: string, worktree: WorktreeInfo) => Promise<void>
   consumePendingStartup: (sessionId: string) => string | null
   consumePendingFocus: (sessionId: string) => boolean
+  queuePendingStartup: (sessionId: string, command: string) => void
 }
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
@@ -212,6 +213,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (get().pendingFocusSessionId !== sessionId) return false
     set({ pendingFocusSessionId: null })
     return true
+  },
+
+  queuePendingStartup: (sessionId: string, command: string) => {
+    set({ pendingStartup: { sessionId, command } })
   },
 
   removeSession: async (projectId, repoPath, sessionId) => {

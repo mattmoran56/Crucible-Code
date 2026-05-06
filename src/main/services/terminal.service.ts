@@ -102,11 +102,28 @@ function spawnPty(
     // Use the shell to run claude so PATH is resolved
     command = shell
     // First launch: plain `claude`. After exit/restart: `claude --resume`
-    // Review mode always starts fresh (no --resume)
+    // Review mode always starts fresh (no --resume).
+    //
+    // When `commandString` is set on a fresh `claude` launch, we pipe it into
+    // claude via heredoc so the prompt arrives as stdin before claude binds
+    // raw-mode TTY. Claude processes the prompt, generates a response, and
+    // exits — the onExit handler then auto-restarts with `claude --resume`,
+    // dropping the user back into an interactive session that already has
+    // the conversation history. This is the same trick the custom-button
+    // background-claude flow uses, made interactive-friendly by piggy-backing
+    // on the auto-restart logic.
     if (instance.mode === 'review') {
       args = ['-l', '-c', 'claude']
+    } else if (isResume) {
+      args = ['-l', '-c', 'claude --resume']
+    } else if (instance.commandString) {
+      args = [
+        '-l',
+        '-c',
+        `claude <<'CRUCIBLE_PROMPT_EOF'\n${instance.commandString}\nCRUCIBLE_PROMPT_EOF`,
+      ]
     } else {
-      args = ['-l', '-c', isResume ? 'claude --resume' : 'claude']
+      args = ['-l', '-c', 'claude']
     }
   } else if (instance.mode === 'command' && instance.commandString) {
     // Run a specific command via shell -l -c "cmd", exits when done

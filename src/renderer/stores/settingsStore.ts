@@ -16,7 +16,12 @@ interface PersistedSettings {
   claudeTheme: ClaudeTheme
   mergedCleanupAction: MergedCleanupAction
   mergedCleanupDelay: MergedCleanupDelay
+  autoQueueContinue: boolean
+  usageResetDelayMinutes: number
 }
+
+export const USAGE_RESET_DELAY_MIN = 0
+export const USAGE_RESET_DELAY_MAX = 30
 
 function getDefaultClaudeTheme(theme: ThemeName): ClaudeTheme {
   return THEMES.find((t) => t.name === theme)?.claudeTheme ?? 'dark'
@@ -27,7 +32,12 @@ function loadSettings(): PersistedSettings {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return JSON.parse(raw)
   } catch { /* ignore */ }
-  return { theme: 'dark', matchSystem: false, preferredLight: 'light', preferredDark: 'dark', claudeTheme: 'dark', mergedCleanupAction: 'deleteSession', mergedCleanupDelay: 30 }
+  return { theme: 'dark', matchSystem: false, preferredLight: 'light', preferredDark: 'dark', claudeTheme: 'dark', mergedCleanupAction: 'deleteSession', mergedCleanupDelay: 30, autoQueueContinue: false, usageResetDelayMinutes: 1 }
+}
+
+function clampDelay(n: number): number {
+  if (!Number.isFinite(n)) return 1
+  return Math.max(USAGE_RESET_DELAY_MIN, Math.min(USAGE_RESET_DELAY_MAX, Math.round(n)))
 }
 
 function saveSettings(s: PersistedSettings) {
@@ -53,6 +63,8 @@ interface SettingsState {
   claudeTheme: ClaudeTheme
   mergedCleanupAction: MergedCleanupAction
   mergedCleanupDelay: MergedCleanupDelay
+  autoQueueContinue: boolean
+  usageResetDelayMinutes: number
   openSettings: () => void
   closeSettings: () => void
   setTheme: (theme: ThemeName) => void
@@ -62,6 +74,8 @@ interface SettingsState {
   setClaudeTheme: (claudeTheme: ClaudeTheme) => void
   setMergedCleanupAction: (action: MergedCleanupAction) => void
   setMergedCleanupDelay: (delay: MergedCleanupDelay) => void
+  setAutoQueueContinue: (enabled: boolean) => void
+  setUsageResetDelayMinutes: (minutes: number) => void
 }
 
 const initial = loadSettings()
@@ -80,6 +94,8 @@ function persist(get: () => SettingsState, overrides: Partial<PersistedSettings>
     claudeTheme: s.claudeTheme,
     mergedCleanupAction: s.mergedCleanupAction,
     mergedCleanupDelay: s.mergedCleanupDelay,
+    autoQueueContinue: s.autoQueueContinue,
+    usageResetDelayMinutes: s.usageResetDelayMinutes,
     ...overrides,
   })
 }
@@ -93,6 +109,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   claudeTheme: initial.claudeTheme ?? getDefaultClaudeTheme(initialTheme),
   mergedCleanupAction: initial.mergedCleanupAction ?? 'deleteSession',
   mergedCleanupDelay: initial.mergedCleanupDelay ?? 30,
+  autoQueueContinue: initial.autoQueueContinue ?? false,
+  usageResetDelayMinutes: clampDelay(initial.usageResetDelayMinutes ?? 1),
   openSettings: () => set({ isOpen: true }),
   closeSettings: () => set({ isOpen: false }),
   setTheme: (theme) => {
@@ -152,6 +170,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ mergedCleanupDelay: delay })
     persist(get, { mergedCleanupDelay: delay })
   },
+  setAutoQueueContinue: (enabled) => {
+    set({ autoQueueContinue: enabled })
+    persist(get, { autoQueueContinue: enabled })
+  },
+  setUsageResetDelayMinutes: (minutes) => {
+    const clamped = clampDelay(minutes)
+    set({ usageResetDelayMinutes: clamped })
+    persist(get, { usageResetDelayMinutes: clamped })
+  },
 }))
 
 // Listen for OS color scheme changes
@@ -163,6 +190,6 @@ mq.addEventListener('change', () => {
     applyTheme(resolved)
     const claudeTheme = getDefaultClaudeTheme(resolved)
     useSettingsStore.setState({ theme: resolved, claudeTheme })
-    saveSettings({ theme: resolved, matchSystem: true, preferredLight: s.preferredLight, preferredDark: s.preferredDark, claudeTheme, mergedCleanupAction: s.mergedCleanupAction, mergedCleanupDelay: s.mergedCleanupDelay })
+    saveSettings({ theme: resolved, matchSystem: true, preferredLight: s.preferredLight, preferredDark: s.preferredDark, claudeTheme, mergedCleanupAction: s.mergedCleanupAction, mergedCleanupDelay: s.mergedCleanupDelay, autoQueueContinue: s.autoQueueContinue, usageResetDelayMinutes: s.usageResetDelayMinutes })
   }
 })

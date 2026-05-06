@@ -10,6 +10,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { SessionCard } from '../sessions/SessionCard'
 import { StaleSessionCard } from '../sessions/StaleSessionCard'
+import { ScheduledSessionsPanel } from '../sessions/ScheduledSessionsPanel'
 import { SessionSortMenu } from '../sessions/SessionSortMenu'
 import { CreateSessionDialog } from '../sessions/CreateSessionDialog'
 import { ImportWorktreeDialog } from '../sessions/ImportWorktreeDialog'
@@ -592,6 +593,8 @@ export function SessionSidebar() {
           onCarry={handleDialogCarry}
         />
       )}
+
+      <ScheduledSessionsPanel projectId={activeProject.id} />
 
       <div
         ref={setPanelsContainerEl}
