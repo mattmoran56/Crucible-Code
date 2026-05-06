@@ -27,6 +27,8 @@ export function SettingsPage() {
     claudeTheme, setClaudeTheme,
     mergedCleanupAction, setMergedCleanupAction,
     mergedCleanupDelay, setMergedCleanupDelay,
+    autoQueueContinue, setAutoQueueContinue,
+    usageResetDelayMinutes, setUsageResetDelayMinutes,
   } = useSettingsStore()
 
   const {
@@ -496,6 +498,57 @@ export function SettingsPage() {
                 </select>
               </div>
             )}
+          </div>
+
+          {/* ─── Usage limits ─── */}
+          <div style={{ marginTop: 40 }}>
+            <h1 className="text-lg font-semibold text-text" style={{ marginBottom: 4 }}>Usage Limits</h1>
+            <p className="text-xs text-text-muted" style={{ marginBottom: 20 }}>
+              When a session hits its 5‑hour usage limit, queue a follow‑up
+              prompt to fire after the window resets.
+            </p>
+
+            <div
+              className="flex items-center justify-between border border-border rounded-md"
+              style={{ padding: '10px 14px', marginBottom: 10 }}
+            >
+              <div>
+                <p className="text-xs font-medium text-text">Auto‑queue 'continue'</p>
+                <p className="text-[11px] text-text-muted">
+                  When the limit is reached, queue 'continue' automatically without confirmation
+                </p>
+              </div>
+              <ToggleGroup
+                options={[
+                  { value: 'off', label: 'Off' },
+                  { value: 'on', label: 'On' },
+                ]}
+                value={autoQueueContinue ? 'on' : 'off'}
+                onChange={(v) => setAutoQueueContinue(v === 'on')}
+              />
+            </div>
+
+            <div
+              className="flex items-center justify-between border border-border rounded-md"
+              style={{ padding: '10px 14px' }}
+            >
+              <div>
+                <p className="text-xs font-medium text-text">Reset delay</p>
+                <p className="text-[11px] text-text-muted">
+                  Fire queued continues this many minutes after the window resets (safety margin)
+                </p>
+              </div>
+              <input
+                type="number"
+                min={0}
+                max={30}
+                step={1}
+                value={usageResetDelayMinutes}
+                onChange={(e) => setUsageResetDelayMinutes(Number(e.target.value))}
+                className="bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent shrink-0"
+                style={{ padding: '6px 10px', width: 80 }}
+              />
+            </div>
           </div>
 
           {/* Color palette detail for active theme */}

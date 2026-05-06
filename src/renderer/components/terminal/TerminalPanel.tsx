@@ -1,33 +1,13 @@
 import React, { useEffect } from 'react'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useSessionStore } from '../../stores/sessionStore'
+import { writeWhenReady } from '../../lib/writeWhenReady'
 import { TerminalView } from './TerminalView'
+import { QueuedMessageChip } from '../sessions/QueuedMessageChip'
 
 interface Props {
   mode?: 'shell' | 'claude'
   visible?: boolean
-}
-
-// Wait for Claude's prompt indicator on the freshly-spawned PTY, then write the
-// startup command. Mirrors the prompt-detection-then-write trick used by custom
-// buttons in foreground 'claude' mode.
-function writeStartupCommandWhenReady(terminalId: string, command: string) {
-  let sent = false
-  const finish = () => {
-    if (sent) return
-    sent = true
-    unsub()
-    window.api.terminal.write(terminalId, command + '\r')
-  }
-  const unsub = window.api.terminal.onData((tid: string, data: string) => {
-    if (tid !== terminalId || sent) return
-    if (data.includes('>') || data.includes('$')) {
-      sent = true
-      unsub()
-      setTimeout(() => window.api.terminal.write(terminalId, command + '\r'), 100)
-    }
-  })
-  setTimeout(finish, 10000)
 }
 
 export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
@@ -54,7 +34,7 @@ export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
     ).then((terminalId) => {
       if (mode !== 'claude') return
       const command = useSessionStore.getState().consumePendingStartup(sessionId)
-      if (command) writeStartupCommandWhenReady(terminalId, command)
+      if (command) writeWhenReady(terminalId, command)
     })
   }, [activeSessionId, mode, sessions, getTerminal, spawnTerminal])
 
@@ -77,6 +57,7 @@ export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
 
   return (
     <div className="flex-1 relative min-h-0">
+      {mode === 'claude' && visible && <QueuedMessageChip />}
       {allInstances.map((instance) => {
         const isActive = instance.sessionId === activeSessionId && visible
 

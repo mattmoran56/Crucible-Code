@@ -4,7 +4,12 @@ import { homedir, tmpdir, platform } from 'node:os'
 import { execSync } from 'node:child_process'
 import type { BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
-import type { SessionUsage, UsageStats, SubscriptionInfo, DailyActivity } from '../../shared/types'
+import type { SessionUsage, UsageStats, SubscriptionInfo, DailyActivity, UsageLimitEvent } from '../../shared/types'
+
+// 5h limit considered "reached" at this fill percentage. Slightly under 100%
+// so the auto-continue toast surfaces just before Claude starts rejecting
+// prompts, not after.
+const LIMIT_THRESHOLD_PCT = 95
 
 // Map of sessionId → temp file path for statusLine JSON output
 const sessionFiles = new Map<string, string>()
@@ -95,9 +100,29 @@ function pollAllSessions(): void {
   for (const [sessionId, filePath] of sessionFiles) {
     const usage = parseStatusLineFile(sessionId, filePath)
     if (usage) {
+      const previous = sessionUsages.get(sessionId)
       sessionUsages.set(sessionId, usage)
       mainWindow?.webContents.send(IPC.USAGE_SESSION_UPDATE, usage)
+      maybeEmitLimitReached(previous, usage)
     }
+  }
+}
+
+/**
+ * Emit USAGE_LIMIT_REACHED on the rising edge of fiveHour.usedPercentage
+ * crossing LIMIT_THRESHOLD_PCT. Fires once per crossing — until usage drops
+ * back below the threshold (after the window resets), no new event fires.
+ */
+function maybeEmitLimitReached(previous: SessionUsage | undefined, current: SessionUsage): void {
+  const currentPct = current.rateLimits?.fiveHour?.usedPercentage
+  const resetsAt = current.rateLimits?.fiveHour?.resetsAt
+  if (currentPct == null || !resetsAt) return
+  const previousPct = previous?.rateLimits?.fiveHour?.usedPercentage ?? 0
+  const wasFull = previousPct >= LIMIT_THRESHOLD_PCT
+  const isFull = currentPct >= LIMIT_THRESHOLD_PCT
+  if (!wasFull && isFull) {
+    const event: UsageLimitEvent = { sessionId: current.sessionId, resetsAt }
+    mainWindow?.webContents.send(IPC.USAGE_LIMIT_REACHED, event)
   }
 }
 

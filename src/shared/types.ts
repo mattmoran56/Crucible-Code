@@ -405,3 +405,31 @@ export const DEFAULT_REVIEW_LOOP_CONFIG: ReviewLoopConfig = {
   consecutiveCleanRounds: 2,
   costCapUsd: 5,
 }
+
+// Scheduler ──────────────────────────────────────────────────────────────────
+
+export interface QueuedSession {
+  id: string
+  projectId: string
+  name: string
+  baseBranch?: string
+  startupPrompt: string
+  scheduledFor: number       // unix ms
+  createdAt: string
+}
+
+export type QueuedMessageReason = 'usage-reset' | 'manual'
+
+export interface QueuedMessage {
+  id: string
+  sessionId: string
+  message: string
+  scheduledFor: number       // unix ms
+  createdAt: string
+  reason: QueuedMessageReason
+}
+
+export interface UsageLimitEvent {
+  sessionId: string
+  resetsAt: number           // unix seconds, mirrors RateLimitWindow.resetsAt
+}

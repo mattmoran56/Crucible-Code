@@ -169,4 +169,29 @@ export const IPC = {
 
   // Claude Web Sessions
   CLAUDE_WEB_LIST_SESSIONS: 'claude-web:list-sessions',
+
+  // Scheduler — queued sessions and queued messages
+  SCHEDULER_LIST_QUEUED_SESSIONS: 'scheduler:list-queued-sessions',
+  SCHEDULER_ADD_QUEUED_SESSION: 'scheduler:add-queued-session',
+  SCHEDULER_CANCEL_QUEUED_SESSION: 'scheduler:cancel-queued-session',
+  SCHEDULER_RESCHEDULE_QUEUED_SESSION: 'scheduler:reschedule-queued-session',
+  SCHEDULER_FIRE_QUEUED_SESSION_NOW: 'scheduler:fire-queued-session-now',
+  SCHEDULER_QUEUED_SESSIONS_UPDATE: 'scheduler:queued-sessions-update',
+  SCHEDULER_FIRE_QUEUED_SESSION: 'scheduler:fire-queued-session',
+
+  SCHEDULER_LIST_QUEUED_MESSAGES: 'scheduler:list-queued-messages',
+  SCHEDULER_ADD_QUEUED_MESSAGE: 'scheduler:add-queued-message',
+  SCHEDULER_CANCEL_QUEUED_MESSAGE: 'scheduler:cancel-queued-message',
+  SCHEDULER_QUEUED_MESSAGES_UPDATE: 'scheduler:queued-messages-update',
+  SCHEDULER_FIRE_QUEUED_MESSAGE: 'scheduler:fire-queued-message',
+
+  // Usage limit detection (rising-edge of fiveHour usedPercentage)
+  USAGE_LIMIT_REACHED: 'usage:limit-reached',
+
+  // Spawn a claude agent terminal with a heredoc-piped initial prompt — used
+  // by the queued-session fire path so the prompt lands as claude's stdin
+  // rather than relying on `>`-detection-then-write (which is racy in the
+  // queued-fire context). Auto-restart kicks in after claude consumes the
+  // heredoc and exits, putting the user back into `claude --resume`.
+  SCHEDULER_SPAWN_AGENT_WITH_PROMPT: 'scheduler:spawn-agent-with-prompt',
 } as const
