@@ -215,14 +215,41 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
     // Best-effort lookup
   }
 
+  let removeError: unknown = null
   try {
     await g.raw(['worktree', 'remove', worktreePath, '--force'])
-  } catch {
-    // Worktree directory may already be gone — fall through to prune
+  } catch (err) {
+    removeError = err
   }
   await pruneWorktrees(repoPath)
 
-  if (attachedBranch && attachedBranch.startsWith('session/')) {
+  let removed = removeError === null
+  if (removeError) {
+    // The remove may have failed simply because the directory was already gone
+    // and git's admin entry was stale. After prune, re-check the worktree list:
+    // if our target is no longer registered, treat the removal as successful;
+    // otherwise surface the original error.
+    let stillPresent = true
+    try {
+      const wtOutput = await g.raw(['worktree', 'list', '--porcelain'])
+      stillPresent = false
+      for (const line of wtOutput.split('\n')) {
+        if (line.startsWith('worktree ')) {
+          const p = await normalize(line.slice('worktree '.length))
+          if (p === targetPath) {
+            stillPresent = true
+            break
+          }
+        }
+      }
+    } catch {
+      // If we can't list, treat the worktree as still present and rethrow.
+    }
+    if (stillPresent) throw removeError
+    removed = true
+  }
+
+  if (removed && attachedBranch && attachedBranch.startsWith('session/')) {
     try {
       await g.raw(['branch', '-D', attachedBranch])
     } catch {
