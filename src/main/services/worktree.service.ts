@@ -1,11 +1,24 @@
 import simpleGit from 'simple-git'
-import { join, dirname, basename } from 'path'
-import { mkdir, access } from 'fs/promises'
+import { join, dirname, basename, resolve as resolvePath } from 'path'
+import { mkdir, access, realpath } from 'fs/promises'
 import type { WorktreeInfo } from '../../shared/types'
 
 function worktreeDir(repoPath: string): string {
   const repoName = basename(repoPath)
   return join(dirname(repoPath), '.codecrucible-worktrees', repoName)
+}
+
+// `git worktree prune` clears stale administrative entries left behind when a
+// worktree's directory is deleted or moved outside of git (e.g. after the
+// parent repo itself is moved). Stale entries keep their branch "in use",
+// which causes tools like GitHub Desktop to fail with
+// `cannot delete branch '...' used by worktree at '...'`.
+async function pruneWorktrees(repoPath: string): Promise<void> {
+  try {
+    await simpleGit(repoPath).raw(['worktree', 'prune'])
+  } catch {
+    // Best-effort cleanup
+  }
 }
 
 // If `branch` is currently checked out in some worktree, detach that worktree
@@ -49,6 +62,7 @@ export async function createWorktree(
   const wtPath = join(wtBase, sessionName)
 
   await mkdir(wtBase, { recursive: true })
+  await pruneWorktrees(repoPath)
 
   // Check if repo has any commits
   let hasCommits = true
@@ -104,6 +118,7 @@ export async function createWorktreeFromBranch(
   const wtPath = join(wtBase, sessionName)
 
   await mkdir(wtBase, { recursive: true })
+  await pruneWorktrees(repoPath)
 
   // Fetch the branch from origin
   await g.raw(['fetch', 'origin', remoteBranch])
@@ -146,6 +161,7 @@ export async function createWorktreeFromBranch(
 
 export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
   const g = simpleGit(repoPath)
+  await pruneWorktrees(repoPath)
   const result = await g.raw(['worktree', 'list', '--porcelain'])
 
   const worktrees: WorktreeInfo[] = []
@@ -169,5 +185,48 @@ export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
 
 export async function removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
   const g = simpleGit(repoPath)
-  await g.raw(['worktree', 'remove', worktreePath, '--force'])
+
+  // Look up the branch attached to this worktree before we remove it, so we
+  // can delete an orphaned `session/*` branch and avoid leaving dangling refs
+  // that block branch deletion in other tools (e.g. GitHub Desktop).
+  // Normalize both sides via realpath so symlinked paths (e.g. macOS /var vs
+  // /private/var) and trailing-slash differences don't cause a miss.
+  const normalize = async (p: string): Promise<string> => {
+    try {
+      return await realpath(p)
+    } catch {
+      return resolvePath(p)
+    }
+  }
+  const targetPath = await normalize(worktreePath)
+  let attachedBranch: string | null = null
+  try {
+    const wtOutput = await g.raw(['worktree', 'list', '--porcelain'])
+    let currentPath = ''
+    for (const line of wtOutput.split('\n')) {
+      if (line.startsWith('worktree ')) {
+        currentPath = await normalize(line.slice('worktree '.length))
+      } else if (line.startsWith('branch refs/heads/') && currentPath === targetPath) {
+        attachedBranch = line.slice('branch refs/heads/'.length)
+        break
+      }
+    }
+  } catch {
+    // Best-effort lookup
+  }
+
+  try {
+    await g.raw(['worktree', 'remove', worktreePath, '--force'])
+  } catch {
+    // Worktree directory may already be gone — fall through to prune
+  }
+  await pruneWorktrees(repoPath)
+
+  if (attachedBranch && attachedBranch.startsWith('session/')) {
+    try {
+      await g.raw(['branch', '-D', attachedBranch])
+    } catch {
+      // Branch may not exist or may be checked out elsewhere
+    }
+  }
 }
