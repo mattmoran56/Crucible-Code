@@ -195,7 +195,16 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
     try {
       return await realpath(p)
     } catch {
-      return resolvePath(p)
+      // The path may not exist (e.g. the worktree directory was already
+      // deleted). Resolve the parent — usually still present — and re-append
+      // the basename so symlinked ancestors (e.g. macOS /var → /private/var)
+      // are still followed.
+      try {
+        const parent = await realpath(dirname(p))
+        return join(parent, basename(p))
+      } catch {
+        return resolvePath(p)
+      }
     }
   }
   const targetPath = await normalize(worktreePath)
