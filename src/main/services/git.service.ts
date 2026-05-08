@@ -311,7 +311,44 @@ export async function getWorkingDiff(repoPath: string): Promise<string> {
   // Show both staged and unstaged changes
   const unstaged = await g.diff()
   const staged = await g.diff(['--cached'])
-  return [staged, unstaged].filter(Boolean).join('\n')
+  // Untracked files are not picked up by `git diff`; synthesize an addition
+  // diff for each so they render in the branch-compare view.
+  const status = await g.status()
+  const untrackedDiffs: string[] = []
+  for (const filePath of status.not_added) {
+    const synth = await synthesizeAddedFileDiff(repoPath, filePath)
+    if (synth) untrackedDiffs.push(synth)
+  }
+  return [staged, unstaged, ...untrackedDiffs].filter(Boolean).join('\n')
+}
+
+async function synthesizeAddedFileDiff(repoPath: string, filePath: string): Promise<string | null> {
+  let buf: Buffer
+  try {
+    buf = await readFile(join(repoPath, filePath))
+  } catch {
+    return null
+  }
+  // Skip binary files — produce a stub note instead of garbled text.
+  const isBinary = buf.includes(0)
+  const header =
+    `diff --git a/${filePath} b/${filePath}\n` +
+    `new file mode 100644\n` +
+    `index 0000000..0000000\n` +
+    `--- /dev/null\n` +
+    `+++ b/${filePath}\n`
+  if (isBinary) {
+    return header + `Binary files /dev/null and b/${filePath} differ\n`
+  }
+  const text = buf.toString('utf8')
+  if (text.length === 0) return header + `@@ -0,0 +0,0 @@\n`
+  const hadTrailingNewline = text.endsWith('\n')
+  const body = hadTrailingNewline ? text.slice(0, -1) : text
+  const lines = body.split('\n')
+  const hunk = `@@ -0,0 +1,${lines.length} @@\n`
+  const added = lines.map((l) => `+${l}`).join('\n')
+  const tail = hadTrailingNewline ? '\n' : '\n\\ No newline at end of file\n'
+  return header + hunk + added + tail
 }
 
 // ── Branch comparison (PR preview) ─────────────────────────────────────────

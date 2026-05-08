@@ -18,10 +18,22 @@ export function PRPreviewPanel({ repoPath }: Props) {
   const {
     baseBranch, files, fullDiff, commits, workingFiles,
     selectedFilePath, selectedCommitHash, commitDiff,
-    viewMode, loading,
+    viewMode, loading, refreshing,
     selectFile, selectNextFile, selectPrevFile,
-    selectCommit, nextCommit, prevCommit, setViewMode,
+    selectCommit, nextCommit, prevCommit, setViewMode, refresh,
   } = usePRPreviewStore()
+
+  // Auto-refresh while the preview is mounted so committed/working changes
+  // pick up quickly as the user works.
+  useEffect(() => {
+    if (loading) return
+    const id = setInterval(() => {
+      if (!usePRPreviewStore.getState().refreshing) {
+        refresh(repoPath)
+      }
+    }, 4000)
+    return () => clearInterval(id)
+  }, [repoPath, refresh, loading])
 
   const hasWorkingChanges = workingFiles.length > 0
 
@@ -102,11 +114,29 @@ export function PRPreviewPanel({ repoPath }: Props) {
         className="flex items-center justify-between bg-bg-tertiary border-b border-border"
         style={{ padding: '4px 12px' }}
       >
-        <span className="text-xs text-text-muted">
+        <span className="text-xs text-text-muted flex items-center gap-2">
           {commits.length} commit{commits.length !== 1 ? 's' : ''} &middot;{' '}
           {files.length} file{files.length !== 1 ? 's' : ''} &middot;{' '}
           <span className="text-success">+{totalAdded}</span>{' '}
           <span className="text-danger">-{totalDeleted}</span>
+          <button
+            onClick={() => refresh(repoPath)}
+            disabled={refreshing}
+            aria-label="Refresh comparison"
+            title="Refresh comparison"
+            className="ml-1 text-text-muted hover:text-text disabled:opacity-60 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded"
+            style={{ padding: '2px 4px' }}
+          >
+            <svg
+              width="12" height="12" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              className={refreshing ? 'animate-spin' : ''}
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
         </span>
         <ToggleGroup
           options={[

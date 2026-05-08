@@ -6,6 +6,8 @@ interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> 
   size?: 'sm' | 'md'
   variant?: 'ghost' | 'danger'
   tooltipSide?: 'top' | 'bottom' | 'left'
+  /** When true, spin the icon and disable the button to signal in-flight work. */
+  loading?: boolean
 }
 
 const VARIANT_CLASSES: Record<string, string> = {
@@ -24,6 +26,8 @@ export function IconButton({
   variant = 'ghost',
   tooltipSide,
   className = '',
+  loading = false,
+  disabled,
   children,
   ...rest
 }: IconButtonProps) {
@@ -31,10 +35,12 @@ export function IconButton({
     <Tooltip content={label} side={tooltipSide} className={className}>
       <button
         aria-label={label}
-        className={`inline-flex items-center justify-center rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]}`}
+        aria-busy={loading || undefined}
+        disabled={disabled || loading}
+        className={`inline-flex items-center justify-center rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]}`}
         {...rest}
       >
-        {children}
+        {loading ? <span className="inline-flex animate-spin">{children}</span> : children}
       </button>
     </Tooltip>
   )
