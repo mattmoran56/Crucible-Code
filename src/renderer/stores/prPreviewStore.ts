@@ -23,6 +23,8 @@ interface PRPreviewState {
   commitDiff: string | null
   viewMode: 'single' | 'scroll'
   loading: boolean
+  /** True while a non-blocking refresh is in flight (preserves selection). */
+  refreshing: boolean
 
   activate: (repoPath: string, branch: string, sessionId?: string) => Promise<void>
   deactivate: (sessionId?: string) => void
@@ -97,6 +99,7 @@ export const usePRPreviewStore = create<PRPreviewState>((set, get) => ({
   commitDiff: null,
   viewMode: 'single',
   loading: false,
+  refreshing: false,
 
   activate: async (repoPath, branch, sessionId) => {
     set({ active: true, loading: true, sessionId: sessionId ?? null })
@@ -243,8 +246,38 @@ export const usePRPreviewStore = create<PRPreviewState>((set, get) => ({
   },
 
   refresh: async (repoPath) => {
-    const { baseBranch } = get()
+    const { baseBranch, selectedFilePath, selectedCommitHash } = get()
     if (!baseBranch) return
-    await get().setBaseBranch(repoPath, baseBranch)
+    set({ refreshing: true })
+    const { addToast } = useToastStore.getState()
+    try {
+      const [committedFiles, compareDiff, commits, wFiles, wDiff] = await Promise.all([
+        window.api.git.compareFiles(repoPath, baseBranch),
+        window.api.git.compareDiff(repoPath, baseBranch),
+        window.api.git.compareCommits(repoPath, baseBranch),
+        window.api.git.workingFilesPR(repoPath),
+        window.api.git.workingDiff(repoPath),
+      ])
+      const allFiles = mergeFiles(committedFiles, wFiles)
+      const fullDiff = wDiff ? [compareDiff, wDiff].filter(Boolean).join('\n') : compareDiff
+      // Preserve selection if it still exists in the refreshed file list.
+      const stillThere = selectedFilePath && allFiles.some((f) => f.path === selectedFilePath)
+      // If user is viewing the working-changes pseudo-commit, refresh its diff too.
+      const commitDiffNext =
+        selectedCommitHash === WORKING_CHANGES_HASH ? wDiff || null : get().commitDiff
+      set({
+        files: allFiles,
+        fullDiff,
+        workingDiff: wDiff || null,
+        workingFiles: wFiles,
+        commits,
+        commitDiff: commitDiffNext,
+        selectedFilePath: stillThere ? selectedFilePath : (allFiles[0]?.path ?? null),
+        refreshing: false,
+      })
+    } catch (err) {
+      addToast('error', err instanceof Error ? err.message : String(err))
+      set({ refreshing: false })
+    }
   },
 }))

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
+import { usePRReviewStore } from '../../stores/prReviewStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useEditorStore } from '../../stores/editorStore'
 import { editorContextIdFor } from '../editor/EditorWorkspace'
@@ -51,6 +52,7 @@ export function SessionSidebar() {
   const [showOpenBranch, setShowOpenBranch] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
   const [claudeWebCollapsed, setClaudeWebCollapsed] = useState(false)
+  const [refreshingPRs, setRefreshingPRs] = useState(false)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Listen for app-action create-session events from custom buttons
@@ -515,7 +517,16 @@ export function SessionSidebar() {
 
   const handleRefreshPRs = () => {
     if (!activeProject) return
-    loadPRs(activeProject.repoPath)
+    setRefreshingPRs(true)
+    // Refresh the list and — if a PR is currently open in the review panel —
+    // also refetch its details so reviews/checks/comments aren't stale.
+    const review = usePRReviewStore.getState()
+    const openPR = review.prNumber
+    const tasks: Promise<unknown>[] = [loadPRs(activeProject.repoPath)]
+    if (openPR != null) {
+      tasks.push(review.loadPR(activeProject.repoPath, openPR, activeProject.id, true))
+    }
+    Promise.allSettled(tasks).finally(() => setRefreshingPRs(false))
     // Reset polling so next tick is a full interval from now
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     pollIntervalRef.current = setInterval(() => {
@@ -704,6 +715,7 @@ export function SessionSidebar() {
                   <IconButton
                     label="Refresh Claude Web sessions"
                     size="sm"
+                    loading={claudeWebLoading}
                     onClick={() => {
                       if (!activeProject) return
                       loadClaudeWebSessions(
@@ -784,8 +796,9 @@ export function SessionSidebar() {
               <div className="flex items-center gap-1">
                 <PRSortFilterMenu repoPath={activeProject.repoPath} />
                 <IconButton
-                  aria-label="Refresh pull requests"
+                  label="Refresh pull requests"
                   size="sm"
+                  loading={refreshingPRs || prsLoading}
                   onClick={handleRefreshPRs}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

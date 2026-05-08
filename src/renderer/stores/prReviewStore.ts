@@ -55,7 +55,7 @@ interface PRReviewState {
   blobCache: Record<string, BlobCacheEntry>
   expandedLines: Record<string, Set<number>>
 
-  loadPR: (repoPath: string, prNumber: number, projectId?: string) => Promise<void>
+  loadPR: (repoPath: string, prNumber: number, projectId?: string, force?: boolean) => Promise<void>
   selectFile: (filePath: string) => void
   selectNextFile: () => void
   selectPrevFile: () => void
@@ -136,16 +136,22 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
   blobCache: {},
   expandedLines: {},
 
-  loadPR: async (repoPath, prNumber, projectId) => {
-    // Skip reload if this PR's data is already loaded
-    if (get().prNumber === prNumber && get().files.length > 0) return
+  loadPR: async (repoPath, prNumber, projectId, force = false) => {
+    // Skip reload if this PR's data is already loaded (unless forced)
+    if (!force && get().prNumber === prNumber && get().files.length > 0) return
 
-    set({
-      loading: true, prNumber, files: [], fullDiff: null, fileDiffCache: {}, fileDiffLoading: null,
-      comments: [], mergeable: 'UNKNOWN', selectedFilePath: null,
-      detail: null, conversationComments: [], checks: [], activeTab: 'conversation',
-      blobCache: {}, expandedLines: {},
-    })
+    if (force) {
+      // Refresh in place — keep current data visible while refetching so the
+      // user doesn't see the panel flash empty.
+      set({ loading: true, prNumber })
+    } else {
+      set({
+        loading: true, prNumber, files: [], fullDiff: null, fileDiffCache: {}, fileDiffLoading: null,
+        comments: [], mergeable: 'UNKNOWN', selectedFilePath: null,
+        detail: null, conversationComments: [], checks: [], activeTab: 'conversation',
+        blobCache: {}, expandedLines: {},
+      })
+    }
     try {
       const [files, fullDiff, comments, mergeabilityResult, detail, conversationComments, checks, viewedFilesArr, commits, reviewThreads] = await Promise.all([
         window.api.github.getFiles(repoPath, prNumber),
@@ -159,20 +165,23 @@ export const usePRReviewStore = create<PRReviewState>((set, get) => ({
         window.api.github.getCommits(repoPath, prNumber),
         window.api.github.getReviewThreads(repoPath, prNumber),
       ])
+      // Preserve current selection if still present after refresh.
+      const prevSelected = get().selectedFilePath
+      const stillThere = prevSelected && files.some((f) => f.path === prevSelected)
       set({
         files,
         fullDiff,
         comments,
         mergeable: mergeabilityResult.mergeable,
         loading: false,
-        selectedFilePath: files.length > 0 ? files[0].path : null,
+        selectedFilePath: stillThere ? prevSelected : (files.length > 0 ? files[0].path : null),
         detail,
         conversationComments,
         checks,
         viewedFiles: new Set(viewedFilesArr),
         commits,
-        selectedCommitHash: null,
-        commitDiff: null,
+        selectedCommitHash: force ? get().selectedCommitHash : null,
+        commitDiff: force ? get().commitDiff : null,
         reviewThreads,
       })
       // Start polling if any checks are still running
