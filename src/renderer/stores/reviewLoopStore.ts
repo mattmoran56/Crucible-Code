@@ -91,6 +91,7 @@ export const useReviewLoopStore = create<ReviewLoopStoreState>()((set, get) => (
     if (!override) return workspace
     return {
       enabled: override.enabled ?? workspace.enabled,
+      variant: override.variant ?? workspace.variant,
       maxIterations: override.maxIterations ?? workspace.maxIterations,
       consecutiveCleanRounds: override.consecutiveCleanRounds ?? workspace.consecutiveCleanRounds,
       costCapUsd: override.costCapUsd ?? workspace.costCapUsd,

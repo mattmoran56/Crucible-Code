@@ -349,12 +349,16 @@ export interface ReviewLoopTriagedIssue extends ReviewLoopIssue {
   justification: string
 }
 
+export type ReviewLoopVariant = 'pro' | 'lite'
+
 export interface ReviewLoopRound {
   index: number
   startedAt: string
   endedAt?: string
   phase: ReviewLoopPhase
+  /** Pro-only: structured issues from review phase. Empty for Lite. */
   rawIssues: ReviewLoopIssue[]
+  /** Pro-only: triaged issues. Empty for Lite. */
   triaged: ReviewLoopTriagedIssue[]
   costUsd: number
   log: string[]
@@ -368,6 +372,7 @@ export interface ReviewLoopState {
   branch: string
   baseBranch: string
   worktreePath: string
+  variant: ReviewLoopVariant
   status: ReviewLoopStatus
   currentPhase: ReviewLoopPhase
   iteration: number
@@ -377,11 +382,14 @@ export interface ReviewLoopState {
   endedAt?: string
   stopReason?: ReviewLoopStopReason
   errorMessage?: string
+  /** Pro-only: items the loop chose not to fix; surfaced in sticky PR comment. Empty for Lite. */
   skippedIssues: ReviewLoopTriagedIssue[]
 }
 
 export interface ReviewLoopConfig {
   enabled: boolean
+  /** Lite (default): unstructured, /review-driven, single shared session for triage→fix. Pro: structured 3-phase pipeline with JSON intermediates and PR comments. */
+  variant: ReviewLoopVariant
   maxIterations: number
   consecutiveCleanRounds: number
   costCapUsd: number
@@ -389,6 +397,7 @@ export interface ReviewLoopConfig {
 
 export interface ReviewLoopProjectOverride {
   enabled?: boolean
+  variant?: ReviewLoopVariant
   maxIterations?: number
   consecutiveCleanRounds?: number
   costCapUsd?: number
@@ -401,6 +410,7 @@ export interface ReviewLoopSettings {
 
 export const DEFAULT_REVIEW_LOOP_CONFIG: ReviewLoopConfig = {
   enabled: true,
+  variant: 'lite',
   maxIterations: 5,
   consecutiveCleanRounds: 2,
   costCapUsd: 5,
