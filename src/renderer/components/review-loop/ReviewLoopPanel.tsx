@@ -93,13 +93,28 @@ export function ReviewLoopPanel({ visible = true }: Props) {
 
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: 14 }}>
-        {state ? <LoopStateView state={state} /> : <EmptyState />}
+        {state ? <LoopStateView state={state} /> : <EmptyState variant={config.variant} />}
       </div>
     </div>
   )
 }
 
-function EmptyState() {
+function EmptyState({ variant }: { variant: 'lite' | 'pro' }) {
+  if (variant === 'lite') {
+    return (
+      <div className="text-xs text-text-muted">
+        <p>Press <strong>Start review loop</strong> to begin. Each round runs:</p>
+        <ol style={{ marginTop: 8, paddingLeft: 18 }}>
+          <li><strong>Review</strong> — <code>/review</code> on the PR (or the diff vs. base).</li>
+          <li><strong>Triage</strong> — sub-agents investigate each issue and propose a decision as a table.</li>
+          <li><strong>Fix</strong> — same session as triage: "do what you think needs doing, commit, and push".</li>
+        </ol>
+        <p style={{ marginTop: 12 }}>
+          The UI shows the raw session output. Stops after consecutive rounds with no new commit, the iteration cap, the cost cap, or manual cancel.
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="text-xs text-text-muted">
       <p>Press <strong>Start review loop</strong> to begin. Each round runs three phases:</p>
@@ -119,6 +134,7 @@ function EmptyState() {
 function LoopStateView({ state }: { state: ReviewLoopState }) {
   const reversed = [...state.rounds].reverse()
   const latestIndex = reversed[0]?.index
+  const variant = state.variant ?? 'pro'
   return (
     <div className="flex flex-col gap-3">
       <SummaryBar state={state} />
@@ -129,6 +145,7 @@ function LoopStateView({ state }: { state: ReviewLoopState }) {
         <RoundCard
           key={round.index}
           round={round}
+          variant={variant}
           isLatest={round.index === latestIndex}
           loopRunning={state.status === 'running'}
         />
@@ -140,6 +157,7 @@ function LoopStateView({ state }: { state: ReviewLoopState }) {
 function SummaryBar({ state }: { state: ReviewLoopState }) {
   const status = state.status
   const phase = state.currentPhase
+  const variant = state.variant ?? 'pro'
 
   const fixedTotal = useMemo(
     () =>
@@ -154,8 +172,11 @@ function SummaryBar({ state }: { state: ReviewLoopState }) {
     <div className="border border-border rounded-md" style={{ padding: '10px 12px' }}>
       <div className="flex items-center gap-3 flex-wrap">
         <StatusPill status={status} phase={phase} />
+        <span className="text-[10px] uppercase tracking-wide text-text-muted border border-border rounded px-1.5">
+          {variant}
+        </span>
         <span className="text-[11px] text-text-muted">
-          Round {state.iteration} · ${state.cumulativeCostUsd.toFixed(3)} spent · {fixedTotal} {fixedTotal === 1 ? 'fix' : 'fixes'} so far
+          Round {state.iteration} · ${state.cumulativeCostUsd.toFixed(3)} spent{variant === 'pro' ? ` · ${fixedTotal} ${fixedTotal === 1 ? 'fix' : 'fixes'} so far` : ''}
         </span>
         {state.stopReason && (
           <span className="text-[11px] text-text-muted">
@@ -166,7 +187,7 @@ function SummaryBar({ state }: { state: ReviewLoopState }) {
           <span className="text-[11px] text-danger">{state.errorMessage}</span>
         )}
       </div>
-      {state.skippedIssues.length > 0 && (
+      {variant === 'pro' && state.skippedIssues.length > 0 && (
         <p className="text-[11px] text-text-muted" style={{ marginTop: 6 }}>
           {state.skippedIssues.length} skipped/deferred {state.skippedIssues.length === 1 ? 'item' : 'items'} will be posted to the PR.
         </p>
@@ -216,10 +237,12 @@ function stopReasonLabel(r: ReviewLoopStopReason): string {
 
 function RoundCard({
   round,
+  variant,
   isLatest,
   loopRunning,
 }: {
   round: ReviewLoopRound
+  variant: 'lite' | 'pro'
   isLatest: boolean
   loopRunning: boolean
 }) {
@@ -237,7 +260,9 @@ function RoundCard({
           Round {round.index} <span className="text-text-muted">· {round.phase}</span>
         </p>
         <span className="text-[11px] text-text-muted">
-          {round.rawIssues.length} found · {fixCount} fixed · {skipCount} skipped · ${round.costUsd.toFixed(3)}
+          {variant === 'pro'
+            ? `${round.rawIssues.length} found · ${fixCount} fixed · ${skipCount} skipped · $${round.costUsd.toFixed(3)}`
+            : `$${round.costUsd.toFixed(3)}`}
         </span>
       </div>
 
@@ -247,7 +272,7 @@ function RoundCard({
         </p>
       )}
 
-      {round.triaged.length > 0 && (
+      {variant === 'pro' && round.triaged.length > 0 && (
         <div className="flex flex-col gap-1" style={{ marginTop: 8 }}>
           {round.triaged.map((t) => (
             <IssueRow key={t.id} issue={t} />

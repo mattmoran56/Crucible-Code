@@ -16,6 +16,13 @@ import {
   startReviewLoop,
   type StartReviewLoopOptions,
 } from '../services/review-loop.service'
+import {
+  cancelReviewLoopLite,
+  getReviewLoopLiteState,
+  hasReviewLoopLite,
+  setReviewLoopLiteWindow,
+  startReviewLoopLite,
+} from '../services/review-loop-lite.service'
 
 interface PersistedShape {
   workspace: ReviewLoopConfig
@@ -33,6 +40,7 @@ const store = new Store<PersistedShape>({
 
 export function registerReviewLoopHandlers(window: BrowserWindow): void {
   setReviewLoopWindow(window)
+  setReviewLoopLiteWindow(window)
 
   ipcMain.handle(IPC.REVIEW_LOOP_SETTINGS_GET, async (): Promise<ReviewLoopSettings> => {
     return {
@@ -52,18 +60,24 @@ export function registerReviewLoopHandlers(window: BrowserWindow): void {
   ipcMain.handle(
     IPC.REVIEW_LOOP_START,
     async (_e, opts: StartReviewLoopOptions): Promise<void> => {
-      await startReviewLoop(opts)
+      if (opts.config?.variant === 'pro') {
+        await startReviewLoop(opts)
+      } else {
+        await startReviewLoopLite(opts)
+      }
     }
   )
 
   ipcMain.handle(IPC.REVIEW_LOOP_CANCEL, async (_e, sessionId: string): Promise<void> => {
-    cancelReviewLoop(sessionId)
+    // Cancel on whichever variant is running for this session.
+    if (hasReviewLoopLite(sessionId)) cancelReviewLoopLite(sessionId)
+    else cancelReviewLoop(sessionId)
   })
 
   ipcMain.handle(
     IPC.REVIEW_LOOP_STATE_GET,
     async (_e, sessionId: string): Promise<ReviewLoopState | null> => {
-      return getReviewLoopState(sessionId)
+      return getReviewLoopLiteState(sessionId) ?? getReviewLoopState(sessionId)
     }
   )
 }

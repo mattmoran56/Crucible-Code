@@ -53,6 +53,7 @@ export function ReviewLoopSettings({ projects }: Props) {
                   const ws = settings.workspace
                   const delta: Partial<ReviewLoopProjectOverride> = {}
                   if (next.enabled !== ws.enabled) delta.enabled = next.enabled
+                  if (next.variant !== ws.variant) delta.variant = next.variant
                   if (next.maxIterations !== ws.maxIterations) delta.maxIterations = next.maxIterations
                   if (next.consecutiveCleanRounds !== ws.consecutiveCleanRounds) delta.consecutiveCleanRounds = next.consecutiveCleanRounds
                   if (next.costCapUsd !== ws.costCapUsd) delta.costCapUsd = next.costCapUsd
@@ -121,6 +122,25 @@ function ConfigCard({ title, description, config, onChange, customized, onReset 
           ]}
           value={config.enabled ? 'on' : 'off'}
           onChange={(v) => update({ enabled: v === 'on' })}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-3" style={{ marginTop: 12 }}>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-text">Variant</p>
+          <p className="text-[11px] text-text-muted">
+            <strong>Lite</strong> — unstructured: <code>/review</code> → triage table → "do what you think". UI shows raw session output.<br />
+            <strong>Pro</strong> — structured 3-phase pipeline with JSON intermediates, issue list, and sticky PR comment.
+          </p>
+        </div>
+        <ToggleGroup
+          className="shrink-0"
+          options={[
+            { value: 'lite', label: 'Lite' },
+            { value: 'pro', label: 'Pro' },
+          ]}
+          value={config.variant}
+          onChange={(v) => update({ variant: v as 'lite' | 'pro' })}
         />
       </div>
 

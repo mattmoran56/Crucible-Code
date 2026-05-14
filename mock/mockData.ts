@@ -652,6 +652,7 @@ export const mockReviewLoopRunning: ReviewLoopState = {
   branch: 'session/add-pr-review',
   baseBranch: 'main',
   worktreePath: '/Users/dev/.codecrucible-worktrees/CodeCrucible/add-pr-review',
+  variant: 'pro',
   status: 'running',
   currentPhase: 'triage',
   iteration: 2,

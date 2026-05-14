@@ -110,6 +110,7 @@ export async function startReviewLoop(opts: StartReviewLoopOptions): Promise<voi
     branch: opts.branch,
     baseBranch: opts.baseBranch,
     worktreePath: opts.worktreePath,
+    variant: 'pro',
     status: 'running',
     currentPhase: 'idle',
     iteration: 0,
