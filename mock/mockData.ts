@@ -317,8 +317,56 @@ export const mockPRChecks: PRCheck[] = [
 ]
 
 export const mockPRReviewThreads: PRReviewThread[] = [
-  { path: 'src/renderer/components/pullrequests/PRReviewPanel.tsx', line: 42, isResolved: false },
-  { path: 'src/renderer/stores/prReviewStore.ts', line: 15, isResolved: true },
+  {
+    id: 'PRRT_1',
+    path: 'src/renderer/components/pullrequests/PRReviewPanel.tsx',
+    line: 42,
+    startLine: null,
+    side: 'RIGHT',
+    isResolved: false,
+    rootCommentId: 201,
+    comments: [
+      {
+        id: 201,
+        body: 'Consider memoizing this callback to avoid re-renders.',
+        path: 'src/renderer/components/pullrequests/PRReviewPanel.tsx',
+        line: 42,
+        side: 'RIGHT',
+        author: 'bob',
+        createdAt: hoursAgo(2),
+      },
+      {
+        id: 202,
+        body: 'Good catch — wrapping it in `useCallback`.',
+        path: 'src/renderer/components/pullrequests/PRReviewPanel.tsx',
+        line: 42,
+        side: 'RIGHT',
+        author: 'alice',
+        createdAt: hoursAgo(1.5),
+        inReplyToId: 201,
+      },
+    ],
+  },
+  {
+    id: 'PRRT_2',
+    path: 'src/renderer/stores/prReviewStore.ts',
+    line: 15,
+    startLine: 12,
+    side: 'RIGHT',
+    isResolved: true,
+    rootCommentId: 203,
+    comments: [
+      {
+        id: 203,
+        body: 'Should this initial state live in a constant?',
+        path: 'src/renderer/stores/prReviewStore.ts',
+        line: 15,
+        side: 'RIGHT',
+        author: 'bob',
+        createdAt: hoursAgo(3),
+      },
+    ],
+  },
 ]
 
 export const mockPRComments: PRComment[] = [

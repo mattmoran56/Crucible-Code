@@ -3,7 +3,8 @@ import { marked } from 'marked'
 import { usePRReviewStore } from '../../stores/prReviewStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { ReviewersSection } from './ReviewersSection'
-import type { PRCheck, PRConversationComment, PRDetail } from '../../../shared/types'
+import { InlineThread } from './InlineThread'
+import type { PRCheck, PRConversationComment, PRDetail, PRReviewThread } from '../../../shared/types'
 
 marked.setOptions({ breaks: true })
 
@@ -155,10 +156,81 @@ function PRBody({ detail }: { detail: PRDetail }) {
   )
 }
 
+function ReviewThreadsSection({
+  threads,
+  onReply,
+  onResolve,
+  onUnresolve,
+}: {
+  threads: PRReviewThread[]
+  onReply: (rootCommentId: number, body: string) => Promise<void>
+  onResolve: (threadId: string) => Promise<void>
+  onUnresolve: (threadId: string) => Promise<void>
+}) {
+  const grouped = useMemo(() => {
+    const map = new Map<string, PRReviewThread[]>()
+    for (const t of threads) {
+      const list = map.get(t.path) ?? []
+      list.push(t)
+      map.set(t.path, list)
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.line ?? 0) - (b.line ?? 0))
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
+  }, [threads])
+
+  if (threads.length === 0) return null
+
+  const unresolvedCount = threads.filter((t) => !t.isResolved).length
+
+  return (
+    <div style={{ marginTop: '16px' }}>
+      <div className="text-xs font-medium text-text" style={{ marginBottom: '8px' }}>
+        Review comments ({threads.length}
+        {unresolvedCount > 0 && (
+          <>, <span className="text-danger">{unresolvedCount} unresolved</span></>
+        )}
+        )
+      </div>
+      {grouped.map(([path, fileThreads]) => (
+        <div key={path} style={{ marginBottom: '12px' }}>
+          <div
+            className="font-mono text-[11px] text-text-muted bg-bg-tertiary border border-border rounded-t"
+            style={{ padding: '4px 10px' }}
+          >
+            {path}
+          </div>
+          <div className="border border-t-0 border-border rounded-b" style={{ paddingTop: '4px', paddingBottom: '4px' }}>
+            {fileThreads.map((thread) => (
+              <div key={thread.id} style={{ marginBottom: '4px' }}>
+                <div className="text-[10px] text-text-muted" style={{ padding: '2px 12px 0 32px' }}>
+                  {thread.startLine != null && thread.startLine !== thread.line
+                    ? `Lines ${thread.startLine}–${thread.line}`
+                    : thread.line != null
+                      ? `Line ${thread.line}`
+                      : 'File comment'}
+                </div>
+                <InlineThread
+                  thread={thread}
+                  onReply={onReply}
+                  onResolve={onResolve}
+                  onUnresolve={onUnresolve}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function PRConversationTab() {
   const {
-    prNumber, detail, conversationComments, checks, checksPolling,
+    prNumber, detail, conversationComments, checks, checksPolling, reviewThreads,
     collaborators, reviewerLoading, loadCollaborators, addReviewer, removeReviewer,
+    replyToThread, resolveThread, unresolveThread,
   } = usePRReviewStore()
   const { projects, activeProjectId } = useProjectStore()
   const activeProject = projects.find((p) => p.id === activeProjectId)
@@ -168,6 +240,19 @@ export function PRConversationTab() {
       loadCollaborators(activeProject.repoPath)
     }
   }, [activeProject?.id, loadCollaborators])
+
+  const handleReply = async (rootCommentId: number, body: string) => {
+    if (!activeProject || prNumber == null) return
+    await replyToThread(activeProject.repoPath, prNumber, rootCommentId, body)
+  }
+  const handleResolve = async (threadId: string) => {
+    if (!activeProject || prNumber == null) return
+    await resolveThread(activeProject.repoPath, prNumber, threadId)
+  }
+  const handleUnresolve = async (threadId: string) => {
+    if (!activeProject || prNumber == null) return
+    await unresolveThread(activeProject.repoPath, prNumber, threadId)
+  }
 
   return (
     <div className="flex-1 overflow-y-auto" style={{ padding: '12px 16px' }}>
@@ -220,7 +305,15 @@ export function PRConversationTab() {
         </div>
       )}
 
-      {conversationComments.length === 0 && (
+      {/* Review comments (inline code comments grouped by file) */}
+      <ReviewThreadsSection
+        threads={reviewThreads}
+        onReply={handleReply}
+        onResolve={handleResolve}
+        onUnresolve={handleUnresolve}
+      />
+
+      {conversationComments.length === 0 && reviewThreads.length === 0 && (
         <div className="text-xs text-text-muted" style={{ padding: '8px 0' }}>
           No comments yet
         </div>
