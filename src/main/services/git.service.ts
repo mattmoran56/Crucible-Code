@@ -526,3 +526,25 @@ export async function showFileBase64(
     )
   })
 }
+
+/** Read a file from a git ref as UTF-8 text. Returns null if the file doesn't exist at that ref. */
+export async function showFile(
+  repoPath: string,
+  ref: string,
+  filePath: string
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['show', `${ref}:${filePath}`],
+      { cwd: repoPath, maxBuffer: 10 * 1024 * 1024, encoding: 'utf8' },
+      (err, stdout) => {
+        if (err) {
+          resolve(null)
+          return
+        }
+        resolve(stdout)
+      }
+    )
+  })
+}

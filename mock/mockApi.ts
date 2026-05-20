@@ -123,6 +123,8 @@ export const mockApi = {
     restoreWorktree: async () => {},
     workingFiles: async () => mockWorkingFiles,
     workingFileDiff: async () => mockUnifiedDiff,
+    showFile: async () => mockFileContent,
+    showFileBase64: async () => btoa(unescape(encodeURIComponent(mockFileContent))),
     commitStatuses: async () => ({ unpushedHashes: ['a1b2c3d', 'e4f5g6h'], newBranchHashes: [] }),
     push: async () => {},
     openPR: async () => {},
@@ -228,6 +230,7 @@ export const mockApi = {
     getCommits: async () => mockPRCommits,
     getCommitDiff: async () => mockUnifiedDiff,
     getReviewThreads: async () => mockPRReviewThreads,
+    getFileBlob: async () => mockFileContent,
   },
 
   session: {

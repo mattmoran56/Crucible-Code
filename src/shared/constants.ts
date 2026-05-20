@@ -24,6 +24,7 @@ export const IPC = {
   GIT_WORKING_FILES_PR: 'git:working-files-pr',
   GIT_WORKING_DIFF: 'git:working-diff',
   GIT_SHOW_FILE_BASE64: 'git:show-file-base64',
+  GIT_SHOW_FILE: 'git:show-file',
   GIT_FETCH_AND_PULL: 'git:fetch-and-pull',
 
   // Worktree
