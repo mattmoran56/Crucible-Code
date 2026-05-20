@@ -490,22 +490,48 @@ function ExpanderRow({ meta, onExpand, enabled }: ExpanderRowProps) {
     ? `Show ${gap} unchanged ${gap === 1 ? 'line' : 'lines'}`
     : 'Show more lines below'
 
-  const btn =
-    'flex items-center justify-center text-text-muted hover:text-accent hover:bg-accent/10 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent rounded'
+  // The whole row is one big clickable surface — the default action is
+  // "expand all" for an in-between gap (no use leaving lines hidden once
+  // the user has asked for them) or "expand 20 down" for a tail expander
+  // (no upper bound to expand to). The discrete arrow buttons inside the
+  // row stop propagation so they can override that default.
+  const defaultDirection: 'up' | 'down' | 'all' = hasUpper ? 'all' : 'down'
+
+  const arrowBtn =
+    'relative z-10 flex items-center justify-center text-text-muted hover:text-accent hover:bg-accent/10 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent'
+
+  const handleRowKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!enabled) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onExpand(defaultDirection, meta)
+    }
+  }
 
   return (
     <div
-      className="flex items-stretch leading-5 bg-accent/5 border-y border-border text-[10px] text-text-muted select-none"
+      role="button"
+      tabIndex={enabled ? 0 : -1}
+      aria-label={label}
+      className={`group flex items-stretch leading-5 bg-accent/5 border-y border-border text-[10px] text-text-muted select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${
+        enabled ? 'cursor-pointer hover:bg-accent/10 hover:text-accent' : 'cursor-not-allowed'
+      }`}
       style={{ minHeight: 24 }}
       title={enabled ? label : 'Loading file content needed to expand context…'}
       data-expander-row="true"
+      onClick={() => enabled && onExpand(defaultDirection, meta)}
+      onKeyDown={handleRowKey}
     >
-      <div className="flex items-center w-[80px] shrink-0 border-r border-border/40 bg-accent/10">
+      <div className="flex items-stretch w-[80px] shrink-0 border-r border-border/40 bg-accent/10">
         {hasUpper && (
           <button
-            className={`${btn} flex-1 h-full`}
+            type="button"
+            className={`${arrowBtn} flex-1`}
             disabled={!enabled}
-            onClick={() => onExpand('up', meta)}
+            onClick={(e) => {
+              e.stopPropagation()
+              onExpand('up', meta)
+            }}
             aria-label="Expand 20 lines up"
             title="Expand 20 lines up"
             data-expand-direction="up"
@@ -514,9 +540,13 @@ function ExpanderRow({ meta, onExpand, enabled }: ExpanderRowProps) {
           </button>
         )}
         <button
-          className={`${btn} flex-1 h-full`}
+          type="button"
+          className={`${arrowBtn} flex-1`}
           disabled={!enabled}
-          onClick={() => onExpand('down', meta)}
+          onClick={(e) => {
+            e.stopPropagation()
+            onExpand('down', meta)
+          }}
           aria-label="Expand 20 lines down"
           title="Expand 20 lines down"
           data-expand-direction="down"
@@ -525,9 +555,13 @@ function ExpanderRow({ meta, onExpand, enabled }: ExpanderRowProps) {
         </button>
         {hasUpper && (
           <button
-            className={`${btn} flex-1 h-full`}
+            type="button"
+            className={`${arrowBtn} flex-1`}
             disabled={!enabled}
-            onClick={() => onExpand('all', meta)}
+            onClick={(e) => {
+              e.stopPropagation()
+              onExpand('all', meta)
+            }}
             aria-label="Expand all unchanged lines"
             title="Expand all unchanged lines"
             data-expand-direction="all"
@@ -536,15 +570,7 @@ function ExpanderRow({ meta, onExpand, enabled }: ExpanderRowProps) {
           </button>
         )}
       </div>
-      <button
-        type="button"
-        className="flex-1 flex items-center px-3 truncate text-left hover:text-accent disabled:cursor-not-allowed"
-        disabled={!enabled}
-        onClick={() => onExpand(hasUpper ? 'all' : 'down', meta)}
-        title={label}
-      >
-        {label}
-      </button>
+      <span className="flex-1 flex items-center px-3 truncate">{label}</span>
     </div>
   )
 }

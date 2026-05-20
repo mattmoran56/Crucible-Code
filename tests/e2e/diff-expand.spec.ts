@@ -79,6 +79,31 @@ test.describe('Diff expand button', () => {
     }).toPass({ timeout: 5_000 })
   })
 
+  test('PR diff: clicking anywhere on the expander row expands context', async ({ page }) => {
+    await openFirstPR(page)
+    await gotoFilesTab(page)
+
+    const linesBefore = await page
+      .locator('[data-line-type=context], [data-line-type=add], [data-line-type=delete]')
+      .count()
+
+    // The row root has role="button" so the entire strip is one click target.
+    // Hit the label span — well clear of the 80px arrow column — to prove the
+    // row-level click handler works, not just the discrete arrow buttons.
+    const labelSpan = page
+      .locator('[data-expander-row="true"]')
+      .first()
+      .locator('span.flex-1.flex.items-center')
+    await labelSpan.click()
+
+    await expect(async () => {
+      const after = await page
+        .locator('[data-line-type=context], [data-line-type=add], [data-line-type=delete]')
+        .count()
+      expect(after).toBeGreaterThan(linesBefore)
+    }).toPass({ timeout: 5_000 })
+  })
+
   test('PR diff: clicking the label expands and the gap label updates', async ({ page }) => {
     await openFirstPR(page)
     await gotoFilesTab(page)
