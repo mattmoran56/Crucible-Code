@@ -144,6 +144,9 @@ function settingsTargets(): Target[] {
     { name: 'pr-list-display-empty', storyId: 'settings-prlistdisplaysettings--empty', viewport: { width: 720, height: 600 }, delay: 200 },
     { name: 'pr-list-display-customized', storyId: 'settings-prlistdisplaysettings--one-customized', viewport: { width: 720, height: 600 }, delay: 200 },
     { name: 'pr-list-display-label-picker', storyId: 'settings-prlistdisplaysettings--label-picker-open', viewport: { width: 720, height: 700 }, delay: 200 },
+    { name: 'notion-settings-empty', storyId: 'settings-notionintegrationsettings--empty', viewport: { width: 800, height: 540 }, delay: 300 },
+    { name: 'notion-settings-configured', storyId: 'settings-notionintegrationsettings--configured', viewport: { width: 800, height: 1400 }, delay: 600 },
+    { name: 'notion-settings-mcp-prompt', storyId: 'settings-notionintegrationsettings--mcp-prompt-open', viewport: { width: 800, height: 1500 }, delay: 700 },
   ]
 }
 
