@@ -286,6 +286,34 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 360, height: 460 },
     delay: 700,
   },
+
+  // Diff viewer — showcases the new GitHub-style row layout, full-file
+  // syntax highlighting context, and the working "Show N unchanged lines"
+  // expander.
+  {
+    name: 'diff-viewer-unified',
+    storyId: 'git-diffviewer--unified-view',
+    viewport: { width: 1280, height: 720 },
+    delay: 1500,
+  },
+  {
+    name: 'diff-viewer-split',
+    storyId: 'git-diffviewer--split-view',
+    viewport: { width: 1280, height: 720 },
+    delay: 1500,
+  },
+  {
+    name: 'diff-viewer-unified-expanded',
+    storyId: 'git-diffviewer--unified-with-expanded-context',
+    viewport: { width: 1280, height: 900 },
+    delay: 1500,
+  },
+  {
+    name: 'diff-viewer-split-expanded',
+    storyId: 'git-diffviewer--split-with-expanded-context',
+    viewport: { width: 1280, height: 900 },
+    delay: 1500,
+  },
 ]
 
 async function captureScreenshots() {
