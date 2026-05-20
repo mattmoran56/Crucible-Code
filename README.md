@@ -20,7 +20,7 @@
 - **Multi-project management** — Open multiple git repos, switch with draggable tabs, per-project notifications
 - **Session isolation** — Each session gets its own git worktree and branch — no conflicts between parallel agents
 - **Embedded terminals** — Full xterm.js terminal per session with dynamic shell and Claude terminals
-- **Git integration** — Commit log, changed files, and syntax-highlighted inline diffs (Shiki)
+- **Git integration** — Commit log, changed files, and a GitHub-style syntax-highlighted diff viewer (Shiki) with full-file syntax context, click-anywhere context expansion, per-hunk collapse, and side-by-side or unified modes
 - **PR review panel** — Review pull requests without leaving the IDE: conversation, checks, file tree, inline comments, merge
 - **Intervention alerts** — Desktop notifications and dock badge when Claude Code needs your input
 - **Usage tracking** — Rate limit bars and activity stats per session
@@ -216,15 +216,29 @@ Every session gets an embedded terminal (xterm.js + node-pty) that opens in the 
 <details>
 <summary><strong>Git integration</strong></summary>
 
-Built-in git panel with commit history, changed files, and diff viewer.
+Built-in git panel with commit history, changed files, and a GitHub-style diff viewer.
 
 - **Commit log** — Scrollable list with polling for new commits
 - **Changed files** — Both committed and working-tree changes, with right-click stage / unstage / stash / discard / reveal in Finder
-- **Syntax-highlighted diffs** — Inline diff viewer powered by Shiki with full language support
-- **Expand context & per-hunk collapse** — Same diff viewer powers PR review and the git tab; expand surrounding lines or fold whole hunks
+- **GitHub-style diff viewer** — Three-zone rows (gutter / indicator / body) with tabular line numbers and progressive tinting so changes pop without overwhelming the surrounding context
+- **Unified or side-by-side** — Toggle between the two modes per file; choice sticks across files
+- **Full-file syntax context** — Syntax highlighting (Shiki) splices the visible hunk back into the whole-file blob before tokenising, so hunks that start mid-class or mid-string still highlight correctly
+- **Click-anywhere context expansion** — The "Show N unchanged lines" strip is one big click target; the discrete ↑20 / ↓20 / ⇕all buttons override that default for fine-grained control. Works in both the worktree diff and PR diff.
+- **Per-hunk collapse** — Click any `@@` row to fold a hunk; "Collapse hunks" toggle in the diff header collapses every hunk in the file
 - **Commit status indicators** — Unpushed commits and new branches are marked
 - **Push & PR** — Push button, open PR button, and merge controls with conflict detection
 - **Working file diffs** — View uncommitted changes alongside commit diffs
+
+<table>
+<tr>
+<td><img src="docs/screenshots/diff-viewer/storybook-diff-unified.png" alt="Unified diff with the GitHub-style gutter, indicator, and body zones" /></td>
+<td><img src="docs/screenshots/diff-viewer/storybook-diff-split.png" alt="Side-by-side diff in split mode" /></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/diff-viewer/storybook-diff-unified-expanded.png" alt="Unified diff after expanding context between two hunks" /></td>
+<td><img src="docs/screenshots/diff-viewer/storybook-diff-split-expanded.png" alt="Split diff after expanding context between two hunks" /></td>
+</tr>
+</table>
 
 </details>
 
@@ -239,7 +253,7 @@ Full pull request review without leaving the IDE — comparable to GitHub's web 
 - **Commits tab** — Per-commit diffs with prev/next navigation
 - **File tree** — Changed files with viewed-file tracking and unresolved-comment badges
 - **Scrollable diff view** — Lazy-loaded per file, optimised for very large PRs
-- **Expand context** — GitHub-style ↑20 / ↓20 / ⇕all buttons between hunks pull surrounding lines from the head SHA
+- **Click-anywhere context expansion** — The "Show N unchanged lines" strip between hunks is one big click target (defaults to expand-all for a known gap, expand-down for a tail). The discrete ↑20 / ↓20 / ⇕all buttons inside the strip override that default for fine-grained control. Surrounding lines are pulled from the head SHA.
 - **Per-hunk collapse** — Click any `@@` row to fold a hunk; "Collapse hunks" toggle in the diff header collapses every hunk in the file
 - **Inline threads** — Reply to and resolve / unresolve review threads inline; resolved threads collapse to one line
 - **Suggestion blocks** — `` ```suggestion `` blocks render as a side-by-side preview with an Apply button that writes to the worktree and creates a commit
