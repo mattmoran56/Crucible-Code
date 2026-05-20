@@ -161,7 +161,11 @@ export const mockWorkingFiles: FileDiff[] = [
 
 // --- Unified diff string for DiffViewer ---
 
-export const mockUnifiedDiff = `@@ -1,6 +1,8 @@
+export const mockUnifiedDiff = `diff --git a/src/renderer/components/pullrequests/PRReviewPanel.tsx b/src/renderer/components/pullrequests/PRReviewPanel.tsx
+index 1111111..2222222 100644
+--- a/src/renderer/components/pullrequests/PRReviewPanel.tsx
++++ b/src/renderer/components/pullrequests/PRReviewPanel.tsx
+@@ -1,6 +1,8 @@
  import React from 'react'
 +import { TabBar, Tab } from '../ui'
 +import { PRConversationTab } from './PRConversationTab'
@@ -277,6 +281,8 @@ export const mockPRDetail: PRDetail = {
   createdAt: daysAgo(3),
   baseRefName: 'main',
   headRefName: 'session/add-pr-review',
+  baseRefOid: 'deadbeef00000000000000000000000000000000',
+  headRefOid: 'cafef00d00000000000000000000000000000000',
   requestedReviewers: ['carol'],
   reviews: [
     { author: 'bob', state: 'APPROVED', submittedAt: hoursAgo(2) },

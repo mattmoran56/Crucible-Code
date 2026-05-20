@@ -112,6 +112,10 @@ export function registerGitHandlers() {
     return gitService.showFileBase64(repoPath, ref, filePath)
   })
 
+  ipcMain.handle(IPC.GIT_SHOW_FILE, async (_e, repoPath: string, ref: string, filePath: string) => {
+    return gitService.showFile(repoPath, ref, filePath)
+  })
+
   ipcMain.handle(IPC.GIT_FETCH_AND_PULL, async (_e, repoPath: string, branch: string) => {
     return gitService.fetchAndPull(repoPath, branch)
   })

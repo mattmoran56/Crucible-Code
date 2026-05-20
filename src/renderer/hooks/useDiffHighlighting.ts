@@ -73,13 +73,68 @@ export type TokenMap = Map<number, ThemedToken[]>
 interface DiffLineInput {
   type: string
   content: string
+  oldLine?: number
+  newLine?: number
 }
 
-const HIGHLIGHT_LINE_THRESHOLD = 3000
+const HIGHLIGHT_LINE_THRESHOLD = 5000
+
+/**
+ * Splice the visible diff lines into the corresponding blob (or, when no blob
+ * is provided, an array padded only with the visible lines). Returns:
+ *   - `text`: the full source we hand to shiki, one line per element joined by '\n'.
+ *   - `displayToLine`: for each visible display index `i`, the 1-based line
+ *     number in `text` whose tokens belong to that display row.
+ *
+ * `side === 'new'` builds the post-edit file (uses `add` + `context` lines,
+ * indexed by `newLine`). `side === 'old'` builds the pre-edit file (uses
+ * `delete` + `context` lines, indexed by `oldLine`).
+ */
+export function buildFullText(
+  lines: DiffLineInput[],
+  blob: string[] | null,
+  side: 'new' | 'old',
+): { text: string; displayToLine: Map<number, number> } | null {
+  const overrides = new Map<number, string>()
+  const displayToLine = new Map<number, number>()
+  let maxLine = blob?.length ?? 0
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const num = side === 'new' ? line.newLine : line.oldLine
+    if (num == null) continue
+
+    const include =
+      line.type === 'context' ||
+      (side === 'new' && line.type === 'add') ||
+      (side === 'old' && line.type === 'delete')
+    if (!include) continue
+
+    overrides.set(num, line.content)
+    displayToLine.set(i, num)
+    if (num > maxLine) maxLine = num
+  }
+
+  if (maxLine === 0) return null
+
+  const parts: string[] = new Array(maxLine)
+  for (let n = 1; n <= maxLine; n++) {
+    if (overrides.has(n)) {
+      parts[n - 1] = overrides.get(n)!
+    } else if (blob && n - 1 < blob.length) {
+      parts[n - 1] = blob[n - 1]
+    } else {
+      parts[n - 1] = ''
+    }
+  }
+
+  return { text: parts.join('\n'), displayToLine }
+}
 
 async function highlightDiffLines(
   lines: DiffLineInput[],
   filePath: string,
+  blobLines: string[] | null,
 ): Promise<TokenMap | null> {
   if (lines.length > HIGHLIGHT_LINE_THRESHOLD) return null
 
@@ -88,7 +143,6 @@ async function highlightDiffLines(
 
   const h = await getOrCreateHighlighter()
 
-  // Lazy-load language if not already loaded
   if (!loadedLangs.has(lang)) {
     try {
       await h.loadLanguage(lang as Parameters<typeof h.loadLanguage>[0])
@@ -99,51 +153,41 @@ async function highlightDiffLines(
   }
 
   const theme = getShikiTheme()
-
-  // Reconstruct old (context + delete) and new (context + add) content
-  // so shiki gets full context for accurate tokenisation
-  const oldIndices: number[] = []
-  const newIndices: number[] = []
-  const oldContent: string[] = []
-  const newContent: string[] = []
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (line.type === 'context') {
-      oldIndices.push(i)
-      newIndices.push(i)
-      oldContent.push(line.content)
-      newContent.push(line.content)
-    } else if (line.type === 'delete') {
-      oldIndices.push(i)
-      oldContent.push(line.content)
-    } else if (line.type === 'add') {
-      newIndices.push(i)
-      newContent.push(line.content)
-    }
-  }
-
   const tokenMap: TokenMap = new Map()
 
-  if (oldContent.length > 0) {
+  // Build "new" side from blob (when available) so syntax highlighting has
+  // proper context for hunks that start mid-class / mid-string. Without the
+  // blob we still tokenise the concatenated visible new lines so highlighting
+  // works for the common case.
+  const newSide = buildFullText(lines, blobLines, 'new')
+  if (newSide) {
     try {
-      const result = h.codeToTokens(oldContent.join('\n'), { lang, theme })
-      result.tokens.forEach((lineTokens, idx) => {
-        if (idx < oldIndices.length) tokenMap.set(oldIndices[idx], lineTokens)
-      })
+      const result = h.codeToTokens(newSide.text, { lang: lang as Parameters<typeof h.codeToTokens>[1]['lang'], theme })
+      for (const [displayIdx, lineNum] of newSide.displayToLine) {
+        const tokens = result.tokens[lineNum - 1]
+        if (tokens) tokenMap.set(displayIdx, tokens)
+      }
     } catch {
-      /* unsupported — fall through to plain text */
+      /* unsupported — fall through */
     }
   }
 
-  if (newContent.length > 0) {
+  // Old side: we don't have a base blob here yet, but tokenising the visible
+  // (context + delete) lines still produces decent highlighting because the
+  // sequence usually starts at a top-level token.
+  const oldSide = buildFullText(lines, null, 'old')
+  if (oldSide) {
     try {
-      const result = h.codeToTokens(newContent.join('\n'), { lang, theme })
-      result.tokens.forEach((lineTokens, idx) => {
-        if (idx < newIndices.length) tokenMap.set(newIndices[idx], lineTokens)
-      })
+      const result = h.codeToTokens(oldSide.text, { lang: lang as Parameters<typeof h.codeToTokens>[1]['lang'], theme })
+      for (const [displayIdx, lineNum] of oldSide.displayToLine) {
+        // Only set if we haven't already filled this index from the new side
+        // (context lines are present in both — prefer new-side tokens).
+        if (tokenMap.has(displayIdx)) continue
+        const tokens = result.tokens[lineNum - 1]
+        if (tokens) tokenMap.set(displayIdx, tokens)
+      }
     } catch {
-      /* unsupported — fall through to plain text */
+      /* unsupported — fall through */
     }
   }
 
@@ -155,6 +199,7 @@ async function highlightDiffLines(
 export function useDiffHighlighting(
   lines: DiffLineInput[],
   filePath: string | null,
+  blobLines?: string[] | null,
 ): TokenMap | null {
   const [tokenMap, setTokenMap] = useState<TokenMap | null>(null)
 
@@ -166,14 +211,14 @@ export function useDiffHighlighting(
 
     let cancelled = false
 
-    highlightDiffLines(lines, filePath).then((map) => {
+    highlightDiffLines(lines, filePath, blobLines ?? null).then((map) => {
       if (!cancelled) setTokenMap(map)
     })
 
     return () => {
       cancelled = true
     }
-  }, [lines, filePath])
+  }, [lines, filePath, blobLines])
 
   return tokenMap
 }

@@ -8,6 +8,7 @@ import type { PRComment, PRReviewThread } from '../../../shared/types'
 import { ImageDiffViewer, isImageFile } from './ImageDiffViewer'
 import { DiffErrorBoundary } from '../ui/DiffErrorBoundary'
 import { InlineThread, OrphanComment } from '../pullrequests/InlineThread'
+import { useExpandableBlob } from './useExpandableBlob'
 
 // --- Patch parsing ---
 
@@ -165,13 +166,13 @@ function toSplitRows(lines: DiffLine[]): SplitRow[] {
 
 // --- Display lines: splice in expanded context, drop collapsed hunks ---
 
-interface DisplayOptions {
+export interface DisplayOptions {
   expandedNewLines: Set<number> | undefined
   blobLines: string[] | null
   collapsedHunks: Set<number>
 }
 
-function buildDisplayLines(parsed: DiffLine[], opts: DisplayOptions): DiffLine[] {
+export function buildDisplayLines(parsed: DiffLine[], opts: DisplayOptions): DiffLine[] {
   const out: DiffLine[] = []
   const { expandedNewLines, blobLines, collapsedHunks } = opts
 
@@ -232,19 +233,44 @@ function buildDisplayLines(parsed: DiffLine[], opts: DisplayOptions): DiffLine[]
 }
 
 // --- Styles ---
+//
+// GitHub-inspired diff layout. Each line is composed of three visual zones:
+//   1. Gutter (line-number columns + add-comment "+") — slightly more
+//      saturated than the body so it reads as a sidebar.
+//   2. Indicator (the +/- column) — strongest tint so the eye can scan it.
+//   3. Body (the code) — softest tint, just enough to mark the row.
+// Context rows are completely untinted to keep the eye on the actual change.
 
-const LINE_STYLES: Record<string, string> = {
-  header: 'text-text-muted bg-bg-tertiary',
-  hunk: 'text-accent bg-accent/5',
+const ROW_BODY: Record<string, string> = {
+  header: 'bg-bg-tertiary text-text-muted',
+  hunk: 'bg-accent/8 text-accent',
   context: '',
-  add: 'bg-success/10',
-  delete: 'bg-danger/10',
+  add: 'bg-success/8',
+  delete: 'bg-danger/8',
   expander: 'bg-bg-tertiary',
 }
 
-const INDICATOR_STYLES: Record<string, string> = {
-  add: 'text-success',
-  delete: 'text-danger',
+const ROW_GUTTER: Record<string, string> = {
+  add: 'bg-success/15 text-success/70',
+  delete: 'bg-danger/15 text-danger/70',
+  context: 'text-text-muted/60',
+  hunk: 'bg-accent/15 text-accent',
+  header: 'text-text-muted/60',
+  expander: '',
+}
+
+const ROW_INDICATOR: Record<string, string> = {
+  add: 'bg-success/20 text-success',
+  delete: 'bg-danger/20 text-danger',
+  context: '',
+  hunk: '',
+  header: '',
+  expander: '',
+}
+
+const INDICATOR_GLYPH: Record<string, string> = {
+  add: '+',
+  delete: '−',
 }
 
 // --- Highlighted code rendering ---
@@ -464,52 +490,61 @@ function ExpanderRow({ meta, onExpand, enabled }: ExpanderRowProps) {
     ? `Show ${gap} unchanged ${gap === 1 ? 'line' : 'lines'}`
     : 'Show more lines below'
 
-  const baseBtn =
-    'flex items-center justify-center gap-1 text-text-muted hover:text-accent disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent rounded'
+  const btn =
+    'flex items-center justify-center text-text-muted hover:text-accent hover:bg-accent/10 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent rounded'
 
   return (
     <div
-      className="flex items-center px-2 leading-5 bg-bg-tertiary border-y border-border text-[10px] text-text-muted select-none"
+      className="flex items-stretch leading-5 bg-accent/5 border-y border-border text-[10px] text-text-muted select-none"
       style={{ minHeight: 24 }}
       title={enabled ? label : 'Loading file content needed to expand context…'}
+      data-expander-row="true"
     >
-      <div className="flex items-center gap-1 mr-3">
+      <div className="flex items-center w-[80px] shrink-0 border-r border-border/40 bg-accent/10">
         {hasUpper && (
           <button
-            className={baseBtn}
-            style={{ padding: '2px 6px' }}
+            className={`${btn} flex-1 h-full`}
             disabled={!enabled}
             onClick={() => onExpand('up', meta)}
             aria-label="Expand 20 lines up"
             title="Expand 20 lines up"
+            data-expand-direction="up"
           >
-            ↑ 20
+            ↑20
           </button>
         )}
         <button
-          className={baseBtn}
-          style={{ padding: '2px 6px' }}
+          className={`${btn} flex-1 h-full`}
           disabled={!enabled}
           onClick={() => onExpand('down', meta)}
           aria-label="Expand 20 lines down"
           title="Expand 20 lines down"
+          data-expand-direction="down"
         >
-          ↓ 20
+          ↓20
         </button>
         {hasUpper && (
           <button
-            className={baseBtn}
-            style={{ padding: '2px 6px' }}
+            className={`${btn} flex-1 h-full`}
             disabled={!enabled}
             onClick={() => onExpand('all', meta)}
             aria-label="Expand all unchanged lines"
             title="Expand all unchanged lines"
+            data-expand-direction="all"
           >
-            ⇕ all
+            ⇕
           </button>
         )}
       </div>
-      <span className="truncate">{label}</span>
+      <button
+        type="button"
+        className="flex-1 flex items-center px-3 truncate text-left hover:text-accent disabled:cursor-not-allowed"
+        disabled={!enabled}
+        onClick={() => onExpand(hasUpper ? 'all' : 'down', meta)}
+        title={label}
+      >
+        {label}
+      </button>
     </div>
   )
 }
@@ -623,38 +658,47 @@ function UnifiedView({
         const showForm = commentRange && lineNum === commentRange.endLine && commentRange.side === side
         const isCollapsed = isHunkRow && line.hunkId != null && collapsedHunks.has(line.hunkId)
 
+        const bodyTint = ROW_BODY[line.type] ?? ''
+        const gutterTint = ROW_GUTTER[line.type] ?? ''
+        const indicatorTint = ROW_INDICATOR[line.type] ?? ''
+
         return (
           <div
             key={i}
             ref={virtualizer.measureElement}
             data-index={i}
+            data-line-type={line.type}
+            data-old-line={line.oldLine ?? undefined}
+            data-new-line={line.newLine ?? undefined}
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
           >
             <div
-              className={`group flex px-2 leading-5 ${LINE_STYLES[line.type] || ''} ${highlighted ? 'bg-accent/15' : ''} ${isHunkRow ? 'cursor-pointer hover:bg-accent/10' : ''}`}
+              className={`group flex leading-5 ${highlighted ? 'bg-accent/15' : ''} ${isHunkRow ? 'cursor-pointer hover:bg-accent/15' : ''}`}
               onMouseEnter={() => lineNum != null && extendDrag(lineNum, side)}
               onClick={isHunkRow && line.hunkId != null ? () => onToggleHunk(line.hunkId!) : undefined}
               title={isHunkRow ? (isCollapsed ? 'Expand hunk' : 'Collapse hunk') : undefined}
             >
-              {isHunkRow ? (
-                <span className="w-5 shrink-0 text-text-muted text-center select-none">
-                  {isCollapsed ? '▸' : '▾'}
+              <span className={`flex shrink-0 ${gutterTint}`}>
+                {isHunkRow ? (
+                  <span className="w-5 text-center select-none">
+                    {isCollapsed ? '▸' : '▾'}
+                  </span>
+                ) : canComment ? (
+                  <GutterButton lineNum={lineNum!} side={side} rangePos={rangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
+                ) : (
+                  <span className="w-5" />
+                )}
+                <span className="w-10 text-right select-none pr-2 tabular-nums">
+                  {line.oldLine ?? ''}
                 </span>
-              ) : canComment ? (
-                <GutterButton lineNum={lineNum!} side={side} rangePos={rangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
-              ) : (
-                <span className="w-5 shrink-0" />
-              )}
-              <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
-                {line.oldLine ?? ''}
+                <span className="w-10 text-right select-none pr-2 tabular-nums border-r border-border/40">
+                  {line.newLine ?? ''}
+                </span>
               </span>
-              <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
-                {line.newLine ?? ''}
+              <span className={`w-5 text-center select-none shrink-0 ${indicatorTint}`}>
+                {INDICATOR_GLYPH[line.type] || ''}
               </span>
-              <span className={`w-4 text-center select-none shrink-0 ${INDICATOR_STYLES[line.type] || ''}`}>
-                {line.type === 'add' ? '+' : line.type === 'delete' ? '-' : ''}
-              </span>
-              <pre className="flex-1 whitespace-pre-wrap break-all">
+              <pre className={`flex-1 whitespace-pre-wrap break-all pl-2 pr-2 ${bodyTint}`}>
                 <HighlightedCode tokens={tokenMap?.get(i)} fallback={line.content} />
               </pre>
             </div>
@@ -704,10 +748,21 @@ function SplitView({
     return map
   }, [lines])
 
-  const cellStyle = (line: DiffLine | null, highlighted: boolean) => {
+  const cellBodyClass = (line: DiffLine | null, highlighted: boolean) => {
     if (highlighted) return 'bg-accent/15'
     if (!line) return 'bg-bg-tertiary/30'
-    return LINE_STYLES[line.type] || ''
+    return ROW_BODY[line.type] || ''
+  }
+
+  const cellGutterClass = (line: DiffLine | null, highlighted: boolean) => {
+    if (highlighted) return 'bg-accent/20 text-accent'
+    if (!line) return 'bg-bg-tertiary/30'
+    return ROW_GUTTER[line.type] || ''
+  }
+
+  const cellIndicatorClass = (line: DiffLine | null) => {
+    if (!line) return ''
+    return ROW_INDICATOR[line.type] || ''
   }
 
   const virtualizer = useVirtualizer({
@@ -759,11 +814,18 @@ function SplitView({
         const showLeftForm = commentRange && commentRange.side === 'LEFT' && leftLineNum === commentRange.endLine
         const showRightForm = commentRange && commentRange.side === 'RIGHT' && rightLineNum === commentRange.endLine
 
+        // The row's "type" for testing is whatever is shown on either side —
+        // adds appear on the right, deletes on the left, contexts/hunks on both.
+        const rowType = row.right?.type ?? row.left?.type ?? ''
+
         return (
           <div
             key={i}
             ref={virtualizer.measureElement}
             data-index={i}
+            data-line-type={rowType || undefined}
+            data-old-line={row.left?.oldLine ?? undefined}
+            data-new-line={row.right?.newLine ?? undefined}
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
           >
             <div
@@ -772,25 +834,27 @@ function SplitView({
               title={isHunkRow ? (isCollapsed ? 'Expand hunk' : 'Collapse hunk') : undefined}
             >
               <div
-                className={`flex w-1/2 border-r border-border px-2 ${cellStyle(row.left, leftHighlighted)} ${isHunkRow ? 'hover:bg-accent/10' : ''}`}
+                className={`flex w-1/2 border-r border-border ${isHunkRow ? 'hover:bg-accent/15' : ''}`}
                 onMouseEnter={() => leftLineNum != null && extendDrag(leftLineNum, 'LEFT')}
               >
-                {isHunkRow ? (
-                  <span className="w-5 shrink-0 text-text-muted text-center select-none">
-                    {isCollapsed ? '▸' : '▾'}
+                <span className={`flex shrink-0 ${cellGutterClass(row.left, leftHighlighted)}`}>
+                  {isHunkRow ? (
+                    <span className="w-5 text-center select-none">
+                      {isCollapsed ? '▸' : '▾'}
+                    </span>
+                  ) : canCommentLeft ? (
+                    <GutterButton lineNum={leftLineNum!} side="LEFT" rangePos={leftRangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
+                  ) : (
+                    <span className="w-5" />
+                  )}
+                  <span className="w-10 text-right select-none pr-2 tabular-nums border-r border-border/40">
+                    {row.left?.oldLine ?? ''}
                   </span>
-                ) : canCommentLeft ? (
-                  <GutterButton lineNum={leftLineNum!} side="LEFT" rangePos={leftRangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
-                ) : (
-                  <span className="w-5 shrink-0" />
-                )}
-                <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
-                  {row.left?.oldLine ?? ''}
                 </span>
-                <span className={`w-4 text-center select-none shrink-0 ${row.left ? INDICATOR_STYLES[row.left.type] || '' : ''}`}>
-                  {row.left?.type === 'delete' ? '-' : ''}
+                <span className={`w-5 text-center select-none shrink-0 ${cellIndicatorClass(row.left)}`}>
+                  {row.left?.type === 'delete' ? '−' : ''}
                 </span>
-                <pre className="flex-1 whitespace-pre-wrap break-all">
+                <pre className={`flex-1 whitespace-pre-wrap break-all pl-2 pr-2 ${cellBodyClass(row.left, leftHighlighted)}`}>
                   <HighlightedCode
                     tokens={row.left ? tokenMap?.get(lineToIndex.get(row.left)!) : undefined}
                     fallback={row.left?.content ?? ''}
@@ -798,23 +862,25 @@ function SplitView({
                 </pre>
               </div>
               <div
-                className={`flex w-1/2 px-2 ${cellStyle(row.right, rightHighlighted)} ${isHunkRow ? 'hover:bg-accent/10' : ''}`}
+                className={`flex w-1/2 ${isHunkRow ? 'hover:bg-accent/15' : ''}`}
                 onMouseEnter={() => rightLineNum != null && extendDrag(rightLineNum, 'RIGHT')}
               >
-                {isHunkRow ? (
-                  <span className="w-5 shrink-0" />
-                ) : canCommentRight ? (
-                  <GutterButton lineNum={rightLineNum!} side="RIGHT" rangePos={rightRangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
-                ) : (
-                  <span className="w-5 shrink-0" />
-                )}
-                <span className="w-10 text-right text-text-muted/50 select-none pr-2 shrink-0">
-                  {row.right?.newLine ?? ''}
+                <span className={`flex shrink-0 ${cellGutterClass(row.right, rightHighlighted)}`}>
+                  {isHunkRow ? (
+                    <span className="w-5" />
+                  ) : canCommentRight ? (
+                    <GutterButton lineNum={rightLineNum!} side="RIGHT" rangePos={rightRangePos} onMouseDown={startDrag} onMouseEnter={extendDrag} />
+                  ) : (
+                    <span className="w-5" />
+                  )}
+                  <span className="w-10 text-right select-none pr-2 tabular-nums border-r border-border/40">
+                    {row.right?.newLine ?? ''}
+                  </span>
                 </span>
-                <span className={`w-4 text-center select-none shrink-0 ${row.right ? INDICATOR_STYLES[row.right.type] || '' : ''}`}>
+                <span className={`w-5 text-center select-none shrink-0 ${cellIndicatorClass(row.right)}`}>
                   {row.right?.type === 'add' ? '+' : ''}
                 </span>
-                <pre className="flex-1 whitespace-pre-wrap break-all">
+                <pre className={`flex-1 whitespace-pre-wrap break-all pl-2 pr-2 ${cellBodyClass(row.right, rightHighlighted)}`}>
                   <HighlightedCode
                     tokens={row.right ? tokenMap?.get(lineToIndex.get(row.right)!) : undefined}
                     fallback={row.right?.content ?? ''}
@@ -931,11 +997,19 @@ export function DiffViewer({ repoPath }: { repoPath?: string }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const parsedLines = useMemo(() => (filePatch ? parsePatch(filePatch) : []), [filePatch])
   const [collapsedHunks, setCollapsedHunks] = useState<Set<number>>(new Set())
+
+  // Lazily fetch the file contents that back "Show N unchanged lines" expansions.
+  const { blobLines, expandedNewLines, handleExpand } = useExpandableBlob({
+    repoPath: repoPath ?? null,
+    filePath: selectedFilePath,
+    commitHash: selectedCommitHash,
+  })
+
   const displayLines = useMemo(
-    () => buildDisplayLines(parsedLines, { expandedNewLines: undefined, blobLines: null, collapsedHunks }),
-    [parsedLines, collapsedHunks]
+    () => buildDisplayLines(parsedLines, { expandedNewLines, blobLines, collapsedHunks }),
+    [parsedLines, expandedNewLines, blobLines, collapsedHunks]
   )
-  const tokenMap = useDiffHighlighting(displayLines, selectedFilePath)
+  const tokenMap = useDiffHighlighting(displayLines, selectedFilePath, blobLines)
   const onToggleHunk = useCallback((id: number) => {
     setCollapsedHunks((prev) => {
       const next = new Set(prev)
@@ -1003,6 +1077,8 @@ export function DiffViewer({ repoPath }: { repoPath?: string }) {
               threads={[]}
               filePath={null}
               tokenMap={tokenMap}
+              onExpand={handleExpand}
+              expandEnabled={true}
               collapsedHunks={collapsedHunks}
               onToggleHunk={onToggleHunk}
               scrollContainerRef={scrollRef}
@@ -1014,6 +1090,8 @@ export function DiffViewer({ repoPath }: { repoPath?: string }) {
               threads={[]}
               filePath={null}
               tokenMap={tokenMap}
+              onExpand={handleExpand}
+              expandEnabled={true}
               collapsedHunks={collapsedHunks}
               onToggleHunk={onToggleHunk}
               scrollContainerRef={scrollRef}
@@ -1074,7 +1152,7 @@ export function PRDiffViewer({
     [parsedLines, expandedNewLines, blobLines, collapsedHunks]
   )
 
-  const tokenMap = useDiffHighlighting(displayLines, filePath)
+  const tokenMap = useDiffHighlighting(displayLines, filePath, blobLines ?? null)
 
   const onToggleHunk = useCallback((id: number) => {
     setCollapsedHunks((prev) => {
