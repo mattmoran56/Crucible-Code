@@ -443,3 +443,105 @@ export interface UsageLimitEvent {
   sessionId: string
   resetsAt: number           // unix seconds, mirrors RateLimitWindow.resetsAt
 }
+
+// Notion task integration ────────────────────────────────────────────────────
+
+export type NotionPropertyType =
+  | 'select'
+  | 'status'
+  | 'checkbox'
+  | 'rich_text'
+  | 'title'
+  | 'number'
+  | 'date'
+  | 'url'
+  | 'people'
+  | 'multi_select'
+
+export type NotionFilterOperator =
+  | 'equals'
+  | 'does_not_equal'
+  | 'contains'
+  | 'does_not_contain'
+  | 'is_empty'
+  | 'is_not_empty'
+
+export interface NotionPropertyFilter {
+  property: string
+  type: NotionPropertyType
+  operator: NotionFilterOperator
+  // Omitted for is_empty / is_not_empty.
+  value?: string | number | boolean
+}
+
+export interface NotionPropertyUpdate {
+  property: string
+  type: NotionPropertyType
+  // Supports placeholders: {{branch}}, {{sessionId}}, {{taskUrl}}, {{taskTitle}}, {{taskId}}, {{taskTitleSlug}}
+  value: string
+}
+
+export interface NotionIntegrationConfig {
+  enabled: boolean
+  apiToken: string
+  databaseId: string
+  // Empty array = no filter (every row in the DB).
+  filters: NotionPropertyFilter[]
+  // Updates applied on pickup. Splits into two passes inside the service: ones
+  // that don't reference {{branch}}/{{sessionId}} run immediately (so the next
+  // poll tick won't re-fire the page), the rest run after the renderer creates
+  // the session and calls applyWriteBack.
+  pickupUpdates: NotionPropertyUpdate[]
+  // Optional markdown appended as paragraph blocks to the page on pickup. Runs
+  // in the second (post-session) pass so {{branch}}/{{sessionId}} can be used.
+  pickupAppendMarkdown?: string
+  // Startup prompt typed into the new Claude terminal. Supports the same
+  // placeholders as pickupUpdates.
+  startupPromptTemplate: string
+  // Defaults to whichever property is type 'title' in the DB schema.
+  titlePropertyName?: string
+  // Defaults to "notion/{{taskTitleSlug}}".
+  branchNameTemplate?: string
+}
+
+export interface NotionDatabasePropertyOption {
+  id: string
+  name: string
+  color?: string
+}
+
+export interface NotionDatabaseProperty {
+  name: string
+  type: NotionPropertyType | string
+  // Populated for 'select', 'status', 'multi_select'.
+  options?: NotionDatabasePropertyOption[]
+}
+
+export interface NotionDatabaseSchema {
+  id: string
+  title: string
+  titlePropertyName: string
+  properties: NotionDatabaseProperty[]
+}
+
+export interface NotionTaskPayload {
+  id: string
+  url: string
+  title: string
+  // Raw properties for placeholder resolution and UI display.
+  rawProperties: Record<string, unknown>
+}
+
+export interface NotionFireTaskPayload {
+  projectId: string
+  page: NotionTaskPayload
+  resolvedStartupPrompt: string
+  suggestedBranchName: string
+  suggestedSessionName: string
+}
+
+export interface NotionTestConnectionResult {
+  ok: boolean
+  taskCount?: number
+  error?: string
+}

@@ -194,4 +194,14 @@ export const IPC = {
   // queued-fire context). Auto-restart kicks in after claude consumes the
   // heredoc and exits, putting the user back into `claude --resume`.
   SCHEDULER_SPAWN_AGENT_WITH_PROMPT: 'scheduler:spawn-agent-with-prompt',
+
+  // Notion task integration (per-project)
+  NOTION_CONFIG_LOAD: 'notion:config:load',
+  NOTION_CONFIG_SAVE: 'notion:config:save',
+  NOTION_TEST_CONNECTION: 'notion:test-connection',
+  NOTION_GET_DATABASE_SCHEMA: 'notion:get-database-schema',
+  NOTION_APPLY_WRITE_BACK: 'notion:apply-write-back',
+  NOTION_CLEAR_PICKED_UP: 'notion:clear-picked-up',
+  NOTION_GET_CONFIG_PATH: 'notion:get-config-path',
+  NOTION_FIRE_TASK: 'notion:fire-task',
 } as const

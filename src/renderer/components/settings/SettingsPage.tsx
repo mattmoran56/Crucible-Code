@@ -14,6 +14,7 @@ import { ButtonSettings } from './ButtonSettings'
 import { PRListDisplaySettings } from './PRListDisplaySettings'
 import { StartupPromptSettings } from './StartupPromptSettings'
 import { ReviewLoopSettings } from './ReviewLoopSettings'
+import { NotionIntegrationSettings } from './NotionIntegrationSettings'
 
 const LIGHT_THEMES = THEMES.filter((t) => !t.isDark)
 const DARK_THEMES = THEMES.filter((t) => t.isDark)
@@ -863,6 +864,8 @@ export function SettingsPage() {
           <PRListDisplaySettings projects={projects} />
 
           <StartupPromptSettings projects={projects} />
+
+          <NotionIntegrationSettings projects={projects} />
 
           <ReviewLoopSettings projects={projects} />
 
