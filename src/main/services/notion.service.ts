@@ -6,6 +6,7 @@ import type {
   NotionPropertyUpdate,
   NotionRelationOption,
   NotionTaskPayload,
+  NotionUser,
 } from '../../shared/types'
 
 const NOTION_VERSION = '2022-06-28'
@@ -124,6 +125,30 @@ function buildSingleFilter(f: NotionPropertyFilter): Record<string, unknown> | n
     base.relation = { [op]: f.value }
     return base
   }
+  // Formula / rollup filter: Notion expects
+  //   `{ property, <kind>: { <resultType>: { <op>: value } } }`
+  // where <kind> is 'formula' or 'rollup'. The result type is captured on the
+  // filter when the user picked the property (via the sample-page lookup in
+  // getDatabaseSchema, since GET /databases doesn't return it).
+  if ((f.type === 'formula' || f.type === 'rollup') && f.formulaResultType) {
+    const rt = f.formulaResultType
+    let coerced: string | number | boolean = f.value as string | number | boolean
+    if (rt === 'boolean') coerced = coerced === true || coerced === 'true' || coerced === '1'
+    else if (rt === 'number') coerced = typeof coerced === 'number' ? coerced : Number(coerced)
+    base[f.type] = { [rt]: { [f.operator]: coerced } }
+    return base
+  }
+  // people only supports contains / does_not_contain — coerce equals.
+  if (f.type === 'people') {
+    const op =
+      f.operator === 'equals' || f.operator === 'contains'
+        ? 'contains'
+        : f.operator === 'does_not_equal' || f.operator === 'does_not_contain'
+          ? 'does_not_contain'
+          : f.operator
+    base.people = { [op]: f.value }
+    return base
+  }
   // multi_select doesn't support equals — coerce to contains.
   if (f.type === 'multi_select') {
     const op =
@@ -144,6 +169,81 @@ function buildFilterJson(filters: NotionPropertyFilter[]): Record<string, unknow
   if (valid.length === 0) return undefined
   if (valid.length === 1) return valid[0]
   return { and: valid }
+}
+
+// A sentinel indicating that a relation sub-filter resolved to zero matching
+// pages — meaning the outer query should also return zero results without
+// hitting the API.
+const SHORT_CIRCUIT_EMPTY = Symbol('short-circuit-empty')
+
+// Resolve any relation sub-filters into concrete `or`-of-relation.contains
+// clauses by querying the related database first. Returns either:
+//   - the symbol SHORT_CIRCUIT_EMPTY (no related pages matched → outer query
+//     definitely has no results)
+//   - an array of Notion filter clauses ready to be combined with `and`
+async function materializeFilters(
+  token: string,
+  filters: NotionPropertyFilter[]
+): Promise<Record<string, unknown>[] | typeof SHORT_CIRCUIT_EMPTY> {
+  const out: Record<string, unknown>[] = []
+  for (const f of filters) {
+    if (f.type === 'relation' && f.subFilter && f.relationDatabaseId) {
+      const inner = await materializeFilters(token, [f.subFilter])
+      if (inner === SHORT_CIRCUIT_EMPTY) return SHORT_CIRCUIT_EMPTY
+      const innerFilter =
+        inner.length === 0 ? undefined : inner.length === 1 ? inner[0] : { and: inner }
+      // Fetch matching pages in the related DB. Cap at 100 — if the user has
+      // hundreds of matching related rows, the `or` group would balloon and
+      // Notion would likely reject it; better to fail loudly than silently
+      // truncate, so we throw if we hit the cap.
+      const pages = await queryRawPages(token, f.relationDatabaseId, innerFilter, 100)
+      if (pages.length === 0) return SHORT_CIRCUIT_EMPTY
+      if (pages.length >= 100) {
+        throw new Error(
+          `Relation sub-filter on property "${f.property}" matched ≥100 related rows. Tighten the inner filter so the result set is smaller.`
+        )
+      }
+      const orChildren = pages.map((p) => ({
+        property: f.property,
+        relation: { contains: p.id },
+      }))
+      if (orChildren.length === 1) out.push(orChildren[0])
+      else out.push({ or: orChildren })
+      continue
+    }
+    const j = buildSingleFilter(f)
+    if (j) out.push(j)
+  }
+  return out
+}
+
+// Bare query helper that returns just `{ id }[]` for the related-DB lookup
+// step. Doesn't paginate beyond `limit` — caller chooses the cap.
+async function queryRawPages(
+  token: string,
+  databaseId: string,
+  filter: Record<string, unknown> | undefined,
+  limit: number
+): Promise<{ id: string }[]> {
+  const dbId = normalizeDatabaseId(databaseId)
+  const body: Record<string, unknown> = { page_size: Math.min(100, limit) }
+  if (filter) body.filter = filter
+  const out: { id: string }[] = []
+  let cursor: string | undefined
+  while (out.length < limit) {
+    if (cursor) body.start_cursor = cursor
+    const res = (await notionFetch(token, `/databases/${dbId}/query`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })) as { results: { id: string }[]; has_more?: boolean; next_cursor?: string | null }
+    for (const r of res.results ?? []) {
+      out.push({ id: r.id })
+      if (out.length >= limit) break
+    }
+    if (!res.has_more || !res.next_cursor) break
+    cursor = res.next_cursor
+  }
+  return out
 }
 
 // ── Page property extraction ────────────────────────────────────────────────
@@ -198,7 +298,14 @@ export async function queryDatabase(
   filters: NotionPropertyFilter[],
   titlePropertyName?: string
 ): Promise<NotionTaskPayload[]> {
-  const filter = buildFilterJson(filters)
+  const materialized = await materializeFilters(token, filters)
+  if (materialized === SHORT_CIRCUIT_EMPTY) return []
+  const filter =
+    materialized.length === 0
+      ? undefined
+      : materialized.length === 1
+        ? materialized[0]
+        : { and: materialized }
   const dbId = normalizeDatabaseId(databaseId)
   const body: Record<string, unknown> = { page_size: 100 }
   if (filter) body.filter = filter
@@ -232,6 +339,7 @@ export async function getDatabaseSchema(
       status?: { options?: NotionDatabasePropertyOption[] }
       multi_select?: { options?: NotionDatabasePropertyOption[] }
       relation?: { database_id?: string }
+      formula?: { type?: 'boolean' | 'number' | 'date' | 'string' }
     }>
   }
   const titleText = (res.title ?? []).map((s) => s.plain_text ?? '').join('') || dbId
@@ -249,8 +357,56 @@ export async function getDatabaseSchema(
             ? prop.multi_select?.options
             : undefined
     const relationDatabaseId = type === 'relation' ? prop.relation?.database_id : undefined
-    properties.push({ name, type, options, relationDatabaseId })
+    const formulaResultType = type === 'formula' ? prop.formula?.type : undefined
+    properties.push({ name, type, options, relationDatabaseId, formulaResultType })
   }
+  // Notion's GET /databases endpoint no longer returns the result type for
+  // formula (or rollup) properties — only the expression. The result type is
+  // visible per-page when reading a property value. To populate
+  // formulaResultType, we query a single page and look up each formula's
+  // computed type. (We can't reliably know the result type without this — the
+  // UI needs it to pick the right value input widget.)
+  const needsSamplePage = properties.some(
+    (p) => (p.type === 'formula' || p.type === 'rollup') && !p.formulaResultType
+  )
+  if (needsSamplePage) {
+    try {
+      const sample = (await notionFetch(token, `/databases/${dbId}/query`, {
+        method: 'POST',
+        body: JSON.stringify({ page_size: 1 }),
+      })) as { results?: Array<{ properties?: Record<string, { type: string; formula?: { type?: string }; rollup?: { type?: string } }> }> }
+      const samplePage = sample.results?.[0]
+      const sampleProps = samplePage?.properties ?? {}
+      for (const p of properties) {
+        if (p.formulaResultType) continue
+        const sp = sampleProps[p.name]
+        if (!sp) continue
+        if (p.type === 'formula' && sp.formula?.type) {
+          p.formulaResultType = sp.formula.type as 'boolean' | 'number' | 'date' | 'string'
+        } else if (p.type === 'rollup' && sp.rollup?.type) {
+          // We reuse the same field for rollup — Notion's rollup result types
+          // overlap with formula's enough that the UI / filter shape can
+          // share the handling. ('array' isn't a primitive value type, so
+          // those rollups still fall through to the free-text input.)
+          const rt = sp.rollup.type
+          if (rt === 'boolean' || rt === 'number' || rt === 'date') {
+            p.formulaResultType = rt
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[notion-schema] sample-page lookup for formula/rollup types failed', err)
+    }
+  }
+  console.log(
+    `[notion-schema] db=${dbId} title="${titleText}" properties=`,
+    properties.map((p) => ({
+      name: p.name,
+      type: p.type,
+      relationDatabaseId: p.relationDatabaseId,
+      formulaResultType: p.formulaResultType,
+    }))
+  )
   return {
     id: res.id,
     title: titleText,
@@ -276,6 +432,27 @@ export async function listRelationOptions(
     })) as { results: Record<string, unknown>[]; has_more?: boolean; next_cursor?: string | null }
     for (const r of res.results ?? []) {
       out.push({ id: String(r.id ?? ''), title: extractTitleFromPage(r) || String(r.id ?? '') })
+    }
+    if (!res.has_more || !res.next_cursor) break
+    cursor = res.next_cursor
+  }
+  return out
+}
+
+export async function listUsers(token: string): Promise<NotionUser[]> {
+  const out: NotionUser[] = []
+  let cursor: string | undefined
+  for (let i = 0; i < 10; i++) {
+    const path = cursor ? `/users?start_cursor=${encodeURIComponent(cursor)}&page_size=100` : `/users?page_size=100`
+    const res = (await notionFetch(token, path)) as {
+      results: Array<{ id: string; type?: string; name?: string; avatar_url?: string }>
+      has_more?: boolean
+      next_cursor?: string | null
+    }
+    for (const u of res.results ?? []) {
+      // Skip the workspace bot user — only show real people.
+      if (u.type === 'bot') continue
+      out.push({ id: u.id, name: u.name ?? u.id, avatarUrl: u.avatar_url })
     }
     if (!res.has_more || !res.next_cursor) break
     cursor = res.next_cursor

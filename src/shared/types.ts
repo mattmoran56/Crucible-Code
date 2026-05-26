@@ -458,6 +458,8 @@ export type NotionPropertyType =
   | 'people'
   | 'multi_select'
   | 'relation'
+  | 'formula'
+  | 'rollup'
 
 export type NotionFilterOperator =
   | 'equals'
@@ -473,6 +475,17 @@ export interface NotionPropertyFilter {
   operator: NotionFilterOperator
   // Omitted for is_empty / is_not_empty.
   value?: string | number | boolean
+  // For type='relation', either pick a single related page by id (set `value`)
+  // OR filter by a property on the related page (set `relationDatabaseId` and
+  // `subFilter`). When `subFilter` is present, the poller resolves it at query
+  // time by first querying the related DB for matching page ids, then
+  // expanding the outer filter into an `or` of relation.contains over each id.
+  // Notion's API doesn't support this natively — it's resolved client-side.
+  relationDatabaseId?: string
+  subFilter?: NotionPropertyFilter
+  // For type='formula', the result type of the formula (e.g. 'boolean'). Notion
+  // formula filters nest the operator under this — see NotionDatabaseProperty.
+  formulaResultType?: 'boolean' | 'number' | 'date' | 'string'
 }
 
 export interface NotionPropertyUpdate {
@@ -518,11 +531,21 @@ export interface NotionDatabaseProperty {
   options?: NotionDatabasePropertyOption[]
   // Populated for 'relation' — id of the related database.
   relationDatabaseId?: string
+  // Populated for 'formula' — the computed result type. Filtering by a formula
+  // in Notion requires nesting the operator under this type (e.g. for a
+  // boolean formula: `{ formula: { boolean: { equals: true } } }`).
+  formulaResultType?: 'boolean' | 'number' | 'date' | 'string'
 }
 
 export interface NotionRelationOption {
   id: string
   title: string
+}
+
+export interface NotionUser {
+  id: string
+  name: string
+  avatarUrl?: string
 }
 
 export interface NotionDatabaseSchema {

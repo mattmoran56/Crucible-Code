@@ -201,6 +201,7 @@ export const IPC = {
   NOTION_TEST_CONNECTION: 'notion:test-connection',
   NOTION_GET_DATABASE_SCHEMA: 'notion:get-database-schema',
   NOTION_LIST_RELATION_OPTIONS: 'notion:list-relation-options',
+  NOTION_LIST_USERS: 'notion:list-users',
   NOTION_APPLY_WRITE_BACK: 'notion:apply-write-back',
   NOTION_CLEAR_PICKED_UP: 'notion:clear-picked-up',
   NOTION_GET_CONFIG_PATH: 'notion:get-config-path',

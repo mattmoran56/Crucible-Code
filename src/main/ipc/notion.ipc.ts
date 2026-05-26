@@ -6,6 +6,7 @@ import type {
   NotionRelationOption,
   NotionTaskPayload,
   NotionTestConnectionResult,
+  NotionUser,
 } from '../../shared/types'
 import {
   applyWriteBack,
@@ -17,7 +18,7 @@ import {
   startNotionPoller,
   stopNotionPoller,
 } from '../services/notion-poller.service'
-import { getDatabaseSchema, listRelationOptions, queryDatabase } from '../services/notion.service'
+import { getDatabaseSchema, listRelationOptions, listUsers, queryDatabase } from '../services/notion.service'
 
 export function registerNotionHandlers(window: BrowserWindow): void {
   startNotionPoller(window)
@@ -71,6 +72,13 @@ export function registerNotionHandlers(window: BrowserWindow): void {
     IPC.NOTION_LIST_RELATION_OPTIONS,
     async (_e, token: string, databaseId: string): Promise<NotionRelationOption[]> => {
       return listRelationOptions(token, databaseId)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.NOTION_LIST_USERS,
+    async (_e, token: string): Promise<NotionUser[]> => {
+      return listUsers(token)
     }
   )
 

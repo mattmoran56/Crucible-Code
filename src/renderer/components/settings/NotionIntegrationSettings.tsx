@@ -7,6 +7,7 @@ import type {
   NotionPropertyType,
   NotionPropertyUpdate,
   NotionRelationOption,
+  NotionUser,
   Project,
 } from '../../../shared/types'
 import { Button } from '../ui/Button'
@@ -351,8 +352,11 @@ function FilterEditor({ schema, apiToken, filters, onChange }: FilterEditorProps
         {filters.length === 0 && (
           <p className="text-[10px] text-text-muted italic">No filter — every row in the database is picked up.</p>
         )}
-        {filters.map((f, i) => (
-          <div key={i} className="flex items-center gap-2">
+        {filters.map((f, i) => {
+          const isSubFilterMode = f.type === 'relation' && !!f.subFilter
+          return (
+          <div key={i} className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
             {propertyOptions.length > 0 ? (
               <select
                 value={f.property}
@@ -364,6 +368,13 @@ function FilterEditor({ schema, apiToken, filters, onChange }: FilterEditorProps
                     property: e.target.value,
                     type: nextType,
                     operator: allowed.has(f.operator) ? f.operator : defaultOperatorForType(nextType),
+                    // Track the related DB id so the service can resolve sub-filters.
+                    relationDatabaseId: nextType === 'relation' ? prop?.relationDatabaseId : undefined,
+                    formulaResultType:
+                      nextType === 'formula' || nextType === 'rollup' ? prop?.formulaResultType : undefined,
+                    // Reset stale sub-filter / value when switching properties.
+                    subFilter: undefined,
+                    value: '',
                   })
                 }}
                 className="flex-1 bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
@@ -400,23 +411,26 @@ function FilterEditor({ schema, apiToken, filters, onChange }: FilterEditorProps
                 </option>
               ))}
             </select>
-            <select
-              value={f.operator}
-              onChange={(e) => updateAt(i, { operator: e.target.value as NotionFilterOperator })}
-              className="bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
-            >
-              {FILTER_OPERATORS.map((op) => (
-                <option key={op.value} value={op.value}>
-                  {op.label}
-                </option>
-              ))}
-            </select>
-            {operatorNeedsValue(f.operator) && (
+            {!isSubFilterMode && (
+              <select
+                value={f.operator}
+                onChange={(e) => updateAt(i, { operator: e.target.value as NotionFilterOperator })}
+                className="bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+              >
+                {FILTER_OPERATORS.map((op) => (
+                  <option key={op.value} value={op.value}>
+                    {op.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {(isSubFilterMode || operatorNeedsValue(f.operator)) && (
               <FilterValueInput
                 schema={schema}
                 apiToken={apiToken}
                 filter={f}
                 onChange={(value) => updateAt(i, { value })}
+                onPatch={(patch) => updateAt(i, patch)}
               />
             )}
             <IconButton label="Remove" size="sm" variant="danger" onClick={() => remove(i)}>
@@ -426,7 +440,19 @@ function FilterEditor({ schema, apiToken, filters, onChange }: FilterEditorProps
               </svg>
             </IconButton>
           </div>
-        ))}
+          {isSubFilterMode && f.subFilter && f.relationDatabaseId && (
+            <div style={{ paddingLeft: 24 }}>
+              <SubFilterRow
+                apiToken={apiToken}
+                relatedDatabaseId={f.relationDatabaseId}
+                filter={f.subFilter}
+                onChange={(next) => updateAt(i, { subFilter: next })}
+              />
+            </div>
+          )}
+          </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -437,11 +463,13 @@ function FilterValueInput({
   apiToken,
   filter,
   onChange,
+  onPatch,
 }: {
   schema: NotionDatabaseSchema | undefined
   apiToken: string
   filter: NotionPropertyFilter
   onChange: (value: string | boolean | number) => void
+  onPatch: (patch: Partial<NotionPropertyFilter>) => void
 }) {
   const prop = schema?.properties.find((p) => p.name === filter.property)
   if (prop && (prop.type === 'select' || prop.type === 'status' || prop.type === 'multi_select') && prop.options) {
@@ -462,15 +490,21 @@ function FilterValueInput({
   }
   if (prop && prop.type === 'relation' && prop.relationDatabaseId) {
     return (
-      <RelationValueInput
+      <RelationValueOrSubFilter
         apiToken={apiToken}
         databaseId={prop.relationDatabaseId}
-        value={String(filter.value ?? '')}
-        onChange={onChange}
+        filter={filter}
+        onChangeValue={onChange}
+        onPatch={onPatch}
       />
     )
   }
-  if (filter.type === 'checkbox') {
+  if (prop && prop.type === 'people') {
+    return (
+      <PeopleValueInput apiToken={apiToken} value={String(filter.value ?? '')} onChange={onChange} />
+    )
+  }
+  if (filter.type === 'checkbox' || ((filter.type === 'formula' || filter.type === 'rollup') && filter.formulaResultType === 'boolean')) {
     return (
       <select
         value={String(filter.value ?? 'false')}
@@ -492,8 +526,279 @@ function FilterValueInput({
   )
 }
 
-// Cache so we don't refetch the same related-DB pages each render.
+// Cache so we don't refetch the same related-DB pages / schema each render.
 const relationOptionsCache = new Map<string, Promise<NotionRelationOption[]>>()
+const relationSchemaCache = new Map<string, Promise<NotionDatabaseSchema>>()
+
+function useRelatedSchema(apiToken: string, databaseId: string): NotionDatabaseSchema | null {
+  const [schema, setSchema] = useState<NotionDatabaseSchema | null>(null)
+  useEffect(() => {
+    if (!apiToken || !databaseId) return
+    const key = `${apiToken}:${databaseId}`
+    let cancelled = false
+    let promise = relationSchemaCache.get(key)
+    if (!promise) {
+      promise = window.api.notion.getDatabaseSchema(apiToken, databaseId)
+      relationSchemaCache.set(key, promise)
+    }
+    promise
+      .then((s) => {
+        if (!cancelled) setSchema(s)
+      })
+      .catch(() => {
+        relationSchemaCache.delete(key)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [apiToken, databaseId])
+  return schema
+}
+
+function RelationValueOrSubFilter({
+  apiToken,
+  databaseId,
+  filter,
+  onChangeValue,
+  onPatch,
+}: {
+  apiToken: string
+  databaseId: string
+  filter: NotionPropertyFilter
+  onChangeValue: (value: string) => void
+  onPatch: (patch: Partial<NotionPropertyFilter>) => void
+}) {
+  const mode: 'page' | 'sub' = filter.subFilter ? 'sub' : 'page'
+  const relatedSchema = useRelatedSchema(apiToken, databaseId)
+
+  const enterSubMode = () => {
+    const firstProp = relatedSchema?.properties[0]
+    const innerType = (firstProp?.type as NotionPropertyType) ?? 'rich_text'
+    onPatch({
+      value: '',
+      subFilter: {
+        property: firstProp?.name ?? '',
+        type: innerType,
+        operator: defaultOperatorForType(innerType),
+        value: '',
+      },
+    })
+  }
+  const exitSubMode = () => onPatch({ subFilter: undefined })
+
+  return (
+    <div className="flex items-center gap-2 flex-1">
+      <div className="flex border border-border rounded-md overflow-hidden text-[11px] shrink-0">
+        <button
+          type="button"
+          onClick={() => mode === 'sub' && exitSubMode()}
+          style={{ padding: '4px 10px' }}
+          className={`${mode === 'page' ? 'bg-accent text-bg' : 'bg-bg text-text-muted hover:text-text'}`}
+        >
+          page
+        </button>
+        <button
+          type="button"
+          onClick={() => mode === 'page' && enterSubMode()}
+          style={{ padding: '4px 10px' }}
+          className={`${mode === 'sub' ? 'bg-accent text-bg' : 'bg-bg text-text-muted hover:text-text'}`}
+        >
+          where
+        </button>
+      </div>
+      {mode === 'page' && (
+        <RelationValueInput
+          apiToken={apiToken}
+          databaseId={databaseId}
+          value={String(filter.value ?? '')}
+          onChange={onChangeValue}
+        />
+      )}
+    </div>
+  )
+}
+
+function SubFilterRow({
+  apiToken,
+  relatedDatabaseId,
+  filter,
+  onChange,
+}: {
+  apiToken: string
+  relatedDatabaseId: string
+  filter: NotionPropertyFilter
+  onChange: (filter: NotionPropertyFilter) => void
+}) {
+  const schema = useRelatedSchema(apiToken, relatedDatabaseId)
+  const propertyOptions = schema?.properties ?? []
+  const operatorNeedsValue = (op: NotionFilterOperator) =>
+    op !== 'is_empty' && op !== 'is_not_empty'
+  const patch = (p: Partial<NotionPropertyFilter>) => onChange({ ...filter, ...p })
+  const prop = propertyOptions.find((p) => p.name === filter.property)
+
+  // Race: if the user clicked `where` before the related schema loaded, the
+  // sub-filter is sitting with an empty property + default `rich_text` type.
+  // Once the schema arrives, snap to the first real property so the value
+  // input reflects the actual type (people / checkbox / select / etc).
+  useEffect(() => {
+    if (propertyOptions.length === 0) return
+    if (prop) return
+    const first = propertyOptions[0]
+    const firstType = (first.type as NotionPropertyType) ?? 'rich_text'
+    onChange({
+      ...filter,
+      property: first.name,
+      type: firstType,
+      operator: defaultOperatorForType(firstType),
+      value: '',
+      formulaResultType:
+        firstType === 'formula' || firstType === 'rollup' ? first.formulaResultType : undefined,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyOptions.length, prop?.name])
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-text-muted" style={{ minWidth: 40 }}>where</span>
+      {propertyOptions.length > 0 ? (
+        <select
+          value={filter.property}
+          onChange={(e) => {
+            const p = propertyOptions.find((x) => x.name === e.target.value)
+            const nextType = (p?.type as NotionPropertyType) ?? filter.type
+            patch({
+              property: e.target.value,
+              type: nextType,
+              operator: defaultOperatorForType(nextType),
+              value: '',
+              formulaResultType:
+                nextType === 'formula' || nextType === 'rollup' ? p?.formulaResultType : undefined,
+            })
+          }}
+          className="flex-1 bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+        >
+          {propertyOptions.map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className="text-[11px] text-text-muted italic">Loading related schema…</span>
+      )}
+      <select
+        value={filter.operator}
+        onChange={(e) => patch({ operator: e.target.value as NotionFilterOperator })}
+        className="bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+      >
+        {FILTER_OPERATORS.map((op) => (
+          <option key={op.value} value={op.value}>
+            {op.label}
+          </option>
+        ))}
+      </select>
+      {operatorNeedsValue(filter.operator) &&
+        (prop && prop.type === 'people' ? (
+          <PeopleValueInput
+            apiToken={apiToken}
+            value={String(filter.value ?? '')}
+            onChange={(v) => patch({ value: v })}
+          />
+        ) : prop && (prop.type === 'select' || prop.type === 'status' || prop.type === 'multi_select') && prop.options ? (
+          <select
+            value={String(filter.value ?? '')}
+            onChange={(e) => patch({ value: e.target.value })}
+            className="bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+          >
+            <option value="">—</option>
+            {prop.options.map((o) => (
+              <option key={o.id} value={o.name}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        ) : filter.type === 'checkbox' || ((filter.type === 'formula' || filter.type === 'rollup') && filter.formulaResultType === 'boolean') ? (
+          <select
+            value={String(filter.value ?? 'false')}
+            onChange={(e) => patch({ value: e.target.value === 'true' })}
+            className="bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+          >
+            <option value="true">checked</option>
+            <option value="false">unchecked</option>
+          </select>
+        ) : (
+          <input
+            value={String(filter.value ?? '')}
+            onChange={(e) => patch({ value: e.target.value })}
+            placeholder="value"
+            className="flex-1 bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+          />
+        ))}
+    </div>
+  )
+}
+
+const usersCache = new Map<string, Promise<NotionUser[]>>()
+
+function PeopleValueInput({
+  apiToken,
+  value,
+  onChange,
+}: {
+  apiToken: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  const [users, setUsers] = useState<NotionUser[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!apiToken) return
+    let cancelled = false
+    let promise = usersCache.get(apiToken)
+    if (!promise) {
+      promise = window.api.notion.listUsers(apiToken)
+      usersCache.set(apiToken, promise)
+    }
+    promise
+      .then((u) => {
+        if (!cancelled) setUsers(u)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err))
+          usersCache.delete(apiToken)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [apiToken])
+
+  if (error) {
+    return (
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="user id"
+        title={`Couldn't fetch users: ${error}`}
+        className="flex-1 bg-bg border border-danger rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+      />
+    )
+  }
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+    >
+      <option value="">{users ? '—' : 'Loading users…'}</option>
+      {(users ?? []).map((u) => (
+        <option key={u.id} value={u.id}>
+          {u.name}
+        </option>
+      ))}
+    </select>
+  )
+}
 
 function RelationValueInput({
   apiToken,
