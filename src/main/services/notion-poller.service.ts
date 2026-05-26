@@ -148,10 +148,21 @@ function splitUpdates(
 }
 
 async function tickProject(projectId: string, config: NotionIntegrationConfig): Promise<void> {
-  if (ticksInFlight.has(projectId)) return
+  if (ticksInFlight.has(projectId)) {
+    console.log(`[notion-poller] tick skipped for ${projectId} (in flight)`)
+    return
+  }
   ticksInFlight.add(projectId)
   try {
-    if (!config.enabled || !config.apiToken || !config.databaseId) return
+    if (!config.enabled || !config.apiToken || !config.databaseId) {
+      console.log(
+        `[notion-poller] tick skipped for ${projectId}: enabled=${config.enabled} hasToken=${!!config.apiToken} hasDb=${!!config.databaseId}`
+      )
+      return
+    }
+    console.log(
+      `[notion-poller] querying db=${config.databaseId} for project=${projectId} filters=${config.filters?.length ?? 0}`
+    )
     const pages = await queryDatabase(
       config.apiToken,
       config.databaseId,
@@ -160,6 +171,9 @@ async function tickProject(projectId: string, config: NotionIntegrationConfig): 
     )
     const picked = new Set(getPickedUp(projectId))
     const candidates = pages.filter((p) => !picked.has(p.id))
+    console.log(
+      `[notion-poller] project=${projectId} matched=${pages.length} alreadyPicked=${pages.length - candidates.length} new=${candidates.length}`
+    )
     if (candidates.length === 0) return
 
     const window = mainWindow
@@ -194,6 +208,9 @@ async function tickProject(projectId: string, config: NotionIntegrationConfig): 
         suggestedBranchName,
         suggestedSessionName,
       }
+      console.log(
+        `[notion-poller] firing task ${page.id} (${page.title}) for project=${projectId} branch=${suggestedBranchName}`
+      )
       window.webContents.send(IPC.NOTION_FIRE_TASK, payload)
     }
   } catch (err) {
@@ -213,6 +230,7 @@ async function tick(): Promise<void> {
 export function startNotionPoller(window: BrowserWindow): void {
   mainWindow = window
   if (pollTimer) clearInterval(pollTimer)
+  console.log(`[notion-poller] started, interval=${POLL_INTERVAL_MS}ms`)
   // Fire once on startup, then on the interval.
   void tick()
   pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS)

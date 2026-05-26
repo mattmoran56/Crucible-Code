@@ -457,6 +457,7 @@ export type NotionPropertyType =
   | 'url'
   | 'people'
   | 'multi_select'
+  | 'relation'
 
 export type NotionFilterOperator =
   | 'equals'
@@ -515,6 +516,13 @@ export interface NotionDatabaseProperty {
   type: NotionPropertyType | string
   // Populated for 'select', 'status', 'multi_select'.
   options?: NotionDatabasePropertyOption[]
+  // Populated for 'relation' — id of the related database.
+  relationDatabaseId?: string
+}
+
+export interface NotionRelationOption {
+  id: string
+  title: string
 }
 
 export interface NotionDatabaseSchema {

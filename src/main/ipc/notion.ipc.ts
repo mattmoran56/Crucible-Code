@@ -3,6 +3,7 @@ import { IPC } from '../../shared/constants'
 import type {
   NotionDatabaseSchema,
   NotionIntegrationConfig,
+  NotionRelationOption,
   NotionTaskPayload,
   NotionTestConnectionResult,
 } from '../../shared/types'
@@ -16,7 +17,7 @@ import {
   startNotionPoller,
   stopNotionPoller,
 } from '../services/notion-poller.service'
-import { getDatabaseSchema, queryDatabase } from '../services/notion.service'
+import { getDatabaseSchema, listRelationOptions, queryDatabase } from '../services/notion.service'
 
 export function registerNotionHandlers(window: BrowserWindow): void {
   startNotionPoller(window)
@@ -63,6 +64,13 @@ export function registerNotionHandlers(window: BrowserWindow): void {
     IPC.NOTION_GET_DATABASE_SCHEMA,
     async (_e, token: string, databaseId: string): Promise<NotionDatabaseSchema> => {
       return getDatabaseSchema(token, databaseId)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.NOTION_LIST_RELATION_OPTIONS,
+    async (_e, token: string, databaseId: string): Promise<NotionRelationOption[]> => {
+      return listRelationOptions(token, databaseId)
     }
   )
 

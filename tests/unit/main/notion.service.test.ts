@@ -91,5 +91,11 @@ describe('notion.service / placeholder helpers', () => {
     it('trims whitespace', () => {
       expect(normalizeDatabaseId('  abc123  ')).toBe('abc123')
     })
+
+    it('accepts a dashed UUID and returns the 32-char hex id', () => {
+      expect(normalizeDatabaseId('b71ae719-0fea-4124-8a82-b91bf9c92778')).toBe(
+        'b71ae7190fea41248a82b91bf9c92778'
+      )
+    })
   })
 })

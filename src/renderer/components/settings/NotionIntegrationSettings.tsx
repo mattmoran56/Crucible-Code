@@ -6,6 +6,7 @@ import type {
   NotionPropertyFilter,
   NotionPropertyType,
   NotionPropertyUpdate,
+  NotionRelationOption,
   Project,
 } from '../../../shared/types'
 import { Button } from '../ui/Button'
@@ -60,6 +61,7 @@ const PROPERTY_TYPE_OPTIONS: { value: NotionPropertyType; label: string }[] = [
   { value: 'status', label: 'status' },
   { value: 'select', label: 'select' },
   { value: 'multi_select', label: 'multi-select' },
+  { value: 'relation', label: 'relation' },
   { value: 'checkbox', label: 'checkbox' },
   { value: 'rich_text', label: 'rich text' },
   { value: 'title', label: 'title' },
@@ -76,6 +78,29 @@ const FILTER_OPERATORS: { value: NotionFilterOperator; label: string }[] = [
   { value: 'is_empty', label: 'is empty' },
   { value: 'is_not_empty', label: 'is not empty' },
 ]
+
+// Notion's API only accepts certain operators per property type. Mismatches
+// produce 400 errors (e.g. multi_select doesn't support `equals`).
+const OPERATORS_BY_TYPE: Record<NotionPropertyType, NotionFilterOperator[]> = {
+  select: ['equals', 'does_not_equal', 'is_empty', 'is_not_empty'],
+  status: ['equals', 'does_not_equal', 'is_empty', 'is_not_empty'],
+  multi_select: ['contains', 'does_not_contain', 'is_empty', 'is_not_empty'],
+  checkbox: ['equals', 'does_not_equal'],
+  rich_text: ['equals', 'does_not_equal', 'contains', 'does_not_contain', 'is_empty', 'is_not_empty'],
+  title: ['equals', 'does_not_equal', 'contains', 'does_not_contain', 'is_empty', 'is_not_empty'],
+  url: ['equals', 'does_not_equal', 'contains', 'does_not_contain', 'is_empty', 'is_not_empty'],
+  number: ['equals', 'does_not_equal', 'is_empty', 'is_not_empty'],
+  date: ['equals', 'is_empty', 'is_not_empty'],
+}
+
+function operatorsForType(type: NotionPropertyType): { value: NotionFilterOperator; label: string }[] {
+  const allowed = new Set(OPERATORS_BY_TYPE[type] ?? FILTER_OPERATORS.map((o) => o.value))
+  return FILTER_OPERATORS.filter((o) => allowed.has(o.value))
+}
+
+function defaultOperatorForType(type: NotionPropertyType): NotionFilterOperator {
+  return OPERATORS_BY_TYPE[type]?.[0] ?? 'equals'
+}
 
 interface ProjectCardProps {
   project: Project
@@ -192,6 +217,7 @@ function ProjectCard({ project }: ProjectCardProps) {
 
           <FilterEditor
             schema={schema}
+            apiToken={draft.apiToken}
             filters={draft.filters}
             onChange={(filters) => handleSave({ filters })}
           />
@@ -290,22 +316,25 @@ function ProjectCard({ project }: ProjectCardProps) {
 
 interface FilterEditorProps {
   schema: NotionDatabaseSchema | undefined
+  apiToken: string
   filters: NotionPropertyFilter[]
   onChange: (filters: NotionPropertyFilter[]) => void
 }
 
-function FilterEditor({ schema, filters, onChange }: FilterEditorProps) {
+function FilterEditor({ schema, apiToken, filters, onChange }: FilterEditorProps) {
   const propertyOptions = schema?.properties ?? []
   const updateAt = (i: number, patch: Partial<NotionPropertyFilter>) => {
     const next = filters.map((f, idx) => (idx === i ? { ...f, ...patch } : f))
     onChange(next)
   }
   const remove = (i: number) => onChange(filters.filter((_, idx) => idx !== i))
-  const add = () =>
+  const add = () => {
+    const type = (propertyOptions[0]?.type as NotionPropertyType) ?? 'rich_text'
     onChange([
       ...filters,
-      { property: propertyOptions[0]?.name ?? '', type: (propertyOptions[0]?.type as NotionPropertyType) ?? 'rich_text', operator: 'equals', value: '' },
+      { property: propertyOptions[0]?.name ?? '', type, operator: defaultOperatorForType(type), value: '' },
     ])
+  }
 
   const operatorNeedsValue = (op: NotionFilterOperator) =>
     op !== 'is_empty' && op !== 'is_not_empty'
@@ -329,9 +358,12 @@ function FilterEditor({ schema, filters, onChange }: FilterEditorProps) {
                 value={f.property}
                 onChange={(e) => {
                   const prop = propertyOptions.find((p) => p.name === e.target.value)
+                  const nextType = (prop?.type as NotionPropertyType) ?? f.type
+                  const allowed = new Set(OPERATORS_BY_TYPE[nextType] ?? [])
                   updateAt(i, {
                     property: e.target.value,
-                    type: (prop?.type as NotionPropertyType) ?? f.type,
+                    type: nextType,
+                    operator: allowed.has(f.operator) ? f.operator : defaultOperatorForType(nextType),
                   })
                 }}
                 className="flex-1 bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
@@ -352,7 +384,14 @@ function FilterEditor({ schema, filters, onChange }: FilterEditorProps) {
             )}
             <select
               value={f.type}
-              onChange={(e) => updateAt(i, { type: e.target.value as NotionPropertyType })}
+              onChange={(e) => {
+                const nextType = e.target.value as NotionPropertyType
+                const allowed = new Set(OPERATORS_BY_TYPE[nextType] ?? [])
+                updateAt(i, {
+                  type: nextType,
+                  operator: allowed.has(f.operator) ? f.operator : defaultOperatorForType(nextType),
+                })
+              }}
               className="bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
             >
               {PROPERTY_TYPE_OPTIONS.map((p) => (
@@ -375,6 +414,7 @@ function FilterEditor({ schema, filters, onChange }: FilterEditorProps) {
             {operatorNeedsValue(f.operator) && (
               <FilterValueInput
                 schema={schema}
+                apiToken={apiToken}
                 filter={f}
                 onChange={(value) => updateAt(i, { value })}
               />
@@ -394,10 +434,12 @@ function FilterEditor({ schema, filters, onChange }: FilterEditorProps) {
 
 function FilterValueInput({
   schema,
+  apiToken,
   filter,
   onChange,
 }: {
   schema: NotionDatabaseSchema | undefined
+  apiToken: string
   filter: NotionPropertyFilter
   onChange: (value: string | boolean | number) => void
 }) {
@@ -416,6 +458,16 @@ function FilterValueInput({
           </option>
         ))}
       </select>
+    )
+  }
+  if (prop && prop.type === 'relation' && prop.relationDatabaseId) {
+    return (
+      <RelationValueInput
+        apiToken={apiToken}
+        databaseId={prop.relationDatabaseId}
+        value={String(filter.value ?? '')}
+        onChange={onChange}
+      />
     )
   }
   if (filter.type === 'checkbox') {
@@ -437,6 +489,74 @@ function FilterValueInput({
       placeholder="value"
       className="flex-1 bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
     />
+  )
+}
+
+// Cache so we don't refetch the same related-DB pages each render.
+const relationOptionsCache = new Map<string, Promise<NotionRelationOption[]>>()
+
+function RelationValueInput({
+  apiToken,
+  databaseId,
+  value,
+  onChange,
+}: {
+  apiToken: string
+  databaseId: string
+  value: string
+  onChange: (value: string) => void
+}) {
+  const [options, setOptions] = useState<NotionRelationOption[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!apiToken || !databaseId) return
+    const key = `${apiToken}:${databaseId}`
+    let cancelled = false
+    let promise = relationOptionsCache.get(key)
+    if (!promise) {
+      promise = window.api.notion.listRelationOptions(apiToken, databaseId)
+      relationOptionsCache.set(key, promise)
+    }
+    promise
+      .then((opts) => {
+        if (!cancelled) setOptions(opts)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err))
+          relationOptionsCache.delete(key)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [apiToken, databaseId])
+
+  if (error) {
+    return (
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="page id"
+        title={`Couldn't fetch related pages: ${error}`}
+        className="flex-1 bg-bg border border-danger rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+      />
+    )
+  }
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="bg-bg border border-border rounded-md text-xs text-text px-2 py-1.5 focus:outline-none focus:border-accent"
+    >
+      <option value="">{options ? '—' : 'Loading…'}</option>
+      {(options ?? []).map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.title || o.id}
+        </option>
+      ))}
+    </select>
   )
 }
 

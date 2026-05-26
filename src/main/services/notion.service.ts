@@ -4,6 +4,7 @@ import type {
   NotionDatabaseSchema,
   NotionPropertyFilter,
   NotionPropertyUpdate,
+  NotionRelationOption,
   NotionTaskPayload,
 } from '../../shared/types'
 
@@ -50,14 +51,17 @@ async function notionFetch(
 }
 
 export function normalizeDatabaseId(input: string): string {
-  // Accept full Notion DB URLs and strip everything but the trailing 32-char id.
-  // Notion URLs look like https://www.notion.so/workspace/<title>-<id> where id
-  // is 32 hex chars without dashes. We accept dashed or undashed.
-  const trimmed = input.trim()
-  const noQuery = trimmed.split('?')[0]
-  const tail = noQuery.split('/').pop() ?? noQuery
-  const last = tail.split('-').pop() ?? tail
-  return last
+  // Accept:
+  //   - bare 32-char hex id (with or without dashes)
+  //   - Notion URLs like https://www.notion.so/workspace/<title>-<32hex>?v=...
+  // We find the last 32 hex chars in the string (ignoring dashes) and return them.
+  const trimmed = input.trim().split('?')[0]
+  const matches = trimmed.match(/[0-9a-fA-F]{32}/g)
+  if (matches && matches.length > 0) return matches[matches.length - 1].toLowerCase()
+  const stripped = trimmed.replace(/-/g, '')
+  const tailMatch = stripped.match(/[0-9a-fA-F]{32}$/)
+  if (tailMatch) return tailMatch[0].toLowerCase()
+  return trimmed
 }
 
 type PlaceholderContext = {
@@ -106,7 +110,31 @@ function buildSingleFilter(f: NotionPropertyFilter): Record<string, unknown> | n
     base[f.type] = { [f.operator]: true }
     return base
   }
-  if (f.value === undefined || f.value === null) return null
+  if (f.value === undefined || f.value === null || f.value === '') return null
+  // Notion's relation filter only accepts contains/does_not_contain with a page id.
+  // Translate equals → contains so the user can keep "equals" in the UI without
+  // hitting a 400.
+  if (f.type === 'relation') {
+    const op =
+      f.operator === 'equals' || f.operator === 'contains'
+        ? 'contains'
+        : f.operator === 'does_not_equal' || f.operator === 'does_not_contain'
+          ? 'does_not_contain'
+          : f.operator
+    base.relation = { [op]: f.value }
+    return base
+  }
+  // multi_select doesn't support equals — coerce to contains.
+  if (f.type === 'multi_select') {
+    const op =
+      f.operator === 'equals' || f.operator === 'contains'
+        ? 'contains'
+        : f.operator === 'does_not_equal' || f.operator === 'does_not_contain'
+          ? 'does_not_contain'
+          : f.operator
+    base.multi_select = { [op]: f.value }
+    return base
+  }
   base[f.type] = { [f.operator]: f.value }
   return base
 }
@@ -198,7 +226,13 @@ export async function getDatabaseSchema(
   const res = (await notionFetch(token, `/databases/${dbId}`)) as {
     id: string
     title?: Array<{ plain_text?: string }>
-    properties: Record<string, { type: string; select?: { options?: NotionDatabasePropertyOption[] }; status?: { options?: NotionDatabasePropertyOption[] }; multi_select?: { options?: NotionDatabasePropertyOption[] } }>
+    properties: Record<string, {
+      type: string
+      select?: { options?: NotionDatabasePropertyOption[] }
+      status?: { options?: NotionDatabasePropertyOption[] }
+      multi_select?: { options?: NotionDatabasePropertyOption[] }
+      relation?: { database_id?: string }
+    }>
   }
   const titleText = (res.title ?? []).map((s) => s.plain_text ?? '').join('') || dbId
   let titlePropertyName = ''
@@ -214,7 +248,8 @@ export async function getDatabaseSchema(
           : type === 'multi_select'
             ? prop.multi_select?.options
             : undefined
-    properties.push({ name, type, options })
+    const relationDatabaseId = type === 'relation' ? prop.relation?.database_id : undefined
+    properties.push({ name, type, options, relationDatabaseId })
   }
   return {
     id: res.id,
@@ -222,6 +257,30 @@ export async function getDatabaseSchema(
     titlePropertyName,
     properties,
   }
+}
+
+export async function listRelationOptions(
+  token: string,
+  databaseId: string
+): Promise<NotionRelationOption[]> {
+  const dbId = normalizeDatabaseId(databaseId)
+  const out: NotionRelationOption[] = []
+  let cursor: string | undefined
+  const body: Record<string, unknown> = { page_size: 100 }
+  for (let i = 0; i < 5; i++) {
+    if (cursor) body.start_cursor = cursor
+    else delete body.start_cursor
+    const res = (await notionFetch(token, `/databases/${dbId}/query`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })) as { results: Record<string, unknown>[]; has_more?: boolean; next_cursor?: string | null }
+    for (const r of res.results ?? []) {
+      out.push({ id: String(r.id ?? ''), title: extractTitleFromPage(r) || String(r.id ?? '') })
+    }
+    if (!res.has_more || !res.next_cursor) break
+    cursor = res.next_cursor
+  }
+  return out
 }
 
 // ── Property update translation ─────────────────────────────────────────────

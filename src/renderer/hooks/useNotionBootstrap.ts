@@ -1,14 +1,19 @@
 import { useEffect } from 'react'
 import { useProjectStore } from '../stores/projectStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useTerminalStore } from '../stores/terminalStore'
 import { useToastStore } from '../stores/toastStore'
+import { writeWhenReady } from '../lib/writeWhenReady'
 
 /**
  * Subscribes to NOTION_FIRE_TASK events from the main-process poller. For each
- * fired task, creates a session with the resolved startup prompt and then
- * calls back to main with the new branch/session id so the poller can apply
- * any property updates / appended blocks that reference {{branch}} or
- * {{sessionId}}.
+ * fired task, creates a session and proactively spawns its claude terminal
+ * with the startup prompt injected via writeWhenReady — the same mechanism
+ * the Review tab uses. Going through writeWhenReady directly (rather than
+ * relying on sessionStore.pendingStartup) is what keeps multiple tasks fired
+ * in a single poll tick from clobbering each other: pendingStartup is a
+ * single slot, so back-to-back createSession calls would lose all but the
+ * last command.
  *
  * Mount once at the top of the component tree (sibling of useSchedulerBootstrap).
  */
@@ -21,6 +26,9 @@ export function useNotionBootstrap(): void {
         return
       }
       try {
+        // Don't pass startupCommand into createSession — we'll inject it
+        // ourselves below to avoid the single-slot pendingStartup race when
+        // many tasks fire in one tick.
         await useSessionStore
           .getState()
           .createSession(
@@ -28,13 +36,30 @@ export function useNotionBootstrap(): void {
             project.repoPath,
             payload.suggestedSessionName,
             undefined,
-            payload.resolvedStartupPrompt
+            undefined
           )
-        // createSession sets activeSessionId on success. Look up the new session
-        // to grab its real branchName (createSession may have suffixed it).
         const newId = useSessionStore.getState().activeSessionId
         const newSession = useSessionStore.getState().sessions.find((s) => s.id === newId)
         if (!newSession) return
+
+        // Spawn the claude terminal up-front (same pattern as ReviewTerminalPanel)
+        // and arm writeWhenReady against it. If this session never becomes the
+        // active one (because a later fire overwrites activeSessionId), the
+        // terminal still exists and the command still gets injected once the
+        // PTY shows a prompt.
+        const terminalId = await useTerminalStore
+          .getState()
+          .spawnTerminal(
+            newSession.id,
+            newSession.name,
+            newSession.worktreePath,
+            'claude',
+            false,
+            newSession.id,
+            'agent'
+          )
+        writeWhenReady(terminalId, payload.resolvedStartupPrompt)
+
         await window.api.notion.applyWriteBack(
           payload.projectId,
           payload.page,
