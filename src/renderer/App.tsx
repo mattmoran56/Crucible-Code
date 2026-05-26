@@ -25,6 +25,7 @@ import { useButtonStore } from './stores/buttonStore'
 import { useButtonShortcuts } from './hooks/useButtonShortcuts'
 import { useReviewLoopStore } from './stores/reviewLoopStore'
 import { useSchedulerBootstrap } from './hooks/useSchedulerBootstrap'
+import { useNotionBootstrap } from './hooks/useNotionBootstrap'
 import { UsageLimitToast } from './components/usage/UsageLimitToast'
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
 
   useButtonShortcuts()
   useSchedulerBootstrap()
+  useNotionBootstrap()
 
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
   const rightPanel = useResizable({ direction: 'horizontal', initialSize: 300, minSize: 200, maxSize: 600, inverted: true })

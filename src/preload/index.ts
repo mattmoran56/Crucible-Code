@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -507,6 +507,39 @@ const api = {
       githubLogin: string | null
     ): Promise<ClaudeWebSession[]> =>
       ipcRenderer.invoke(IPC.CLAUDE_WEB_LIST_SESSIONS, repoPath, prefix, githubLogin),
+  },
+
+  notion: {
+    loadConfig: (projectId: string): Promise<NotionIntegrationConfig | null> =>
+      ipcRenderer.invoke(IPC.NOTION_CONFIG_LOAD, projectId),
+    saveConfig: (
+      projectId: string,
+      config: NotionIntegrationConfig,
+      opts?: { backfill?: boolean }
+    ): Promise<void> => ipcRenderer.invoke(IPC.NOTION_CONFIG_SAVE, projectId, config, opts),
+    testConnection: (token: string, databaseId: string): Promise<NotionTestConnectionResult> =>
+      ipcRenderer.invoke(IPC.NOTION_TEST_CONNECTION, token, databaseId),
+    getDatabaseSchema: (token: string, databaseId: string): Promise<NotionDatabaseSchema> =>
+      ipcRenderer.invoke(IPC.NOTION_GET_DATABASE_SCHEMA, token, databaseId),
+    listRelationOptions: (token: string, databaseId: string): Promise<NotionRelationOption[]> =>
+      ipcRenderer.invoke(IPC.NOTION_LIST_RELATION_OPTIONS, token, databaseId),
+    listUsers: (token: string): Promise<NotionUser[]> =>
+      ipcRenderer.invoke(IPC.NOTION_LIST_USERS, token),
+    applyWriteBack: (
+      projectId: string,
+      page: NotionTaskPayload,
+      branch: string,
+      sessionId: string
+    ): Promise<void> =>
+      ipcRenderer.invoke(IPC.NOTION_APPLY_WRITE_BACK, projectId, page, branch, sessionId),
+    clearPickedUp: (projectId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.NOTION_CLEAR_PICKED_UP, projectId),
+    getConfigPath: (): Promise<string> => ipcRenderer.invoke(IPC.NOTION_GET_CONFIG_PATH),
+    onFireTask: (callback: (payload: NotionFireTaskPayload) => void) => {
+      const listener = (_e: unknown, payload: NotionFireTaskPayload) => callback(payload)
+      ipcRenderer.on(IPC.NOTION_FIRE_TASK, listener)
+      return () => ipcRenderer.removeListener(IPC.NOTION_FIRE_TASK, listener)
+    },
   },
 
 }

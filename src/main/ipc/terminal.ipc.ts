@@ -49,6 +49,11 @@ export function registerTerminalHandlers(window: BrowserWindow) {
   )
 
   ipcMain.handle(IPC.TERMINAL_WRITE, async (_e, terminalId: string, data: string) => {
+    // Log non-trivial writes (skip 1-char keystrokes) so we can see when
+    // automated injections (writeWhenReady, /review, notion startup) happen.
+    if (data.length > 2) {
+      console.log(`[terminal-write] ${terminalId}: ${JSON.stringify(data.slice(0, 200))}`)
+    }
     terminalService.writeTerminal(terminalId, data)
   })
 

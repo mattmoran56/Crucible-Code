@@ -78,8 +78,21 @@ export function writeWhenReady(
     if (sent) return
     sent = true
     unsub()
+    if (quietTimer) {
+      clearTimeout(quietTimer)
+      quietTimer = null
+    }
     if (debug) console.log(`[writeWhenReady] writing command to ${terminalId} (${reason})`)
-    window.api.terminal.write(terminalId, command + '\r')
+    // Two-step write: text first, then \r as a separate keystroke after a
+    // short gap. Claude's TUI uses bracketed-paste heuristics — when a long
+    // multi-char write arrives all at once, the embedded \r is treated as a
+    // newline inside a paste (the text lands in the input box but isn't
+    // submitted). Sending Enter as its own write makes claude register it as
+    // a real keystroke and submit.
+    window.api.terminal.write(terminalId, command)
+    setTimeout(() => {
+      window.api.terminal.write(terminalId, '\r')
+    }, 250)
   }
 
   const sendEnter = (reason: string) => {
@@ -96,6 +109,21 @@ export function writeWhenReady(
     window.api.terminal.write(terminalId, '\r')
   }
 
+  // Claude's TUI prints prompt-looking characters (`>`, `$`) during its splash
+  // before stdin is actually bound. We don't fire on the first sighting —
+  // instead we wait for output to be QUIET for a beat after seeing one. That
+  // way the boot stream finishes before we type, and writes don't get eaten.
+  const QUIET_AFTER_PROMPT_MS = 800
+  let sawPromptMarker = false
+  let quietTimer: ReturnType<typeof setTimeout> | null = null
+
+  const armQuietWrite = () => {
+    if (quietTimer) clearTimeout(quietTimer)
+    quietTimer = setTimeout(() => {
+      performWrite('prompt-detected+quiet')
+    }, QUIET_AFTER_PROMPT_MS)
+  }
+
   const unsub = window.api.terminal.onData((tid: string, data: string) => {
     if (tid !== terminalId || sent) return
 
@@ -103,13 +131,21 @@ export function writeWhenReady(
       // Slight delay so claude's selection state is fully painted before we
       // accept it.
       setTimeout(() => sendEnter('mcp-prompt'), 150)
+      // An MCP confirmation resets the quiet timer — there's more setup to go.
+      sawPromptMarker = false
+      if (quietTimer) {
+        clearTimeout(quietTimer)
+        quietTimer = null
+      }
       return
     }
 
     if (looksLikeMainInputPrompt(data)) {
-      // Grace period so claude has time to bind raw-mode stdin.
-      setTimeout(() => performWrite('prompt-detected'), 150)
+      sawPromptMarker = true
     }
+    // Any data resets the quiet timer. We only fire once output has been
+    // silent for QUIET_AFTER_PROMPT_MS after the first prompt marker.
+    if (sawPromptMarker) armQuietWrite()
   })
 
   setTimeout(() => performWrite('timeout-fallback'), timeoutMs)

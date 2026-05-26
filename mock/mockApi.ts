@@ -481,4 +481,66 @@ export const mockApi = {
       return terminalId
     },
   },
+
+  notion: (() => {
+    type Cfg = Record<string, unknown>
+    const configByProject: Record<string, Cfg> = {}
+    const fireListeners: Array<(payload: unknown) => void> = []
+    const writeBackCalls: Array<{
+      projectId: string
+      page: unknown
+      branch: string
+      sessionId: string
+    }> = []
+    ;(globalThis as any).__notionWriteBackCalls = writeBackCalls
+    ;(globalThis as any).__notionFireTask = (payload: unknown) => {
+      for (const cb of fireListeners) cb(payload)
+    }
+    return {
+      loadConfig: async (projectId: string) => configByProject[projectId] ?? null,
+      saveConfig: async (projectId: string, config: Cfg) => {
+        configByProject[projectId] = config
+      },
+      testConnection: async (token: string, dbId: string) => {
+        if (!token || !dbId) return { ok: false, error: 'Missing token or database id' }
+        if (token === 'BAD') return { ok: false, error: 'Unauthorized' }
+        return { ok: true, taskCount: 3 }
+      },
+      getDatabaseSchema: async () => ({
+        id: 'mock-db',
+        title: 'Crucible Tasks',
+        titlePropertyName: 'Task',
+        properties: [
+          { name: 'Task', type: 'title' },
+          {
+            name: 'Status',
+            type: 'status',
+            options: [
+              { id: 'ready', name: 'Ready' },
+              { id: 'in_progress', name: 'In Progress' },
+              { id: 'done', name: 'Done' },
+            ],
+          },
+          { name: 'Crucible Branch', type: 'url' },
+        ],
+      }),
+      applyWriteBack: async (
+        projectId: string,
+        page: unknown,
+        branch: string,
+        sessionId: string,
+      ) => {
+        writeBackCalls.push({ projectId, page, branch, sessionId })
+      },
+      clearPickedUp: async () => {},
+      getConfigPath: async () => '/mock/userData/dev/notion-integration.json',
+      onFireTask: (cb: (payload: unknown) => void) => {
+        fireListeners.push(cb)
+        return () => {
+          const idx = fireListeners.indexOf(cb)
+          if (idx >= 0) fireListeners.splice(idx, 1)
+        }
+      },
+    }
+  })(),
 }

@@ -34,14 +34,45 @@ afterEach(() => {
 })
 
 describe('writeWhenReady — prompt detection', () => {
-  it('writes the command 150 ms after seeing a `>` in terminal data', async () => {
+  it('writes the command once output goes quiet after seeing a `>` in terminal data', async () => {
     writeWhenReady('term-1', 'go', { debug: false })
     expect(writeCalls).toHaveLength(0)
 
     emitTerminalData('term-1', '\r\n> ')
-    await vi.advanceTimersByTimeAsync(160)
+    // Quiet timer is 800 ms — 200 ms isn't long enough to fire yet.
+    await vi.advanceTimersByTimeAsync(200)
+    expect(writeCalls).toHaveLength(0)
 
-    expect(writeCalls).toEqual([{ terminalId: 'term-1', data: 'go\r' }])
+    // Wait the rest of the quiet window.
+    await vi.advanceTimersByTimeAsync(700)
+    // The command is written as two parts (text, then Enter after a gap) so
+    // claude doesn't treat the inline \r as a paste-newline.
+    await vi.advanceTimersByTimeAsync(300)
+    expect(writeCalls).toEqual([
+      { terminalId: 'term-1', data: 'go' },
+      { terminalId: 'term-1', data: '\r' },
+    ])
+  })
+
+  it('resets the quiet timer when more output arrives after seeing `>` (avoids firing into the splash)', async () => {
+    writeWhenReady('term-1', 'go', { debug: false })
+
+    emitTerminalData('term-1', '> Try "some hint"')
+    // More splash output arrives 400 ms later — should reset the timer.
+    await vi.advanceTimersByTimeAsync(400)
+    emitTerminalData('term-1', 'more boot output')
+    await vi.advanceTimersByTimeAsync(700)
+    expect(writeCalls).toHaveLength(0)
+
+    // After the full quiet window with no more output, write fires.
+    await vi.advanceTimersByTimeAsync(200)
+    // The command is written as two parts (text, then Enter after a gap) so
+    // claude doesn't treat the inline \r as a paste-newline.
+    await vi.advanceTimersByTimeAsync(300)
+    expect(writeCalls).toEqual([
+      { terminalId: 'term-1', data: 'go' },
+      { terminalId: 'term-1', data: '\r' },
+    ])
   })
 
   it('ignores data for other terminals', async () => {
@@ -56,7 +87,13 @@ describe('writeWhenReady — timeout fallback', () => {
   it('writes the command after the default 6s if no prompt char shows up', async () => {
     writeWhenReady('term-1', 'go', { debug: false })
     await vi.advanceTimersByTimeAsync(6_100)
-    expect(writeCalls).toEqual([{ terminalId: 'term-1', data: 'go\r' }])
+    // The command is written as two parts (text, then Enter after a gap) so
+    // claude doesn't treat the inline \r as a paste-newline.
+    await vi.advanceTimersByTimeAsync(300)
+    expect(writeCalls).toEqual([
+      { terminalId: 'term-1', data: 'go' },
+      { terminalId: 'term-1', data: '\r' },
+    ])
   })
 
   it('honours a custom timeoutMs', async () => {
@@ -64,7 +101,13 @@ describe('writeWhenReady — timeout fallback', () => {
     await vi.advanceTimersByTimeAsync(1_900)
     expect(writeCalls).toHaveLength(0)
     await vi.advanceTimersByTimeAsync(200)
-    expect(writeCalls).toEqual([{ terminalId: 'term-1', data: 'go\r' }])
+    // The command is written as two parts (text, then Enter after a gap) so
+    // claude doesn't treat the inline \r as a paste-newline.
+    await vi.advanceTimersByTimeAsync(300)
+    expect(writeCalls).toEqual([
+      { terminalId: 'term-1', data: 'go' },
+      { terminalId: 'term-1', data: '\r' },
+    ])
   })
 })
 
@@ -105,10 +148,11 @@ describe('writeWhenReady — MCP auto-confirm', () => {
     emitTerminalData('term-1', 'Allow Notion tools to access this?')
     await vi.advanceTimersByTimeAsync(200)
     emitTerminalData('term-1', '\r\n> ')
-    await vi.advanceTimersByTimeAsync(200)
+    // Quiet window after seeing `>`.
+    await vi.advanceTimersByTimeAsync(900)
 
     expect(writeCalls).toContainEqual({ terminalId: 'term-1', data: '\r' })
-    expect(writeCalls).toContainEqual({ terminalId: 'term-1', data: 'go\r' })
+    expect(writeCalls).toContainEqual({ terminalId: 'term-1', data: 'go' })
   })
 
   it('respects maxAutoConfirms — too many MCP prompts does not spam Enter forever', async () => {
@@ -130,11 +174,12 @@ describe('writeWhenReady — dedupe', () => {
     writeWhenReady('term-1', 'second', { debug: false })
 
     emitTerminalData('term-1', '> ')
-    await vi.advanceTimersByTimeAsync(200)
+    await vi.advanceTimersByTimeAsync(1100)
 
-    // Only the first call's command lands.
-    expect(writeCalls.filter((w) => w.data.endsWith('\r'))).toEqual([
-      { terminalId: 'term-1', data: 'first\r' },
+    // Only the first call's command lands (text + separate Enter).
+    expect(writeCalls).toEqual([
+      { terminalId: 'term-1', data: 'first' },
+      { terminalId: 'term-1', data: '\r' },
     ])
   })
 })
