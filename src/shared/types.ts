@@ -24,6 +24,12 @@ export type SessionStatus = 'running' | 'attention' | 'completed'
 export type HookType = 'prompt' | 'notification' | 'stop'
 export type ContextKind = 'session' | 'code' | 'pr'
 
+export interface NotionTicketLink {
+  pageId: string
+  url: string
+  title: string
+}
+
 export interface Session {
   id: string
   name: string
@@ -34,6 +40,7 @@ export interface Session {
   lastActiveAt?: string
   prNumber?: number
   baseBranch?: string
+  notionTicket?: NotionTicketLink
 }
 
 export interface Commit {

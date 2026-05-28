@@ -36,7 +36,8 @@ export function useNotionBootstrap(): void {
             project.repoPath,
             payload.suggestedSessionName,
             undefined,
-            undefined
+            undefined,
+            { pageId: payload.page.id, url: payload.page.url, title: payload.page.title }
           )
         const newId = useSessionStore.getState().activeSessionId
         const newSession = useSessionStore.getState().sessions.find((s) => s.id === newId)

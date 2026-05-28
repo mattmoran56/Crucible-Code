@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, shell } from 'electron'
 import { IPC } from '../../shared/constants'
 import type {
   NotionDatabaseSchema,
@@ -101,6 +101,15 @@ export function registerNotionHandlers(window: BrowserWindow): void {
 
   ipcMain.handle(IPC.NOTION_GET_CONFIG_PATH, async (): Promise<string> => {
     return getConfigFilePath()
+  })
+
+  ipcMain.handle(IPC.NOTION_OPEN_TICKET, async (_e, url: string): Promise<void> => {
+    // Hand off to the OS so the Notion desktop app (if registered) or default
+    // browser handles it — never load Notion inside the Electron window.
+    if (!/^https?:\/\//i.test(url) && !/^notion:\/\//i.test(url)) {
+      throw new Error('Refusing to open non-http(s)/notion URL')
+    }
+    await shell.openExternal(url)
   })
 }
 
