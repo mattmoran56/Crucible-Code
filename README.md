@@ -26,7 +26,7 @@
 - **Usage tracking** — Rate limit bars and activity stats per session
 - **Code editor** — CodeMirror editor with file explorer for editing files in any worktree
 - **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
-- **Remote access** — Pair a second device's browser to your desktop instance over the LAN; view projects, sessions, settings, and live agent terminals from anywhere on your network (full mobile layout included)
+- **Remote access** — Pair a second device's browser to your desktop instance over the LAN, or over a hosted end-to-end encrypted Cloudflare Worker relay that works through VPNs and hotel Wi-Fi. View projects, sessions, settings, and live agent terminals from anywhere (full mobile layout, PWA-installable on iOS)
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
 - **Review loop** — One-click review → triage → fix cycle on a branch with stop conditions (clean rounds, iteration cap, cost cap) and a sticky PR comment for skipped findings
@@ -160,7 +160,19 @@ The installed app polls `origin/main` every 5 minutes. When new commits land, an
 <details>
 <summary><strong>Remote access (web receiver)</strong></summary>
 
-Flip a toggle in the desktop top bar and your projects, sessions, settings, and live agent terminals become reachable from any browser on the same LAN — phone, tablet, laptop. The desktop hosts an embedded WebSocket relay; the browser loads a small React receiver paired with a short code shown in the toggle popover. Architecture details live in [docs/REMOTE.md](docs/REMOTE.md).
+Pair a second device's browser to your desktop in one of two modes. Both serve the same React receiver — same projects, sessions, settings, live agent terminals. Architecture details live in [docs/REMOTE.md](docs/REMOTE.md); the cloud relay deep-dive is in [docs/cloud-relay.md](docs/cloud-relay.md).
+
+| | LAN mode | Cloud mode |
+|---|---|---|
+| Transport | Embedded WebSocket server on the desktop | Outbound WSS to a hosted Cloudflare Worker relay |
+| Requires same network | Yes | No — works through VPN, cellular, hotel Wi-Fi |
+| Third party in path | None | Relay (forwards opaque ciphertext only) |
+| Encryption | TLS to the LAN listener | TLS + libsodium end-to-end (X25519 + XChaCha20-Poly1305) |
+| URL on the phone | `https://<desktop-ip>:<port>` | `https://codecrucible-relay.mattmoran56.workers.dev` |
+
+### LAN mode
+
+Flip the LAN toggle in the desktop top-bar popover. The phone loads the receiver from the desktop and pairs with a 6-char code (single-use, 5-minute TTL); the browser swaps it for a long-lived token stored in `localStorage`.
 
 ![Pairing](docs/screenshots/remote-pair.png)
 ![Project list on desktop browser](docs/screenshots/remote-projects-desktop.png)
@@ -168,11 +180,29 @@ Flip a toggle in the desktop top bar and your projects, sessions, settings, and 
 ![Mobile drawer](docs/screenshots/remote-drawer-mobile.png)
 ![Mobile settings](docs/screenshots/remote-settings-mobile.png)
 
-- **Pairing code + token** — A 6-char code is shown in the desktop toggle popover; the browser swaps it for a long-lived token stored in `localStorage`. Codes are single-use, 5-minute TTL.
+### Cloud mode
+
+Flip **Cloud relay** on in the same popover. The desktop opens an outbound WSS to the hosted relay and registers a handle (e.g. `silver-otter-79`). On the phone, open `https://codecrucible-relay.mattmoran56.workers.dev`, type the handle and 6-char pairing code shown in the popover, and you're paired. On iOS you can install the page via Safari → Share → **Add to Home Screen** to get a standalone PWA with manifest, service worker, notch padding, and sticky tabs.
+
+![Cloud relay popover with handle + code](docs/screenshots/cloud-relay-popover.png)
+![Receiver handle entry page](docs/screenshots/cloud-receiver-handlepage.png)
+![Receiver safety-number panel](docs/screenshots/cloud-receiver-settings-safety-number.png)
+![Desktop approval prompt](docs/screenshots/pairing-approval-prompt.png)
+
+### Security model
+
+End-to-end encrypted in both modes. Cloud mode adds a libsodium handshake on top of TLS: ephemeral X25519 key exchange, HKDF salted with the pairing code (first pair) or bearer token (reconnect), then XChaCha20-Poly1305 on every frame. A 6-digit **safety number** derived from the shared key is displayed on both ends so the user can visually confirm there's no MITM. The relay forwards opaque ciphertext only — it never sees the pairing code, IPC payloads, or terminal output. An optional **approval gate** on the desktop requires the user to Approve or Deny each incoming pairing attempt, closing brute-force of the derived ticket as an attack class. The relay layer adds KV-gated handles (no enumeration), per-IP rate limits on `/register` and `/phone`, and 30-day TTL cleanup of idle handles. Full threat model in [docs/cloud-relay.md](docs/cloud-relay.md).
+
+### Implementation notes
+
 - **Same code paths as the desktop renderer** — `req` frames hit the shared `handlerMap` that `ipcMain.handle` registers, so the relay can never drift from the local UI for the channels it forwards.
 - **Live terminal attach with backfill** — Receiver attaches to the *existing* PTY for `(sessionId, tabId)`; the desktop's `terminal.service` keeps a 64 KiB tail per terminal so a remote join shows recent context, then streams new output live. Typing on either device drives the same shell.
 - **Mobile layout** — Below 768 px the project tabs collapse into a slide-in drawer, the workspace tab strip grows to thumb-friendly h-14 with full-width accent bar, and the theme picker moves into Settings as a chunky radio list (web-only, independent from the desktop).
 - **Out of v1 scope** — Pull requests, Claude-for-Web, env-var sync, and repo cloning to the remote machine.
+
+### Self-hosting the relay
+
+The Worker source is in [`relay-worker/`](relay-worker/README.md) — `npx wrangler deploy` puts it on your own Cloudflare account. Point the desktop at it by setting `RELAY_BACKEND_URL=https://your-relay.example.workers.dev` before launching the app.
 
 </details>
 
