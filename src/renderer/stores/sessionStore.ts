@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, PullRequest, WorktreeInfo } from '../../shared/types'
+import type { Session, PullRequest, WorktreeInfo, NotionTicketLink } from '../../shared/types'
 import { useToastStore } from './toastStore'
 import { useTerminalStore } from './terminalStore'
 
@@ -44,7 +44,7 @@ interface SessionState {
   /** A session whose agent xterm should auto-focus on first attach, consumed by useTerminal. */
   pendingFocusSessionId: string | null
   loadSessions: (projectId: string) => Promise<void>
-  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string) => Promise<void>
+  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string, notionTicket?: NotionTicketLink) => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
   renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
   setActiveSession: (id: string, repoPath?: string) => Promise<void>
@@ -168,7 +168,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  createSession: async (projectId, repoPath, name, baseBranch, startupCommand) => {
+  createSession: async (projectId, repoPath, name, baseBranch, startupCommand, notionTicket) => {
     const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch)
     const session: Session = {
       id: crypto.randomUUID(),
@@ -179,6 +179,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
       baseBranch,
+      notionTicket,
     }
 
     const sessions = sortByCreatedAtDesc([...get().sessions, session])

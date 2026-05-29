@@ -37,7 +37,7 @@ const meta: Meta<typeof SessionCard> = {
   title: 'Sessions/SessionCard',
   component: SessionCard,
   parameters: { layout: 'centered' },
-  decorators: [(Story) => <div style={{ width: 224, background: 'var(--color-bg-secondary)' }}><Story /></div>],
+  decorators: [(Story) => <div style={{ width: 224, padding: 16, background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}><Story /></div>],
   args: {
     session: baseSession,
     isActive: false,
@@ -77,6 +77,19 @@ export const WithPR: Story = {
 
 export const WithDraftPR: Story = {
   args: { pr: { ...basePR, isDraft: true, title: 'WIP: Add code editor' } },
+}
+
+export const WithNotionTicket: Story = {
+  args: {
+    session: {
+      ...baseSession,
+      notionTicket: {
+        pageId: 'abc123',
+        url: 'https://www.notion.so/Add-PR-review-panel-abc123',
+        title: 'Add PR review panel with conversation and checks',
+      },
+    },
+  },
 }
 
 export const WithMergedPR: Story = {

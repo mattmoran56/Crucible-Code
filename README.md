@@ -302,6 +302,18 @@ If you also drive Claude Code from [claude.ai/code](https://claude.com/product/c
 </details>
 
 <details>
+<summary><strong>Notion task integration</strong></summary>
+
+Poll a Notion database for new tasks and auto-spawn a session per task. Sessions created this way carry a link back to the originating Notion page so you can jump straight to the ticket from the sidebar.
+
+- **Auto-create sessions** — A poller watches your configured database every ~5 s; new rows matching your filters fire a session with the branch name, session name, and startup prompt resolved from page placeholders
+- **Ticket link under branch name** — The session card shows a small ticket icon and the page title beneath the branch. Clicking it hands off to your OS so it opens in the Notion desktop app (if installed) or your default browser — never inside Electron
+
+![Session card with Notion ticket link](docs/screenshots/session-card-notion-ticket.png)
+
+</details>
+
+<details>
 <summary><strong>Notifications & intervention detection</strong></summary>
 
 Detects when Claude Code needs user input by scanning terminal output for permission prompts and questions.
