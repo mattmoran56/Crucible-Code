@@ -499,8 +499,15 @@ export interface NotionIntegrationConfig {
   enabled: boolean
   apiToken: string
   databaseId: string
-  // Empty array = no filter (every row in the DB).
+  // Legacy single-group AND filter. Kept for backward compatibility with
+  // existing configs (and the MCP setup prompts). If `filterGroups` is set
+  // and non-empty, it takes precedence and `filters` is ignored.
   filters: NotionPropertyFilter[]
+  // OR of ANDs: each group's conditions are ANDed together, and the groups
+  // are ORed. Empty/missing = fall back to `filters`. When the user defines
+  // a single group via the UI it's still written to `filters` to minimise
+  // JSON churn for the common case.
+  filterGroups?: NotionPropertyFilter[][]
   // Updates applied on pickup. Splits into two passes inside the service: ones
   // that don't reference {{branch}}/{{sessionId}} run immediately (so the next
   // poll tick won't re-fire the page), the rest run after the renderer creates

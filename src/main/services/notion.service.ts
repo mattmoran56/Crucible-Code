@@ -2,12 +2,25 @@ import type {
   NotionDatabaseProperty,
   NotionDatabasePropertyOption,
   NotionDatabaseSchema,
+  NotionIntegrationConfig,
   NotionPropertyFilter,
   NotionPropertyUpdate,
   NotionRelationOption,
   NotionTaskPayload,
   NotionUser,
 } from '../../shared/types'
+
+// Returns the canonical list of filter groups for a config. Each group's
+// conditions are ANDed; the groups themselves are ORed. Prefers the explicit
+// `filterGroups` field; falls back to wrapping legacy `filters` as one group.
+export function getEffectiveFilterGroups(
+  config: Pick<NotionIntegrationConfig, 'filters' | 'filterGroups'>
+): NotionPropertyFilter[][] {
+  if (config.filterGroups && config.filterGroups.length > 0) {
+    return config.filterGroups.filter((g) => g.length > 0)
+  }
+  return config.filters && config.filters.length > 0 ? [config.filters] : []
+}
 
 const NOTION_VERSION = '2022-06-28'
 const NOTION_BASE = 'https://api.notion.com/v1'
@@ -295,17 +308,34 @@ function pageToTaskPayload(
 export async function queryDatabase(
   token: string,
   databaseId: string,
-  filters: NotionPropertyFilter[],
+  groups: NotionPropertyFilter[][],
   titlePropertyName?: string
 ): Promise<NotionTaskPayload[]> {
-  const materialized = await materializeFilters(token, filters)
-  if (materialized === SHORT_CIRCUIT_EMPTY) return []
-  const filter =
-    materialized.length === 0
-      ? undefined
-      : materialized.length === 1
-        ? materialized[0]
-        : { and: materialized }
+  // Materialize each group independently (each may resolve relation
+  // sub-filters). Drop any group that short-circuits to "no matches" — it
+  // contributes nothing to the outer OR. If every group short-circuits (or
+  // there were no groups), there's no filter at all → fetch everything.
+  // If every *non-empty* group short-circuits but some groups existed, the
+  // result is definitively empty.
+  const filledGroups = groups.filter((g) => g.length > 0)
+  let perGroup: Record<string, unknown>[] = []
+  for (const g of filledGroups) {
+    const materialized = await materializeFilters(token, g)
+    if (materialized === SHORT_CIRCUIT_EMPTY) continue
+    if (materialized.length === 0) continue
+    perGroup.push(materialized.length === 1 ? materialized[0] : { and: materialized })
+  }
+  let filter: Record<string, unknown> | undefined
+  if (filledGroups.length === 0) {
+    filter = undefined
+  } else if (perGroup.length === 0) {
+    // Every group resolved to "no possible matches" via short-circuit.
+    return []
+  } else if (perGroup.length === 1) {
+    filter = perGroup[0]
+  } else {
+    filter = { or: perGroup }
+  }
   const dbId = normalizeDatabaseId(databaseId)
   const body: Record<string, unknown> = { page_size: 100 }
   if (filter) body.filter = filter

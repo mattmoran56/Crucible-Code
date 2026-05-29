@@ -258,6 +258,79 @@ describe('notion-poller.service — tick', () => {
   })
 })
 
+describe('notion-poller.service — filter groups (OR of ANDs)', () => {
+  it('sends an OR of ANDs to Notion when multiple filterGroups are configured', async () => {
+    const poller = await loadFresh()
+    poller.saveConfig(
+      'p1',
+      baseConfig({
+        filters: [],
+        filterGroups: [
+          [
+            { property: 'Status', type: 'status', operator: 'equals', value: 'Ready' },
+            { property: 'Priority', type: 'select', operator: 'equals', value: 'High' },
+          ],
+          [
+            { property: 'Status', type: 'status', operator: 'equals', value: 'Ready' },
+            { property: 'Priority', type: 'select', operator: 'equals', value: 'Low' },
+          ],
+        ],
+      }) as any,
+    )
+
+    const queryBodies: any[] = []
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/query')) {
+        queryBodies.push(JSON.parse((init?.body as string) ?? '{}'))
+        return fakeNotionResponse(200, { results: [], has_more: false, next_cursor: null })
+      }
+      return fakeNotionResponse(404, {})
+    })
+
+    poller.startNotionPoller(fakeWindow)
+    await new Promise((r) => setTimeout(r, 5))
+    poller.stopNotionPoller()
+
+    expect(queryBodies.length).toBeGreaterThan(0)
+    const filter = queryBodies[0].filter
+    expect(filter).toBeDefined()
+    expect(filter.or).toHaveLength(2)
+    expect(filter.or[0].and).toHaveLength(2)
+    expect(filter.or[1].and).toHaveLength(2)
+    // Spot-check that each group's conditions came through.
+    expect(filter.or[0].and[0]).toMatchObject({ property: 'Status' })
+    expect(filter.or[1].and[1]).toMatchObject({ property: 'Priority' })
+  })
+
+  it('falls back to the legacy `filters` field when filterGroups is absent', async () => {
+    const poller = await loadFresh()
+    poller.saveConfig(
+      'p1',
+      baseConfig({
+        filters: [{ property: 'Status', type: 'status', operator: 'equals', value: 'Ready' }],
+      }) as any,
+    )
+
+    const queryBodies: any[] = []
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/query')) {
+        queryBodies.push(JSON.parse((init?.body as string) ?? '{}'))
+        return fakeNotionResponse(200, { results: [], has_more: false, next_cursor: null })
+      }
+      return fakeNotionResponse(404, {})
+    })
+
+    poller.startNotionPoller(fakeWindow)
+    await new Promise((r) => setTimeout(r, 5))
+    poller.stopNotionPoller()
+
+    expect(queryBodies[0].filter).toMatchObject({
+      property: 'Status',
+      status: { equals: 'Ready' },
+    })
+  })
+})
+
 describe('notion-poller.service — applyWriteBack', () => {
   it('only applies updates that reference {{branch}}/{{sessionId}} after session creation', async () => {
     const poller = await loadFresh()
