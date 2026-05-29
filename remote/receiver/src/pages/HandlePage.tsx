@@ -37,9 +37,13 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
   const handleValid = /^[a-z]+(-[a-z]+){2,}$/.test(handle.trim().toLowerCase())
 
   return (
-    <div className="min-h-screen bg-bg text-text flex items-center justify-center p-6" data-theme="dark">
+    <div
+      className="min-h-screen bg-bg text-text flex items-center justify-center"
+      style={{ padding: '24px 28px' }}
+      data-theme="dark"
+    >
       <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
+        <div className="text-center" style={{ marginBottom: 32 }}>
           <img
             src="/icon.png"
             alt=""
@@ -55,7 +59,7 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
               Cloud
             </span>
           </div>
-          <p className="text-sm text-text-muted">
+          <p className="text-sm text-text-muted" style={{ marginTop: 8, lineHeight: 1.5 }}>
             Enter your desktop's handle and the 6-character pairing code shown in its Remote popover.
           </p>
         </div>
