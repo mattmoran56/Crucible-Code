@@ -204,11 +204,30 @@ test.describe('Notion integration — fire path', () => {
       { timeout: 12_000 }
     )
 
+    // writeWhenReady deliberately splits the injection into two writes — the
+    // prompt text first, then a separate `\r` keystroke ~250ms later — so
+    // claude's TUI registers Enter as a real keystroke rather than swallowing
+    // it as part of a bracketed-paste payload. Wait for the trailing `\r`.
+    await page.waitForFunction(
+      () => {
+        const writes = (window as any).__terminalWrites as Array<{
+          terminalId: string
+          data: string
+        }>
+        const promptIdx = writes.findIndex((w) => w.data.includes('NOTION_E2E_PROMPT'))
+        if (promptIdx < 0) return false
+        return writes.slice(promptIdx + 1).some((w) => w.data === '\r')
+      },
+      undefined,
+      { timeout: 5_000 }
+    )
+
     const writes = await page.evaluate(
       () => (window as any).__terminalWrites as Array<{ terminalId: string; data: string }>
     )
-    const w = writes.find((w) => w.data.includes('NOTION_E2E_PROMPT'))
-    expect(w).toBeDefined()
-    expect(w!.data.endsWith('\r')).toBe(true)
+    const promptIdx = writes.findIndex((w) => w.data.includes('NOTION_E2E_PROMPT'))
+    expect(promptIdx).toBeGreaterThanOrEqual(0)
+    const followedByEnter = writes.slice(promptIdx + 1).some((w) => w.data === '\r')
+    expect(followedByEnter).toBe(true)
   })
 })
