@@ -6,6 +6,7 @@ import { SessionSidebar } from './components/SessionSidebar'
 import { SessionWorkspace } from './components/SessionWorkspace'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ThemePicker } from './components/ThemePicker'
+import { MobileNav, HamburgerButton } from './components/MobileNav'
 
 interface Project {
   id: string
@@ -53,6 +54,7 @@ export function App() {
   const [route, setRoute] = useState<Route>(parseHash())
   const [projects, setProjects] = useState<Project[]>([])
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, Session[]>>({})
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   useEffect(() => {
     if (token) wsClient.connect()
@@ -117,11 +119,12 @@ export function App() {
 
   return (
     <div className="flex flex-col h-screen bg-bg text-text">
-      {/* Top bar — branding row */}
-      <header className="flex items-center h-10 bg-bg-tertiary border-b border-border shrink-0">
+      {/* Top bar — branding row. Taller on mobile for thumb-friendly hit area. */}
+      <header className="flex items-center h-14 md:h-10 bg-bg-tertiary border-b border-border shrink-0">
+        <HamburgerButton onClick={() => setMobileNavOpen(true)} />
         <div className="flex items-center gap-2 shrink-0" style={{ padding: '0 12px' }}>
-          <img src="/icon.png" alt="" className="w-5 h-5 rounded-sm" />
-          <span className="text-sm font-semibold">Crucible Code</span>
+          <img src="/icon.png" alt="" className="w-7 h-7 md:w-5 md:h-5 rounded-sm" />
+          <span className="text-base md:text-sm font-semibold">Crucible Code</span>
           <span
             className="rounded text-[10px] uppercase tracking-wider bg-accent text-bg font-bold"
             style={{ padding: '2px 6px' }}
@@ -139,20 +142,23 @@ export function App() {
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1 shrink-0" style={{ padding: '0 8px' }}>
-          <ThemePicker />
+          {/* Theme picker only on desktop — on mobile it lives in Settings */}
+          <div className="hidden md:block">
+            <ThemePicker />
+          </div>
           <button
             onClick={handleUnpair}
-            className="text-xs text-text-muted hover:text-text"
-            style={{ padding: '4px 8px' }}
+            className="text-text-muted hover:text-text text-sm md:text-xs"
+            style={{ padding: '8px 12px' }}
           >
             Unpair
           </button>
         </div>
       </header>
 
-      {/* Project tabs row — separate strip, like the desktop's titlebar tab row */}
+      {/* Project tabs row — hidden on mobile, shown on md+ */}
       {projects.length > 0 && (
-        <div className="h-11 bg-bg-tertiary border-b border-border shrink-0">
+        <div className="hidden md:block h-11 bg-bg-tertiary border-b border-border shrink-0">
           <ProjectTabs
             projects={projects}
             activeProjectId={activeProjectId}
@@ -161,21 +167,49 @@ export function App() {
         </div>
       )}
 
-      {/* Body — sidebar + workspace */}
+      {/* Mobile drawer */}
+      <MobileNav
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onSelectProject={(pid) => {
+          navigate({ name: 'project', projectId: pid, view: 'sessions' })
+        }}
+        sessions={activeSessions}
+        activeSessionId={activeSessionId}
+        settingsOpen={settingsOpen}
+        onSelectSession={(sid) => {
+          if (activeProjectId) {
+            navigate({ name: 'session', projectId: activeProjectId, sessionId: sid })
+            setMobileNavOpen(false)
+          }
+        }}
+        onOpenSettings={() => {
+          if (activeProjectId) {
+            navigate({ name: 'project', projectId: activeProjectId, view: 'settings' })
+            setMobileNavOpen(false)
+          }
+        }}
+      />
+
+      {/* Body — sidebar (md+) + workspace */}
       <div className="flex-1 min-h-0 flex">
         {activeProjectId ? (
           <>
-            <SessionSidebar
-              sessions={activeSessions}
-              activeSessionId={activeSessionId}
-              settingsOpen={settingsOpen}
-              onSelectSession={(sid) =>
-                navigate({ name: 'session', projectId: activeProjectId, sessionId: sid })
-              }
-              onOpenSettings={() =>
-                navigate({ name: 'project', projectId: activeProjectId, view: 'settings' })
-              }
-            />
+            <div className="hidden md:flex">
+              <SessionSidebar
+                sessions={activeSessions}
+                activeSessionId={activeSessionId}
+                settingsOpen={settingsOpen}
+                onSelectSession={(sid) =>
+                  navigate({ name: 'session', projectId: activeProjectId, sessionId: sid })
+                }
+                onOpenSettings={() =>
+                  navigate({ name: 'project', projectId: activeProjectId, view: 'settings' })
+                }
+              />
+            </div>
             <section className="flex-1 min-w-0">
               {settingsOpen ? (
                 <SettingsPanel projectId={activeProjectId} />

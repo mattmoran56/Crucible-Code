@@ -80,11 +80,11 @@ export function SessionWorkspace({ session }: { session: Session }) {
     <div className="h-full flex flex-col">
       {error && <div className="text-xs text-danger px-3 py-1.5 bg-danger/10">{error}</div>}
 
-      {/* Workspace tab strip — matches desktop styling */}
+      {/* Workspace tab strip — h-14 on mobile for thumb-friendly tabs, scrolls horizontally if overflowing. */}
       <div
         role="tablist"
-        className="flex items-center bg-bg-tertiary border-b border-border shrink-0"
-        style={{ padding: '0 4px' }}
+        className="flex items-stretch bg-bg-tertiary border-b border-border shrink-0 overflow-x-auto min-h-14 md:gap-0 md:px-1 md:min-h-0"
+        style={{ gap: 12, paddingLeft: 12, paddingRight: 12 }}
       >
         {(terminals ?? []).map((t) => {
           const isActive = t.tabId === activeTabId
@@ -95,22 +95,26 @@ export function SessionWorkspace({ session }: { session: Session }) {
               aria-selected={isActive}
               onClick={() => setActiveTabId(t.tabId)}
               className={
-                'flex items-center gap-1.5 text-xs transition-colors ' +
+                'relative flex items-center justify-center gap-1.5 transition-colors shrink-0 ' +
+                'text-base md:text-xs md:px-2.5 md:py-2 ' +
                 (isActive
-                  ? 'text-text'
+                  ? 'text-text bg-bg md:bg-transparent'
                   : 'text-text-muted hover:text-text')
               }
-              style={{ padding: '8px 10px' }}
+              style={{ paddingLeft: 24, paddingRight: 24 }}
             >
               {labelFor(t)}
+              {isActive && (
+                <span className="absolute left-0 right-0 bottom-0 h-[3px] md:h-[2px] bg-accent rounded-t" />
+              )}
             </button>
           )
         })}
         <button
           onClick={handleSpawnShell}
           title="Open a new shell tab"
-          className="text-xs text-text-muted hover:text-text"
-          style={{ padding: '8px 10px' }}
+          className="text-text-muted hover:text-text shrink-0 text-xl md:text-xs md:px-2.5 md:py-2"
+          style={{ paddingLeft: 20, paddingRight: 20 }}
         >
           +
         </button>

@@ -52,6 +52,13 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void 
     ext === '.json' ? 'application/json' :
     'application/octet-stream'
   res.setHeader('Content-Type', type)
+  // Hashed asset bundles can cache forever; index.html must always be revalidated
+  // so a new build is picked up immediately on reload.
+  if (rel === '/index.html' || rel === '/') {
+    res.setHeader('Cache-Control', 'no-store, must-revalidate')
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+  }
   fs.createReadStream(full).pipe(res)
 }
 

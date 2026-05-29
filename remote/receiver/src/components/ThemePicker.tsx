@@ -21,19 +21,25 @@ export function applyStoredTheme(): void {
   document.documentElement.setAttribute('data-theme', loadTheme())
 }
 
-export function ThemePicker() {
-  const [theme, setTheme] = useState<ThemeId>(loadTheme())
-  const [open, setOpen] = useState(false)
-
+function useThemeState(): [ThemeId, (id: ThemeId) => void] {
+  const [theme, setThemeState] = useState<ThemeId>(loadTheme())
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem(STORAGE_KEY, theme)
   }, [theme])
+  return [theme, setThemeState]
+}
+
+/**
+ * Compact dropdown for the desktop top bar.
+ */
+export function ThemePicker() {
+  const [theme, setTheme] = useThemeState()
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
     const onClick = () => setOpen(false)
-    // Fire after the toggling click finishes
     const t = setTimeout(() => document.addEventListener('click', onClick), 0)
     return () => {
       clearTimeout(t)
@@ -50,7 +56,7 @@ export function ThemePicker() {
           e.stopPropagation()
           setOpen((v) => !v)
         }}
-        title="Theme (web only — independent from desktop)"
+        title="Theme"
         className="text-xs text-text-muted hover:text-text flex items-center gap-1.5"
         style={{ padding: '4px 8px' }}
       >
@@ -84,6 +90,46 @@ export function ThemePicker() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Chunky stacked radio list — used inside Settings on mobile. Each row is a
+ * generous touch target.
+ */
+export function ThemeRadioList() {
+  const [theme, setTheme] = useThemeState()
+  return (
+    <div role="radiogroup" aria-label="Theme">
+      {THEMES.map((t) => {
+        const isActive = t.id === theme
+        return (
+          <button
+            key={t.id}
+            role="radio"
+            aria-checked={isActive}
+            onClick={() => setTheme(t.id)}
+            className={
+              'flex items-center gap-3 w-full text-left transition-colors border-b border-border/40 last:border-b-0 ' +
+              (isActive ? 'bg-bg' : 'hover:bg-bg-tertiary')
+            }
+            style={{ padding: '16px 20px' }}
+          >
+            <span
+              className={
+                'inline-flex items-center justify-center w-5 h-5 rounded-full border-2 shrink-0 ' +
+                (isActive ? 'border-accent' : 'border-border')
+              }
+            >
+              {isActive && <span className="w-2.5 h-2.5 rounded-full bg-accent" />}
+            </span>
+            <span className={'text-base ' + (isActive ? 'text-accent' : 'text-text')}>
+              {t.label}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
