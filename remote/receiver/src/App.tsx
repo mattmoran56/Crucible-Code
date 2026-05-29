@@ -148,7 +148,7 @@ export function App() {
   return (
     <div className="flex flex-col h-screen bg-bg text-text">
       {/* Top bar — branding row. Taller on mobile for thumb-friendly hit area. */}
-      <header className="flex items-center h-14 md:h-10 bg-bg-tertiary border-b border-border shrink-0">
+      <header className="pwa-header flex items-center h-14 md:h-10 bg-bg-tertiary border-b border-border shrink-0">
         <HamburgerButton onClick={() => setMobileNavOpen(true)} />
         <div className="flex items-center gap-2 shrink-0" style={{ padding: '0 12px' }}>
           <img src="/icon.png" alt="" className="w-7 h-7 md:w-5 md:h-5 rounded-sm" />
@@ -182,7 +182,7 @@ export function App() {
 
       {/* Project tabs row — hidden on mobile, shown on md+ */}
       {projects.length > 0 && (
-        <div className="hidden md:block h-11 bg-bg-tertiary border-b border-border shrink-0">
+        <div className="pwa-tabs hidden md:block h-11 bg-bg-tertiary border-b border-border shrink-0">
           <ProjectTabs
             projects={projects}
             activeProjectId={activeProjectId}

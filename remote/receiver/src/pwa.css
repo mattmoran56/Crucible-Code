@@ -1,0 +1,49 @@
+/*
+ * PWA standalone-mode tweaks for iPhone:
+ *   - Top safe-area padding so the notch doesn't overlap the header
+ *   - The padding bleeds the header's bg so it looks like one continuous bar
+ *   - Header + project tab strip stick to the top so they don't scroll away
+ *     under finger gestures on iOS
+ *
+ * Scoped via `@media (display-mode: standalone)` — these rules only apply
+ * when the receiver is launched from the home screen.
+ */
+@media (display-mode: standalone) {
+  /* Lock document scroll so iOS doesn't rubber-band the whole page (which
+     pulls the header out from under the notch). Inner regions still scroll.
+     Using dvh (dynamic viewport) so the layout shrinks with the iOS chrome
+     instead of overflowing past the home indicator. */
+  html, body {
+    overflow: hidden;
+    overscroll-behavior: none;
+    height: 100dvh;
+    margin: 0;
+  }
+  /* The receiver root is `.flex.flex-col.h-screen` — override h-screen to dvh
+     so it never exceeds the visible viewport. */
+  #root > div.h-screen {
+    height: 100dvh;
+  }
+
+  /* Extra breathing room above the notch beyond the safe-area inset, so the
+     branding doesn't kiss the camera cutout. */
+  .pwa-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding-top: calc(env(safe-area-inset-top) + 8px);
+    /* Make the padded notch strip visually merge with the bar across themes. */
+    background: var(--color-bg-tertiary);
+  }
+  .pwa-tabs {
+    position: sticky;
+    top: calc(env(safe-area-inset-top) + 8px + 3.5rem); /* 3.5rem = h-14 mobile */
+    z-index: 29;
+    background: var(--color-bg-tertiary);
+  }
+  @media (min-width: 768px) {
+    .pwa-tabs {
+      top: calc(env(safe-area-inset-top) + 8px + 2.5rem); /* h-10 on md+ */
+    }
+  }
+}
