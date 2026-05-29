@@ -60,7 +60,7 @@ export function MobileNav({
       {/* Drawer */}
       <aside
         className={
-          'fixed top-0 left-0 bottom-0 z-50 w-72 bg-bg-secondary border-r border-border ' +
+          'pwa-drawer fixed top-0 left-0 bottom-0 z-50 w-72 bg-bg-secondary border-r border-border ' +
           'flex flex-col transform transition-transform md:hidden ' +
           (open ? 'translate-x-0' : '-translate-x-full')
         }

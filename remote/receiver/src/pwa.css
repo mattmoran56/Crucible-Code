@@ -33,32 +33,38 @@
     position: sticky;
     top: 0;
     z-index: 30;
-    height: calc(3.5rem + env(safe-area-inset-top) + 12px) !important;
-    padding-top: calc(env(safe-area-inset-top) + 12px);
+    height: calc(3.5rem + env(safe-area-inset-top)) !important;
+    padding-top: env(safe-area-inset-top);
     /* Make the padded notch strip visually merge with the bar across themes. */
     background: var(--color-bg-tertiary);
   }
   @media (min-width: 768px) {
     .pwa-header {
-      height: calc(2.5rem + env(safe-area-inset-top) + 12px) !important;
+      height: calc(2.5rem + env(safe-area-inset-top)) !important;
     }
   }
   .pwa-tabs {
     position: sticky;
-    top: calc(env(safe-area-inset-top) + 12px + 3.5rem); /* mobile header */
+    top: calc(env(safe-area-inset-top) + 3.5rem); /* mobile header */
     z-index: 29;
     background: var(--color-bg-tertiary);
   }
   @media (min-width: 768px) {
     .pwa-tabs {
-      top: calc(env(safe-area-inset-top) + 12px + 2.5rem); /* md+ header */
+      top: calc(env(safe-area-inset-top) + 2.5rem); /* md+ header */
     }
   }
 
   /* Pad the body for the home indicator inset so content doesn't slip
-     underneath it — and ensure the flex column actually fills the dvh so
-     there's no dead space at the bottom. */
+     underneath it. */
   #root > div.h-screen > .flex-1 {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Hamburger drawer: pad top for the notch and bottom for the home
+     indicator. The drawer's bg paints the notch strip so it visually merges. */
+  .pwa-drawer {
+    padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
