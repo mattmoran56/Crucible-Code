@@ -47,8 +47,8 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
           <img
             src="/icon.png"
             alt=""
-            className="rounded-md mb-4"
-            style={{ width: 64, height: 64, display: 'block', marginLeft: 'auto', marginRight: 'auto' }}
+            className="rounded-md"
+            style={{ width: 64, height: 64, display: 'block', marginLeft: 'auto', marginRight: 'auto', marginBottom: 20 }}
           />
           <div className="inline-flex items-center gap-2 mb-3">
             <span className="text-lg font-semibold">Crucible Code</span>
