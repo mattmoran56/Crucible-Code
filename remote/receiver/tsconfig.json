@@ -12,8 +12,10 @@
     "isolatedModules": true,
     "noEmit": true,
     "paths": {
-      "@protocol/*": ["../protocol/*"]
+      "@protocol/*": ["../protocol/*"],
+      "@renderer/*": ["../../src/renderer/*"],
+      "@shared/*": ["../../src/shared/*"]
     }
   },
-  "include": ["src", "../protocol"]
+  "include": ["src", "../protocol", "../../src/renderer", "../../src/shared"]
 }

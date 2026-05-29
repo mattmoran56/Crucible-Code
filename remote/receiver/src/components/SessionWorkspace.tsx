@@ -1,0 +1,135 @@
+import { useEffect, useState } from 'react'
+import { api } from '../api/wsClient'
+import { RemoteTerminal } from './RemoteTerminal'
+
+interface Session {
+  id: string
+  name: string
+  branchName?: string
+  worktreePath?: string
+}
+
+interface TerminalRef {
+  terminalId: string
+  mode: string
+  tabId: string
+  contextId: string
+}
+
+function labelFor(t: TerminalRef): string {
+  if (t.tabId === 'agent') return 'Agent'
+  if (t.tabId === 'review') return 'Review'
+  if (t.tabId.startsWith('agent:')) return `Agent ${t.tabId.slice(6)}`
+  if (t.tabId.startsWith('terminal:')) return `Terminal ${t.tabId.slice(9)}`
+  return t.tabId
+}
+
+export function SessionWorkspace({ session }: { session: Session }) {
+  const [terminals, setTerminals] = useState<TerminalRef[] | null>(null)
+  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const refreshTerminals = () => {
+    api.terminal
+      .listForSession(session.id)
+      .then((list) => {
+        const arr = list as TerminalRef[]
+        setTerminals(arr)
+        setActiveTabId((prev) => {
+          if (prev && arr.some((t) => t.tabId === prev)) return prev
+          return arr[0]?.tabId ?? null
+        })
+      })
+      .catch((e) => setError(String(e)))
+  }
+
+  useEffect(() => {
+    refreshTerminals()
+    const t = window.setInterval(refreshTerminals, 4000)
+    return () => window.clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id])
+
+  const handleSpawnShell = async () => {
+    if (!session.worktreePath) return
+    const nextTabIndex =
+      (terminals?.filter((t) => t.tabId.startsWith('terminal:')).length ?? 0) + 1
+    const tabId = `terminal:${nextTabIndex}`
+    try {
+      await api.terminal.spawn(
+        session.id,
+        session.worktreePath,
+        'shell',
+        'dark',
+        undefined,
+        session.worktreePath,
+        false,
+        session.id,
+        tabId
+      )
+      refreshTerminals()
+      setActiveTabId(tabId)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const active = terminals?.find((t) => t.tabId === activeTabId) ?? null
+
+  return (
+    <div className="h-full flex flex-col">
+      {error && <div className="text-xs text-danger px-3 py-1.5 bg-danger/10">{error}</div>}
+
+      {/* Workspace tab strip — matches desktop styling */}
+      <div
+        role="tablist"
+        className="flex items-center bg-bg-tertiary border-b border-border shrink-0"
+        style={{ padding: '0 4px' }}
+      >
+        {(terminals ?? []).map((t) => {
+          const isActive = t.tabId === activeTabId
+          return (
+            <button
+              key={t.tabId}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setActiveTabId(t.tabId)}
+              className={
+                'flex items-center gap-1.5 text-xs transition-colors ' +
+                (isActive
+                  ? 'text-text'
+                  : 'text-text-muted hover:text-text')
+              }
+              style={{ padding: '8px 10px' }}
+            >
+              {labelFor(t)}
+            </button>
+          )
+        })}
+        <button
+          onClick={handleSpawnShell}
+          title="Open a new shell tab"
+          className="text-xs text-text-muted hover:text-text"
+          style={{ padding: '8px 10px' }}
+        >
+          +
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 bg-bg flex flex-col">
+        {terminals && terminals.length === 0 ? (
+          <div className="text-sm text-text-muted" style={{ padding: 24 }}>
+            No active terminals in this session. Open one on your desktop, or click "+" to start a
+            remote shell.
+          </div>
+        ) : active ? (
+          <RemoteTerminal key={active.terminalId} terminalId={active.terminalId} />
+        ) : (
+          <div className="text-sm text-text-muted" style={{ padding: 24 }}>
+            Loading…
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
