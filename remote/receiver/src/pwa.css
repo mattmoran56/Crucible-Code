@@ -25,25 +25,40 @@
     height: 100dvh;
   }
 
-  /* Extra breathing room above the notch beyond the safe-area inset, so the
-     branding doesn't kiss the camera cutout. */
+  /* Header height = the original Tailwind h-14/h-10 bar PLUS the notch inset
+     PLUS a bit of breathing room. Without this, the padding-top eats into
+     the fixed h-14 box and the bar's visible portion collapses. !important
+     overrides Tailwind's h-14 / md:h-10. */
   .pwa-header {
     position: sticky;
     top: 0;
     z-index: 30;
-    padding-top: calc(env(safe-area-inset-top) + 8px);
+    height: calc(3.5rem + env(safe-area-inset-top) + 12px) !important;
+    padding-top: calc(env(safe-area-inset-top) + 12px);
     /* Make the padded notch strip visually merge with the bar across themes. */
     background: var(--color-bg-tertiary);
   }
+  @media (min-width: 768px) {
+    .pwa-header {
+      height: calc(2.5rem + env(safe-area-inset-top) + 12px) !important;
+    }
+  }
   .pwa-tabs {
     position: sticky;
-    top: calc(env(safe-area-inset-top) + 8px + 3.5rem); /* 3.5rem = h-14 mobile */
+    top: calc(env(safe-area-inset-top) + 12px + 3.5rem); /* mobile header */
     z-index: 29;
     background: var(--color-bg-tertiary);
   }
   @media (min-width: 768px) {
     .pwa-tabs {
-      top: calc(env(safe-area-inset-top) + 8px + 2.5rem); /* h-10 on md+ */
+      top: calc(env(safe-area-inset-top) + 12px + 2.5rem); /* md+ header */
     }
+  }
+
+  /* Pad the body for the home indicator inset so content doesn't slip
+     underneath it — and ensure the flex column actually fills the dvh so
+     there's no dead space at the bottom. */
+  #root > div.h-screen > .flex-1 {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
