@@ -27,6 +27,7 @@ import type {
 
 const STORAGE_HANDLE = 'codecrucible-remote-handle'
 const STORAGE_CLOUD_TOKEN = 'codecrucible-remote-cloud-token'
+const STORAGE_TICKET = 'codecrucible-remote-ticket'
 
 export function getStoredHandle(): string | null {
   return localStorage.getItem(STORAGE_HANDLE)
@@ -36,9 +37,18 @@ export function setStoredHandle(h: string): void {
   localStorage.setItem(STORAGE_HANDLE, h)
 }
 
+export function getStoredTicket(): string | null {
+  return localStorage.getItem(STORAGE_TICKET)
+}
+
+export function setStoredTicket(t: string): void {
+  localStorage.setItem(STORAGE_TICKET, t)
+}
+
 export function clearStoredHandle(): void {
   localStorage.removeItem(STORAGE_HANDLE)
   localStorage.removeItem(STORAGE_CLOUD_TOKEN)
+  localStorage.removeItem(STORAGE_TICKET)
 }
 
 export function getCloudToken(): string | null {
@@ -84,8 +94,9 @@ export async function detectCloudMode(): Promise<boolean> {
 
 export async function openCloudConnection(opts: CloudConnectOptions): Promise<CloudConnection> {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+  const ticket = getStoredTicket() ?? ''
   const ws = new WebSocket(
-    `${proto}://${location.host}/phone?handle=${encodeURIComponent(opts.handle)}`
+    `${proto}://${location.host}/phone?handle=${encodeURIComponent(opts.handle)}&ticket=${encodeURIComponent(ticket)}`
   )
 
   const kp = await generateKeypair()

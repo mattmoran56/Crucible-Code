@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { wsClient, api } from './api/wsClient'
 import { PairingPage } from './pages/PairingPage'
 import { HandlePage } from './pages/HandlePage'
-import { getStoredHandle, getCloudToken } from './api/cloud'
+import { getStoredHandle, getCloudToken, getStoredTicket } from './api/cloud'
 import { ProjectTabs } from './components/ProjectTabs'
 import { SessionSidebar } from './components/SessionSidebar'
 import { SessionWorkspace } from './components/SessionWorkspace'
@@ -52,7 +52,9 @@ function buildHash(r: Route): string {
 export function App() {
   const [mode, setMode] = useState<'lan' | 'cloud' | null>(null)
   const [token, setToken] = useState<string | null>(wsClient.getToken())
-  const [cloudHandle, setCloudHandle] = useState<string | null>(getStoredHandle())
+  const [cloudHandle, setCloudHandle] = useState<string | null>(
+    getStoredHandle() && getStoredTicket() ? getStoredHandle() : null
+  )
   const [connected, setConnected] = useState(false)
   const [route, setRoute] = useState<Route>(parseHash())
   const [projects, setProjects] = useState<Project[]>([])
@@ -65,7 +67,10 @@ export function App() {
 
   useEffect(() => {
     if (mode === null) return
-    const hasAuth = mode === 'lan' ? !!token : !!cloudHandle && !!getCloudToken()
+    const hasAuth =
+      mode === 'lan'
+        ? !!token
+        : !!cloudHandle && !!getStoredTicket() && !!getCloudToken()
     if (hasAuth) wsClient.connect()
     return wsClient.onConnectionChange(setConnected)
   }, [mode, token, cloudHandle])
@@ -120,7 +125,7 @@ export function App() {
     return <PairingPage onPaired={() => setToken(wsClient.getToken())} />
   }
 
-  if (mode === 'cloud' && !connected && !cloudHandle) {
+  if (mode === 'cloud' && !connected && (!cloudHandle || !getStoredTicket())) {
     return <HandlePage onPaired={() => setCloudHandle(getStoredHandle())} />
   }
 
@@ -132,6 +137,7 @@ export function App() {
       // Cloud
       localStorage.removeItem('codecrucible-remote-handle')
       localStorage.removeItem('codecrucible-remote-cloud-token')
+      localStorage.removeItem('codecrucible-remote-ticket')
       setCloudHandle(null)
     }
     wsClient.disconnect()

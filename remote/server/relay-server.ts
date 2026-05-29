@@ -13,6 +13,7 @@ import {
   isCloudEnabled,
   getCloudConnected,
   getCloudHandle,
+  getCloudPhoneTicket,
   getCloudSafetyNumber,
 } from './cloud-client'
 import {
@@ -259,6 +260,7 @@ export interface RemoteStatus {
   cloud: {
     enabled: boolean
     handle: string | null
+    ticket: string | null
     connected: boolean
     safetyNumber: string | null
   }
@@ -277,6 +279,7 @@ export function getRemoteStatus(): RemoteStatus {
     cloud: {
       enabled: isCloudEnabled(),
       handle: getCloudHandle(),
+      ticket: getCloudPhoneTicket(),
       connected: getCloudConnected(),
       safetyNumber: getCloudSafetyNumber(),
     },

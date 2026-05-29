@@ -10,6 +10,7 @@ import { Input } from '@renderer/components/ui/Input'
  */
 export function HandlePage({ onPaired }: { onPaired: () => void }) {
   const [handle, setHandle] = useState('')
+  const [ticket, setTicket] = useState('')
   const [code, setCode] = useState('')
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -24,7 +25,7 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
       // label is forwarded by openCloudConnection internally; this hook just
       // triggers the pair flow and resolves on auth success or error.
       void labelToUse
-      await pairCloud(handle.trim().toLowerCase(), code.trim())
+      await pairCloud(handle.trim().toLowerCase(), ticket.trim().toLowerCase(), code.trim())
       // Auth happens async; the App component listens for connected state.
       onPaired()
     } catch (err) {
@@ -35,6 +36,7 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
   }
 
   const handleValid = /^[a-z]+(-[a-z]+){2,}$/.test(handle.trim().toLowerCase())
+  const ticketValid = ticket.trim().length >= 8
 
   return (
     <div className="min-h-screen bg-bg text-text flex items-center justify-center p-6" data-theme="dark">
@@ -63,6 +65,15 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
             style={{ fontSize: 16, textAlign: 'center' }}
           />
           <Input
+            value={ticket}
+            onChange={(e) => setTicket(e.target.value.toLowerCase())}
+            placeholder="Phone ticket"
+            spellCheck={false}
+            autoCapitalize="none"
+            autoCorrect="off"
+            style={{ fontSize: 14, letterSpacing: 2, textAlign: 'center', fontFamily: 'monospace' }}
+          />
+          <Input
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder="ABCDEF"
@@ -76,7 +87,7 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
           />
           <Button
             type="submit"
-            disabled={busy || !handleValid || code.length !== 6}
+            disabled={busy || !handleValid || !ticketValid || code.length !== 6}
             loading={busy}
             className="w-full"
           >

@@ -18,6 +18,7 @@ interface RemoteStatus {
   cloud: {
     enabled: boolean
     handle: string | null
+    ticket: string | null
     connected: boolean
     safetyNumber: string | null
   }
@@ -91,6 +92,10 @@ export function RemoteTogglePopover() {
 
   const handleCopyHandle = async () => {
     if (status?.cloud.handle) await navigator.clipboard.writeText(status.cloud.handle)
+  }
+
+  const handleCopyTicket = async () => {
+    if (status?.cloud.ticket) await navigator.clipboard.writeText(status.cloud.ticket)
   }
 
   const handleToggleRequireApproval = async () => {
@@ -346,6 +351,24 @@ export function RemoteTogglePopover() {
                   <button type="button" onClick={handleRegenerateHandle} style={{ fontSize: 12 }}>
                     Regenerate
                   </button>
+                </div>
+                <div style={{ marginTop: 10, color: '#555' }}>Phone ticket:</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <code
+                    onClick={handleCopyTicket}
+                    style={{
+                      fontSize: 14,
+                      padding: '4px 10px',
+                      background: '#f3f4f6',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      flex: 1,
+                      wordBreak: 'break-all',
+                    }}
+                    title="Click to copy"
+                  >
+                    {status.cloud.ticket ?? '—'}
+                  </code>
                 </div>
                 <div style={{ marginTop: 10, color: '#555' }}>Pairing code:</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>

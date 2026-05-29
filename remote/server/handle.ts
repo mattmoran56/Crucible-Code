@@ -49,9 +49,19 @@ export interface CloudHandleState {
   token: string
 }
 
-const store = new Store<{ cloudHandle: string | null; cloudAuthToken: string | null }>({
+const store = new Store<{
+  cloudHandle: string | null
+  cloudAuthToken: string | null
+  cloudPhoneTicket: string | null
+  cloudLastRegisteredAt: number | null
+}>({
   name: 'remote-cloud-settings',
-  defaults: { cloudHandle: null, cloudAuthToken: null },
+  defaults: {
+    cloudHandle: null,
+    cloudAuthToken: null,
+    cloudPhoneTicket: null,
+    cloudLastRegisteredAt: null,
+  },
 })
 
 function pick(): string {
@@ -70,6 +80,23 @@ export function getCurrentToken(): string | null {
 export function setRegistered(handle: string, token: string): void {
   store.set('cloudHandle', handle)
   store.set('cloudAuthToken', token)
+  store.set('cloudLastRegisteredAt', Date.now())
+}
+
+export function getPhoneTicket(): string | null {
+  return store.get('cloudPhoneTicket', null)
+}
+
+export function setPhoneTicket(ticket: string | null): void {
+  store.set('cloudPhoneTicket', ticket)
+}
+
+export function getLastRegisteredAt(): number | null {
+  return store.get('cloudLastRegisteredAt', null)
+}
+
+export function touchLastRegisteredAt(): void {
+  store.set('cloudLastRegisteredAt', Date.now())
 }
 
 /** Generate a *candidate* handle. The backend `/register` may reject it (409
@@ -81,4 +108,6 @@ export function generateCandidateHandle(): string {
 export function clearHandle(): void {
   store.set('cloudHandle', null)
   store.set('cloudAuthToken', null)
+  store.set('cloudPhoneTicket', null)
+  store.set('cloudLastRegisteredAt', null)
 }

@@ -6,6 +6,7 @@ import {
   getStoredHandle,
   getCloudToken,
   clearStoredHandle,
+  setStoredTicket,
   type CloudConnection,
 } from './cloud'
 
@@ -127,9 +128,10 @@ class WsClient {
     this.cloud.onMessage((frame) => this.onMessage(frame))
   }
 
-  async pairCloud(handle: string, code: string): Promise<void> {
-    // Persist handle now so reconnects find it. Token is stored by cloud.ts on success.
+  async pairCloud(handle: string, ticket: string, code: string): Promise<void> {
+    // Persist handle + ticket now so reconnects find them. Token is stored by cloud.ts on success.
     localStorage.setItem('codecrucible-remote-handle', handle)
+    setStoredTicket(ticket)
     await this.connectCloud(code)
   }
 
@@ -242,8 +244,8 @@ export async function pair(code: string, label: string): Promise<void> {
   wsClient.connect()
 }
 
-export async function pairCloud(handle: string, code: string): Promise<void> {
-  await wsClient.pairCloud(handle, code)
+export async function pairCloud(handle: string, ticket: string, code: string): Promise<void> {
+  await wsClient.pairCloud(handle, ticket, code)
 }
 
 // Tiny window.api shim: api.projects.list() -> wsClient.invoke(IPC.PROJECT_LIST, [])

@@ -13,8 +13,24 @@ not_found_handling = "single-page-application"
 name = "ROOM"
 class_name = "Room"
 
+# Single fixed DO instance for per-IP rate limiting of /register.
+[[durable_objects.bindings]]
+name = "RATE_LIMIT"
+class_name = "RateLimit"
+
+# Existence registry: handle -> 1 (with TTL on the entry to mirror DO alarm).
+# Worker checks this before instantiating a Room DO, so unknown handles can't
+# spawn free DOs.
+[[kv_namespaces]]
+binding = "HANDLE_REGISTRY"
+id = "eec0512da1924d4e996c5eeff3594bd9"
+
 # SQLite-backed DO storage. Required for new DO classes on the Workers Free
-# plan; harmless on Paid. Our state is tiny (just a token per handle).
+# plan; harmless on Paid.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RateLimit"]

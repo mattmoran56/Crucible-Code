@@ -590,6 +590,7 @@ interface RemoteStatus {
   cloud: {
     enabled: boolean
     handle: string | null
+    ticket: string | null
     connected: boolean
     safetyNumber: string | null
   }

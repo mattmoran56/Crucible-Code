@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import WebSocket from 'ws'
 import {
   generateKeypair,
@@ -17,6 +18,10 @@ import {
   setRegistered,
   generateCandidateHandle,
   clearHandle,
+  getPhoneTicket,
+  setPhoneTicket,
+  getLastRegisteredAt,
+  touchLastRegisteredAt,
 } from './handle'
 import { attachBridgeToTransport, type Transport } from './bridge'
 import { awaitApproval } from './approval'
@@ -70,6 +75,10 @@ export function getCloudHandle(): string | null {
   return getCurrentHandle()
 }
 
+export function getCloudPhoneTicket(): string | null {
+  return getPhoneTicket()
+}
+
 export function getCloudConnected(): boolean {
   return connected
 }
@@ -82,11 +91,109 @@ export function setCloudStatusListener(cb: () => void): void {
   onStatusChange = cb
 }
 
+const ROTATE_AFTER_MS = 7 * 24 * 3600 * 1000
+
 export async function startCloudClient(): Promise<void> {
   if (!stopped) return
   stopped = false
+  await maybeRotateOnStartup()
   await ensureRegistered()
   scheduleConnect(0)
+}
+
+async function maybeRotateOnStartup(): Promise<void> {
+  const handle = getCurrentHandle()
+  const token = getCurrentToken()
+  if (!handle || !token) return
+  const last = getLastRegisteredAt() ?? 0
+  if (Date.now() - last < ROTATE_AFTER_MS) return
+  const base = relayHttpUrl()
+  // eslint-disable-next-line no-console
+  console.log(`[cloud] proactively rotating token for handle=${handle}`)
+  try {
+    const resp = await fetch(`${base}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle, currentToken: token }),
+    })
+    if (resp.status === 409) {
+      // eslint-disable-next-line no-console
+      console.warn('[cloud] rotation 409 — handle no longer ours, clearing state')
+      clearHandle()
+      return
+    }
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      // eslint-disable-next-line no-console
+      console.error(`[cloud] rotation failed: ${resp.status} ${body}`)
+      return
+    }
+    const data = (await resp.json()) as { handle: string; token: string }
+    setRegistered(data.handle, data.token)
+    const ticket = randomBytes(8).toString('hex')
+    const ok = await postPhoneTicket(base, data.handle, data.token, ticket)
+    if (!ok) {
+      // Rollback — leaves the handle cleared so ensureRegistered() runs fresh.
+      // eslint-disable-next-line no-console
+      console.error('[cloud] /set-phone-ticket failed after rotation, rolling back')
+      clearHandle()
+      return
+    }
+    setPhoneTicket(ticket)
+    touchLastRegisteredAt()
+    // eslint-disable-next-line no-console
+    console.log('[cloud] rotation complete')
+  } catch (err) {
+    const e = err as Error
+    // eslint-disable-next-line no-console
+    console.error(`[cloud] rotation error: ${e.message}`)
+  }
+}
+
+async function postPhoneTicket(
+  base: string,
+  handle: string,
+  token: string,
+  ticket: string,
+): Promise<boolean> {
+  try {
+    const resp = await fetch(`${base}/set-phone-ticket`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle, token, ticket }),
+    })
+    if (!resp.ok) {
+      // Legacy relay-backend doesn't implement /set-phone-ticket; treat 404 as
+      // a no-op success so local/dev flows keep working. Cloudflare Worker
+      // returns 200/401/400 only.
+      if (resp.status === 404) return true
+      return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function unregisterCloud(): Promise<void> {
+  const handle = getCurrentHandle()
+  const token = getCurrentToken()
+  if (!handle || !token) return
+  const base = relayHttpUrl()
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 2000)
+  try {
+    await fetch(`${base}/unregister`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle, token }),
+      signal: ctrl.signal,
+    })
+  } catch {
+    // best-effort
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export function stopCloudClient(): void {
@@ -146,6 +253,17 @@ async function ensureRegistered(): Promise<void> {
       }
       const data = (await resp.json()) as { handle: string; token: string }
       setRegistered(data.handle, data.token)
+      const ticket = randomBytes(8).toString('hex')
+      const ok = await postPhoneTicket(base, data.handle, data.token, ticket)
+      if (!ok) {
+        // Roll back the half-state — don't leave a token persisted that the
+        // user can't actually use because the phone has no ticket.
+        clearHandle()
+        // eslint-disable-next-line no-console
+        console.error('[cloud] /set-phone-ticket failed after register, rolled back')
+        throw new Error('relay /set-phone-ticket failed')
+      }
+      setPhoneTicket(ticket)
       // eslint-disable-next-line no-console
       console.log(`[cloud] registered: handle=${data.handle}`)
       return
