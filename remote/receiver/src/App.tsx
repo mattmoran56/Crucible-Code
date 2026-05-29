@@ -5,7 +5,6 @@ import { ProjectTabs } from './components/ProjectTabs'
 import { SessionSidebar } from './components/SessionSidebar'
 import { SessionWorkspace } from './components/SessionWorkspace'
 import { SettingsPanel } from './components/SettingsPanel'
-import { ThemePicker } from './components/ThemePicker'
 import { MobileNav, HamburgerButton } from './components/MobileNav'
 
 interface Project {
@@ -142,10 +141,6 @@ export function App() {
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1 shrink-0" style={{ padding: '0 8px' }}>
-          {/* Theme picker only on desktop — on mobile it lives in Settings */}
-          <div className="hidden md:block">
-            <ThemePicker />
-          </div>
           <button
             onClick={handleUnpair}
             className="text-text-muted hover:text-text text-sm md:text-xs"

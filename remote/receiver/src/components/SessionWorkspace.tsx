@@ -83,7 +83,7 @@ export function SessionWorkspace({ session }: { session: Session }) {
       {/* Workspace tab strip — h-14 on mobile for thumb-friendly tabs, scrolls horizontally if overflowing. */}
       <div
         role="tablist"
-        className="flex items-stretch bg-bg-tertiary border-b border-border shrink-0 overflow-x-auto min-h-14 md:gap-0 md:px-1 md:min-h-0"
+        className="flex items-stretch bg-bg-tertiary border-b border-border shrink-0 overflow-x-auto min-h-14 md:gap-0 md:px-1 md:min-h-9"
         style={{ gap: 12, paddingLeft: 12, paddingRight: 12 }}
       >
         {(terminals ?? []).map((t) => {
