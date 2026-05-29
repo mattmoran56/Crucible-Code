@@ -40,9 +40,18 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
     <div className="min-h-screen bg-bg text-text flex items-center justify-center p-6" data-theme="dark">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
+          <img
+            src="/icon.png"
+            alt=""
+            className="rounded-md mx-auto mb-4"
+            style={{ width: 64, height: 64 }}
+          />
           <div className="inline-flex items-center gap-2 mb-3">
             <span className="text-lg font-semibold">Crucible Code</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider bg-accent text-bg font-bold">
+            <span
+              className="rounded text-[10px] uppercase tracking-wider bg-accent text-bg font-bold"
+              style={{ padding: '2px 6px' }}
+            >
               Cloud
             </span>
           </div>
@@ -53,7 +62,8 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
 
         <form
           onSubmit={handleSubmit}
-          className="bg-bg-secondary border border-border rounded-md p-5 space-y-5"
+          className="bg-bg-secondary border border-border rounded-md"
+          style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}
         >
           <Input
             autoFocus
@@ -73,7 +83,7 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="Device label (optional)"
-            style={{ padding: '12px 14px' }}
+            style={{ padding: '12px 14px', textAlign: 'center' }}
           />
           <Button
             type="submit"
