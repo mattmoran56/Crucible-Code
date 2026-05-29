@@ -12,5 +12,12 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "electron.vite.config.ts"]
+  "include": [
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "remote/server/**/*",
+    "remote/protocol/**/*",
+    "electron.vite.config.ts"
+  ]
 }

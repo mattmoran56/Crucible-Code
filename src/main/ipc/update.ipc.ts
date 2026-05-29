@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow } from 'electron'
+import { handle } from './handle'
 import { IPC } from '../../shared/constants'
 import { startUpdatePoller, stopUpdatePoller, applyUpdate, getBuiltCommit } from '../services/update.service'
 import type { UpdateStatus } from '../../shared/types'
@@ -10,7 +11,7 @@ export function registerUpdateHandlers(window: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle(IPC.UPDATE_APPLY, () => {
+  handle(IPC.UPDATE_APPLY, () => {
     applyUpdate(
       (line: string) => {
         if (!window.isDestroyed()) {
@@ -26,7 +27,7 @@ export function registerUpdateHandlers(window: BrowserWindow): void {
     return getBuiltCommit()
   })
 
-  ipcMain.handle(IPC.UPDATE_BUILT_COMMIT, () => getBuiltCommit())
+  handle(IPC.UPDATE_BUILT_COMMIT, () => getBuiltCommit())
 }
 
 export function unregisterUpdateHandlers(): void {

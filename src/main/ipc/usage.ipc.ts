@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
+import { handle } from './handle'
 import { IPC } from '../../shared/constants'
 import * as usageService from '../services/usage.service'
 
@@ -6,15 +7,15 @@ export function registerUsageHandlers(window: BrowserWindow) {
   // Start polling session usage files
   usageService.startUsagePolling(window)
 
-  ipcMain.handle(IPC.USAGE_GET_SESSION, async (_e, sessionId: string) => {
+  handle(IPC.USAGE_GET_SESSION, async (_e, sessionId: string) => {
     return usageService.getSessionUsage(sessionId)
   })
 
-  ipcMain.handle(IPC.USAGE_GET_STATS, async (_e, configDir?: string) => {
+  handle(IPC.USAGE_GET_STATS, async (_e, configDir?: string) => {
     return usageService.getUsageStats(configDir)
   })
 
-  ipcMain.handle(IPC.USAGE_GET_SUBSCRIPTION, async (_e, configDir?: string) => {
+  handle(IPC.USAGE_GET_SUBSCRIPTION, async (_e, configDir?: string) => {
     return usageService.getSubscriptionInfo(configDir)
   })
 }
