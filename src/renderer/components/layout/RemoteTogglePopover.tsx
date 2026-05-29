@@ -7,11 +7,18 @@ interface RemoteStatus {
   urls: string[]
   pairingCode: string | null
   devices: { token: string; label: string; createdAt: number }[]
+  cloud: {
+    enabled: boolean
+    handle: string | null
+    connected: boolean
+    safetyNumber: string | null
+  }
 }
 
 export function RemoteTogglePopover() {
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<RemoteStatus | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -45,7 +52,33 @@ export function RemoteTogglePopover() {
     setStatus(await window.api.remote.revokeAll())
   }
 
-  const dotColor = status?.running ? '#22c55e' : '#9ca3af'
+  const handleToggleCloud = async () => {
+    if (!status) return
+    setError(null)
+    try {
+      setStatus(await window.api.remote.setCloudEnabled(!status.cloud.enabled))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      // Strip the noisy IPC prefix Electron prepends.
+      setError(msg.replace(/^Error invoking remote method '[^']+':\s*Error:\s*/, ''))
+    }
+  }
+
+  const handleRegenerateHandle = async () => {
+    setError(null)
+    try {
+      setStatus(await window.api.remote.regenerateHandle())
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg.replace(/^Error invoking remote method '[^']+':\s*Error:\s*/, ''))
+    }
+  }
+
+  const handleCopyHandle = async () => {
+    if (status?.cloud.handle) await navigator.clipboard.writeText(status.cloud.handle)
+  }
+
+  const dotColor = status?.running || status?.cloud.connected ? '#22c55e' : '#9ca3af'
 
   return (
     <div ref={ref} className="titlebar-no-drag" style={{ position: 'relative' }}>
@@ -154,6 +187,105 @@ export function RemoteTogglePopover() {
               Code instance.
             </p>
           )}
+
+          <div style={{ borderTop: '1px solid rgba(0,0,0,0.1)', marginTop: 14, paddingTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Cloud relay</strong>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={status.cloud.enabled}
+                  onChange={handleToggleCloud}
+                />
+                {status.cloud.enabled ? 'On' : 'Off'}
+              </label>
+            </div>
+            {status.cloud.enabled ? (
+              <>
+                <div style={{ marginTop: 8, color: '#555' }}>Handle:</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <code
+                    onClick={handleCopyHandle}
+                    style={{
+                      fontSize: 14,
+                      padding: '4px 10px',
+                      background: '#f3f4f6',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      flex: 1,
+                    }}
+                    title="Click to copy"
+                  >
+                    {status.cloud.handle ?? '—'}
+                  </code>
+                  <button type="button" onClick={handleRegenerateHandle} style={{ fontSize: 12 }}>
+                    Regenerate
+                  </button>
+                </div>
+                <div style={{ marginTop: 10, color: '#555' }}>Pairing code:</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <code
+                    style={{
+                      fontSize: 18,
+                      letterSpacing: 2,
+                      padding: '4px 10px',
+                      background: '#f3f4f6',
+                      borderRadius: 4,
+                    }}
+                  >
+                    {status.pairingCode ?? '——————'}
+                  </code>
+                  <button type="button" onClick={handleRegenerate} style={{ fontSize: 12 }}>
+                    Regenerate
+                  </button>
+                </div>
+                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, color: '#555' }}>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: status.cloud.connected ? '#22c55e' : '#9ca3af',
+                    }}
+                  />
+                  {status.cloud.connected ? 'Connected to relay' : 'Disconnected'}
+                </div>
+                {status.cloud.safetyNumber && (
+                  <div style={{ marginTop: 8, color: '#555' }}>
+                    Safety number:&nbsp;
+                    <code style={{ fontSize: 13, letterSpacing: 1 }}>
+                      {status.cloud.safetyNumber}
+                    </code>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                      Compare with your phone — they must match.
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p style={{ color: '#555', marginTop: 8, fontSize: 12 }}>
+                Reach this desktop from anywhere through a hosted relay. Use this when LAN pairing
+                doesn't work (e.g. on a VPN).
+              </p>
+            )}
+            {error && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '6px 8px',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: 4,
+                  color: '#991b1b',
+                  fontSize: 11,
+                  wordBreak: 'break-word',
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

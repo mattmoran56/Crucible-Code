@@ -549,6 +549,9 @@ const api = {
       ipcRenderer.invoke(IPC.REMOTE_SET_ENABLED, enabled),
     regenerateCode: (): Promise<RemoteStatus> => ipcRenderer.invoke(IPC.REMOTE_REGENERATE_CODE),
     revokeAll: (): Promise<RemoteStatus> => ipcRenderer.invoke(IPC.REMOTE_REVOKE_ALL),
+    setCloudEnabled: (enabled: boolean): Promise<RemoteStatus> =>
+      ipcRenderer.invoke(IPC.REMOTE_SET_CLOUD_ENABLED, enabled),
+    regenerateHandle: (): Promise<RemoteStatus> => ipcRenderer.invoke(IPC.REMOTE_REGENERATE_HANDLE),
     onStatusChanged: (callback: (status: RemoteStatus) => void) => {
       const listener = (_e: unknown, status: RemoteStatus) => callback(status)
       ipcRenderer.on(IPC.REMOTE_STATUS_CHANGED, listener)
@@ -565,6 +568,12 @@ interface RemoteStatus {
   urls: string[]
   pairingCode: string | null
   devices: { token: string; label: string; createdAt: number }[]
+  cloud: {
+    enabled: boolean
+    handle: string | null
+    connected: boolean
+    safetyNumber: string | null
+  }
 }
 
 export type ApiType = typeof api

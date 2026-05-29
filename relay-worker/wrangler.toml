@@ -1,0 +1,20 @@
+name = "codecrucible-relay"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Static SPA — receiver build dropped into ./public at deploy time.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+# SQLite-backed DO storage. Required for new DO classes on the Workers Free
+# plan; harmless on Paid. Our state is tiny (just a token per handle).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

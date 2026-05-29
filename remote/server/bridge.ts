@@ -5,11 +5,17 @@ import { IPC } from '../../src/shared/constants'
 import type { JsonFrame, IPCChannel } from '../protocol/messages'
 
 /**
- * One-per-client bridge. Wires a paired WebSocket to:
- *   - inbound `req` frames -> invokeHandler -> `res` frame
- *   - eventBus events -> outbound `evt` frames
+ * Transport abstraction the bridge speaks. The LAN relay wraps a `ws.WebSocket`
+ * directly; the cloud client wraps an encrypted envelope channel. Both look
+ * identical to the bridge — string frames in, string frames out.
  */
-export function attachBridge(ws: WebSocket): () => void {
+export interface Transport {
+  send(frame: string): void
+  onMessage(cb: (frame: string) => void): void
+  onClose(cb: () => void): void
+}
+
+function attachToTransport(transport: Transport): () => void {
   const channels: string[] = Object.values(IPC)
   const listeners = new Map<string, (...args: unknown[]) => void>()
 
@@ -17,34 +23,33 @@ export function attachBridge(ws: WebSocket): () => void {
     const listener = (...args: unknown[]) => {
       const frame = { kind: 'evt' as const, channel: ch as IPCChannel, args }
       try {
-        ws.send(JSON.stringify(frame))
+        transport.send(JSON.stringify(frame))
       } catch {
-        /* socket closed mid-emit */
+        /* transport closed mid-emit */
       }
     }
     listeners.set(ch, listener)
     eventBus.on(ch, listener)
   }
 
-  ws.on('message', async (raw, isBinary) => {
-    if (isBinary) {
-      // Binary frames are reserved for the future terminal hot path. Today
-      // terminal output already streams as JSON `evt` frames via the eventBus
-      // subscription above (channel IPC.TERMINAL_DATA).
-      return
-    }
+  const detach = () => {
+    for (const [ch, listener] of listeners) eventBus.off(ch, listener)
+    listeners.clear()
+  }
+
+  transport.onMessage(async (raw) => {
     let frame: JsonFrame
     try {
-      frame = JSON.parse(raw.toString()) as JsonFrame
+      frame = JSON.parse(raw) as JsonFrame
     } catch {
       return
     }
     if (frame.kind !== 'req') return
     try {
       const result = await invokeHandler(frame.channel, frame.args)
-      ws.send(JSON.stringify({ kind: 'res', id: frame.id, ok: true, result }))
+      transport.send(JSON.stringify({ kind: 'res', id: frame.id, ok: true, result }))
     } catch (err) {
-      ws.send(
+      transport.send(
         JSON.stringify({
           kind: 'res',
           id: frame.id,
@@ -55,8 +60,40 @@ export function attachBridge(ws: WebSocket): () => void {
     }
   })
 
-  return () => {
-    for (const [ch, listener] of listeners) eventBus.off(ch, listener)
-    listeners.clear()
+  transport.onClose(detach)
+
+  return detach
+}
+
+export function attachBridgeToTransport(transport: Transport): () => void {
+  return attachToTransport(transport)
+}
+
+/**
+ * Convenience wrapper for the existing LAN relay: turn a `ws.WebSocket` into a
+ * Transport and attach the bridge. Preserves the original `attachBridge(ws)`
+ * call site in `relay-server.ts`.
+ */
+export function attachBridge(ws: WebSocket): () => void {
+  const messageHandlers = new Set<(frame: string) => void>()
+  const closeHandlers = new Set<() => void>()
+
+  ws.on('message', (raw, isBinary) => {
+    if (isBinary) return // binary path reserved for future hot terminal frames
+    const s = raw.toString()
+    for (const cb of messageHandlers) cb(s)
+  })
+  ws.on('close', () => {
+    for (const cb of closeHandlers) cb()
+  })
+
+  const transport: Transport = {
+    send: (frame) => {
+      try { ws.send(frame) } catch { /* closed */ }
+    },
+    onMessage: (cb) => { messageHandlers.add(cb) },
+    onClose: (cb) => { closeHandlers.add(cb) },
   }
+
+  return attachToTransport(transport)
 }

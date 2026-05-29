@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { wsClient, api } from './api/wsClient'
 import { PairingPage } from './pages/PairingPage'
+import { HandlePage } from './pages/HandlePage'
+import { getStoredHandle, getCloudToken } from './api/cloud'
 import { ProjectTabs } from './components/ProjectTabs'
 import { SessionSidebar } from './components/SessionSidebar'
 import { SessionWorkspace } from './components/SessionWorkspace'
@@ -48,7 +50,9 @@ function buildHash(r: Route): string {
 }
 
 export function App() {
+  const [mode, setMode] = useState<'lan' | 'cloud' | null>(null)
   const [token, setToken] = useState<string | null>(wsClient.getToken())
+  const [cloudHandle, setCloudHandle] = useState<string | null>(getStoredHandle())
   const [connected, setConnected] = useState(false)
   const [route, setRoute] = useState<Route>(parseHash())
   const [projects, setProjects] = useState<Project[]>([])
@@ -56,9 +60,15 @@ export function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   useEffect(() => {
-    if (token) wsClient.connect()
+    void wsClient.detectMode().then(setMode)
+  }, [])
+
+  useEffect(() => {
+    if (mode === null) return
+    const hasAuth = mode === 'lan' ? !!token : !!cloudHandle && !!getCloudToken()
+    if (hasAuth) wsClient.connect()
     return wsClient.onConnectionChange(setConnected)
-  }, [token])
+  }, [mode, token, cloudHandle])
 
   useEffect(() => {
     const onHash = () => setRoute(parseHash())
@@ -98,14 +108,33 @@ export function App() {
     location.hash = buildHash(next)
   }
 
-  if (!token) {
+  if (mode === null) {
+    return (
+      <div className="min-h-screen bg-bg text-text flex items-center justify-center text-sm text-text-muted">
+        Connecting…
+      </div>
+    )
+  }
+
+  if (mode === 'lan' && !token) {
     return <PairingPage onPaired={() => setToken(wsClient.getToken())} />
   }
 
+  if (mode === 'cloud' && !connected && !cloudHandle) {
+    return <HandlePage onPaired={() => setCloudHandle(getStoredHandle())} />
+  }
+
   const handleUnpair = () => {
-    wsClient.clearToken()
+    if (mode === 'lan') {
+      wsClient.clearToken()
+      setToken(null)
+    } else {
+      // Cloud
+      localStorage.removeItem('codecrucible-remote-handle')
+      localStorage.removeItem('codecrucible-remote-cloud-token')
+      setCloudHandle(null)
+    }
     wsClient.disconnect()
-    setToken(null)
   }
 
   const activeSessions = activeProjectId ? sessionsByProject[activeProjectId] ?? null : null

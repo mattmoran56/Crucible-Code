@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api/wsClient'
+import { api, wsClient } from '../api/wsClient'
 import { ThemeRadioList } from './ThemePicker'
 
 interface NotionConfig {
@@ -10,6 +10,7 @@ interface NotionConfig {
 export function SettingsPanel({ projectId }: { projectId: string }) {
   const [notion, setNotion] = useState<NotionConfig | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [safetyNumber, setSafetyNumber] = useState<string | null>(null)
 
   useEffect(() => {
     api.notion
@@ -17,6 +18,8 @@ export function SettingsPanel({ projectId }: { projectId: string }) {
       .then((c) => setNotion((c as NotionConfig | null) ?? { enabled: false }))
       .catch((e) => setError(String(e)))
   }, [projectId])
+
+  useEffect(() => wsClient.onSafetyNumber(setSafetyNumber), [])
 
   const handleNotionToggle = async () => {
     if (!notion) return
@@ -73,6 +76,42 @@ export function SettingsPanel({ projectId }: { projectId: string }) {
             <ThemeRadioList />
           </div>
         </section>
+
+        {/* Security — cloud sessions only */}
+        {safetyNumber && (
+          <section
+            className="bg-bg-secondary border border-border rounded-md"
+            style={{ marginBottom: 24 }}
+          >
+            <div className="border-b border-border" style={{ padding: '14px 20px' }}>
+              <h2 className="text-[11px] uppercase tracking-wider text-text-muted font-medium">
+                Security
+              </h2>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <div className="text-base md:text-sm text-text">Safety number</div>
+              <div className="text-sm md:text-xs text-text-muted mt-1 leading-relaxed">
+                Compare this with the number on your desktop. They must match — if they don't, the
+                connection was tampered with.
+              </div>
+              <code
+                className="text-text"
+                style={{
+                  display: 'inline-block',
+                  marginTop: 10,
+                  fontSize: 20,
+                  letterSpacing: 3,
+                  padding: '8px 14px',
+                  background: 'var(--color-bg)',
+                  borderRadius: 6,
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                {safetyNumber}
+              </code>
+            </div>
+          </section>
+        )}
 
         {/* Automation — project-scoped */}
         <section

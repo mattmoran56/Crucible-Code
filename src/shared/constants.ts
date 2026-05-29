@@ -217,4 +217,6 @@ export const IPC = {
   REMOTE_REGENERATE_CODE: 'remote:regenerate-code',
   REMOTE_REVOKE_ALL: 'remote:revoke-all',
   REMOTE_STATUS_CHANGED: 'remote:status-changed',
+  REMOTE_SET_CLOUD_ENABLED: 'remote:set-cloud-enabled',
+  REMOTE_REGENERATE_HANDLE: 'remote:regenerate-handle',
 } as const

@@ -9,6 +9,12 @@ import { REMOTE_DEFAULT_PORT } from '../protocol/channels'
 import { generatePairingCode, consumePairingCode, currentPairingCode } from './pairing'
 import { issueToken, verifyToken, listDevices, revokeAll } from './auth'
 import { attachBridge } from './bridge'
+import {
+  isCloudEnabled,
+  getCloudConnected,
+  getCloudHandle,
+  getCloudSafetyNumber,
+} from './cloud-client'
 
 const settingsStore = new Store<{ remoteEnabled: boolean; remotePort: number }>({
   name: 'remote-settings',
@@ -224,6 +230,12 @@ export interface RemoteStatus {
   urls: string[]
   pairingCode: string | null
   devices: { token: string; label: string; createdAt: number }[]
+  cloud: {
+    enabled: boolean
+    handle: string | null
+    connected: boolean
+    safetyNumber: string | null
+  }
 }
 
 export function getRemoteStatus(): RemoteStatus {
@@ -234,6 +246,12 @@ export function getRemoteStatus(): RemoteStatus {
     urls: getLanUrls(),
     pairingCode: currentPairingCode(),
     devices: listDevices(),
+    cloud: {
+      enabled: isCloudEnabled(),
+      handle: getCloudHandle(),
+      connected: getCloudConnected(),
+      safetyNumber: getCloudSafetyNumber(),
+    },
   }
 }
 
