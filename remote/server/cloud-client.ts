@@ -33,7 +33,10 @@ const settingsStore = new Store<{ cloudEnabled: boolean }>({
 })
 
 function relayHttpUrl(): string {
-  return process.env.RELAY_BACKEND_URL ?? 'https://relay.codecrucible.app'
+  return (
+    process.env.RELAY_BACKEND_URL ??
+    'https://codecrucible-relay.mattmoran56.workers.dev'
+  )
 }
 
 function relayWsUrl(): string {
