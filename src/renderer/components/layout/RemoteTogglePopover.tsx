@@ -14,13 +14,26 @@ export function RemoteTogglePopover() {
   const [status, setStatus] = useState<RemoteStatus | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
 
+  // The mock app + Storybook don't expose the remote namespace on window.api;
+  // skip rendering rather than crashing the project tabs row.
+  const remoteApi = (window.api as { remote?: unknown }).remote as
+    | {
+        getStatus: () => Promise<RemoteStatus>
+        setEnabled: (enabled: boolean) => Promise<RemoteStatus>
+        regenerateCode: () => Promise<RemoteStatus>
+        revokeAll: () => Promise<RemoteStatus>
+        onStatusChanged: (cb: (s: RemoteStatus) => void) => () => void
+      }
+    | undefined
+
   useEffect(() => {
-    window.api.remote.getStatus().then(setStatus)
-    const off = window.api.remote.onStatusChanged(setStatus)
+    if (!remoteApi) return
+    remoteApi.getStatus().then(setStatus)
+    const off = remoteApi.onStatusChanged(setStatus)
     return () => {
       off()
     }
-  }, [])
+  }, [remoteApi])
 
   useEffect(() => {
     if (!open) return
@@ -33,17 +46,19 @@ export function RemoteTogglePopover() {
 
   const handleToggle = async () => {
     if (!status) return
-    const next = await window.api.remote.setEnabled(!status.enabled)
+    const next = await remoteApi!.setEnabled(!status.enabled)
     setStatus(next)
   }
 
   const handleRegenerate = async () => {
-    setStatus(await window.api.remote.regenerateCode())
+    setStatus(await remoteApi!.regenerateCode())
   }
 
   const handleRevokeAll = async () => {
-    setStatus(await window.api.remote.revokeAll())
+    setStatus(await remoteApi!.revokeAll())
   }
+
+  if (!remoteApi) return null
 
   const dotColor = status?.running ? '#22c55e' : '#9ca3af'
 
