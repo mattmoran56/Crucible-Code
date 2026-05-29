@@ -370,7 +370,7 @@ function FilterGroupsEditor({ schema, apiToken, groups, onChange }: FilterGroups
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
         <label className="text-xs text-text-muted">
           {isMulti
             ? 'Filter groups — match any group (groups ORed; conditions ANDed)'

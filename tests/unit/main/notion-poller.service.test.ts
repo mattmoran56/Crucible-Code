@@ -259,7 +259,7 @@ describe('notion-poller.service — tick', () => {
 })
 
 describe('notion-poller.service — filter groups (OR of ANDs)', () => {
-  it('sends an OR of ANDs to Notion when multiple filterGroups are configured', async () => {
+  it('issues one Notion query per filter group (avoiding 3-level compound filters that Notion silently drops)', async () => {
     const poller = await loadFresh()
     poller.saveConfig(
       'p1',
@@ -291,15 +291,51 @@ describe('notion-poller.service — filter groups (OR of ANDs)', () => {
     await new Promise((r) => setTimeout(r, 5))
     poller.stopNotionPoller()
 
-    expect(queryBodies.length).toBeGreaterThan(0)
-    const filter = queryBodies[0].filter
-    expect(filter).toBeDefined()
-    expect(filter.or).toHaveLength(2)
-    expect(filter.or[0].and).toHaveLength(2)
-    expect(filter.or[1].and).toHaveLength(2)
-    // Spot-check that each group's conditions came through.
-    expect(filter.or[0].and[0]).toMatchObject({ property: 'Status' })
-    expect(filter.or[1].and[1]).toMatchObject({ property: 'Priority' })
+    // One request per group, each a 2-level AND filter.
+    expect(queryBodies).toHaveLength(2)
+    expect(queryBodies[0].filter.and).toHaveLength(2)
+    expect(queryBodies[1].filter.and).toHaveLength(2)
+    expect(queryBodies[0].filter.and[1]).toMatchObject({ property: 'Priority', select: { equals: 'High' } })
+    expect(queryBodies[1].filter.and[1]).toMatchObject({ property: 'Priority', select: { equals: 'Low' } })
+  })
+
+  it('unions and de-duplicates pages across groups so a row matching both groups only fires once', async () => {
+    const poller = await loadFresh()
+    poller.saveConfig(
+      'p1',
+      baseConfig({
+        filters: [],
+        filterGroups: [
+          [{ property: 'Status', type: 'status', operator: 'equals', value: 'Ready' }],
+          [{ property: 'Priority', type: 'select', operator: 'equals', value: 'High' }],
+        ],
+      }) as any,
+    )
+
+    let call = 0
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/query')) {
+        call++
+        // First group returns pages [a, b]; second returns [b, c]. Union is
+        // [a, b, c] — b must appear only once.
+        const pages = call === 1 ? [{ id: 'a' }, { id: 'b' }] : [{ id: 'b' }, { id: 'c' }]
+        return fakeNotionResponse(200, {
+          results: pages.map((p) => pageWithTitle(p)),
+          has_more: false,
+          next_cursor: null,
+        })
+      }
+      return fakeNotionResponse(200, {})
+    })
+
+    poller.startNotionPoller(fakeWindow)
+    await new Promise((r) => setTimeout(r, 10))
+    poller.stopNotionPoller()
+
+    const fires = sentMessages.filter((m) => m.channel === 'notion:fire-task')
+    const firedIds = fires.map((m) => (m.payload as any).page.id)
+    expect(new Set(firedIds)).toEqual(new Set(['a', 'b', 'c']))
+    expect(firedIds).toHaveLength(3)
   })
 
   it('falls back to the legacy `filters` field when filterGroups is absent', async () => {

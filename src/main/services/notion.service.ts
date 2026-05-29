@@ -311,32 +311,46 @@ export async function queryDatabase(
   groups: NotionPropertyFilter[][],
   titlePropertyName?: string
 ): Promise<NotionTaskPayload[]> {
-  // Materialize each group independently (each may resolve relation
-  // sub-filters). Drop any group that short-circuits to "no matches" — it
-  // contributes nothing to the outer OR. If every group short-circuits (or
-  // there were no groups), there's no filter at all → fetch everything.
-  // If every *non-empty* group short-circuits but some groups existed, the
-  // result is definitively empty.
   const filledGroups = groups.filter((g) => g.length > 0)
-  let perGroup: Record<string, unknown>[] = []
+  const dbId = normalizeDatabaseId(databaseId)
+
+  // No groups → unfiltered query.
+  if (filledGroups.length === 0) {
+    return queryOneGroup(token, dbId, undefined, titlePropertyName)
+  }
+
+  // Build a 2-level filter per group (and → or for relation sub-filters) and
+  // issue one query per group, then union the results by page id. We can't
+  // safely combine groups into a single `{ or: [...] }` filter when any group
+  // contains a relation sub-filter: that produces or → and → or, which
+  // exceeds Notion's 2-level compound nesting cap and is silently dropped /
+  // truncated. Doing it as N queries keeps each request inside Notion's
+  // limits and is the only structure that consistently returns correct
+  // results regardless of sub-filter shape.
+  const seen = new Set<string>()
+  const out: NotionTaskPayload[] = []
   for (const g of filledGroups) {
     const materialized = await materializeFilters(token, g)
     if (materialized === SHORT_CIRCUIT_EMPTY) continue
     if (materialized.length === 0) continue
-    perGroup.push(materialized.length === 1 ? materialized[0] : { and: materialized })
+    const filter =
+      materialized.length === 1 ? materialized[0] : { and: materialized }
+    const pages = await queryOneGroup(token, dbId, filter, titlePropertyName)
+    for (const p of pages) {
+      if (seen.has(p.id)) continue
+      seen.add(p.id)
+      out.push(p)
+    }
   }
-  let filter: Record<string, unknown> | undefined
-  if (filledGroups.length === 0) {
-    filter = undefined
-  } else if (perGroup.length === 0) {
-    // Every group resolved to "no possible matches" via short-circuit.
-    return []
-  } else if (perGroup.length === 1) {
-    filter = perGroup[0]
-  } else {
-    filter = { or: perGroup }
-  }
-  const dbId = normalizeDatabaseId(databaseId)
+  return out
+}
+
+async function queryOneGroup(
+  token: string,
+  dbId: string,
+  filter: Record<string, unknown> | undefined,
+  titlePropertyName?: string
+): Promise<NotionTaskPayload[]> {
   const body: Record<string, unknown> = { page_size: 100 }
   if (filter) body.filter = filter
   // Paginate up to 5 pages (500 rows) — well past any reasonable poll batch.
