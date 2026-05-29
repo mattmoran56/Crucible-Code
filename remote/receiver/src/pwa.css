@@ -61,10 +61,14 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 
-  /* Hamburger drawer: pad top for the notch and bottom for the home
-     indicator. The drawer's bg paints the notch strip so it visually merges. */
+  /* Hamburger drawer: pad top for the notch. The drawer fills the full
+     viewport — its bg paints all the way down to the home indicator so
+     there's no gap. The settings button at the drawer's bottom gets its own
+     padding-bottom so the tap target sits above the home indicator. */
   .pwa-drawer {
     padding-top: env(safe-area-inset-top);
+  }
+  .pwa-drawer > :last-child {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
