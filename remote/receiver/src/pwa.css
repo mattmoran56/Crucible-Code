@@ -18,11 +18,19 @@
     overscroll-behavior: none;
     height: 100dvh;
     margin: 0;
+    /* Paint the body in the theme bg so any sub-pixel rounding gap between
+       child elements and the viewport edge isn't visible as the page bg. */
+    background: var(--color-bg);
   }
-  /* The receiver root is `.flex.flex-col.h-screen` — override h-screen to dvh
-     so it never exceeds the visible viewport. */
+  #root {
+    height: 100dvh;
+  }
+  /* The receiver root is `.flex.flex-col.h-screen`. Use lvh (largest viewport
+     height) to cover the home indicator strip too, then min-height as a
+     safety net. */
   #root > div.h-screen {
     height: 100dvh;
+    min-height: 100dvh;
   }
 
   /* Header height = the original Tailwind h-14/h-10 bar PLUS the notch inset
