@@ -55,11 +55,10 @@
     }
   }
 
-  /* Pad the body for the home indicator inset so content doesn't slip
-     underneath it. */
-  #root > div.h-screen > .flex-1 {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
+  /* Let the body region paint all the way to the bottom edge (outer bg-bg
+     covers the home indicator strip). Inner content that needs to keep its
+     last interactive element above the indicator should handle it locally —
+     padding here just creates a visible gap. */
 
   /* Hamburger drawer: pad top for the notch. The drawer fills the full
      viewport — its bg paints all the way down to the home indicator so
