@@ -16,21 +16,22 @@
   html, body {
     overflow: hidden;
     overscroll-behavior: none;
-    height: 100dvh;
+    /* lvh (largest viewport height) explicitly includes the home indicator
+       strip, so positioned-bottom children paint all the way to the screen
+       edge. dvh on iOS PWA can fall short there, causing a visible bar. */
+    height: 100lvh;
     margin: 0;
-    /* Paint the body in the theme bg so any sub-pixel rounding gap between
-       child elements and the viewport edge isn't visible as the page bg. */
-    background: var(--color-bg);
+    /* Paint body in bg-bg-secondary — the surfaces most likely to overlay
+       the very bottom (drawer, settings) use this token, so any residual
+       sub-pixel gap blends in instead of showing as a black/white bar. */
+    background: var(--color-bg-secondary);
   }
   #root {
-    height: 100dvh;
+    height: 100lvh;
   }
-  /* The receiver root is `.flex.flex-col.h-screen`. Use lvh (largest viewport
-     height) to cover the home indicator strip too, then min-height as a
-     safety net. */
   #root > div.h-screen {
-    height: 100dvh;
-    min-height: 100dvh;
+    height: 100lvh !important;
+    min-height: 100lvh;
   }
 
   /* Header height = the original Tailwind h-14/h-10 bar PLUS the notch inset
