@@ -1,0 +1,82 @@
+/*
+ * PWA standalone-mode tweaks for iPhone:
+ *   - Top safe-area padding so the notch doesn't overlap the header
+ *   - The padding bleeds the header's bg so it looks like one continuous bar
+ *   - Header + project tab strip stick to the top so they don't scroll away
+ *     under finger gestures on iOS
+ *
+ * Scoped via `@media (display-mode: standalone)` — these rules only apply
+ * when the receiver is launched from the home screen.
+ */
+@media (display-mode: standalone) {
+  /* Lock document scroll so iOS doesn't rubber-band the whole page (which
+     pulls the header out from under the notch). Inner regions still scroll.
+     Using dvh (dynamic viewport) so the layout shrinks with the iOS chrome
+     instead of overflowing past the home indicator. */
+  html, body {
+    overflow: hidden;
+    overscroll-behavior: none;
+    /* lvh (largest viewport height) explicitly includes the home indicator
+       strip, so positioned-bottom children paint all the way to the screen
+       edge. dvh on iOS PWA can fall short there, causing a visible bar. */
+    height: 100lvh;
+    margin: 0;
+    /* Paint body in bg-bg-secondary — the surfaces most likely to overlay
+       the very bottom (drawer, settings) use this token, so any residual
+       sub-pixel gap blends in instead of showing as a black/white bar. */
+    background: var(--color-bg-secondary);
+  }
+  #root {
+    height: 100lvh;
+  }
+  #root > div.h-screen {
+    height: 100lvh !important;
+    min-height: 100lvh;
+  }
+
+  /* Header height = the original Tailwind h-14/h-10 bar PLUS the notch inset
+     PLUS a bit of breathing room. Without this, the padding-top eats into
+     the fixed h-14 box and the bar's visible portion collapses. !important
+     overrides Tailwind's h-14 / md:h-10. */
+  .pwa-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: calc(3.5rem + env(safe-area-inset-top)) !important;
+    padding-top: env(safe-area-inset-top);
+    /* Make the padded notch strip visually merge with the bar across themes. */
+    background: var(--color-bg-tertiary);
+  }
+  @media (min-width: 768px) {
+    .pwa-header {
+      height: calc(2.5rem + env(safe-area-inset-top)) !important;
+    }
+  }
+  .pwa-tabs {
+    position: sticky;
+    top: calc(env(safe-area-inset-top) + 3.5rem); /* mobile header */
+    z-index: 29;
+    background: var(--color-bg-tertiary);
+  }
+  @media (min-width: 768px) {
+    .pwa-tabs {
+      top: calc(env(safe-area-inset-top) + 2.5rem); /* md+ header */
+    }
+  }
+
+  /* Let the body region paint all the way to the bottom edge (outer bg-bg
+     covers the home indicator strip). Inner content that needs to keep its
+     last interactive element above the indicator should handle it locally —
+     padding here just creates a visible gap. */
+
+  /* Hamburger drawer: pad top for the notch. The drawer fills the full
+     viewport — its bg paints all the way down to the home indicator so
+     there's no gap. The settings button at the drawer's bottom gets its own
+     padding-bottom so the tap target sits above the home indicator. */
+  .pwa-drawer {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pwa-drawer > :last-child {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

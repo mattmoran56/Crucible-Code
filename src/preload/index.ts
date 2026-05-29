@@ -551,13 +551,35 @@ const api = {
       ipcRenderer.invoke(IPC.REMOTE_SET_ENABLED, enabled),
     regenerateCode: (): Promise<RemoteStatus> => ipcRenderer.invoke(IPC.REMOTE_REGENERATE_CODE),
     revokeAll: (): Promise<RemoteStatus> => ipcRenderer.invoke(IPC.REMOTE_REVOKE_ALL),
+    setCloudEnabled: (enabled: boolean): Promise<RemoteStatus> =>
+      ipcRenderer.invoke(IPC.REMOTE_SET_CLOUD_ENABLED, enabled),
+    regenerateHandle: (): Promise<RemoteStatus> => ipcRenderer.invoke(IPC.REMOTE_REGENERATE_HANDLE),
+    setRequireApproval: (enabled: boolean): Promise<RemoteStatus> =>
+      ipcRenderer.invoke(IPC.REMOTE_SET_REQUIRE_APPROVAL, enabled),
+    approvePairing: (id: string): Promise<RemoteStatus> =>
+      ipcRenderer.invoke(IPC.REMOTE_APPROVE_PAIRING, id),
+    denyPairing: (id: string): Promise<RemoteStatus> =>
+      ipcRenderer.invoke(IPC.REMOTE_DENY_PAIRING, id),
     onStatusChanged: (callback: (status: RemoteStatus) => void) => {
       const listener = (_e: unknown, status: RemoteStatus) => callback(status)
       ipcRenderer.on(IPC.REMOTE_STATUS_CHANGED, listener)
       return () => ipcRenderer.removeListener(IPC.REMOTE_STATUS_CHANGED, listener)
     },
+    onPairingRequested: (callback: (pending: PendingPairing[]) => void) => {
+      const listener = (_e: unknown, pending: PendingPairing[]) => callback(pending)
+      ipcRenderer.on(IPC.REMOTE_PAIRING_REQUESTED, listener)
+      return () => ipcRenderer.removeListener(IPC.REMOTE_PAIRING_REQUESTED, listener)
+    },
   },
 
+}
+
+interface PendingPairing {
+  id: string
+  label: string
+  mode: 'lan' | 'cloud'
+  code: string | null
+  createdAt: number
 }
 
 interface RemoteStatus {
@@ -567,6 +589,15 @@ interface RemoteStatus {
   urls: string[]
   pairingCode: string | null
   devices: { token: string; label: string; createdAt: number }[]
+  cloud: {
+    enabled: boolean
+    handle: string | null
+    ticket: string | null
+    connected: boolean
+    safetyNumber: string | null
+  }
+  requireApproval: boolean
+  pendingPairings: PendingPairing[]
 }
 
 export type ApiType = typeof api

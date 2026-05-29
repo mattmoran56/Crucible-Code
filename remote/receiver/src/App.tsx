@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { wsClient, api } from './api/wsClient'
 import { PairingPage } from './pages/PairingPage'
+import { HandlePage } from './pages/HandlePage'
+import { getStoredHandle, getCloudToken, getStoredTicket } from './api/cloud'
 import { ProjectTabs } from './components/ProjectTabs'
 import { SessionSidebar } from './components/SessionSidebar'
 import { SessionWorkspace } from './components/SessionWorkspace'
@@ -48,7 +50,11 @@ function buildHash(r: Route): string {
 }
 
 export function App() {
+  const [mode, setMode] = useState<'lan' | 'cloud' | null>(null)
   const [token, setToken] = useState<string | null>(wsClient.getToken())
+  const [cloudHandle, setCloudHandle] = useState<string | null>(
+    getStoredHandle() && getStoredTicket() ? getStoredHandle() : null
+  )
   const [connected, setConnected] = useState(false)
   const [route, setRoute] = useState<Route>(parseHash())
   const [projects, setProjects] = useState<Project[]>([])
@@ -56,9 +62,18 @@ export function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   useEffect(() => {
-    if (token) wsClient.connect()
+    void wsClient.detectMode().then(setMode)
+  }, [])
+
+  useEffect(() => {
+    if (mode === null) return
+    const hasAuth =
+      mode === 'lan'
+        ? !!token
+        : !!cloudHandle && !!getStoredTicket() && !!getCloudToken()
+    if (hasAuth) wsClient.connect()
     return wsClient.onConnectionChange(setConnected)
-  }, [token])
+  }, [mode, token, cloudHandle])
 
   useEffect(() => {
     const onHash = () => setRoute(parseHash())
@@ -98,14 +113,34 @@ export function App() {
     location.hash = buildHash(next)
   }
 
-  if (!token) {
+  if (mode === null) {
+    return (
+      <div className="min-h-screen bg-bg text-text flex items-center justify-center text-sm text-text-muted">
+        Connecting…
+      </div>
+    )
+  }
+
+  if (mode === 'lan' && !token) {
     return <PairingPage onPaired={() => setToken(wsClient.getToken())} />
   }
 
+  if (mode === 'cloud' && !connected && (!cloudHandle || !getStoredTicket())) {
+    return <HandlePage onPaired={() => setCloudHandle(getStoredHandle())} />
+  }
+
   const handleUnpair = () => {
-    wsClient.clearToken()
+    if (mode === 'lan') {
+      wsClient.clearToken()
+      setToken(null)
+    } else {
+      // Cloud
+      localStorage.removeItem('codecrucible-remote-handle')
+      localStorage.removeItem('codecrucible-remote-cloud-token')
+      localStorage.removeItem('codecrucible-remote-ticket')
+      setCloudHandle(null)
+    }
     wsClient.disconnect()
-    setToken(null)
   }
 
   const activeSessions = activeProjectId ? sessionsByProject[activeProjectId] ?? null : null
@@ -119,7 +154,7 @@ export function App() {
   return (
     <div className="flex flex-col h-screen bg-bg text-text">
       {/* Top bar — branding row. Taller on mobile for thumb-friendly hit area. */}
-      <header className="flex items-center h-14 md:h-10 bg-bg-tertiary border-b border-border shrink-0">
+      <header className="pwa-header flex items-center h-14 md:h-10 bg-bg-tertiary border-b border-border shrink-0">
         <HamburgerButton onClick={() => setMobileNavOpen(true)} />
         <div className="flex items-center gap-2 shrink-0" style={{ padding: '0 12px' }}>
           <img src="/icon.png" alt="" className="w-7 h-7 md:w-5 md:h-5 rounded-sm" />
@@ -153,7 +188,7 @@ export function App() {
 
       {/* Project tabs row — hidden on mobile, shown on md+ */}
       {projects.length > 0 && (
-        <div className="hidden md:block h-11 bg-bg-tertiary border-b border-border shrink-0">
+        <div className="pwa-tabs hidden md:block h-11 bg-bg-tertiary border-b border-border shrink-0">
           <ProjectTabs
             projects={projects}
             activeProjectId={activeProjectId}

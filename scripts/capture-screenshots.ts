@@ -29,6 +29,10 @@ interface ScreenshotTarget {
   clickNav?: string
   /** Right-click the demo container to trigger a context menu before capture. */
   rightClickDemo?: boolean
+  /** Click an element matching this selector before capture. */
+  clickSelector?: string
+  /** Click a button whose text matches this string before capture. */
+  clickButtonText?: string
 }
 
 /**
@@ -328,6 +332,25 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 1280, height: 900 },
     delay: 1500,
   },
+  {
+    name: 'cloud-relay-popover',
+    storyId: 'layout-remotetogglepopover--open-cloud-connected',
+    viewport: { width: 520, height: 720 },
+    delay: 600,
+    clickButtonText: 'Remote',
+  },
+  {
+    name: 'pairing-approval-prompt',
+    storyId: 'layout-remotetogglepopover--open-pending-pairing',
+    viewport: { width: 520, height: 720 },
+    delay: 1200,
+  },
+  {
+    name: 'cloud-receiver-handlepage',
+    storyId: 'remote-handlepage--default',
+    viewport: { width: 420, height: 900 },
+    delay: 800,
+  },
 ]
 
 async function captureScreenshots() {
@@ -376,6 +399,23 @@ async function captureScreenshots() {
           await page.waitForTimeout(150)
         }
       }
+    }
+
+    if (target.clickSelector) {
+      const el = await page.$(target.clickSelector)
+      if (el) {
+        await el.click()
+        await page.waitForTimeout(300)
+      }
+    }
+
+    if (target.clickButtonText) {
+      await page.evaluate((text) => {
+        const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+        const btn = buttons.find((b) => b.textContent?.trim() === text)
+        if (btn) btn.click()
+      }, target.clickButtonText)
+      await page.waitForTimeout(400)
     }
 
     if (target.clickNav) {

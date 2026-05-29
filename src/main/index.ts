@@ -12,6 +12,7 @@ import { stopAllWatching as stopAllPermissionWatching } from './services/permiss
 import { stopScheduler } from './services/scheduler.service'
 import { eventBus } from './services/event-bus'
 import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
+import { unregisterCloud } from '../../remote/server/cloud-client'
 
 // When launched from Finder/Dock, process.env.PATH is the minimal macOS default
 // and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
@@ -66,7 +67,16 @@ async function createWindow() {
 
 app.whenReady().then(createWindow)
 
-app.on('before-quit', () => {
+let cloudUnregistered = false
+app.on('before-quit', (event) => {
+  // Best-effort POST /unregister so the relay drops our token + ticket
+  // immediately rather than waiting on the 30-day idle alarm. 2s timeout
+  // inside unregisterCloud keeps a hung relay from blocking quit.
+  if (!cloudUnregistered) {
+    event.preventDefault()
+    cloudUnregistered = true
+    void unregisterCloud().finally(() => app.quit())
+  }
   killAllTerminals()
   stopAllPermissionWatching()
   stopNotificationServer()

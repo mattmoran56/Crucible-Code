@@ -6,6 +6,7 @@ const config: StorybookConfig = {
     '../src/renderer/**/*.stories.@(ts|tsx)',
     '../remote/receiver/src/**/*.stories.@(ts|tsx)',
   ],
+  staticDirs: ['../remote/receiver/public'],
   addons: [
     '@storybook/addon-essentials',
     '@storybook/addon-themes',

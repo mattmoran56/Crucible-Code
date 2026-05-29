@@ -10,3 +10,8 @@ storybook-static/
 playwright-report/
 test-results/
 coverage/
+
+# Receiver build copied into relay backends at deploy time
+relay-backend/public/
+relay-worker/public/
+.claude/

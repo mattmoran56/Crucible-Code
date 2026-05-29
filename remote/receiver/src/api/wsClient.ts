@@ -1,5 +1,14 @@
 import type { JsonFrame, IPCChannel } from '@protocol/messages'
 import { IPC } from '@protocol/channels'
+import {
+  detectCloudMode,
+  openCloudConnection,
+  getStoredHandle,
+  getCloudToken,
+  clearStoredHandle,
+  setStoredTicket,
+  type CloudConnection,
+} from './cloud'
 
 type PendingRequest = {
   resolve: (value: unknown) => void
@@ -8,14 +17,44 @@ type PendingRequest = {
 
 const STORAGE_TOKEN_KEY = 'codecrucible-remote-token'
 
+type Mode = 'lan' | 'cloud'
+
 class WsClient {
   private ws: WebSocket | null = null
+  private cloud: CloudConnection | null = null
+  private mode: Mode = 'lan'
+  private cloudSafetyNumber: string | null = null
   private nextId = 1
   private pending = new Map<string, PendingRequest>()
   private listeners = new Map<string, Set<(...args: unknown[]) => void>>()
   private connectedListeners = new Set<(connected: boolean) => void>()
+  private safetyListeners = new Set<(s: string | null) => void>()
   private connected = false
   private reconnectTimer: number | null = null
+
+  async detectMode(): Promise<Mode> {
+    this.mode = (await detectCloudMode()) ? 'cloud' : 'lan'
+    return this.mode
+  }
+
+  getMode(): Mode {
+    return this.mode
+  }
+
+  getSafetyNumber(): string | null {
+    return this.cloudSafetyNumber
+  }
+
+  onSafetyNumber(cb: (s: string | null) => void): () => void {
+    this.safetyListeners.add(cb)
+    cb(this.cloudSafetyNumber)
+    return () => this.safetyListeners.delete(cb)
+  }
+
+  private setSafetyNumber(s: string | null): void {
+    this.cloudSafetyNumber = s
+    this.safetyListeners.forEach((cb) => cb(s))
+  }
 
   getToken(): string | null {
     return localStorage.getItem(STORAGE_TOKEN_KEY)
@@ -40,6 +79,10 @@ class WsClient {
   }
 
   connect(): void {
+    if (this.mode === 'cloud') {
+      void this.connectCloud()
+      return
+    }
     const token = this.getToken()
     if (!token) return
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING))
@@ -60,6 +103,42 @@ class WsClient {
     this.ws.onmessage = (ev) => this.onMessage(ev.data)
   }
 
+  private async connectCloud(code?: string): Promise<void> {
+    const handle = getStoredHandle()
+    if (!handle) return
+    if (this.cloud) return
+    const label = navigator.userAgent.split(/[()]/)[1] || 'browser'
+    this.cloud = await openCloudConnection({
+      handle,
+      code,
+      label,
+      onSafetyNumber: (s) => this.setSafetyNumber(s),
+      onAuthed: () => this.setConnected(true),
+      onAuthFailed: (err) => {
+        // eslint-disable-next-line no-console
+        console.warn('[cloud] auth failed:', err)
+        this.setConnected(false)
+        this.cloud?.close()
+        this.cloud = null
+        // If we were trying with a stale token, drop it and let the UI prompt for a new code.
+        if (!code) clearStoredHandle()
+        this.scheduleReconnect()
+      },
+    })
+    this.cloud.onMessage((frame) => this.onMessage(frame))
+  }
+
+  async pairCloud(handle: string, code: string): Promise<void> {
+    // Derive the relay-layer ticket from (handle, code) so the user only types
+    // the pairing code once — no separate ticket field. Persist both before
+    // opening the WS so reconnects find them.
+    const { deriveTicket } = await import('@protocol/ticket')
+    const ticket = await deriveTicket(handle, code)
+    localStorage.setItem('codecrucible-remote-handle', handle)
+    setStoredTicket(ticket)
+    await this.connectCloud(code)
+  }
+
   disconnect(): void {
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer)
@@ -67,6 +146,9 @@ class WsClient {
     }
     this.ws?.close()
     this.ws = null
+    this.cloud?.close()
+    this.cloud = null
+    this.setSafetyNumber(null)
   }
 
   private setConnected(v: boolean) {
@@ -76,7 +158,8 @@ class WsClient {
   }
 
   private scheduleReconnect() {
-    if (!this.getToken()) return
+    if (this.mode === 'lan' && !this.getToken()) return
+    if (this.mode === 'cloud' && !getStoredHandle()) return
     if (this.reconnectTimer) return
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null
@@ -113,17 +196,23 @@ class WsClient {
     const frame: JsonFrame = { kind: 'req', id, channel, args }
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
-      this.ws!.send(JSON.stringify(frame))
+      this.sendFrame(JSON.stringify(frame))
     })
   }
 
+  private sendFrame(s: string): void {
+    if (this.mode === 'cloud') this.cloud?.send(s)
+    else this.ws?.send(s)
+  }
+
   private waitUntilOpen(timeoutMs = 8000): Promise<void> {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) return Promise.resolve()
-    if (!this.ws) this.connect()
+    if (this.connected) return Promise.resolve()
+    if (this.mode === 'lan' && !this.ws) this.connect()
+    if (this.mode === 'cloud' && !this.cloud) this.connect()
     return new Promise((resolve, reject) => {
       const start = Date.now()
       const tick = () => {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) return resolve()
+        if (this.connected) return resolve()
         if (Date.now() - start > timeoutMs) return reject(new Error('Not connected'))
         setTimeout(tick, 80)
       }
@@ -157,6 +246,10 @@ export async function pair(code: string, label: string): Promise<void> {
   const { token } = (await res.json()) as { token: string }
   wsClient.setToken(token)
   wsClient.connect()
+}
+
+export async function pairCloud(handle: string, code: string): Promise<void> {
+  await wsClient.pairCloud(handle, code)
 }
 
 // Tiny window.api shim: api.projects.list() -> wsClient.invoke(IPC.PROJECT_LIST, [])
