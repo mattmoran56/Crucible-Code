@@ -46,6 +46,7 @@ const meta: Meta<typeof SessionCard> = {
     onClick: noop,
     onOpenAsMainBranch: noop,
     onDelete: noop,
+    onRename: async () => {},
   },
 }
 export default meta

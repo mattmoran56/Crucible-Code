@@ -159,6 +159,58 @@ export async function createWorktreeFromBranch(
   return { path: wtPath, branch: remoteBranch }
 }
 
+// Rename the branch tied to a session. Resolves the actual current branch via
+// (1) reading HEAD from the worktree, or (2) the `worktree list` entry for
+// `fallbackBranch`, or (3) verifying `fallbackBranch` exists as-is. This keeps
+// renames working when the worktree directory is gone but the branch is still
+// around (or vice-versa).
+export async function renameWorktreeBranch(
+  repoPath: string,
+  worktreePath: string,
+  fallbackBranch: string,
+  newBranch: string
+): Promise<{ oldBranch: string; newBranch: string }> {
+  const g = simpleGit(repoPath)
+  await pruneWorktrees(repoPath)
+
+  let oldBranch = ''
+  try {
+    oldBranch = (await simpleGit(worktreePath).raw(['symbolic-ref', '--short', 'HEAD'])).trim()
+  } catch {
+    // Worktree directory missing or not a git repo — fall through.
+  }
+
+  if (!oldBranch) {
+    try {
+      const wtOutput = await g.raw(['worktree', 'list', '--porcelain'])
+      for (const line of wtOutput.split('\n')) {
+        if (line.startsWith('branch refs/heads/')) {
+          const b = line.slice('branch refs/heads/'.length)
+          if (b === fallbackBranch) {
+            oldBranch = b
+            break
+          }
+        }
+      }
+    } catch {
+      // Best-effort
+    }
+  }
+
+  if (!oldBranch) {
+    try {
+      await g.raw(['rev-parse', '--verify', `refs/heads/${fallbackBranch}`])
+      oldBranch = fallbackBranch
+    } catch {
+      throw new Error(`Could not find the branch for this session (tried ${fallbackBranch}). The branch may have been deleted or renamed externally.`)
+    }
+  }
+
+  if (oldBranch === newBranch) return { oldBranch, newBranch }
+  await g.raw(['branch', '-m', oldBranch, newBranch])
+  return { oldBranch, newBranch }
+}
+
 export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
   const g = simpleGit(repoPath)
   await pruneWorktrees(repoPath)
