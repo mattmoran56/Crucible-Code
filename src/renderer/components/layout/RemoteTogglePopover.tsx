@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 
+interface PendingPairing {
+  id: string
+  label: string
+  mode: 'lan' | 'cloud'
+  code: string | null
+  createdAt: number
+}
+
 interface RemoteStatus {
   enabled: boolean
   running: boolean
@@ -13,6 +21,8 @@ interface RemoteStatus {
     connected: boolean
     safetyNumber: string | null
   }
+  requireApproval: boolean
+  pendingPairings: PendingPairing[]
 }
 
 export function RemoteTogglePopover() {
@@ -24,8 +34,13 @@ export function RemoteTogglePopover() {
   useEffect(() => {
     window.api.remote.getStatus().then(setStatus)
     const off = window.api.remote.onStatusChanged(setStatus)
+    // Auto-open the popover when a pairing request needs attention.
+    const offReq = window.api.remote.onPairingRequested((pending) => {
+      if (pending.length > 0) setOpen(true)
+    })
     return () => {
       off()
+      offReq()
     }
   }, [])
 
@@ -76,6 +91,19 @@ export function RemoteTogglePopover() {
 
   const handleCopyHandle = async () => {
     if (status?.cloud.handle) await navigator.clipboard.writeText(status.cloud.handle)
+  }
+
+  const handleToggleRequireApproval = async () => {
+    if (!status) return
+    setStatus(await window.api.remote.setRequireApproval(!status.requireApproval))
+  }
+
+  const handleApprove = async (id: string) => {
+    setStatus(await window.api.remote.approvePairing(id))
+  }
+
+  const handleDeny = async (id: string) => {
+    setStatus(await window.api.remote.denyPairing(id))
   }
 
   const dotColor = status?.running || status?.cloud.connected ? '#22c55e' : '#9ca3af'
@@ -133,6 +161,103 @@ export function RemoteTogglePopover() {
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input type="checkbox" checked={status.enabled} onChange={handleToggle} />
               {status.enabled ? 'On' : 'Off'}
+            </label>
+          </div>
+
+          {/* Pending pairing approval prompts — appear when requireApproval is
+              on and a phone tries to pair. Shown at the top so they're hard to
+              miss. */}
+          {status.pendingPairings.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              {status.pendingPairings.map((p) => (
+                <div
+                  key={p.id}
+                  style={{
+                    border: '1px solid #fcd34d',
+                    background: '#fffbeb',
+                    borderRadius: 6,
+                    padding: 10,
+                    marginBottom: 8,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                    Allow <code>{p.label}</code> to pair?
+                  </div>
+                  <div style={{ fontSize: 11, color: '#78716c', marginBottom: 6 }}>
+                    {p.mode === 'lan' ? 'LAN' : 'Cloud'} request. Code shown on phone:
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: 16,
+                      letterSpacing: 2,
+                      background: '#fef3c7',
+                      padding: '4px 8px',
+                      borderRadius: 4,
+                      display: 'inline-block',
+                      marginBottom: 8,
+                    }}
+                  >
+                    {p.code ?? '—'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(p.id)}
+                      style={{
+                        background: '#16a34a',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 4,
+                        padding: '4px 12px',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeny(p.id)}
+                      style={{
+                        background: '#dc2626',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 4,
+                        padding: '4px 12px',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Shared toggle: applies to both LAN and Cloud pairing paths. */}
+          <div
+            style={{
+              marginTop: 10,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '6px 0',
+              borderBottom: '1px dashed rgba(0,0,0,0.08)',
+            }}
+          >
+            <span style={{ color: '#555' }} title="When on, you must approve each new pairing from this popover before a token is issued.">
+              Require approval to connect
+            </span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={status.requireApproval}
+                onChange={handleToggleRequireApproval}
+              />
+              {status.requireApproval ? 'On' : 'Off'}
             </label>
           </div>
           {status.running ? (

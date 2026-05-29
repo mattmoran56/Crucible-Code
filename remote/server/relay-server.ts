@@ -15,6 +15,12 @@ import {
   getCloudHandle,
   getCloudSafetyNumber,
 } from './cloud-client'
+import {
+  isRequireApproval,
+  awaitApproval,
+  listPendingPairings,
+  type PendingPairing,
+} from './approval'
 
 const settingsStore = new Store<{ remoteEnabled: boolean; remotePort: number }>({
   name: 'remote-settings',
@@ -101,14 +107,34 @@ function handleHttp(req: http.IncomingMessage, res: http.ServerResponse): void {
         res.end('bad json')
         return
       }
-      if (!consumePairingCode(code)) {
+      // Verify the code matches without consuming it yet — if approval is
+      // required and the user denies, we don't want to burn a valid code.
+      const active = currentPairingCode()
+      if (!active || code.toUpperCase().trim() !== active) {
         res.statusCode = 401
         res.end(JSON.stringify({ error: 'invalid or expired code' }))
         return
       }
-      const token = issueToken(label)
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ token }))
+      // Approval gate: when on, hold the response until desktop user
+      // approves/denies/times out. When off, resolves immediately to true.
+      awaitApproval(label, 'lan').then((approved) => {
+        if (!approved) {
+          // 408 covers both deny and timeout from the phone's POV.
+          res.statusCode = 408
+          res.end(JSON.stringify({ error: 'pairing not approved' }))
+          return
+        }
+        // Consume now that we're committing to issuing a token.
+        if (!consumePairingCode(code)) {
+          // Code expired during the approval wait.
+          res.statusCode = 401
+          res.end(JSON.stringify({ error: 'invalid or expired code' }))
+          return
+        }
+        const token = issueToken(label)
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ token }))
+      })
     })
     return
   }
@@ -236,6 +262,8 @@ export interface RemoteStatus {
     connected: boolean
     safetyNumber: string | null
   }
+  requireApproval: boolean
+  pendingPairings: PendingPairing[]
 }
 
 export function getRemoteStatus(): RemoteStatus {
@@ -252,6 +280,8 @@ export function getRemoteStatus(): RemoteStatus {
       connected: getCloudConnected(),
       safetyNumber: getCloudSafetyNumber(),
     },
+    requireApproval: isRequireApproval(),
+    pendingPairings: listPendingPairings(),
   }
 }
 

@@ -20,6 +20,13 @@ import {
   setCloudStatusListener,
 } from '../../../remote/server/cloud-client'
 import { generatePairingCode, currentPairingCode } from '../../../remote/server/pairing'
+import {
+  setRequireApproval,
+  approvePairing,
+  denyPairing,
+  setApprovalChangeListener,
+  listPendingPairings,
+} from '../../../remote/server/approval'
 
 export function registerRemoteHandlers(window: BrowserWindow) {
   const pushStatus = () => {
@@ -30,6 +37,15 @@ export function registerRemoteHandlers(window: BrowserWindow) {
 
   // Cloud client pushes status changes too (connection, safety number, etc.)
   setCloudStatusListener(pushStatus)
+
+  // Approval gate pushes status (pendingPairings) and a discrete event so the
+  // popover can flash open / play a sound when a new request arrives.
+  setApprovalChangeListener(() => {
+    if (window.isDestroyed()) return
+    const pending = listPendingPairings()
+    window.webContents.send(IPC.REMOTE_PAIRING_REQUESTED, pending)
+    pushStatus()
+  })
 
   handle(IPC.REMOTE_GET_STATUS, async (): Promise<RemoteStatus> => {
     return getRemoteStatus()
@@ -84,6 +100,23 @@ export function registerRemoteHandlers(window: BrowserWindow) {
     const status = getRemoteStatus()
     pushStatus()
     return status
+  })
+
+  handle(IPC.REMOTE_SET_REQUIRE_APPROVAL, async (_e, enabled: boolean): Promise<RemoteStatus> => {
+    setRequireApproval(enabled)
+    const status = getRemoteStatus()
+    pushStatus()
+    return status
+  })
+
+  handle(IPC.REMOTE_APPROVE_PAIRING, async (_e, id: string): Promise<RemoteStatus> => {
+    approvePairing(id)
+    return getRemoteStatus()
+  })
+
+  handle(IPC.REMOTE_DENY_PAIRING, async (_e, id: string): Promise<RemoteStatus> => {
+    denyPairing(id)
+    return getRemoteStatus()
   })
 
   handle(IPC.REMOTE_REGENERATE_HANDLE, async (): Promise<RemoteStatus> => {

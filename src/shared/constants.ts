@@ -219,4 +219,8 @@ export const IPC = {
   REMOTE_STATUS_CHANGED: 'remote:status-changed',
   REMOTE_SET_CLOUD_ENABLED: 'remote:set-cloud-enabled',
   REMOTE_REGENERATE_HANDLE: 'remote:regenerate-handle',
+  REMOTE_SET_REQUIRE_APPROVAL: 'remote:set-require-approval',
+  REMOTE_APPROVE_PAIRING: 'remote:approve-pairing',
+  REMOTE_DENY_PAIRING: 'remote:deny-pairing',
+  REMOTE_PAIRING_REQUESTED: 'remote:pairing-requested',
 } as const

@@ -19,6 +19,7 @@ import {
   clearHandle,
 } from './handle'
 import { attachBridgeToTransport, type Transport } from './bridge'
+import { awaitApproval } from './approval'
 import Store from 'electron-store'
 
 const settingsStore = new Store<{ cloudEnabled: boolean }>({
@@ -307,6 +308,13 @@ async function onData(env: CloudData): Promise<void> {
       const code = currentPairingCode()
       if (!code) {
         await sendInner({ kind: 'auth-res', ok: false, error: 'no active code' })
+        return
+      }
+      // Gate token issuance behind desktop approval (no-op when off).
+      const approved = await awaitApproval(inner.label, 'cloud')
+      if (!session || !session.sharedKey) return // session may have been torn down while we waited
+      if (!approved) {
+        await sendInner({ kind: 'auth-res', ok: false, error: 'pairing not approved' })
         return
       }
       // Salt was the code; if we got here, the phone had it. Consume now.
