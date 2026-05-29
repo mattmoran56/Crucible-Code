@@ -53,26 +53,27 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
 
         <form
           onSubmit={handleSubmit}
-          className="bg-bg-secondary border border-border rounded-md p-4 space-y-3"
+          className="bg-bg-secondary border border-border rounded-md p-5 space-y-5"
         >
           <Input
             autoFocus
             value={handle}
             onChange={(e) => setHandle(e.target.value)}
             placeholder="tiger-violet-cobalt"
-            style={{ fontSize: 16, textAlign: 'center' }}
+            style={{ fontSize: 16, textAlign: 'center', padding: '12px 14px' }}
           />
           <Input
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder="ABCDEF"
             maxLength={6}
-            style={{ fontSize: 22, letterSpacing: 6, textAlign: 'center', textTransform: 'uppercase' }}
+            style={{ fontSize: 22, letterSpacing: 6, textAlign: 'center', textTransform: 'uppercase', padding: '14px 14px' }}
           />
           <Input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="Device label (optional)"
+            style={{ padding: '12px 14px' }}
           />
           <Button
             type="submit"
