@@ -180,6 +180,9 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 - **Import existing worktree** — Bring in worktrees created outside CodeCrucible
 - **Open remote branch** — Create a session from a remote branch with autocomplete
 - **Open as main branch** — Temporarily check out a session's branch on the main repo (useful for builds that need the real repo path)
+- **Rename a session** — Give a session a more identifiable name from the card's `⋯` menu; the underlying git branch is renamed to match
+
+![Rename session dialog](docs/screenshots/rename-session-dialog.png)
 
 </details>
 

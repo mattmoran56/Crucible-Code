@@ -140,6 +140,11 @@ const targets: ScreenshotTarget[] = [
     delay: 1500,
   },
   {
+    name: 'rename-session-dialog',
+    storyId: 'app-full-layout--rename-session-dialog',
+    delay: 3500,
+  },
+  {
     name: 'startup-prompt-settings',
     storyId: 'app-full-layout--startup-prompt-settings',
     delay: 2000,
