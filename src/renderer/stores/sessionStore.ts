@@ -255,11 +255,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       throw new Error('Another session already uses this name')
     }
 
-    const newBranchName = `session/${trimmed}`
-    await window.api.worktree.renameBranch(repoPath, session.branchName, newBranchName)
+    const desiredBranch = `session/${trimmed}`
+    const { newBranch } = await window.api.worktree.renameBranch(
+      repoPath,
+      session.worktreePath,
+      session.branchName,
+      desiredBranch
+    )
 
     const sessions = get().sessions.map((s) =>
-      s.id === sessionId ? { ...s, name: trimmed, branchName: newBranchName } : s
+      s.id === sessionId ? { ...s, name: trimmed, branchName: newBranch } : s
     )
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return

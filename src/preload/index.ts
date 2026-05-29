@@ -100,8 +100,8 @@ const api = {
       remoteBranch: string
     ): Promise<{ path: string; branch: string }> =>
       ipcRenderer.invoke(IPC.WORKTREE_CREATE_FROM_BRANCH, repoPath, sessionName, remoteBranch),
-    renameBranch: (repoPath: string, oldBranch: string, newBranch: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.WORKTREE_RENAME_BRANCH, repoPath, oldBranch, newBranch),
+    renameBranch: (repoPath: string, worktreePath: string, fallbackBranch: string, newBranch: string): Promise<{ oldBranch: string; newBranch: string }> =>
+      ipcRenderer.invoke(IPC.WORKTREE_RENAME_BRANCH, repoPath, worktreePath, fallbackBranch, newBranch),
   },
 
   terminal: {

@@ -27,8 +27,8 @@ export function registerWorktreeHandlers() {
 
   ipcMain.handle(
     IPC.WORKTREE_RENAME_BRANCH,
-    async (_e, repoPath: string, oldBranch: string, newBranch: string) => {
-      return worktreeService.renameBranch(repoPath, oldBranch, newBranch)
+    async (_e, repoPath: string, worktreePath: string, fallbackBranch: string, newBranch: string) => {
+      return worktreeService.renameWorktreeBranch(repoPath, worktreePath, fallbackBranch, newBranch)
     }
   )
 }

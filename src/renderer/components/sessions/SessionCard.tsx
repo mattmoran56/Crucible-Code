@@ -3,6 +3,7 @@ import type { Session, PullRequest, SessionStatus } from '../../../shared/types'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu } from '../ui/DropdownMenu'
 import { Dialog } from '../ui/Dialog'
+import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
 import { CIIndicator } from '../pullrequests/CIIndicator'
 
@@ -171,34 +172,32 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
       </div>
 
       <Dialog open={showRename} onClose={() => !renaming && setShowRename(false)} title="Rename session">
-        <p className="text-xs text-text-muted mb-3">
-          The git branch will be renamed to <code className="text-text">session/&lt;new name&gt;</code>.
-        </p>
-        <input
-          type="text"
-          autoFocus
-          value={renameValue}
-          onChange={(e) => setRenameValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !renaming) {
-              e.preventDefault()
-              submitRename()
-            }
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!renaming) submitRename()
           }}
-          disabled={renaming}
-          className="w-full px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded focus:outline-none focus:border-accent text-text"
-        />
-        {renameError && (
-          <p className="text-xs text-danger mt-2">{renameError}</p>
-        )}
-        <div className="flex gap-3 justify-end mt-5">
-          <Button variant="ghost" size="sm" onClick={() => setShowRename(false)} disabled={renaming}>
-            Cancel
-          </Button>
-          <Button variant="primary" size="sm" onClick={submitRename} disabled={renaming || !renameValue.trim()}>
-            {renaming ? 'Renaming…' : 'Save'}
-          </Button>
-        </div>
+          className="flex flex-col gap-5"
+        >
+          <Input
+            label="Session name"
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="e.g. fix-auth-bug"
+            disabled={renaming}
+            error={renameError || undefined}
+            hint={`The git branch will be renamed to session/${renameValue.trim() || '<new name>'}`}
+          />
+          <div className="flex gap-3 justify-end">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowRename(false)} disabled={renaming}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={renaming || !renameValue.trim()} loading={renaming}>
+              Save
+            </Button>
+          </div>
+        </form>
       </Dialog>
 
       <Dialog open={showConfirm} onClose={() => setShowConfirm(false)} title="Delete session?">
