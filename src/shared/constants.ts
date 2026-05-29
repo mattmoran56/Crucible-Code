@@ -207,4 +207,5 @@ export const IPC = {
   NOTION_CLEAR_PICKED_UP: 'notion:clear-picked-up',
   NOTION_GET_CONFIG_PATH: 'notion:get-config-path',
   NOTION_FIRE_TASK: 'notion:fire-task',
+  NOTION_OPEN_TICKET: 'notion:open-ticket',
 } as const

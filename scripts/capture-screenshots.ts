@@ -108,6 +108,12 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 300, height: 600 },
   },
   {
+    name: 'session-card-notion-ticket',
+    storyId: 'sessions-sessioncard--with-notion-ticket',
+    delay: 500,
+    viewport: { width: 320, height: 200 },
+  },
+  {
     name: 'custom-buttons',
     storyId: 'app-full-layout--custom-buttons',
     delay: 2000,

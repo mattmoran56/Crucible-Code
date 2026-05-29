@@ -535,6 +535,7 @@ const api = {
     clearPickedUp: (projectId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.NOTION_CLEAR_PICKED_UP, projectId),
     getConfigPath: (): Promise<string> => ipcRenderer.invoke(IPC.NOTION_GET_CONFIG_PATH),
+    openTicket: (url: string): Promise<void> => ipcRenderer.invoke(IPC.NOTION_OPEN_TICKET, url),
     onFireTask: (callback: (payload: NotionFireTaskPayload) => void) => {
       const listener = (_e: unknown, payload: NotionFireTaskPayload) => callback(payload)
       ipcRenderer.on(IPC.NOTION_FIRE_TASK, listener)
