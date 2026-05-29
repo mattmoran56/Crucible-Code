@@ -4,6 +4,7 @@ import path from 'path'
 const config: StorybookConfig = {
   stories: [
     '../src/renderer/**/*.stories.@(ts|tsx)',
+    '../remote/receiver/src/**/*.stories.@(ts|tsx)',
   ],
   addons: [
     '@storybook/addon-essentials',
@@ -31,6 +32,9 @@ const config: StorybookConfig = {
     config.resolve.alias = {
       ...config.resolve.alias,
       '@mock': path.resolve(__dirname, '../mock'),
+      '@protocol': path.resolve(__dirname, '../remote/protocol'),
+      '@renderer': path.resolve(__dirname, '../src/renderer'),
+      '@shared': path.resolve(__dirname, '../src/shared'),
     }
 
     return config

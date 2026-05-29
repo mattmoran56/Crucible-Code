@@ -26,6 +26,7 @@
 - **Usage tracking** — Rate limit bars and activity stats per session
 - **Code editor** — CodeMirror editor with file explorer for editing files in any worktree
 - **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
+- **Remote access** — Pair a second device's browser to your desktop instance over the LAN; view projects, sessions, settings, and live agent terminals from anywhere on your network (full mobile layout included)
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
 - **Review loop** — One-click review → triage → fix cycle on a branch with stop conditions (clean rounds, iteration cap, cost cap) and a sticky PR comment for skipped findings
@@ -153,6 +154,25 @@ This builds and copies `Crucible Code.app` to `/Applications/`.
 ### Auto-update
 
 The installed app polls `origin/main` every 5 minutes. When new commits land, an **Update Available** button appears in the title bar. Click it to pull, rebuild, and relaunch automatically.
+
+</details>
+
+<details>
+<summary><strong>Remote access (web receiver)</strong></summary>
+
+Flip a toggle in the desktop top bar and your projects, sessions, settings, and live agent terminals become reachable from any browser on the same LAN — phone, tablet, laptop. The desktop hosts an embedded WebSocket relay; the browser loads a small React receiver paired with a short code shown in the toggle popover. Architecture details live in [docs/REMOTE.md](docs/REMOTE.md).
+
+![Pairing](docs/screenshots/remote-pair.png)
+![Project list on desktop browser](docs/screenshots/remote-projects-desktop.png)
+![Live session terminal](docs/screenshots/remote-session-desktop.png)
+![Mobile drawer](docs/screenshots/remote-drawer-mobile.png)
+![Mobile settings](docs/screenshots/remote-settings-mobile.png)
+
+- **Pairing code + token** — A 6-char code is shown in the desktop toggle popover; the browser swaps it for a long-lived token stored in `localStorage`. Codes are single-use, 5-minute TTL.
+- **Same code paths as the desktop renderer** — `req` frames hit the shared `handlerMap` that `ipcMain.handle` registers, so the relay can never drift from the local UI for the channels it forwards.
+- **Live terminal attach with backfill** — Receiver attaches to the *existing* PTY for `(sessionId, tabId)`; the desktop's `terminal.service` keeps a 64 KiB tail per terminal so a remote join shows recent context, then streams new output live. Typing on either device drives the same shell.
+- **Mobile layout** — Below 768 px the project tabs collapse into a slide-in drawer, the workspace tab strip grows to thumb-friendly h-14 with full-width accent bar, and the theme picker moves into Settings as a chunky radio list (web-only, independent from the desktop).
+- **Out of v1 scope** — Pull requests, Claude-for-Web, env-var sync, and repo cloning to the remote machine.
 
 </details>
 
