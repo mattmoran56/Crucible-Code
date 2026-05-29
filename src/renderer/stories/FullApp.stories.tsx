@@ -261,6 +261,59 @@ export const NewSessionDialogWithInput: Story = {
   ],
 }
 
+/** Opens the rename dialog for the first session card by programmatically
+ *  clicking its Actions button (invisible until hover, but clickable via JS)
+ *  and then the "Rename" menu item. */
+// Storybook re-mounts decorators on HMR, so we guard with a window flag and
+// drive the click chain via a global setTimeout (immune to React unmount
+// cleanup) until a dialog appears. The DropdownMenu's outside-click handler
+// listens on mousedown, so we dispatch a full mousedown+mouseup+click sequence
+// to mimic a real user click.
+function OpenRenameDialogAfterMount() {
+  useEffect(() => {
+    const w = window as unknown as { __renameDialogOpened__?: boolean }
+    if (w.__renameDialogOpened__) return
+    w.__renameDialogOpened__ = true
+
+    const fireFull = (el: HTMLElement) => {
+      const opts = { bubbles: true, cancelable: true, view: window }
+      el.dispatchEvent(new MouseEvent('mousedown', opts))
+      el.dispatchEvent(new MouseEvent('mouseup', opts))
+      el.dispatchEvent(new MouseEvent('click', opts))
+    }
+
+    const start = Date.now()
+    const tick = () => {
+      if (document.querySelector('[role="dialog"]')) return
+      const items = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+      const rename = items.find((b) => b.textContent?.trim() === 'Rename')
+      if (rename) {
+        fireFull(rename)
+      } else {
+        const actionBtn = document.querySelector<HTMLButtonElement>('[aria-label^="Actions for"]')
+        if (actionBtn) fireFull(actionBtn)
+      }
+      if (Date.now() - start < 8000) setTimeout(tick, 300)
+    }
+    setTimeout(tick, 400)
+  }, [])
+  return null
+}
+
+export const RenameSessionDialog: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory()
+      return (
+        <>
+          <OpenRenameDialogAfterMount />
+          <Story />
+        </>
+      )
+    },
+  ],
+}
+
 export const StartupPromptSettings: Story = {
   decorators: [
     (Story) => {

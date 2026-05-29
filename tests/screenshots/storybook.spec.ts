@@ -147,6 +147,7 @@ function settingsTargets(): Target[] {
     { name: 'notion-settings-empty', storyId: 'settings-notionintegrationsettings--empty', viewport: { width: 800, height: 540 }, delay: 300 },
     { name: 'notion-settings-configured', storyId: 'settings-notionintegrationsettings--configured', viewport: { width: 800, height: 1400 }, delay: 600 },
     { name: 'notion-settings-mcp-prompt', storyId: 'settings-notionintegrationsettings--mcp-prompt-open', viewport: { width: 800, height: 1500 }, delay: 700 },
+    { name: 'notion-settings-multiple-groups', storyId: 'settings-notionintegrationsettings--multiple-groups', viewport: { width: 800, height: 1500 }, delay: 600 },
   ]
 }
 

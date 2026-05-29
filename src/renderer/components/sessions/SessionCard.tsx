@@ -3,6 +3,7 @@ import type { Session, PullRequest, SessionStatus } from '../../../shared/types'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu } from '../ui/DropdownMenu'
 import { Dialog } from '../ui/Dialog'
+import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
 import { CIIndicator } from '../pullrequests/CIIndicator'
 
@@ -15,6 +16,7 @@ interface Props {
   onClick: () => void
   onOpenAsMainBranch: () => void
   onDelete: () => void
+  onRename: (newName: string) => Promise<void>
 }
 
 const EllipsisIcon = () => (
@@ -67,8 +69,31 @@ function StatusIndicator({ status }: { status: SessionStatus | null }) {
   }
 }
 
-export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onDelete }: Props) {
+export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onDelete, onRename }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showRename, setShowRename] = useState(false)
+  const [renameValue, setRenameValue] = useState(session.name)
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState(false)
+
+  const openRename = () => {
+    setRenameValue(session.name)
+    setRenameError(null)
+    setShowRename(true)
+  }
+
+  const submitRename = async () => {
+    setRenaming(true)
+    setRenameError(null)
+    try {
+      await onRename(renameValue)
+      setShowRename(false)
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRenaming(false)
+    }
+  }
 
   return (
     <>
@@ -132,6 +157,7 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
           <DropdownMenu
             items={[
               ...(!isOpenedAsMain ? [{ label: 'Open as main branch', onClick: onOpenAsMainBranch }] : []),
+              { label: 'Rename', onClick: openRename },
               { label: 'Delete', variant: 'danger' as const, onClick: () => setShowConfirm(true) },
             ]}
           >
@@ -144,6 +170,35 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
           </DropdownMenu>
         </div>
       </div>
+
+      <Dialog open={showRename} onClose={() => !renaming && setShowRename(false)} title="Rename session">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!renaming) submitRename()
+          }}
+          className="flex flex-col gap-5"
+        >
+          <Input
+            label="Session name"
+            autoFocus
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="e.g. fix-auth-bug"
+            disabled={renaming}
+            error={renameError || undefined}
+            hint={`The git branch will be renamed to session/${renameValue.trim() || '<new name>'}`}
+          />
+          <div className="flex gap-3 justify-end">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowRename(false)} disabled={renaming}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={renaming || !renameValue.trim()} loading={renaming}>
+              Save
+            </Button>
+          </div>
+        </form>
+      </Dialog>
 
       <Dialog open={showConfirm} onClose={() => setShowConfirm(false)} title="Delete session?">
         <p className="text-xs text-text-muted mb-5">

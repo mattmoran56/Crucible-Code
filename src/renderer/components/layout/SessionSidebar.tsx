@@ -34,7 +34,7 @@ const PR_POLL_INTERVAL = 30_000
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, openPR, openAsMainBranch, openBranch } =
+  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, openPR, openAsMainBranch, openBranch } =
     useSessionStore()
   const claudeWebSessions = useClaudeWebStore((s) => s.sessions)
   const claudeWebLoading = useClaudeWebStore((s) => s.loading)
@@ -687,6 +687,7 @@ export function SessionSidebar() {
                       }}
                       onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
                       onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
+                      onRename={(newName) => renameSession(activeProject.id, activeProject.repoPath, session.id, newName)}
                     />
                   ))}
                 </React.Fragment>
@@ -748,6 +749,7 @@ export function SessionSidebar() {
                     }}
                     onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
                     onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
+                    onRename={(newName) => renameSession(activeProject.id, activeProject.repoPath, session.id, newName)}
                   />
                 ))}
                 {claudeWebLoading && visibleClaudeWebSessions.length === 0 && sortedClaudeWebActiveSessions.length === 0 ? (

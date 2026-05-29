@@ -32,18 +32,37 @@ export function RemoteTogglePopover() {
   const [error, setError] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
 
+  // The mock app + Storybook don't expose the remote namespace on window.api;
+  // skip rendering rather than crashing the project tabs row.
+  const remoteApi = (window.api as { remote?: unknown }).remote as
+    | {
+        getStatus: () => Promise<RemoteStatus>
+        setEnabled: (enabled: boolean) => Promise<RemoteStatus>
+        regenerateCode: () => Promise<RemoteStatus>
+        revokeAll: () => Promise<RemoteStatus>
+        onStatusChanged: (cb: (s: RemoteStatus) => void) => () => void
+        setCloudEnabled: (enabled: boolean) => Promise<RemoteStatus>
+        regenerateHandle: () => Promise<RemoteStatus>
+        setRequireApproval: (enabled: boolean) => Promise<RemoteStatus>
+        approvePairing: (id: string) => Promise<RemoteStatus>
+        denyPairing: (id: string) => Promise<RemoteStatus>
+        onPairingRequested: (cb: (pending: PendingPairing[]) => void) => () => void
+      }
+    | undefined
+
   useEffect(() => {
-    window.api.remote.getStatus().then(setStatus)
-    const off = window.api.remote.onStatusChanged(setStatus)
+    if (!remoteApi) return
+    remoteApi.getStatus().then(setStatus)
+    const off = remoteApi.onStatusChanged(setStatus)
     // Auto-open the popover when a pairing request needs attention.
-    const offReq = window.api.remote.onPairingRequested((pending) => {
+    const offReq = remoteApi.onPairingRequested((pending) => {
       if (pending.length > 0) setOpen(true)
     })
     return () => {
       off()
       offReq()
     }
-  }, [])
+  }, [remoteApi])
 
   useEffect(() => {
     if (!open) return
@@ -56,23 +75,23 @@ export function RemoteTogglePopover() {
 
   const handleToggle = async () => {
     if (!status) return
-    const next = await window.api.remote.setEnabled(!status.enabled)
+    const next = await remoteApi!.setEnabled(!status.enabled)
     setStatus(next)
   }
 
   const handleRegenerate = async () => {
-    setStatus(await window.api.remote.regenerateCode())
+    setStatus(await remoteApi!.regenerateCode())
   }
 
   const handleRevokeAll = async () => {
-    setStatus(await window.api.remote.revokeAll())
+    setStatus(await remoteApi!.revokeAll())
   }
 
   const handleToggleCloud = async () => {
     if (!status) return
     setError(null)
     try {
-      setStatus(await window.api.remote.setCloudEnabled(!status.cloud.enabled))
+      setStatus(await remoteApi!.setCloudEnabled(!status.cloud.enabled))
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       // Strip the noisy IPC prefix Electron prepends.
@@ -83,7 +102,7 @@ export function RemoteTogglePopover() {
   const handleRegenerateHandle = async () => {
     setError(null)
     try {
-      setStatus(await window.api.remote.regenerateHandle())
+      setStatus(await remoteApi!.regenerateHandle())
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg.replace(/^Error invoking remote method '[^']+':\s*Error:\s*/, ''))
@@ -94,19 +113,20 @@ export function RemoteTogglePopover() {
     if (status?.cloud.handle) await navigator.clipboard.writeText(status.cloud.handle)
   }
 
-
   const handleToggleRequireApproval = async () => {
     if (!status) return
-    setStatus(await window.api.remote.setRequireApproval(!status.requireApproval))
+    setStatus(await remoteApi!.setRequireApproval(!status.requireApproval))
   }
 
   const handleApprove = async (id: string) => {
-    setStatus(await window.api.remote.approvePairing(id))
+    setStatus(await remoteApi!.approvePairing(id))
   }
 
   const handleDeny = async (id: string) => {
-    setStatus(await window.api.remote.denyPairing(id))
+    setStatus(await remoteApi!.denyPairing(id))
   }
+
+  if (!remoteApi) return null
 
   const dotColor = status?.running || status?.cloud.connected ? '#22c55e' : '#9ca3af'
 

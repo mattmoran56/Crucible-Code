@@ -200,6 +200,9 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 - **Import existing worktree** — Bring in worktrees created outside CodeCrucible
 - **Open remote branch** — Create a session from a remote branch with autocomplete
 - **Open as main branch** — Temporarily check out a session's branch on the main repo (useful for builds that need the real repo path)
+- **Rename a session** — Give a session a more identifiable name from the card's `⋯` menu; the underlying git branch is renamed to match
+
+![Rename session dialog](docs/screenshots/rename-session-dialog.png)
 
 </details>
 
@@ -327,9 +330,12 @@ If you also drive Claude Code from [claude.ai/code](https://claude.com/product/c
 Poll a Notion database for new tasks and auto-spawn a session per task. Sessions created this way carry a link back to the originating Notion page so you can jump straight to the ticket from the sidebar.
 
 - **Auto-create sessions** — A poller watches your configured database every ~5 s; new rows matching your filters fire a session with the branch name, session name, and startup prompt resolved from page placeholders
+- **OR filter groups** — Define multiple filter groups in the settings UI; a task is picked up if it matches *any* group (groups ORed; conditions within a group ANDed). Useful for "assigned to me in Project A *or* on the urgent list in Project B"
 - **Ticket link under branch name** — The session card shows a small ticket icon and the page title beneath the branch. Clicking it hands off to your OS so it opens in the Notion desktop app (if installed) or your default browser — never inside Electron
 
 ![Session card with Notion ticket link](docs/screenshots/session-card-notion-ticket.png)
+
+![Notion settings with multiple OR filter groups](docs/screenshots/notion-settings-multiple-groups.png)
 
 </details>
 

@@ -103,6 +103,17 @@ function defaultOperatorForType(type: NotionPropertyType): NotionFilterOperator 
   return OPERATORS_BY_TYPE[type]?.[0] ?? 'equals'
 }
 
+// Mirror of the main-process helper: prefer `filterGroups` if present and
+// non-empty; otherwise fall back to wrapping legacy `filters` as one group.
+function effectiveGroupsFromConfig(
+  config: Pick<NotionIntegrationConfig, 'filters' | 'filterGroups'>
+): NotionPropertyFilter[][] {
+  if (config.filterGroups && config.filterGroups.length > 0) {
+    return config.filterGroups
+  }
+  return config.filters && config.filters.length > 0 ? [config.filters] : []
+}
+
 interface ProjectCardProps {
   project: Project
 }
@@ -129,7 +140,12 @@ function ProjectCard({ project }: ProjectCardProps) {
     if (!config) return 'Not configured'
     if (!config.enabled) return 'Disabled'
     if (!config.apiToken || !config.databaseId) return 'Incomplete'
-    return `Polling · ${config.filters.length} filter${config.filters.length === 1 ? '' : 's'}`
+    const groups = effectiveGroupsFromConfig(config)
+    const totalConditions = groups.reduce((n, g) => n + g.length, 0)
+    if (groups.length > 1) {
+      return `Polling · ${groups.length} groups · ${totalConditions} condition${totalConditions === 1 ? '' : 's'}`
+    }
+    return `Polling · ${totalConditions} filter${totalConditions === 1 ? '' : 's'}`
   }, [config])
 
   const handleSave = async (override?: Partial<NotionIntegrationConfig>) => {
@@ -216,11 +232,20 @@ function ProjectCard({ project }: ProjectCardProps) {
             {savedFlash && <span className="text-[10px] text-text-muted self-center">Saved</span>}
           </div>
 
-          <FilterEditor
+          <FilterGroupsEditor
             schema={schema}
             apiToken={draft.apiToken}
-            filters={draft.filters}
-            onChange={(filters) => handleSave({ filters })}
+            groups={effectiveGroupsFromConfig(draft)}
+            onChange={(groups) => {
+              // Persist as the legacy single-group shape when possible so
+              // existing MCP-driven configs / screenshots stay unchanged for
+              // the common case. Only emit `filterGroups` for multi-group.
+              if (groups.length <= 1) {
+                handleSave({ filters: groups[0] ?? [], filterGroups: undefined })
+              } else {
+                handleSave({ filters: [], filterGroups: groups })
+              }
+            }}
           />
 
           <UpdatesEditor
@@ -315,6 +340,99 @@ function ProjectCard({ project }: ProjectCardProps) {
   )
 }
 
+interface FilterGroupsEditorProps {
+  schema: NotionDatabaseSchema | undefined
+  apiToken: string
+  groups: NotionPropertyFilter[][]
+  onChange: (groups: NotionPropertyFilter[][]) => void
+}
+
+function FilterGroupsEditor({ schema, apiToken, groups, onChange }: FilterGroupsEditorProps) {
+  const propertyOptions = schema?.properties ?? []
+  const isMulti = groups.length > 1
+
+  const updateGroupAt = (i: number, next: NotionPropertyFilter[]) =>
+    onChange(groups.map((g, idx) => (idx === i ? next : g)))
+  const removeGroup = (i: number) => onChange(groups.filter((_, idx) => idx !== i))
+  const addGroup = () => {
+    const type = (propertyOptions[0]?.type as NotionPropertyType) ?? 'rich_text'
+    const seed: NotionPropertyFilter = {
+      property: propertyOptions[0]?.name ?? '',
+      type,
+      operator: defaultOperatorForType(type),
+      value: '',
+    }
+    // Seed each new group with one condition so the user sees the editor
+    // immediately rather than an empty card. An empty group is ignored at
+    // query time anyway.
+    onChange([...groups, [seed]])
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+        <label className="text-xs text-text-muted">
+          {isMulti
+            ? 'Filter groups — match any group (groups ORed; conditions ANDed)'
+            : 'Filters (ANDed; empty = no filter)'}
+        </label>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={addGroup}
+          className="border border-border"
+          style={{ padding: '2px 8px' }}
+        >
+          + Add group
+        </Button>
+      </div>
+      {groups.length === 0 && (
+        <p className="text-[10px] text-text-muted italic">No filter — every row in the database is picked up.</p>
+      )}
+      <div className="flex flex-col gap-2">
+        {groups.map((group, gi) => (
+          <div key={gi}>
+            {gi > 0 && (
+              <div className="flex items-center gap-2" style={{ margin: '4px 0' }}>
+                <div className="flex-1 border-t border-border" />
+                <span className="text-[10px] uppercase tracking-wider text-text-muted font-medium">OR</span>
+                <div className="flex-1 border-t border-border" />
+              </div>
+            )}
+            <div
+              className={isMulti ? 'border border-border rounded-md' : ''}
+              style={isMulti ? { padding: '8px 10px' } : undefined}
+            >
+              {isMulti && (
+                <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                  <span className="text-[11px] text-text-muted">Group {gi + 1}</span>
+                  <IconButton
+                    label="Remove group"
+                    size="sm"
+                    variant="danger"
+                    onClick={() => removeGroup(gi)}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </IconButton>
+                </div>
+              )}
+              <FilterEditor
+                schema={schema}
+                apiToken={apiToken}
+                filters={group}
+                onChange={(next) => updateGroupAt(gi, next)}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 interface FilterEditorProps {
   schema: NotionDatabaseSchema | undefined
   apiToken: string
@@ -342,15 +460,14 @@ function FilterEditor({ schema, apiToken, filters, onChange }: FilterEditorProps
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="text-xs text-text-muted">Filters (ANDed; empty = no filter)</label>
+      <div className="flex justify-end" style={{ marginBottom: 6 }}>
         <Button variant="ghost" size="sm" onClick={add} className="border border-border" style={{ padding: '2px 8px' }}>
-          + Add
+          + Add condition
         </Button>
       </div>
       <div className="flex flex-col gap-2">
         {filters.length === 0 && (
-          <p className="text-[10px] text-text-muted italic">No filter — every row in the database is picked up.</p>
+          <p className="text-[10px] text-text-muted italic">No conditions — this group matches everything.</p>
         )}
         {filters.map((f, i) => {
           const isSubFilterMode = f.type === 'relation' && !!f.subFilter
