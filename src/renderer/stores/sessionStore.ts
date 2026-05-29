@@ -46,6 +46,7 @@ interface SessionState {
   loadSessions: (projectId: string) => Promise<void>
   createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string) => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
+  renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
   setActiveSession: (id: string, repoPath?: string) => Promise<void>
   setActiveWorkspaceTab: (tab: WorkspaceTab) => void
   openPR: (repoPath: string, pr: PullRequest) => Promise<void>
@@ -238,6 +239,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           ? (sessions[0]?.id ?? null)
           : get().activeSessionId,
     })
+  },
+
+  renameSession: async (projectId, repoPath, sessionId, newName) => {
+    const trimmed = newName.trim()
+    if (!trimmed) throw new Error('Name cannot be empty')
+    if (!/^[A-Za-z0-9._/-]+$/.test(trimmed)) {
+      throw new Error('Name can only contain letters, numbers, dots, dashes, underscores and slashes')
+    }
+    const session = get().sessions.find((s) => s.id === sessionId)
+    if (!session) throw new Error('Session not found')
+    if (session.name === trimmed) return
+    if (get().sessions.some((s) => s.id !== sessionId && s.name === trimmed)) {
+      throw new Error('Another session already uses this name')
+    }
+
+    const newBranchName = `session/${trimmed}`
+    await window.api.worktree.renameBranch(repoPath, session.branchName, newBranchName)
+
+    const sessions = get().sessions.map((s) =>
+      s.id === sessionId ? { ...s, name: trimmed, branchName: newBranchName } : s
+    )
+    await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId !== projectId) return
+    set({ sessions })
   },
 
   openBranch: async (projectId, repoPath, branch, sessionName) => {

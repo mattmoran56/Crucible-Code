@@ -15,6 +15,7 @@ interface Props {
   onClick: () => void
   onOpenAsMainBranch: () => void
   onDelete: () => void
+  onRename: (newName: string) => Promise<void>
 }
 
 const EllipsisIcon = () => (
@@ -47,8 +48,31 @@ function StatusIndicator({ status }: { status: SessionStatus | null }) {
   }
 }
 
-export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onDelete }: Props) {
+export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onDelete, onRename }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showRename, setShowRename] = useState(false)
+  const [renameValue, setRenameValue] = useState(session.name)
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState(false)
+
+  const openRename = () => {
+    setRenameValue(session.name)
+    setRenameError(null)
+    setShowRename(true)
+  }
+
+  const submitRename = async () => {
+    setRenaming(true)
+    setRenameError(null)
+    try {
+      await onRename(renameValue)
+      setShowRename(false)
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRenaming(false)
+    }
+  }
 
   return (
     <>
@@ -98,6 +122,7 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
           <DropdownMenu
             items={[
               ...(!isOpenedAsMain ? [{ label: 'Open as main branch', onClick: onOpenAsMainBranch }] : []),
+              { label: 'Rename', onClick: openRename },
               { label: 'Delete', variant: 'danger' as const, onClick: () => setShowConfirm(true) },
             ]}
           >
@@ -110,6 +135,37 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
           </DropdownMenu>
         </div>
       </div>
+
+      <Dialog open={showRename} onClose={() => !renaming && setShowRename(false)} title="Rename session">
+        <p className="text-xs text-text-muted mb-3">
+          The git branch will be renamed to <code className="text-text">session/&lt;new name&gt;</code>.
+        </p>
+        <input
+          type="text"
+          autoFocus
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !renaming) {
+              e.preventDefault()
+              submitRename()
+            }
+          }}
+          disabled={renaming}
+          className="w-full px-2 py-1.5 text-xs bg-bg-tertiary border border-border rounded focus:outline-none focus:border-accent text-text"
+        />
+        {renameError && (
+          <p className="text-xs text-danger mt-2">{renameError}</p>
+        )}
+        <div className="flex gap-3 justify-end mt-5">
+          <Button variant="ghost" size="sm" onClick={() => setShowRename(false)} disabled={renaming}>
+            Cancel
+          </Button>
+          <Button variant="primary" size="sm" onClick={submitRename} disabled={renaming || !renameValue.trim()}>
+            {renaming ? 'Renaming…' : 'Save'}
+          </Button>
+        </div>
+      </Dialog>
 
       <Dialog open={showConfirm} onClose={() => setShowConfirm(false)} title="Delete session?">
         <p className="text-xs text-text-muted mb-5">

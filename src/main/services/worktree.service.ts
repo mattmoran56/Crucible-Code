@@ -159,6 +159,14 @@ export async function createWorktreeFromBranch(
   return { path: wtPath, branch: remoteBranch }
 }
 
+export async function renameBranch(
+  repoPath: string,
+  oldBranch: string,
+  newBranch: string
+): Promise<void> {
+  await simpleGit(repoPath).raw(['branch', '-m', oldBranch, newBranch])
+}
+
 export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
   const g = simpleGit(repoPath)
   await pruneWorktrees(repoPath)

@@ -24,4 +24,11 @@ export function registerWorktreeHandlers() {
       return worktreeService.createWorktreeFromBranch(repoPath, sessionName, remoteBranch)
     }
   )
+
+  ipcMain.handle(
+    IPC.WORKTREE_RENAME_BRANCH,
+    async (_e, repoPath: string, oldBranch: string, newBranch: string) => {
+      return worktreeService.renameBranch(repoPath, oldBranch, newBranch)
+    }
+  )
 }
