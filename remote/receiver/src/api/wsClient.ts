@@ -128,8 +128,12 @@ class WsClient {
     this.cloud.onMessage((frame) => this.onMessage(frame))
   }
 
-  async pairCloud(handle: string, ticket: string, code: string): Promise<void> {
-    // Persist handle + ticket now so reconnects find them. Token is stored by cloud.ts on success.
+  async pairCloud(handle: string, code: string): Promise<void> {
+    // Derive the relay-layer ticket from (handle, code) so the user only types
+    // the pairing code once — no separate ticket field. Persist both before
+    // opening the WS so reconnects find them.
+    const { deriveTicket } = await import('@protocol/ticket')
+    const ticket = await deriveTicket(handle, code)
     localStorage.setItem('codecrucible-remote-handle', handle)
     setStoredTicket(ticket)
     await this.connectCloud(code)
@@ -244,8 +248,8 @@ export async function pair(code: string, label: string): Promise<void> {
   wsClient.connect()
 }
 
-export async function pairCloud(handle: string, ticket: string, code: string): Promise<void> {
-  await wsClient.pairCloud(handle, ticket, code)
+export async function pairCloud(handle: string, code: string): Promise<void> {
+  await wsClient.pairCloud(handle, code)
 }
 
 // Tiny window.api shim: api.projects.list() -> wsClient.invoke(IPC.PROJECT_LIST, [])

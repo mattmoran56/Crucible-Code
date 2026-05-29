@@ -18,6 +18,7 @@ import {
   stopCloudClient,
   regenerateCloudHandle,
   setCloudStatusListener,
+  refreshPhoneTicketForNewCode,
 } from '../../../remote/server/cloud-client'
 import { generatePairingCode, currentPairingCode } from '../../../remote/server/pairing'
 import {
@@ -65,6 +66,9 @@ export function registerRemoteHandlers(window: BrowserWindow) {
 
   handle(IPC.REMOTE_REGENERATE_CODE, async (): Promise<RemoteStatus> => {
     regeneratePairingCode()
+    // Cloud ticket is derived from (handle, code); update the Worker's DO
+    // so a phone using the new code derives the matching ticket.
+    await refreshPhoneTicketForNewCode()
     const status = getRemoteStatus()
     pushStatus()
     return status

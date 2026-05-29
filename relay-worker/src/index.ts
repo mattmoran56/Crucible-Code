@@ -24,9 +24,14 @@
  *      handles return the same 401 as a bad ticket.
  */
 
+interface RateLimitBinding {
+  limit(options: { key: string }): Promise<{ success: boolean }>
+}
+
 interface Env {
   ROOM: DurableObjectNamespace
-  RATE_LIMIT: DurableObjectNamespace
+  REGISTER_RL: RateLimitBinding
+  PHONE_RL: RateLimitBinding
   HANDLE_REGISTRY: KVNamespace
   ASSETS: Fetcher
 }
@@ -71,14 +76,10 @@ export default {
 // ---- /register --------------------------------------------------------------
 
 async function handleRegister(req: Request, env: Env): Promise<Response> {
-  // Per-IP rate limit via a single fixed RateLimit DO.
+  // Per-IP rate limit via Cloudflare's native Workers Rate Limiting API.
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown'
-  const limiter = env.RATE_LIMIT.get(env.RATE_LIMIT.idFromName('register'))
-  const limitResp = await limiter.fetch('https://rl/take', {
-    method: 'POST',
-    body: JSON.stringify({ ip }),
-  })
-  if (limitResp.status === 429) {
+  const { success } = await env.REGISTER_RL.limit({ key: ip })
+  if (!success) {
     return withCors(new Response(JSON.stringify({ error: 'rate limited' }), {
       status: 429,
       headers: { 'Content-Type': 'application/json' },
@@ -161,6 +162,15 @@ async function handleUpgrade(req: Request, env: Env, url: URL): Promise<Response
   const handle = (url.searchParams.get('handle') ?? '').toLowerCase().trim()
   if (!HANDLE_RE.test(handle)) return new Response('bad handle', { status: 400 })
 
+  // Per-IP rate-limit on /phone to make brute-forcing the derived ticket
+  // (entropy bounded by the 6-char pairing code) impractical. 20/min should
+  // be ample for legit reconnects.
+  if (url.pathname === '/phone') {
+    const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown'
+    const { success } = await env.PHONE_RL.limit({ key: ip })
+    if (!success) return unauthorizedWs()
+  }
+
   // KV-gate: no DO spawn for unknown handles. Same 401 as /phone bad-ticket
   // below so neither side can enumerate the namespace.
   const exists = await env.HANDLE_REGISTRY.get(handle)
@@ -224,38 +234,6 @@ function randomHex(bytes: number): string {
   const buf = new Uint8Array(bytes)
   crypto.getRandomValues(buf)
   return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-// ---------------------------------------------------------------------------
-// RateLimit DO — single instance, token bucket per IP. Lives in memory only;
-// loss on eviction just means a fresh burst, which is fine.
-// ---------------------------------------------------------------------------
-
-const RL_RATE = 5 // tokens per minute
-const RL_BURST = 5
-
-export class RateLimit {
-  buckets = new Map<string, { tokens: number; lastRefill: number }>()
-
-  // unused but DO contract requires the constructor signature
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  constructor(_state: DurableObjectState, _env: Env) {}
-
-  async fetch(req: Request): Promise<Response> {
-    const { ip } = (await req.json()) as { ip: string }
-    const now = Date.now()
-    const b = this.buckets.get(ip) ?? { tokens: RL_BURST, lastRefill: now }
-    const elapsedMin = (now - b.lastRefill) / 60_000
-    b.tokens = Math.min(RL_BURST, b.tokens + elapsedMin * RL_RATE)
-    b.lastRefill = now
-    if (b.tokens < 1) {
-      this.buckets.set(ip, b)
-      return new Response('rate limited', { status: 429 })
-    }
-    b.tokens -= 1
-    this.buckets.set(ip, b)
-    return new Response('ok')
-  }
 }
 
 // ---------------------------------------------------------------------------

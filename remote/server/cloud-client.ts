@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import WebSocket from 'ws'
 import {
   generateKeypair,
@@ -10,7 +9,8 @@ import {
   b64decode,
 } from '../protocol/e2e'
 import type { CloudEnvelope, CloudHello, CloudData, CloudInner } from '../protocol/cloud'
-import { consumePairingCode, currentPairingCode } from './pairing'
+import { consumePairingCode, currentPairingCode, setOnPairingCodeChange } from './pairing'
+import { deriveTicket } from '../protocol/ticket'
 import { issueToken, verifyToken } from './auth'
 import {
   getCurrentHandle,
@@ -40,6 +40,11 @@ function relayWsUrl(): string {
   const http = relayHttpUrl()
   return http.replace(/^http/i, 'ws')
 }
+
+// Whenever the pairing code regenerates (LAN relay start, manual regenerate,
+// auto-rotation), push the new derived ticket up to the Worker so a phone
+// using the new code can connect.
+setOnPairingCodeChange(() => { void refreshPhoneTicketForNewCode() })
 
 // ---- Outer state -----------------------------------------------------------
 
@@ -130,7 +135,7 @@ async function maybeRotateOnStartup(): Promise<void> {
     }
     const data = (await resp.json()) as { handle: string; token: string }
     setRegistered(data.handle, data.token)
-    const ticket = randomBytes(8).toString('hex')
+    const ticket = await deriveTicketForCurrentCode(data.handle)
     const ok = await postPhoneTicket(base, data.handle, data.token, ticket)
     if (!ok) {
       // Rollback — leaves the handle cleared so ensureRegistered() runs fresh.
@@ -147,6 +152,31 @@ async function maybeRotateOnStartup(): Promise<void> {
     const e = err as Error
     // eslint-disable-next-line no-console
     console.error(`[cloud] rotation error: ${e.message}`)
+  }
+}
+
+async function deriveTicketForCurrentCode(handle: string): Promise<string> {
+  const code = currentPairingCode() ?? ''
+  return deriveTicket(handle, code)
+}
+
+/**
+ * Re-derive and re-post the phone ticket. Called whenever the pairing code
+ * regenerates (manual or automatic) so a freshly-typed code on the phone
+ * derives the matching ticket. No-op when cloud isn't registered.
+ */
+export async function refreshPhoneTicketForNewCode(): Promise<void> {
+  const handle = getCurrentHandle()
+  const token = getCurrentToken()
+  if (!handle || !token) return
+  const base = relayHttpUrl()
+  const ticket = await deriveTicketForCurrentCode(handle)
+  const ok = await postPhoneTicket(base, handle, token, ticket)
+  if (ok) {
+    setPhoneTicket(ticket)
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn('[cloud] /set-phone-ticket failed during code regen — phone reconnects may fail')
   }
 }
 
@@ -253,7 +283,7 @@ async function ensureRegistered(): Promise<void> {
       }
       const data = (await resp.json()) as { handle: string; token: string }
       setRegistered(data.handle, data.token)
-      const ticket = randomBytes(8).toString('hex')
+      const ticket = await deriveTicketForCurrentCode(data.handle)
       const ok = await postPhoneTicket(base, data.handle, data.token, ticket)
       if (!ok) {
         // Roll back the half-state — don't leave a token persisted that the

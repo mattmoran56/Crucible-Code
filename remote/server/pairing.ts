@@ -11,11 +11,19 @@ let active: PairingCode | null = null
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // base32 sans confusables
 
+let onChange: (() => void) | null = null
+
+/** Cloud client subscribes once at startup so its ticket follows the code. */
+export function setOnPairingCodeChange(cb: () => void): void {
+  onChange = cb
+}
+
 export function generatePairingCode(): string {
   const bytes = randomBytes(6)
   let code = ''
   for (let i = 0; i < 6; i++) code += ALPHABET[bytes[i] % ALPHABET.length]
   active = { code, expiresAt: Date.now() + PAIR_TTL_MS }
+  onChange?.()
   return code
 }
 
