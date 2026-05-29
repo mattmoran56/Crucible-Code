@@ -2,12 +2,25 @@ import type {
   NotionDatabaseProperty,
   NotionDatabasePropertyOption,
   NotionDatabaseSchema,
+  NotionIntegrationConfig,
   NotionPropertyFilter,
   NotionPropertyUpdate,
   NotionRelationOption,
   NotionTaskPayload,
   NotionUser,
 } from '../../shared/types'
+
+// Returns the canonical list of filter groups for a config. Each group's
+// conditions are ANDed; the groups themselves are ORed. Prefers the explicit
+// `filterGroups` field; falls back to wrapping legacy `filters` as one group.
+export function getEffectiveFilterGroups(
+  config: Pick<NotionIntegrationConfig, 'filters' | 'filterGroups'>
+): NotionPropertyFilter[][] {
+  if (config.filterGroups && config.filterGroups.length > 0) {
+    return config.filterGroups.filter((g) => g.length > 0)
+  }
+  return config.filters && config.filters.length > 0 ? [config.filters] : []
+}
 
 const NOTION_VERSION = '2022-06-28'
 const NOTION_BASE = 'https://api.notion.com/v1'
@@ -295,18 +308,49 @@ function pageToTaskPayload(
 export async function queryDatabase(
   token: string,
   databaseId: string,
-  filters: NotionPropertyFilter[],
+  groups: NotionPropertyFilter[][],
   titlePropertyName?: string
 ): Promise<NotionTaskPayload[]> {
-  const materialized = await materializeFilters(token, filters)
-  if (materialized === SHORT_CIRCUIT_EMPTY) return []
-  const filter =
-    materialized.length === 0
-      ? undefined
-      : materialized.length === 1
-        ? materialized[0]
-        : { and: materialized }
+  const filledGroups = groups.filter((g) => g.length > 0)
   const dbId = normalizeDatabaseId(databaseId)
+
+  // No groups → unfiltered query.
+  if (filledGroups.length === 0) {
+    return queryOneGroup(token, dbId, undefined, titlePropertyName)
+  }
+
+  // Build a 2-level filter per group (and → or for relation sub-filters) and
+  // issue one query per group, then union the results by page id. We can't
+  // safely combine groups into a single `{ or: [...] }` filter when any group
+  // contains a relation sub-filter: that produces or → and → or, which
+  // exceeds Notion's 2-level compound nesting cap and is silently dropped /
+  // truncated. Doing it as N queries keeps each request inside Notion's
+  // limits and is the only structure that consistently returns correct
+  // results regardless of sub-filter shape.
+  const seen = new Set<string>()
+  const out: NotionTaskPayload[] = []
+  for (const g of filledGroups) {
+    const materialized = await materializeFilters(token, g)
+    if (materialized === SHORT_CIRCUIT_EMPTY) continue
+    if (materialized.length === 0) continue
+    const filter =
+      materialized.length === 1 ? materialized[0] : { and: materialized }
+    const pages = await queryOneGroup(token, dbId, filter, titlePropertyName)
+    for (const p of pages) {
+      if (seen.has(p.id)) continue
+      seen.add(p.id)
+      out.push(p)
+    }
+  }
+  return out
+}
+
+async function queryOneGroup(
+  token: string,
+  dbId: string,
+  filter: Record<string, unknown> | undefined,
+  titlePropertyName?: string
+): Promise<NotionTaskPayload[]> {
   const body: Record<string, unknown> = { page_size: 100 }
   if (filter) body.filter = filter
   // Paginate up to 5 pages (500 rows) — well past any reasonable poll batch.

@@ -142,6 +142,33 @@ export const Configured: Story = {
   ),
 }
 
+const multiGroupConfig: NotionIntegrationConfig = {
+  ...configuredConfig,
+  filters: [],
+  filterGroups: [
+    [
+      { property: 'Status', type: 'status', operator: 'equals', value: 'Ready' },
+      { property: 'Priority', type: 'select', operator: 'equals', value: 'High' },
+    ],
+    [
+      { property: 'Status', type: 'status', operator: 'equals', value: 'Ready' },
+      { property: 'Priority', type: 'select', operator: 'equals', value: 'Low' },
+    ],
+  ],
+}
+
+export const MultipleGroups: Story = {
+  render: () => (
+    <Wrapper
+      setup={{
+        configs: { 'proj-1': multiGroupConfig },
+        expandFirstProject: true,
+        preloadSchema: true,
+      }}
+    />
+  ),
+}
+
 export const McpPromptOpen: Story = {
   render: () => (
     <Wrapper

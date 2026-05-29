@@ -10,6 +10,7 @@ import type {
 import { getStorePath } from '../store-path'
 import {
   appendMarkdownBlocks,
+  getEffectiveFilterGroups,
   queryDatabase,
   resolvePlaceholders,
   slugify,
@@ -109,7 +110,7 @@ export async function seedPickedUpCache(projectId: string): Promise<void> {
     const pages = await queryDatabase(
       config.apiToken,
       config.databaseId,
-      config.filters,
+      getEffectiveFilterGroups(config),
       config.titlePropertyName
     )
     addPickedUp(
@@ -160,13 +161,14 @@ async function tickProject(projectId: string, config: NotionIntegrationConfig): 
       )
       return
     }
+    const groups = getEffectiveFilterGroups(config)
     console.log(
-      `[notion-poller] querying db=${config.databaseId} for project=${projectId} filters=${config.filters?.length ?? 0}`
+      `[notion-poller] querying db=${config.databaseId} for project=${projectId} groups=${groups.length} totalConditions=${groups.reduce((n, g) => n + g.length, 0)}`
     )
     const pages = await queryDatabase(
       config.apiToken,
       config.databaseId,
-      config.filters,
+      groups,
       config.titlePropertyName
     )
     const picked = new Set(getPickedUp(projectId))

@@ -258,6 +258,115 @@ describe('notion-poller.service — tick', () => {
   })
 })
 
+describe('notion-poller.service — filter groups (OR of ANDs)', () => {
+  it('issues one Notion query per filter group (avoiding 3-level compound filters that Notion silently drops)', async () => {
+    const poller = await loadFresh()
+    poller.saveConfig(
+      'p1',
+      baseConfig({
+        filters: [],
+        filterGroups: [
+          [
+            { property: 'Status', type: 'status', operator: 'equals', value: 'Ready' },
+            { property: 'Priority', type: 'select', operator: 'equals', value: 'High' },
+          ],
+          [
+            { property: 'Status', type: 'status', operator: 'equals', value: 'Ready' },
+            { property: 'Priority', type: 'select', operator: 'equals', value: 'Low' },
+          ],
+        ],
+      }) as any,
+    )
+
+    const queryBodies: any[] = []
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/query')) {
+        queryBodies.push(JSON.parse((init?.body as string) ?? '{}'))
+        return fakeNotionResponse(200, { results: [], has_more: false, next_cursor: null })
+      }
+      return fakeNotionResponse(404, {})
+    })
+
+    poller.startNotionPoller(fakeWindow)
+    await new Promise((r) => setTimeout(r, 5))
+    poller.stopNotionPoller()
+
+    // One request per group, each a 2-level AND filter.
+    expect(queryBodies).toHaveLength(2)
+    expect(queryBodies[0].filter.and).toHaveLength(2)
+    expect(queryBodies[1].filter.and).toHaveLength(2)
+    expect(queryBodies[0].filter.and[1]).toMatchObject({ property: 'Priority', select: { equals: 'High' } })
+    expect(queryBodies[1].filter.and[1]).toMatchObject({ property: 'Priority', select: { equals: 'Low' } })
+  })
+
+  it('unions and de-duplicates pages across groups so a row matching both groups only fires once', async () => {
+    const poller = await loadFresh()
+    poller.saveConfig(
+      'p1',
+      baseConfig({
+        filters: [],
+        filterGroups: [
+          [{ property: 'Status', type: 'status', operator: 'equals', value: 'Ready' }],
+          [{ property: 'Priority', type: 'select', operator: 'equals', value: 'High' }],
+        ],
+      }) as any,
+    )
+
+    let call = 0
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/query')) {
+        call++
+        // First group returns pages [a, b]; second returns [b, c]. Union is
+        // [a, b, c] — b must appear only once.
+        const pages = call === 1 ? [{ id: 'a' }, { id: 'b' }] : [{ id: 'b' }, { id: 'c' }]
+        return fakeNotionResponse(200, {
+          results: pages.map((p) => pageWithTitle(p)),
+          has_more: false,
+          next_cursor: null,
+        })
+      }
+      return fakeNotionResponse(200, {})
+    })
+
+    poller.startNotionPoller(fakeWindow)
+    await new Promise((r) => setTimeout(r, 10))
+    poller.stopNotionPoller()
+
+    const fires = sentMessages.filter((m) => m.channel === 'notion:fire-task')
+    const firedIds = fires.map((m) => (m.payload as any).page.id)
+    expect(new Set(firedIds)).toEqual(new Set(['a', 'b', 'c']))
+    expect(firedIds).toHaveLength(3)
+  })
+
+  it('falls back to the legacy `filters` field when filterGroups is absent', async () => {
+    const poller = await loadFresh()
+    poller.saveConfig(
+      'p1',
+      baseConfig({
+        filters: [{ property: 'Status', type: 'status', operator: 'equals', value: 'Ready' }],
+      }) as any,
+    )
+
+    const queryBodies: any[] = []
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/query')) {
+        queryBodies.push(JSON.parse((init?.body as string) ?? '{}'))
+        return fakeNotionResponse(200, { results: [], has_more: false, next_cursor: null })
+      }
+      return fakeNotionResponse(404, {})
+    })
+
+    poller.startNotionPoller(fakeWindow)
+    await new Promise((r) => setTimeout(r, 5))
+    poller.stopNotionPoller()
+
+    expect(queryBodies[0].filter).toMatchObject({
+      property: 'Status',
+      status: { equals: 'Ready' },
+    })
+  })
+})
+
 describe('notion-poller.service — applyWriteBack', () => {
   it('only applies updates that reference {{branch}}/{{sessionId}} after session creation', async () => {
     const poller = await loadFresh()

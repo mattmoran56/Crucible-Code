@@ -24,6 +24,9 @@ interface ScreenshotTarget {
   viewport?: { width: number; height: number }
   /** CSS selector to scroll into view before capture */
   scrollTo?: string
+  /** Click a sidebar nav button (by exact text) before capture — used for the
+   * Settings page where each section is a separate panel. */
+  clickNav?: string
   /** Right-click the demo container to trigger a context menu before capture. */
   rightClickDemo?: boolean
 }
@@ -127,7 +130,7 @@ const targets: ScreenshotTarget[] = [
     name: 'button-settings',
     storyId: 'app-full-layout--button-settings',
     delay: 2000,
-    scrollTo: 'Custom Buttons',
+    clickNav: 'Buttons',
   },
   {
     name: 'new-session-dialog',
@@ -148,13 +151,13 @@ const targets: ScreenshotTarget[] = [
     name: 'startup-prompt-settings',
     storyId: 'app-full-layout--startup-prompt-settings',
     delay: 2000,
-    scrollTo: 'Session Startup Prompts',
+    clickNav: 'Startup Prompts',
   },
   {
     name: 'startup-prompt-editor',
     storyId: 'app-full-layout--startup-prompt-editor',
     delay: 2000,
-    scrollTo: 'Session Startup Prompts',
+    clickNav: 'Startup Prompts',
   },
   {
     name: 'review-loop-running',
@@ -170,7 +173,7 @@ const targets: ScreenshotTarget[] = [
     name: 'review-loop-settings',
     storyId: 'app-full-layout--review-loop-settings',
     delay: 2000,
-    scrollTo: 'Review Loop',
+    clickNav: 'Review Loop',
   },
   {
     name: 'code-attention',
@@ -269,7 +272,7 @@ const targets: ScreenshotTarget[] = [
     name: 'claude-web-settings',
     storyId: 'app-full-layout--claude-web-settings',
     delay: 2000,
-    scrollTo: 'Claude Web Sessions',
+    clickNav: 'Project Defaults',
   },
   {
     name: 'claude-web-card',
@@ -373,6 +376,15 @@ async function captureScreenshots() {
           await page.waitForTimeout(150)
         }
       }
+    }
+
+    if (target.clickNav) {
+      await page.evaluate((text) => {
+        const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('aside button'))
+        const btn = buttons.find((b) => b.textContent?.trim() === text)
+        if (btn) btn.click()
+      }, target.clickNav)
+      await page.waitForTimeout(500)
     }
 
     if (target.scrollTo) {
