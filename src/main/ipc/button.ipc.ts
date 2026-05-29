@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow } from 'electron'
+import { handle } from './handle'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import type {
@@ -20,23 +21,23 @@ const store = new Store<{
 })
 
 export function registerButtonHandlers(window: BrowserWindow) {
-  ipcMain.handle(IPC.BUTTON_LIST, async (): Promise<CustomButton[]> => {
+  handle(IPC.BUTTON_LIST, async (): Promise<CustomButton[]> => {
     return store.get('buttons', [])
   })
 
-  ipcMain.handle(IPC.BUTTON_SAVE, async (_e, buttons: CustomButton[]): Promise<void> => {
+  handle(IPC.BUTTON_SAVE, async (_e, buttons: CustomButton[]): Promise<void> => {
     store.set('buttons', buttons)
   })
 
-  ipcMain.handle(IPC.BUTTON_GROUP_LIST, async (): Promise<CustomButtonGroup[]> => {
+  handle(IPC.BUTTON_GROUP_LIST, async (): Promise<CustomButtonGroup[]> => {
     return store.get('groups', [])
   })
 
-  ipcMain.handle(IPC.BUTTON_GROUP_SAVE, async (_e, groups: CustomButtonGroup[]): Promise<void> => {
+  handle(IPC.BUTTON_GROUP_SAVE, async (_e, groups: CustomButtonGroup[]): Promise<void> => {
     store.set('groups', groups)
   })
 
-  ipcMain.handle(
+  handle(
     IPC.BUTTON_EXECUTE,
     async (
       _e,

@@ -545,6 +545,28 @@ const api = {
     },
   },
 
+  remote: {
+    getStatus: (): Promise<RemoteStatus> => ipcRenderer.invoke(IPC.REMOTE_GET_STATUS),
+    setEnabled: (enabled: boolean): Promise<RemoteStatus> =>
+      ipcRenderer.invoke(IPC.REMOTE_SET_ENABLED, enabled),
+    regenerateCode: (): Promise<RemoteStatus> => ipcRenderer.invoke(IPC.REMOTE_REGENERATE_CODE),
+    revokeAll: (): Promise<RemoteStatus> => ipcRenderer.invoke(IPC.REMOTE_REVOKE_ALL),
+    onStatusChanged: (callback: (status: RemoteStatus) => void) => {
+      const listener = (_e: unknown, status: RemoteStatus) => callback(status)
+      ipcRenderer.on(IPC.REMOTE_STATUS_CHANGED, listener)
+      return () => ipcRenderer.removeListener(IPC.REMOTE_STATUS_CHANGED, listener)
+    },
+  },
+
+}
+
+interface RemoteStatus {
+  enabled: boolean
+  running: boolean
+  port: number
+  urls: string[]
+  pairingCode: string | null
+  devices: { token: string; label: string; createdAt: number }[]
 }
 
 export type ApiType = typeof api

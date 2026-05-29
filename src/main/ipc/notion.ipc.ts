@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow, shell } from 'electron'
+import { BrowserWindow, shell } from 'electron'
+import { handle } from './handle'
 import { IPC } from '../../shared/constants'
 import type {
   NotionDatabaseSchema,
@@ -23,14 +24,14 @@ import { getDatabaseSchema, listRelationOptions, listUsers, queryDatabase } from
 export function registerNotionHandlers(window: BrowserWindow): void {
   startNotionPoller(window)
 
-  ipcMain.handle(
+  handle(
     IPC.NOTION_CONFIG_LOAD,
     async (_e, projectId: string): Promise<NotionIntegrationConfig | null> => {
       return loadConfig(projectId)
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.NOTION_CONFIG_SAVE,
     async (
       _e,
@@ -46,10 +47,14 @@ export function registerNotionHandlers(window: BrowserWindow): void {
         // spawn a session for every existing row in the user's backlog.
         await seedPickedUpCache(projectId)
       }
+      // Notify the local renderer (and any paired remote receivers via the
+      // event bus monkey-patch in main/index.ts) that this project's Notion
+      // config changed, so settings UIs can refresh without a manual reload.
+      window.webContents.send(IPC.NOTION_CONFIG_LOAD, projectId, config)
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.NOTION_TEST_CONNECTION,
     async (_e, token: string, databaseId: string): Promise<NotionTestConnectionResult> => {
       try {
@@ -61,28 +66,28 @@ export function registerNotionHandlers(window: BrowserWindow): void {
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.NOTION_GET_DATABASE_SCHEMA,
     async (_e, token: string, databaseId: string): Promise<NotionDatabaseSchema> => {
       return getDatabaseSchema(token, databaseId)
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.NOTION_LIST_RELATION_OPTIONS,
     async (_e, token: string, databaseId: string): Promise<NotionRelationOption[]> => {
       return listRelationOptions(token, databaseId)
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.NOTION_LIST_USERS,
     async (_e, token: string): Promise<NotionUser[]> => {
       return listUsers(token)
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.NOTION_APPLY_WRITE_BACK,
     async (
       _e,
@@ -95,15 +100,15 @@ export function registerNotionHandlers(window: BrowserWindow): void {
     }
   )
 
-  ipcMain.handle(IPC.NOTION_CLEAR_PICKED_UP, async (_e, projectId: string): Promise<void> => {
+  handle(IPC.NOTION_CLEAR_PICKED_UP, async (_e, projectId: string): Promise<void> => {
     clearPickedUp(projectId)
   })
 
-  ipcMain.handle(IPC.NOTION_GET_CONFIG_PATH, async (): Promise<string> => {
+  handle(IPC.NOTION_GET_CONFIG_PATH, async (): Promise<string> => {
     return getConfigFilePath()
   })
 
-  ipcMain.handle(IPC.NOTION_OPEN_TICKET, async (_e, url: string): Promise<void> => {
+  handle(IPC.NOTION_OPEN_TICKET, async (_e, url: string): Promise<void> => {
     // Hand off to the OS so the Notion desktop app (if registered) or default
     // browser handles it — never load Notion inside the Electron window.
     if (!/^https?:\/\//i.test(url) && !/^notion:\/\//i.test(url)) {

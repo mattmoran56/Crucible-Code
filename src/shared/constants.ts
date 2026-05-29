@@ -42,6 +42,8 @@ export const IPC = {
   TERMINAL_DATA: 'terminal:data',
   TERMINAL_EXIT: 'terminal:exit',
   TERMINAL_RECOVERY_LIST: 'terminal:recovery-list',
+  TERMINAL_LIST_FOR_SESSION: 'terminal:list-for-session',
+  TERMINAL_GET_BUFFER: 'terminal:get-buffer',
 
   // Notifications
   NOTIFICATION_SHOW: 'notification:show',
@@ -209,4 +211,11 @@ export const IPC = {
   NOTION_GET_CONFIG_PATH: 'notion:get-config-path',
   NOTION_FIRE_TASK: 'notion:fire-task',
   NOTION_OPEN_TICKET: 'notion:open-ticket',
+
+  // Remote connection (embedded relay)
+  REMOTE_GET_STATUS: 'remote:get-status',
+  REMOTE_SET_ENABLED: 'remote:set-enabled',
+  REMOTE_REGENERATE_CODE: 'remote:regenerate-code',
+  REMOTE_REVOKE_ALL: 'remote:revoke-all',
+  REMOTE_STATUS_CHANGED: 'remote:status-changed',
 } as const

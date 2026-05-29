@@ -24,6 +24,14 @@ interface TerminalInstance {
   contextId: string
   /** Workspace tab id (e.g. 'agent', 'agent:1', 'review'). Used for per-agent hook routing. */
   tabId: string
+  /** Rolling tail of recent PTY output so remote attachers see what just happened. */
+  buffer: string
+}
+
+const BUFFER_CAP = 64 * 1024
+
+function appendToBuffer(instance: TerminalInstance, chunk: string): void {
+  instance.buffer = (instance.buffer + chunk).slice(-BUFFER_CAP)
 }
 
 export interface PersistedTerminal {
@@ -156,6 +164,8 @@ function spawnPty(
   })
 
   ptyProcess.onData((data) => {
+    const current = terminals.get(terminalId)
+    if (current) appendToBuffer(current, data)
     safeSend(instance.window, IPC.TERMINAL_DATA, terminalId, data)
   })
 
@@ -220,6 +230,19 @@ export function spawnTerminal(
   contextId?: string,
   tabId?: string
 ): string {
+  const resolvedTabId = tabId ?? (mode === 'review' ? 'review' : 'agent')
+  // Idempotent per (sessionId, tabId): if a live terminal already owns this
+  // workspace tab, hand back its id rather than spawning a duplicate. Prevents
+  // orphan PTYs piling up when a remote receiver reconnects or re-mounts.
+  for (const [existingId, existing] of terminals) {
+    if (
+      existing.sessionId === sessionId &&
+      existing.tabId === resolvedTabId &&
+      !existing.stopped
+    ) {
+      return existingId
+    }
+  }
   const terminalId = `term-${++terminalCounter}`
 
   const instanceBase = {
@@ -232,14 +255,74 @@ export function spawnTerminal(
     commandString,
     repoPath,
     contextId: contextId ?? sessionId,
-    tabId: tabId ?? (mode === 'review' ? 'review' : 'agent'),
+    tabId: resolvedTabId,
   }
   const ptyProcess = spawnPty(terminalId, instanceBase, resume)
 
-  const instance = { ...instanceBase, pty: ptyProcess, stopped: false }
+  const instance: TerminalInstance = { ...instanceBase, pty: ptyProcess, stopped: false, buffer: '' }
   terminals.set(terminalId, instance)
   persistTerminal(terminalId, instance)
   return terminalId
+}
+
+function counterOf(terminalId: string): number {
+  const n = Number(terminalId.replace(/^term-/, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+/** List active terminals for a given session — used by the remote receiver to render its tab strip.
+ *
+ * Deduplicates by tabId (keeping the OLDEST live terminal, which is the one the desktop xterm
+ * originally bound to). Older-but-now-orphaned duplicates are silently killed so listings
+ * converge to the desktop's view of the world.
+ */
+export function listTerminalsForSession(sessionId: string): Array<{
+  terminalId: string
+  mode: TerminalMode
+  tabId: string
+  contextId: string
+}> {
+  const byTab = new Map<string, { terminalId: string; mode: TerminalMode; tabId: string; contextId: string }>()
+  const losers: string[] = []
+  for (const [terminalId, instance] of terminals) {
+    if (instance.sessionId !== sessionId || instance.stopped) continue
+    const existing = byTab.get(instance.tabId)
+    if (!existing) {
+      byTab.set(instance.tabId, {
+        terminalId,
+        mode: instance.mode,
+        tabId: instance.tabId,
+        contextId: instance.contextId,
+      })
+      continue
+    }
+    // Keep whichever is older (lower counter). The other is an orphan.
+    if (counterOf(terminalId) < counterOf(existing.terminalId)) {
+      losers.push(existing.terminalId)
+      byTab.set(instance.tabId, {
+        terminalId,
+        mode: instance.mode,
+        tabId: instance.tabId,
+        contextId: instance.contextId,
+      })
+    } else {
+      losers.push(terminalId)
+    }
+  }
+  for (const id of losers) {
+    const inst = terminals.get(id)
+    if (inst) {
+      inst.stopped = true
+      try { inst.pty.kill() } catch { /* already dead */ }
+      terminals.delete(id)
+    }
+  }
+  return Array.from(byTab.values())
+}
+
+/** Return the recent output tail for a terminal so a late-attacher can render context. */
+export function getTerminalBuffer(terminalId: string): string {
+  return terminals.get(terminalId)?.buffer ?? ''
 }
 
 export function writeTerminal(terminalId: string, data: string): void {

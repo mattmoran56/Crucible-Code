@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
+import { handle } from './handle'
 import { IPC } from '../../shared/constants'
 import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
@@ -8,7 +9,7 @@ import type { TerminalMode } from '../services/terminal.service'
 export function registerTerminalHandlers(window: BrowserWindow) {
   setWindow(window)
 
-  ipcMain.handle(
+  handle(
     IPC.TERMINAL_SPAWN,
     async (
       _e,
@@ -48,7 +49,7 @@ export function registerTerminalHandlers(window: BrowserWindow) {
     }
   )
 
-  ipcMain.handle(IPC.TERMINAL_WRITE, async (_e, terminalId: string, data: string) => {
+  handle(IPC.TERMINAL_WRITE, async (_e, terminalId: string, data: string) => {
     // Log non-trivial writes (skip 1-char keystrokes) so we can see when
     // automated injections (writeWhenReady, /review, notion startup) happen.
     if (data.length > 2) {
@@ -57,11 +58,11 @@ export function registerTerminalHandlers(window: BrowserWindow) {
     terminalService.writeTerminal(terminalId, data)
   })
 
-  ipcMain.handle(IPC.TERMINAL_RESIZE, async (_e, terminalId: string, cols: number, rows: number) => {
+  handle(IPC.TERMINAL_RESIZE, async (_e, terminalId: string, cols: number, rows: number) => {
     terminalService.resizeTerminal(terminalId, cols, rows)
   })
 
-  ipcMain.handle(IPC.TERMINAL_KILL, async (_e, terminalId: string) => {
+  handle(IPC.TERMINAL_KILL, async (_e, terminalId: string) => {
     const cwd = terminalService.getTerminalCwd(terminalId)
     if (cwd) {
       stopWatching(cwd)
@@ -69,14 +70,22 @@ export function registerTerminalHandlers(window: BrowserWindow) {
     terminalService.killTerminal(terminalId)
   })
 
-  ipcMain.handle(IPC.TERMINAL_KILL_SESSION, async (_e, sessionId: string) => {
+  handle(IPC.TERMINAL_KILL_SESSION, async (_e, sessionId: string) => {
     const cwds = terminalService.killSessionTerminals(sessionId)
     for (const cwd of cwds) {
       stopWatching(cwd)
     }
   })
 
-  ipcMain.handle(IPC.TERMINAL_RECOVERY_LIST, async () => {
+  handle(IPC.TERMINAL_RECOVERY_LIST, async () => {
     return terminalService.getAndClearRecoveryList()
+  })
+
+  handle(IPC.TERMINAL_LIST_FOR_SESSION, async (_e, sessionId: string) => {
+    return terminalService.listTerminalsForSession(sessionId)
+  })
+
+  handle(IPC.TERMINAL_GET_BUFFER, async (_e, terminalId: string) => {
+    return terminalService.getTerminalBuffer(terminalId)
   })
 }

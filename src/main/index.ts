@@ -10,6 +10,8 @@ import { setNotificationWindow } from './services/notification.service'
 import { killAllTerminals } from './services/terminal.service'
 import { stopAllWatching as stopAllPermissionWatching } from './services/permission-sync.service'
 import { stopScheduler } from './services/scheduler.service'
+import { eventBus } from './services/event-bus'
+import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
 
 // When launched from Finder/Dock, process.env.PATH is the minimal macOS default
 // and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
@@ -36,11 +38,24 @@ async function createWindow() {
 
   mainWindow.once('ready-to-show', () => mainWindow!.show())
 
+  // Dual-emit every renderer message onto the in-process event bus so the
+  // embedded relay server can fan the same events out to paired remote
+  // receivers. Zero touch on existing webContents.send call sites.
+  const origSend = mainWindow.webContents.send.bind(mainWindow.webContents)
+  mainWindow.webContents.send = ((channel: string, ...args: unknown[]) => {
+    origSend(channel, ...(args as []))
+    eventBus.emit(channel, ...args)
+  }) as typeof mainWindow.webContents.send
+
   // Start the notification HTTP server before registering handlers
   await startNotificationServer(mainWindow)
   setNotificationWindow(mainWindow)
 
   registerAllHandlers(mainWindow)
+
+  // Start the embedded LAN relay if the user has previously enabled it.
+  // The Remote toggle in the renderer top bar controls this flag.
+  await startRelayIfEnabled()
 
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -56,6 +71,7 @@ app.on('before-quit', () => {
   stopAllPermissionWatching()
   stopNotificationServer()
   stopScheduler()
+  stopRelayServer()
 })
 
 app.on('window-all-closed', () => {
@@ -63,6 +79,7 @@ app.on('window-all-closed', () => {
   stopAllPermissionWatching()
   stopNotificationServer()
   stopScheduler()
+  stopRelayServer()
   app.quit()
 })
 

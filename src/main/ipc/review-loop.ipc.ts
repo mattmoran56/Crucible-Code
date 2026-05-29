@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow } from 'electron'
+import { handle } from './handle'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import {
@@ -42,14 +43,14 @@ export function registerReviewLoopHandlers(window: BrowserWindow): void {
   setReviewLoopWindow(window)
   setReviewLoopLiteWindow(window)
 
-  ipcMain.handle(IPC.REVIEW_LOOP_SETTINGS_GET, async (): Promise<ReviewLoopSettings> => {
+  handle(IPC.REVIEW_LOOP_SETTINGS_GET, async (): Promise<ReviewLoopSettings> => {
     return {
       workspace: { ...DEFAULT_REVIEW_LOOP_CONFIG, ...store.get('workspace') },
       projectOverrides: store.get('projectOverrides', {}),
     }
   })
 
-  ipcMain.handle(
+  handle(
     IPC.REVIEW_LOOP_SETTINGS_SET,
     async (_e, settings: ReviewLoopSettings): Promise<void> => {
       store.set('workspace', { ...DEFAULT_REVIEW_LOOP_CONFIG, ...settings.workspace })
@@ -57,7 +58,7 @@ export function registerReviewLoopHandlers(window: BrowserWindow): void {
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.REVIEW_LOOP_START,
     async (_e, opts: StartReviewLoopOptions): Promise<void> => {
       if (opts.config?.variant === 'pro') {
@@ -68,13 +69,13 @@ export function registerReviewLoopHandlers(window: BrowserWindow): void {
     }
   )
 
-  ipcMain.handle(IPC.REVIEW_LOOP_CANCEL, async (_e, sessionId: string): Promise<void> => {
+  handle(IPC.REVIEW_LOOP_CANCEL, async (_e, sessionId: string): Promise<void> => {
     // Cancel on whichever variant is running for this session.
     if (hasReviewLoopLite(sessionId)) cancelReviewLoopLite(sessionId)
     else cancelReviewLoop(sessionId)
   })
 
-  ipcMain.handle(
+  handle(
     IPC.REVIEW_LOOP_STATE_GET,
     async (_e, sessionId: string): Promise<ReviewLoopState | null> => {
       return getReviewLoopLiteState(sessionId) ?? getReviewLoopState(sessionId)

@@ -6,6 +6,7 @@ import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { CustomButtonBar } from '../buttons/CustomButtonBar'
+import { RemoteTogglePopover } from './RemoteTogglePopover'
 import type { Project } from '../../../../shared/types'
 
 export function ProjectTabs() {
@@ -180,6 +181,8 @@ export function ProjectTabs() {
 
       {/* Custom buttons (project-tabs placement) */}
       <CustomButtonBar placement="project-tabs" />
+
+      <RemoteTogglePopover />
 
       {/* Add project + Settings */}
       <Button

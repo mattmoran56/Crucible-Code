@@ -1,5 +1,5 @@
-import { ipcMain } from 'electron'
 import Store from 'electron-store'
+import { handle } from './handle'
 import { IPC } from '../../shared/constants'
 import type { PRReviewEvent, PRMergeMethod } from '../../shared/types'
 import * as githubService from '../services/github.service'
@@ -18,19 +18,19 @@ const store = new Store<{
 })
 
 export function registerGithubHandlers() {
-  ipcMain.handle(IPC.PR_LIST, async (_e, repoPath: string) => {
+  handle(IPC.PR_LIST, async (_e, repoPath: string) => {
     return githubService.listOpenPRs(repoPath)
   })
 
-  ipcMain.handle(IPC.PR_CURRENT_USER, async (_e, repoPath: string) => {
+  handle(IPC.PR_CURRENT_USER, async (_e, repoPath: string) => {
     return githubService.getCurrentGitHubUser(repoPath)
   })
 
-  ipcMain.handle(IPC.PR_SEEN_GET, async (_e, projectId: string) => {
+  handle(IPC.PR_SEEN_GET, async (_e, projectId: string) => {
     return store.get(`seenPRs.${projectId}`, [])
   })
 
-  ipcMain.handle(IPC.PR_SEEN_SET, async (_e, projectId: string, prNumber: number) => {
+  handle(IPC.PR_SEEN_SET, async (_e, projectId: string, prNumber: number) => {
     const seen = store.get(`seenPRs.${projectId}`, []) as number[]
     if (!seen.includes(prNumber)) {
       seen.push(prNumber)
@@ -38,118 +38,118 @@ export function registerGithubHandlers() {
     }
   })
 
-  ipcMain.handle(IPC.PR_DIFF, async (_e, repoPath: string, prNumber: number) => {
+  handle(IPC.PR_DIFF, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRDiff(repoPath, prNumber)
   })
 
-  ipcMain.handle(IPC.PR_FILE_PATCH, async (_e, repoPath: string, prNumber: number, filePath: string) => {
+  handle(IPC.PR_FILE_PATCH, async (_e, repoPath: string, prNumber: number, filePath: string) => {
     return githubService.getPRFilePatch(repoPath, prNumber, filePath)
   })
 
-  ipcMain.handle(IPC.PR_FILES, async (_e, repoPath: string, prNumber: number) => {
+  handle(IPC.PR_FILES, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRFiles(repoPath, prNumber)
   })
 
-  ipcMain.handle(IPC.PR_COMMENTS, async (_e, repoPath: string, prNumber: number) => {
+  handle(IPC.PR_COMMENTS, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRComments(repoPath, prNumber)
   })
 
-  ipcMain.handle(
+  handle(
     IPC.PR_COMMENT_CREATE,
     async (_e, repoPath: string, prNumber: number, body: string, path: string, line: number, startLine?: number, side?: 'LEFT' | 'RIGHT') => {
       return githubService.createPRComment(repoPath, prNumber, body, path, line, startLine, side)
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.PR_REVIEW,
     async (_e, repoPath: string, prNumber: number, event: PRReviewEvent, body?: string) => {
       return githubService.submitPRReview(repoPath, prNumber, event, body)
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.PR_MERGEABILITY,
     async (_e, repoPath: string, prNumber: number) => {
       return githubService.getPRMergeability(repoPath, prNumber)
     }
   )
 
-  ipcMain.handle(
+  handle(
     IPC.PR_MERGE,
     async (_e, repoPath: string, prNumber: number, method: PRMergeMethod) => {
       return githubService.mergePR(repoPath, prNumber, method)
     }
   )
 
-  ipcMain.handle(IPC.PR_DETAIL, async (_e, repoPath: string, prNumber: number) => {
+  handle(IPC.PR_DETAIL, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRDetail(repoPath, prNumber)
   })
 
-  ipcMain.handle(IPC.PR_CONVERSATION, async (_e, repoPath: string, prNumber: number) => {
+  handle(IPC.PR_CONVERSATION, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRConversationComments(repoPath, prNumber)
   })
 
-  ipcMain.handle(IPC.PR_CHECKS, async (_e, repoPath: string, prNumber: number) => {
+  handle(IPC.PR_CHECKS, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRChecks(repoPath, prNumber)
   })
 
-  ipcMain.handle(IPC.PR_VIEWED_GET, async (_e, projectId: string, prNumber: number) => {
+  handle(IPC.PR_VIEWED_GET, async (_e, projectId: string, prNumber: number) => {
     return store.get(`viewedFiles.${projectId}.${prNumber}`, [])
   })
 
-  ipcMain.handle(IPC.PR_VIEWED_SET, async (_e, projectId: string, prNumber: number, files: string[]) => {
+  handle(IPC.PR_VIEWED_SET, async (_e, projectId: string, prNumber: number, files: string[]) => {
     store.set(`viewedFiles.${projectId}.${prNumber}`, files)
   })
 
-  ipcMain.handle(IPC.PR_COMMITS, async (_e, repoPath: string, prNumber: number) => {
+  handle(IPC.PR_COMMITS, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRCommits(repoPath, prNumber)
   })
 
-  ipcMain.handle(IPC.PR_COMMIT_DIFF, async (_e, repoPath: string, commitHash: string) => {
+  handle(IPC.PR_COMMIT_DIFF, async (_e, repoPath: string, commitHash: string) => {
     return githubService.getCommitDiff(repoPath, commitHash)
   })
 
-  ipcMain.handle(IPC.PR_REVIEW_THREADS, async (_e, repoPath: string, prNumber: number) => {
+  handle(IPC.PR_REVIEW_THREADS, async (_e, repoPath: string, prNumber: number) => {
     return githubService.getPRReviewThreads(repoPath, prNumber)
   })
 
-  ipcMain.handle(IPC.PR_REVIEWER_ADD, async (_e, repoPath: string, prNumber: number, login: string) => {
+  handle(IPC.PR_REVIEWER_ADD, async (_e, repoPath: string, prNumber: number, login: string) => {
     return githubService.addPRReviewer(repoPath, prNumber, login)
   })
 
-  ipcMain.handle(IPC.PR_REVIEWER_REMOVE, async (_e, repoPath: string, prNumber: number, login: string) => {
+  handle(IPC.PR_REVIEWER_REMOVE, async (_e, repoPath: string, prNumber: number, login: string) => {
     return githubService.removePRReviewer(repoPath, prNumber, login)
   })
 
-  ipcMain.handle(IPC.PR_COLLABORATORS, async (_e, repoPath: string) => {
+  handle(IPC.PR_COLLABORATORS, async (_e, repoPath: string) => {
     return githubService.listCollaborators(repoPath)
   })
 
-  ipcMain.handle(IPC.PR_FILE_BLOB, async (_e, repoPath: string, ref: string, filePath: string) => {
+  handle(IPC.PR_FILE_BLOB, async (_e, repoPath: string, ref: string, filePath: string) => {
     return githubService.getPRFileBlob(repoPath, ref, filePath)
   })
 
-  ipcMain.handle(IPC.PR_THREAD_REPLY, async (_e, repoPath: string, prNumber: number, rootCommentId: number, body: string) => {
+  handle(IPC.PR_THREAD_REPLY, async (_e, repoPath: string, prNumber: number, rootCommentId: number, body: string) => {
     return githubService.replyToReviewThread(repoPath, prNumber, rootCommentId, body)
   })
 
-  ipcMain.handle(IPC.PR_THREAD_RESOLVE, async (_e, repoPath: string, threadId: string) => {
+  handle(IPC.PR_THREAD_RESOLVE, async (_e, repoPath: string, threadId: string) => {
     return githubService.resolveReviewThread(repoPath, threadId)
   })
 
-  ipcMain.handle(IPC.PR_THREAD_UNRESOLVE, async (_e, repoPath: string, threadId: string) => {
+  handle(IPC.PR_THREAD_UNRESOLVE, async (_e, repoPath: string, threadId: string) => {
     return githubService.unresolveReviewThread(repoPath, threadId)
   })
 
-  ipcMain.handle(
+  handle(
     IPC.PR_APPLY_SUGGESTION,
     async (_e, repoPath: string, filePath: string, startLine: number, endLine: number, newText: string, author: string) => {
       return githubService.applySuggestion(repoPath, filePath, startLine, endLine, newText, author)
     }
   )
 
-  ipcMain.handle(IPC.PR_REPO_LABELS, async (_e, repoPath: string) => {
+  handle(IPC.PR_REPO_LABELS, async (_e, repoPath: string) => {
     return githubService.listRepoLabels(repoPath)
   })
 }

@@ -1,4 +1,5 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { dialog, BrowserWindow } from 'electron'
+import { handle } from './handle'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -34,31 +35,31 @@ function resolveConfigDir(configDir: string): string {
 }
 
 export function registerProjectHandlers(window: BrowserWindow) {
-  ipcMain.handle(IPC.PROJECT_LIST, async () => {
+  handle(IPC.PROJECT_LIST, async () => {
     return store.get('projects', [])
   })
 
-  ipcMain.handle(IPC.PROJECT_ADD, async (_e, project: Project) => {
+  handle(IPC.PROJECT_ADD, async (_e, project: Project) => {
     const projects = store.get('projects', [])
     projects.push(project)
     store.set('projects', projects)
     return projects
   })
 
-  ipcMain.handle(IPC.PROJECT_REMOVE, async (_e, projectId: string) => {
+  handle(IPC.PROJECT_REMOVE, async (_e, projectId: string) => {
     const projects = store.get('projects', []).filter((p) => p.id !== projectId)
     store.set('projects', projects)
     return projects
   })
 
-  ipcMain.handle(IPC.PROJECT_REORDER, async (_e, projectIds: string[]) => {
+  handle(IPC.PROJECT_REORDER, async (_e, projectIds: string[]) => {
     const projects = store.get('projects', [])
     const reordered = projectIds.map((id) => projects.find((p) => p.id === id)!).filter(Boolean)
     store.set('projects', reordered)
     return reordered
   })
 
-  ipcMain.handle(IPC.PROJECT_SELECT_FOLDER, async () => {
+  handle(IPC.PROJECT_SELECT_FOLDER, async () => {
     const result = await dialog.showOpenDialog(window, {
       properties: ['openDirectory'],
       title: 'Select a Git repository folder',
@@ -67,7 +68,7 @@ export function registerProjectHandlers(window: BrowserWindow) {
     return result.filePaths[0]
   })
 
-  ipcMain.handle(IPC.PROJECT_UPDATE, async (_e, project: Project) => {
+  handle(IPC.PROJECT_UPDATE, async (_e, project: Project) => {
     const projects = store.get('projects', [])
     const index = projects.findIndex((p) => p.id === project.id)
     if (index >= 0) {
@@ -78,15 +79,15 @@ export function registerProjectHandlers(window: BrowserWindow) {
   })
 
   // Accounts
-  ipcMain.handle(IPC.ACCOUNT_LIST, async () => {
+  handle(IPC.ACCOUNT_LIST, async () => {
     return store.get('accounts', [])
   })
 
-  ipcMain.handle(IPC.ACCOUNT_SAVE, async (_e, accounts: ClaudeAccount[]) => {
+  handle(IPC.ACCOUNT_SAVE, async (_e, accounts: ClaudeAccount[]) => {
     store.set('accounts', accounts)
   })
 
-  ipcMain.handle(IPC.ACCOUNT_AUTH_STATUS, async (_e, configDir: string) => {
+  handle(IPC.ACCOUNT_AUTH_STATUS, async (_e, configDir: string) => {
     try {
       const resolved = resolveConfigDir(configDir)
       const settingsPath = join(resolved, 'settings.json')
@@ -103,7 +104,7 @@ export function registerProjectHandlers(window: BrowserWindow) {
   })
 
   // Auth terminal — spawn a pty running `claude auth login` with CLAUDE_CONFIG_DIR
-  ipcMain.handle(IPC.ACCOUNT_AUTH_SPAWN, async (_e, authId: string, configDir: string) => {
+  handle(IPC.ACCOUNT_AUTH_SPAWN, async (_e, authId: string, configDir: string) => {
     // Kill any existing auth terminal with this ID
     const existing = authTerminals.get(authId)
     if (existing) {
@@ -138,7 +139,7 @@ export function registerProjectHandlers(window: BrowserWindow) {
     return authId
   })
 
-  ipcMain.handle(IPC.ACCOUNT_AUTH_KILL, async (_e, authId: string) => {
+  handle(IPC.ACCOUNT_AUTH_KILL, async (_e, authId: string) => {
     const p = authTerminals.get(authId)
     if (p) {
       p.kill()
@@ -146,7 +147,7 @@ export function registerProjectHandlers(window: BrowserWindow) {
     }
   })
 
-  ipcMain.handle(IPC.SESSION_LIST, async (_e, projectId: string) => {
+  handle(IPC.SESSION_LIST, async (_e, projectId: string) => {
     const sessions = store.get('sessions', {})
     const list: Session[] = (sessions[projectId] || []).map((s) => ({ ...s }))
 
@@ -166,16 +167,16 @@ export function registerProjectHandlers(window: BrowserWindow) {
     return list
   })
 
-  ipcMain.handle(IPC.SESSION_SAVE, async (_e, projectId: string, sessionList: Session[]) => {
+  handle(IPC.SESSION_SAVE, async (_e, projectId: string, sessionList: Session[]) => {
     store.set(`sessions.${projectId}`, sessionList)
   })
 
   // Session context persistence (crash-safe alternative to localStorage)
-  ipcMain.handle(IPC.SESSION_CONTEXT_SAVE, async (_e, projectId: string, context: Record<string, unknown>) => {
+  handle(IPC.SESSION_CONTEXT_SAVE, async (_e, projectId: string, context: Record<string, unknown>) => {
     store.set(`sessionContexts.${projectId}`, context)
   })
 
-  ipcMain.handle(IPC.SESSION_CONTEXT_GET, async (_e, projectId: string) => {
+  handle(IPC.SESSION_CONTEXT_GET, async (_e, projectId: string) => {
     return store.get(`sessionContexts.${projectId}` as any, null)
   })
 }
