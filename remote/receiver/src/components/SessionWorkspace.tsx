@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api/wsClient'
 import { RemoteTerminal } from './RemoteTerminal'
-import { WorktreeDiff } from './WorktreeDiff'
+import { BranchDiff } from './BranchDiff'
 import { SessionInfo } from './SessionInfo'
 
 const DIFF_TAB_ID = '__diff__'
@@ -13,7 +13,9 @@ interface Session {
   name: string
   branchName?: string
   worktreePath?: string
+  baseBranch?: string
   notionTicket?: { pageId: string; url: string; title: string }
+  viewedFiles?: string[]
 }
 
 interface TerminalRef {
@@ -37,7 +39,12 @@ function labelForTabId(tabId: string): string {
   return tabId
 }
 
-export function SessionWorkspace({ session }: { session: Session }) {
+interface SessionWorkspaceProps {
+  session: Session
+  onUpdateSession: (s: Session) => void | Promise<void>
+}
+
+export function SessionWorkspace({ session, onUpdateSession }: SessionWorkspaceProps) {
   const [terminals, setTerminals] = useState<TerminalRef[] | null>(null)
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -180,7 +187,7 @@ export function SessionWorkspace({ session }: { session: Session }) {
         {isInfoActive ? (
           <SessionInfo session={session} />
         ) : isDiffActive && session.worktreePath ? (
-          <WorktreeDiff worktreePath={session.worktreePath} />
+          <BranchDiff session={session} onUpdateSession={onUpdateSession} />
         ) : terminals && terminals.length === 0 ? (
           <div className="text-sm text-text-muted" style={{ padding: 24 }}>
             No active terminals in this session. Open one on your desktop, or click "+" to start a

@@ -311,5 +311,13 @@ export const api = {
       wsClient.invoke(IPC.GIT_WORKING_FILES, [repoPath]),
     workingFileDiff: (repoPath: string, filePath: string) =>
       wsClient.invoke(IPC.GIT_WORKING_FILE_DIFF, [repoPath, filePath]),
+    compareFiles: (repoPath: string, baseBranch: string) =>
+      wsClient.invoke(IPC.GIT_COMPARE_FILES, [repoPath, baseBranch]),
+    compareDiff: (repoPath: string, baseBranch: string) =>
+      wsClient.invoke(IPC.GIT_COMPARE_DIFF, [repoPath, baseBranch]),
+    compareFileDiff: (repoPath: string, baseBranch: string, filePath: string) =>
+      wsClient.invoke(IPC.GIT_COMPARE_FILE_DIFF, [repoPath, baseBranch, filePath]),
+    defaultBranch: (repoPath: string) =>
+      wsClient.invoke(IPC.GIT_DEFAULT_BRANCH, [repoPath]),
   },
 }

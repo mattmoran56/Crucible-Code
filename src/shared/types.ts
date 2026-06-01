@@ -41,6 +41,8 @@ export interface Session {
   prNumber?: number
   baseBranch?: string
   notionTicket?: NotionTicketLink
+  /** Paths the user has marked viewed in the branch-vs-base diff. */
+  viewedFiles?: string[]
 }
 
 export interface Commit {

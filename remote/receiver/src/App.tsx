@@ -26,7 +26,9 @@ interface Session {
   name: string
   branchName?: string
   worktreePath?: string
+  baseBranch?: string
   notionTicket?: { pageId: string; url: string; title: string }
+  viewedFiles?: string[]
 }
 
 type Route =
@@ -370,7 +372,20 @@ export function App() {
               {settingsOpen ? (
                 <SettingsPanel projectId={activeProjectId} />
               ) : activeSession ? (
-                <SessionWorkspace session={activeSession} />
+                <SessionWorkspace
+                  session={activeSession}
+                  onUpdateSession={async (next) => {
+                    const list = (sessionsByProject[activeProjectId] ?? []).map((s) =>
+                      s.id === next.id ? next : s
+                    )
+                    setSessionsByProject((prev) => ({ ...prev, [activeProjectId]: list }))
+                    try {
+                      await api.sessions.save(activeProjectId, list)
+                    } catch {
+                      // ignore — list refresh poll will reconcile on next tick
+                    }
+                  }}
+                />
               ) : (
                 <div className="h-full flex items-center justify-center text-sm text-text-muted">
                   Select a session from the sidebar.
