@@ -306,4 +306,10 @@ export const api = {
       wsClient.on(IPC.TERMINAL_EXIT, ((tid, code) =>
         cb(tid as string, code as number)) as any),
   },
+  git: {
+    workingFiles: (repoPath: string) =>
+      wsClient.invoke(IPC.GIT_WORKING_FILES, [repoPath]),
+    workingFileDiff: (repoPath: string, filePath: string) =>
+      wsClient.invoke(IPC.GIT_WORKING_FILE_DIFF, [repoPath, filePath]),
+  },
 }

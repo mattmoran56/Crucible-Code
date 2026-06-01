@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api/wsClient'
 import { RemoteTerminal } from './RemoteTerminal'
+import { WorktreeDiff } from './WorktreeDiff'
+
+const DIFF_TAB_ID = '__diff__'
 
 interface Session {
   id: string
@@ -22,6 +25,11 @@ function labelFor(t: TerminalRef): string {
   if (t.tabId.startsWith('agent:')) return `Agent ${t.tabId.slice(6)}`
   if (t.tabId.startsWith('terminal:')) return `Terminal ${t.tabId.slice(9)}`
   return t.tabId
+}
+
+function labelForTabId(tabId: string): string {
+  if (tabId === DIFF_TAB_ID) return 'Diff'
+  return tabId
 }
 
 export function SessionWorkspace({ session }: { session: Session }) {
@@ -75,6 +83,8 @@ export function SessionWorkspace({ session }: { session: Session }) {
   }
 
   const active = terminals?.find((t) => t.tabId === activeTabId) ?? null
+  const isDiffActive = activeTabId === DIFF_TAB_ID
+  const showDiffTab = !!session.worktreePath
 
   return (
     <div className="h-full flex flex-col">
@@ -110,6 +120,27 @@ export function SessionWorkspace({ session }: { session: Session }) {
             </button>
           )
         })}
+        {showDiffTab && (
+          <button
+            role="tab"
+            aria-selected={isDiffActive}
+            onClick={() => setActiveTabId(DIFF_TAB_ID)}
+            className={
+              'relative flex items-center justify-center gap-1.5 transition-colors shrink-0 ' +
+              'text-base md:text-xs md:px-2.5 md:py-2 ' +
+              (isDiffActive
+                ? 'text-text bg-bg md:bg-transparent'
+                : 'text-text-muted hover:text-text')
+            }
+            style={{ paddingLeft: 24, paddingRight: 24 }}
+            title="View live worktree diff"
+          >
+            {labelForTabId(DIFF_TAB_ID)}
+            {isDiffActive && (
+              <span className="absolute left-0 right-0 bottom-0 h-[3px] md:h-[2px] bg-accent rounded-t" />
+            )}
+          </button>
+        )}
         <button
           onClick={handleSpawnShell}
           title="Open a new shell tab"
@@ -121,7 +152,9 @@ export function SessionWorkspace({ session }: { session: Session }) {
       </div>
 
       <div className="flex-1 min-h-0 bg-bg flex flex-col">
-        {terminals && terminals.length === 0 ? (
+        {isDiffActive && session.worktreePath ? (
+          <WorktreeDiff worktreePath={session.worktreePath} />
+        ) : terminals && terminals.length === 0 ? (
           <div className="text-sm text-text-muted" style={{ padding: 24 }}>
             No active terminals in this session. Open one on your desktop, or click "+" to start a
             remote shell.
