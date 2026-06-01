@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto'
-import Store from 'electron-store'
 
 const PAIR_TTL_MS = 5 * 60 * 1000
 
@@ -20,17 +19,43 @@ const CODE_LEN = 6
 
 export type PairingMode = 'qr' | 'code'
 
-const modeStore = new Store<{ pairingMode: PairingMode }>({
-  name: 'remote-pairing-mode',
-  defaults: { pairingMode: 'qr' },
-})
+// `electron-store` pulls in `electron` at module load; that breaks unit tests
+// that run under plain Node without the electron binary installed. Lazy-init
+// the store the first time anyone calls get/set so plain Node test runs only
+// touch this dependency when explicitly setting a mode.
+interface ModeStore {
+  get(key: 'pairingMode', def: PairingMode): PairingMode
+  set(key: 'pairingMode', value: PairingMode): void
+}
+let modeStore: ModeStore | null = null
+let inMemoryMode: PairingMode = 'qr'
+
+function getStore(): ModeStore | null {
+  if (modeStore) return modeStore
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Store = require('electron-store') as new (opts: unknown) => ModeStore
+    modeStore = new Store({
+      name: 'remote-pairing-mode',
+      defaults: { pairingMode: 'qr' as PairingMode },
+    })
+    return modeStore
+  } catch {
+    // No electron available — fall back to in-memory mode for tests / plain Node.
+    return null
+  }
+}
 
 export function getPairingMode(): PairingMode {
-  return modeStore.get('pairingMode', 'qr')
+  const store = getStore()
+  if (store) return store.get('pairingMode', 'qr')
+  return inMemoryMode
 }
 
 export function setPairingMode(mode: PairingMode): void {
-  modeStore.set('pairingMode', mode)
+  const store = getStore()
+  if (store) store.set('pairingMode', mode)
+  else inMemoryMode = mode
   // Mint a fresh secret in the new mode so the displayed value matches.
   generatePairingCode()
 }
