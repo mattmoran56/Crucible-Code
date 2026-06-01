@@ -1,4 +1,5 @@
 import { Sidebar, SidebarSection } from '@renderer/components/ui/Sidebar'
+import { SessionStatusDot } from './StatusDot'
 
 interface Session {
   id: string
@@ -40,18 +41,21 @@ export function SessionSidebar({
               }
               style={{ padding: '8px 10px' }}
             >
-              <div
-                className={
-                  'text-sm truncate ' +
-                  (isActive
-                    ? 'text-accent'
-                    : 'text-text group-hover:text-accent transition-colors')
-                }
-              >
-                {s.name}
+              <div className="flex items-center gap-2">
+                <SessionStatusDot contextId={s.id} size={7} />
+                <div
+                  className={
+                    'text-sm truncate flex-1 ' +
+                    (isActive
+                      ? 'text-accent'
+                      : 'text-text group-hover:text-accent transition-colors')
+                  }
+                >
+                  {s.name}
+                </div>
               </div>
               {s.branchName && (
-                <div className="text-[11px] text-text-muted truncate mt-0.5">{s.branchName}</div>
+                <div className="text-[11px] text-text-muted truncate mt-0.5 pl-[15px]">{s.branchName}</div>
               )}
             </button>
           )

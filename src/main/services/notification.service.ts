@@ -1,5 +1,6 @@
 import { BrowserWindow, Notification } from 'electron'
 import { IPC } from '../../shared/constants'
+import { eventBus } from './event-bus'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -29,4 +30,10 @@ export function showNotification(
     })
   }
   notification.show()
+
+  // Forward to any connected remote receivers. The bridge subscribes to
+  // every IPC channel on the bus and fans the args out as an event frame,
+  // so a remote PWA receives the same title/body and can display it via
+  // the Notification API.
+  eventBus.emit(IPC.NOTIFICATION_SHOW, title, body, focus ?? null)
 }
