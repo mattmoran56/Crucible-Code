@@ -8,6 +8,17 @@
  * Scoped via `@media (display-mode: standalone)` — these rules only apply
  * when the receiver is launched from the home screen.
  */
+/* Sidebar status dot pulse — only animates for 'attention' state, where the
+   user actually needs to act. Other states stay solid so the eye doesn't get
+   trained to ignore movement. */
+@keyframes crucible-status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.35); }
+}
+.crucible-status-dot-pulse {
+  animation: crucible-status-pulse 1.4s ease-in-out infinite;
+}
+
 @media (display-mode: standalone) {
   /* Lock document scroll so iOS doesn't rubber-band the whole page (which
      pulls the header out from under the notch). Inner regions still scroll.
