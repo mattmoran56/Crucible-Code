@@ -2,14 +2,17 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/wsClient'
 import { RemoteTerminal } from './RemoteTerminal'
 import { WorktreeDiff } from './WorktreeDiff'
+import { SessionInfo } from './SessionInfo'
 
 const DIFF_TAB_ID = '__diff__'
+const INFO_TAB_ID = '__info__'
 
 interface Session {
   id: string
   name: string
   branchName?: string
   worktreePath?: string
+  notionTicket?: { pageId: string; url: string; title: string }
 }
 
 interface TerminalRef {
@@ -29,6 +32,7 @@ function labelFor(t: TerminalRef): string {
 
 function labelForTabId(tabId: string): string {
   if (tabId === DIFF_TAB_ID) return 'Diff'
+  if (tabId === INFO_TAB_ID) return 'Info'
   return tabId
 }
 
@@ -84,6 +88,7 @@ export function SessionWorkspace({ session }: { session: Session }) {
 
   const active = terminals?.find((t) => t.tabId === activeTabId) ?? null
   const isDiffActive = activeTabId === DIFF_TAB_ID
+  const isInfoActive = activeTabId === INFO_TAB_ID
   const showDiffTab = !!session.worktreePath
 
   return (
@@ -142,6 +147,25 @@ export function SessionWorkspace({ session }: { session: Session }) {
           </button>
         )}
         <button
+          role="tab"
+          aria-selected={isInfoActive}
+          onClick={() => setActiveTabId(INFO_TAB_ID)}
+          className={
+            'relative flex items-center justify-center gap-1.5 transition-colors shrink-0 ' +
+            'text-base md:text-xs md:px-2.5 md:py-2 ' +
+            (isInfoActive
+              ? 'text-text bg-bg md:bg-transparent'
+              : 'text-text-muted hover:text-text')
+          }
+          style={{ paddingLeft: 24, paddingRight: 24 }}
+          title="Session info"
+        >
+          {labelForTabId(INFO_TAB_ID)}
+          {isInfoActive && (
+            <span className="absolute left-0 right-0 bottom-0 h-[3px] md:h-[2px] bg-accent rounded-t" />
+          )}
+        </button>
+        <button
           onClick={handleSpawnShell}
           title="Open a new shell tab"
           className="text-text-muted hover:text-text shrink-0 text-xl md:text-xs md:px-2.5 md:py-2"
@@ -152,7 +176,9 @@ export function SessionWorkspace({ session }: { session: Session }) {
       </div>
 
       <div className="flex-1 min-h-0 bg-bg flex flex-col">
-        {isDiffActive && session.worktreePath ? (
+        {isInfoActive ? (
+          <SessionInfo session={session} />
+        ) : isDiffActive && session.worktreePath ? (
           <WorktreeDiff worktreePath={session.worktreePath} />
         ) : terminals && terminals.length === 0 ? (
           <div className="text-sm text-text-muted" style={{ padding: 24 }}>

@@ -26,6 +26,7 @@ interface Session {
   name: string
   branchName?: string
   worktreePath?: string
+  notionTicket?: { pageId: string; url: string; title: string }
 }
 
 type Route =

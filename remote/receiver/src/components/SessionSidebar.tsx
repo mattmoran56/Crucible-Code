@@ -5,7 +5,28 @@ interface Session {
   id: string
   name: string
   branchName?: string
+  notionTicket?: { pageId: string; url: string; title: string }
 }
+
+const TicketIcon = () => (
+  <svg
+    aria-hidden="true"
+    className="shrink-0"
+    width="10"
+    height="10"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8z" />
+    <path d="M13 6v2" />
+    <path d="M13 11v2" />
+    <path d="M13 16v2" />
+  </svg>
+)
 
 interface Props {
   sessions: Session[] | null
@@ -56,6 +77,28 @@ export function SessionSidebar({
               </div>
               {s.branchName && (
                 <div className="text-[11px] text-text-muted truncate mt-0.5 pl-[15px]">{s.branchName}</div>
+              )}
+              {s.notionTicket && (
+                <span
+                  role="link"
+                  tabIndex={0}
+                  title={`Open Notion ticket: ${s.notionTicket.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    window.open(s.notionTicket!.url, '_blank', 'noopener,noreferrer')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      window.open(s.notionTicket!.url, '_blank', 'noopener,noreferrer')
+                    }
+                  }}
+                  className="mt-1 pl-[15px] flex items-center gap-1 text-text-muted text-[10px] hover:text-accent hover:underline cursor-pointer focus:outline-none focus-visible:text-accent max-w-full"
+                >
+                  <TicketIcon />
+                  <span className="truncate">{s.notionTicket.title || 'Notion ticket'}</span>
+                </span>
               )}
             </button>
           )
