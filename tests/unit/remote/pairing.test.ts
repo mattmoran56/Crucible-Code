@@ -4,10 +4,12 @@ import {
   currentPairingCode,
   consumePairingCode,
   clearPairingCode,
+  setPairingMode,
 } from '../../../remote/server/pairing'
 
 describe('remote/server/pairing', () => {
   beforeEach(() => {
+    setPairingMode('code')
     clearPairingCode()
     vi.useFakeTimers()
   })
@@ -15,14 +17,22 @@ describe('remote/server/pairing', () => {
   afterEach(() => {
     vi.useRealTimers()
     clearPairingCode()
+    setPairingMode('qr')
   })
 
-  it('generates a 6-character base32-style code without confusable characters', () => {
+  it('generates a 6-character base32-style code in code mode', () => {
     const code = generatePairingCode()
     expect(code).toHaveLength(6)
     expect(code).toMatch(/^[A-Z2-9]+$/)
     // confusables explicitly stripped from the alphabet
     expect(code).not.toMatch(/[01OI]/)
+  })
+
+  it('generates a 52-character high-entropy secret in QR mode', () => {
+    setPairingMode('qr')
+    const code = generatePairingCode()
+    expect(code).toHaveLength(52)
+    expect(code).toMatch(/^[A-Z2-9]+$/)
   })
 
   it('exposes the active code via currentPairingCode until consumed or expired', () => {

@@ -3,10 +3,16 @@ import { pair } from '../api/wsClient'
 import { Button } from '@renderer/components/ui/Button'
 import { Input } from '@renderer/components/ui/Input'
 
-export function PairingPage({ onPaired }: { onPaired: () => void }) {
+export function PairingPage({
+  onPaired,
+  initialError = null,
+}: {
+  onPaired: () => void
+  initialError?: string | null
+}) {
   const [code, setCode] = useState('')
   const [label, setLabel] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError)
   const [busy, setBusy] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,7 +54,6 @@ export function PairingPage({ onPaired }: { onPaired: () => void }) {
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder="ABCDEF"
-            maxLength={6}
             style={{ fontSize: 22, letterSpacing: 6, textAlign: 'center', textTransform: 'uppercase' }}
           />
           <Input
@@ -58,7 +63,7 @@ export function PairingPage({ onPaired }: { onPaired: () => void }) {
           />
           <Button
             type="submit"
-            disabled={busy || code.length !== 6}
+            disabled={busy || code.length < 6}
             loading={busy}
             className="w-full"
           >

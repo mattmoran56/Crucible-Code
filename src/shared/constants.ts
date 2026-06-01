@@ -224,4 +224,5 @@ export const IPC = {
   REMOTE_APPROVE_PAIRING: 'remote:approve-pairing',
   REMOTE_DENY_PAIRING: 'remote:deny-pairing',
   REMOTE_PAIRING_REQUESTED: 'remote:pairing-requested',
+  REMOTE_SET_PAIRING_MODE: 'remote:set-pairing-mode',
 } as const

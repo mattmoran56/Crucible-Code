@@ -8,11 +8,17 @@ import { Input } from '@renderer/components/ui/Input'
  * pairing code shown in the desktop popover. We never POST the code — it's
  * mixed into the encrypted key exchange so the relay can't see it.
  */
-export function HandlePage({ onPaired }: { onPaired: () => void }) {
+export function HandlePage({
+  onPaired,
+  initialError = null,
+}: {
+  onPaired: () => void
+  initialError?: string | null
+}) {
   const [handle, setHandle] = useState('')
   const [code, setCode] = useState('')
   const [label, setLabel] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError)
   const [busy, setBusy] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -80,7 +86,6 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder="ABCDEF"
-            maxLength={6}
             style={{ fontSize: 24, letterSpacing: 6, textAlign: 'center', textTransform: 'uppercase', padding: '16px 14px' }}
           />
           <Input
@@ -91,7 +96,7 @@ export function HandlePage({ onPaired }: { onPaired: () => void }) {
           />
           <Button
             type="submit"
-            disabled={busy || !handleValid || code.length !== 6}
+            disabled={busy || !handleValid || code.length < 6}
             loading={busy}
             className="w-full"
             style={{ padding: '14px 16px', fontSize: 16 }}

@@ -16,6 +16,8 @@ interface RemoteStatus {
   port: number
   urls: string[]
   pairingCode: string | null
+  pairingMode: 'qr' | 'code'
+  qrPayload: string | null
   devices: { token: string; label: string; createdAt: number }[]
   cloud: {
     enabled: boolean
@@ -35,6 +37,8 @@ function baseStatus(): RemoteStatus {
     port: 9876,
     urls: [],
     pairingCode: null,
+    pairingMode: 'qr',
+    qrPayload: null,
     devices: [],
     cloud: {
       enabled: false,
@@ -96,6 +100,10 @@ function withRemoteApi(status: RemoteStatus, opts: { autoOpen?: boolean } = {}) 
         }
         return current
       },
+      setPairingMode: async (mode: 'qr' | 'code') => {
+        current = { ...current, pairingMode: mode }
+        return current
+      },
       onPairingRequested: (cb: (pending: PendingPairing[]) => void) => {
         // Fire once on mount if we want to auto-open the popover.
         if (opts.autoOpen && current.pendingPairings.length > 0) {
@@ -138,7 +146,9 @@ export const Open_LanOnly: Story = {
       enabled: true,
       running: true,
       urls: ['http://192.168.1.42:9876'],
-      pairingCode: 'KX7QM2',
+      pairingCode: 'A7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM',
+      qrPayload:
+        'http://192.168.1.42:9876/#pair=eyJ2IjoxLCJzZWNyZXQiOiJBN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMiJ9',
     }),
   ],
   // Click the toggle so the popover renders. Story renders the closed button;
@@ -153,7 +163,9 @@ export const Open_CloudConnected: Story = {
       enabled: true,
       running: true,
       urls: ['http://192.168.1.42:9876'],
-      pairingCode: 'KX7QM2',
+      pairingCode: 'A7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM',
+      qrPayload:
+        'http://192.168.1.42:9876/#pair=eyJ2IjoxLCJzZWNyZXQiOiJBN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMiJ9',
       cloud: {
         enabled: true,
         handle: 'lively-ember-falcon',
@@ -197,7 +209,7 @@ export const Open_PendingPairing: Story = {
   ],
 }
 
-export const Open_RequireApprovalOn: Story = {
+export const Open_ShortCodeMode: Story = {
   decorators: [
     withRemoteApi({
       ...baseStatus(),
@@ -205,6 +217,22 @@ export const Open_RequireApprovalOn: Story = {
       running: true,
       urls: ['http://192.168.1.42:9876'],
       pairingCode: 'KX7QM2',
+      pairingMode: 'code',
+      qrPayload: null,
+    }),
+  ],
+}
+
+export const Open_RequireApprovalOn: Story = {
+  decorators: [
+    withRemoteApi({
+      ...baseStatus(),
+      enabled: true,
+      running: true,
+      urls: ['http://192.168.1.42:9876'],
+      pairingCode: 'A7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM2KX7QM',
+      qrPayload:
+        'http://192.168.1.42:9876/#pair=eyJ2IjoxLCJzZWNyZXQiOiJBN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMktYN1FNMiJ9',
       requireApproval: true,
     }),
   ],
