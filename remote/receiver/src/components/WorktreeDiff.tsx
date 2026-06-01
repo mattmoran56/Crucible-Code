@@ -172,32 +172,35 @@ export function WorktreeDiff({ worktreePath }: { worktreePath: string }) {
         })}
       </div>
 
-      {/* Diff body */}
-      <div className="flex-1 min-h-0 min-w-0 overflow-auto bg-bg">
+      {/* Diff body — file path bar lives outside the scrollable region so it
+          stays put while the user scrolls horizontally through long lines. */}
+      <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-bg">
         {selected && (
           <div
-            className="bg-bg-tertiary border-b border-border text-xs text-text-muted sticky top-0 z-10 truncate"
+            className="bg-bg-tertiary border-b border-border text-xs text-text-muted truncate shrink-0"
             style={{ padding: '6px 12px' }}
             title={selected}
           >
             {selected}
           </div>
         )}
-        {patch == null ? (
-          <div className="text-xs text-text-muted" style={{ padding: 24 }}>
-            Loading diff…
-          </div>
-        ) : lines.length === 0 ? (
-          <div className="text-xs text-text-muted" style={{ padding: 24 }}>
-            No changes for this file.
-          </div>
-        ) : (
-          <div className="font-mono text-xs">
-            {lines.map((line, i) => (
-              <DiffRow key={i} line={line} />
-            ))}
-          </div>
-        )}
+        <div className="flex-1 min-h-0 overflow-auto">
+          {patch == null ? (
+            <div className="text-xs text-text-muted" style={{ padding: 24 }}>
+              Loading diff…
+            </div>
+          ) : lines.length === 0 ? (
+            <div className="text-xs text-text-muted" style={{ padding: 24 }}>
+              No changes for this file.
+            </div>
+          ) : (
+            <div className="font-mono text-xs">
+              {lines.map((line, i) => (
+                <DiffRow key={i} line={line} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -211,8 +214,9 @@ function DiffRow({ line }: { line: DiffLine }) {
   const bodyTint = ROW_BODY[line.type] ?? ''
   const gutterTint = ROW_GUTTER[line.type] ?? ''
   const indicatorTint = ROW_INDICATOR[line.type] ?? ''
+  // Row grows to content width so the outer scroll container scrolls horizontally.
   return (
-    <div className="flex leading-5">
+    <div className="flex leading-5 min-w-max">
       <span className={`flex shrink-0 ${gutterTint}`}>
         <span className="w-10 text-right select-none pr-2 tabular-nums">{line.oldLine ?? ''}</span>
         <span className="w-10 text-right select-none pr-2 tabular-nums border-r border-border/40">
@@ -222,9 +226,7 @@ function DiffRow({ line }: { line: DiffLine }) {
       <span className={`w-5 text-center select-none shrink-0 ${indicatorTint}`}>
         {INDICATOR_GLYPH[line.type] || ''}
       </span>
-      <pre className={`flex-1 whitespace-pre-wrap break-all pl-2 pr-2 ${bodyTint}`}>
-        {line.content}
-      </pre>
+      <pre className={`whitespace-pre pl-2 pr-4 ${bodyTint}`}>{line.content}</pre>
     </div>
   )
 }

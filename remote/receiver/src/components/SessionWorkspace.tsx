@@ -6,6 +6,7 @@ import { SessionInfo } from './SessionInfo'
 
 const DIFF_TAB_ID = '__diff__'
 const INFO_TAB_ID = '__info__'
+const PSEUDO_TAB_IDS = new Set<string>([DIFF_TAB_ID, INFO_TAB_ID])
 
 interface Session {
   id: string
@@ -48,7 +49,7 @@ export function SessionWorkspace({ session }: { session: Session }) {
         const arr = list as TerminalRef[]
         setTerminals(arr)
         setActiveTabId((prev) => {
-          if (prev && arr.some((t) => t.tabId === prev)) return prev
+          if (prev && (PSEUDO_TAB_IDS.has(prev) || arr.some((t) => t.tabId === prev))) return prev
           return arr[0]?.tabId ?? null
         })
       })
