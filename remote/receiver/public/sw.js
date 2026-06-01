@@ -13,6 +13,55 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
+// Notification tap: focus an existing PWA tab if any, otherwise open one.
+// Honours a `data.url` on the notification (set by the page-side displayer
+// and by future Web Push payloads) so taps land on the right session.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/'
+  event.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      for (const client of all) {
+        // Same-origin match → reuse the tab and post the focus target so the
+        // app can route to it without reload.
+        if (new URL(client.url).origin === self.location.origin) {
+          await client.focus()
+          client.postMessage({ type: 'notification-click', data: event.notification.data })
+          return
+        }
+      }
+      await self.clients.openWindow(targetUrl)
+    })(),
+  )
+})
+
+// Web Push handler. The relay backend can fire push messages to a stored
+// subscription so notifications arrive even when the PWA tab is closed.
+// Payload contract: { title, body, url?, focus? }. Falls back to a generic
+// notification when the push has no payload (some browsers strip it).
+self.addEventListener('push', (event) => {
+  let payload = { title: 'Crucible Code', body: 'New activity', url: '/' }
+  if (event.data) {
+    try {
+      payload = { ...payload, ...event.data.json() }
+    } catch {
+      payload.body = event.data.text() || payload.body
+    }
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      tag: payload.focus
+        ? `focus:${payload.focus.contextId}:${payload.focus.tabId}`
+        : 'crucible-remote',
+      data: { url: payload.url || '/', focus: payload.focus },
+      icon: '/icon.png',
+      badge: '/icon.png',
+    }),
+  )
+})
+
 self.addEventListener('fetch', (event) => {
   const request = event.request
 

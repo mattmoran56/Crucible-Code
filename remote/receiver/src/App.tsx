@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import { wsClient, api } from './api/wsClient'
+import { wsClient, api, pair, pairCloud } from './api/wsClient'
+import {
+  initRemoteNotifications,
+  requestNotificationPermission,
+  useNotificationPermission,
+} from './api/notifications'
+import { initSessionStatus, clearContextStatus } from './api/sessionStatus'
 import { PairingPage } from './pages/PairingPage'
 import { HandlePage } from './pages/HandlePage'
 import { getStoredHandle, getCloudToken, getStoredTicket } from './api/cloud'
@@ -28,6 +34,31 @@ type Route =
   | { name: 'project'; projectId: string; view: 'sessions' | 'settings' }
   | { name: 'new-session'; projectId: string }
   | { name: 'session'; projectId: string; sessionId: string }
+
+/**
+ * Parse `#pair=<base64url(JSON)>` written into the URL by a QR-code scan.
+ * Returns null if absent or malformed. Strips the hash from the URL as a
+ * side-effect so a reload doesn't replay the pair attempt (and so the secret
+ * stops being visible in the address bar).
+ */
+function consumePairPayload(): { secret: string; handle?: string } | null {
+  const h = location.hash.replace(/^#/, '')
+  const params = new URLSearchParams(h)
+  const raw = params.get('pair')
+  if (!raw) return null
+  try {
+    const b64 = raw.replace(/-/g, '+').replace(/_/g, '/')
+    const json = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))
+    const data = JSON.parse(json) as { v?: number; secret?: string; handle?: string }
+    // Clear the hash so reloads don't re-trigger and the URL bar stops leaking
+    // the secret. preserveScroll by using replaceState.
+    history.replaceState(null, '', location.pathname + location.search)
+    if (!data.secret) return null
+    return { secret: data.secret, handle: data.handle }
+  } catch {
+    return null
+  }
+}
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#/, '')
@@ -67,8 +98,32 @@ export function App() {
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, Session[]>>({})
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
+  const [autoPairError, setAutoPairError] = useState<string | null>(null)
+
   useEffect(() => {
-    void wsClient.detectMode().then(setMode)
+    initRemoteNotifications()
+    initSessionStatus()
+    const pairPayload = consumePairPayload()
+    void wsClient.detectMode().then(async (m) => {
+      setMode(m)
+      if (!pairPayload) return
+      const label = navigator.userAgent.split(/[()]/)[1] || 'browser'
+      try {
+        if (m === 'cloud') {
+          if (!pairPayload.handle) {
+            setAutoPairError('QR is missing a cloud handle.')
+            return
+          }
+          await pairCloud(pairPayload.handle.trim().toLowerCase(), pairPayload.secret)
+          setCloudHandle(getStoredHandle())
+        } else {
+          await pair(pairPayload.secret, label)
+          setToken(wsClient.getToken())
+        }
+      } catch (err) {
+        setAutoPairError(err instanceof Error ? err.message : String(err))
+      }
+    })
   }, [])
 
   useEffect(() => {
@@ -86,6 +141,72 @@ export function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+
+  // Edge-swipe to open the mobile drawer (and swipe-left to close it).
+  // Swiping right from the left edge opens the drawer instead of triggering
+  // the browser's back gesture. Only active below the md breakpoint where
+  // the drawer exists.
+  useEffect(() => {
+    const EDGE_PX = 24
+    const THRESHOLD_PX = 50
+    const SLOPE = 1.2 // horizontal must dominate vertical by this factor
+    let startX = 0
+    let startY = 0
+    let tracking: 'open' | 'close' | null = null
+    let openAtStart = false
+
+    const onStart = (e: TouchEvent) => {
+      if (window.innerWidth >= 768) return
+      if (e.touches.length !== 1) return
+      const t = e.touches[0]
+      openAtStart = mobileNavOpen
+      if (!openAtStart && t.clientX <= EDGE_PX) {
+        tracking = 'open'
+        startX = t.clientX
+        startY = t.clientY
+      } else if (openAtStart) {
+        tracking = 'close'
+        startX = t.clientX
+        startY = t.clientY
+      } else {
+        tracking = null
+      }
+    }
+    const onMove = (e: TouchEvent) => {
+      if (!tracking) return
+      const t = e.touches[0]
+      const dx = t.clientX - startX
+      const dy = t.clientY - startY
+      if (Math.abs(dx) > Math.abs(dy) * SLOPE && Math.abs(dx) > 10) {
+        // Horizontal swipe — block browser back-swipe / scroll while we own it.
+        if (e.cancelable) e.preventDefault()
+      }
+    }
+    const onEnd = (e: TouchEvent) => {
+      if (!tracking) return
+      const t = e.changedTouches[0]
+      const dx = t.clientX - startX
+      const dy = t.clientY - startY
+      const horizontal = Math.abs(dx) > Math.abs(dy) * SLOPE
+      if (tracking === 'open' && horizontal && dx > THRESHOLD_PX) {
+        setMobileNavOpen(true)
+      } else if (tracking === 'close' && horizontal && dx < -THRESHOLD_PX) {
+        setMobileNavOpen(false)
+      }
+      tracking = null
+    }
+
+    window.addEventListener('touchstart', onStart, { passive: true })
+    window.addEventListener('touchmove', onMove, { passive: false })
+    window.addEventListener('touchend', onEnd, { passive: true })
+    window.addEventListener('touchcancel', onEnd, { passive: true })
+    return () => {
+      window.removeEventListener('touchstart', onStart)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend', onEnd)
+      window.removeEventListener('touchcancel', onEnd)
+    }
+  }, [mobileNavOpen])
 
   useEffect(() => {
     if (!connected) return
@@ -118,6 +239,9 @@ export function App() {
   }, [activeProjectId])
 
   const navigate = (next: Route) => {
+    // Mirror desktop behaviour: clicking into a session clears its status
+    // indicator so the sidebar dot reflects "user has seen this".
+    if (next.name === 'session') clearContextStatus(next.sessionId)
     location.hash = buildHash(next)
   }
 
@@ -130,11 +254,11 @@ export function App() {
   }
 
   if (mode === 'lan' && !token) {
-    return <PairingPage onPaired={() => setToken(wsClient.getToken())} />
+    return <PairingPage initialError={autoPairError} onPaired={() => setToken(wsClient.getToken())} />
   }
 
   if (mode === 'cloud' && !connected && (!cloudHandle || !getStoredTicket())) {
-    return <HandlePage onPaired={() => setCloudHandle(getStoredHandle())} />
+    return <HandlePage initialError={autoPairError} onPaired={() => setCloudHandle(getStoredHandle())} />
   }
 
   const handleUnpair = () => {
@@ -208,6 +332,7 @@ export function App() {
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1 shrink-0" style={{ padding: '0 8px' }}>
+          <NotificationsButton />
           <button
             onClick={handleUnpair}
             className="text-text-muted hover:text-text text-sm md:text-xs"
@@ -314,6 +439,28 @@ export function App() {
       </div>
 
     </div>
+  )
+}
+
+function NotificationsButton() {
+  const permission = useNotificationPermission()
+  if (permission === 'granted') return null
+  const label = permission === 'denied' ? 'Notifications blocked' : 'Enable notifications'
+  return (
+    <button
+      onClick={async () => {
+        const result = await requestNotificationPermission()
+        if (result === 'denied') {
+          alert(
+            'Notifications are blocked. On iOS: add this app to your home screen, then re-open and tap "Enable notifications".',
+          )
+        }
+      }}
+      className="text-text-muted hover:text-text text-sm md:text-xs"
+      style={{ padding: '8px 12px' }}
+    >
+      {label}
+    </button>
   )
 }
 

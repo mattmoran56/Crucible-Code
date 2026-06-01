@@ -4,6 +4,7 @@ import { app, BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
 import type { HookType, ContextKind } from '../../shared/types'
 import { showNotification } from './notification.service'
+import { emitToRenderer } from './event-bus'
 
 interface ContextMapping {
   contextId: string
@@ -86,8 +87,9 @@ export function handleHookEvent(
 ) {
   if (!mainWindow) return
 
-  // Send typed status event to the renderer
-  mainWindow.webContents.send(IPC.NOTIFICATION_SESSION_STATUS, contextId, tabId, hookType)
+  // Send typed status event to the renderer AND the event bus so the embedded
+  // relay bridge can fan it out to a connected remote PWA (mobile sidebar).
+  emitToRenderer(mainWindow, IPC.NOTIFICATION_SESSION_STATUS, contextId, tabId, hookType)
 
   const mapping = contextMappings.get(contextId)
   if (!mapping) return

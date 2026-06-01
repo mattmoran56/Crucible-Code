@@ -1,4 +1,12 @@
 import { useEffect } from 'react'
+import { SessionStatusDot } from './StatusDot'
+import { useGlobalStatus, type SessionStatus } from '../api/sessionStatus'
+
+const BADGE_COLORS: Record<SessionStatus, string> = {
+  running: 'var(--color-accent)',
+  attention: 'var(--color-warning, #f7768e)',
+  completed: 'var(--color-success, #9ece6a)',
+}
 
 interface Project {
   id: string
@@ -144,11 +152,14 @@ export function MobileNav({
                 }
                 style={{ padding: '14px 16px' }}
               >
-                <div className={'text-base truncate ' + (isActive ? 'text-accent' : 'text-text')}>
-                  {s.name}
+                <div className="flex items-center gap-2">
+                  <SessionStatusDot contextId={s.id} size={10} />
+                  <div className={'text-base truncate flex-1 ' + (isActive ? 'text-accent' : 'text-text')}>
+                    {s.name}
+                  </div>
                 </div>
                 {s.branchName && (
-                  <div className="text-xs text-text-muted truncate mt-1">{s.branchName}</div>
+                  <div className="text-xs text-text-muted truncate mt-1 pl-[18px]">{s.branchName}</div>
                 )}
               </button>
             )
@@ -180,11 +191,18 @@ export function MobileNav({
 }
 
 export function HamburgerButton({ onClick }: { onClick: () => void }) {
+  const status = useGlobalStatus()
   return (
     <button
       onClick={onClick}
-      aria-label="Open navigation"
-      className="md:hidden text-text-muted hover:text-text flex items-center justify-center"
+      aria-label={
+        status === 'attention'
+          ? 'Open navigation — a session needs attention'
+          : status === 'completed'
+            ? 'Open navigation — a session finished'
+            : 'Open navigation'
+      }
+      className="md:hidden text-text-muted hover:text-text flex items-center justify-center relative"
       style={{ width: 48, height: 48 }}
     >
       <svg
@@ -201,6 +219,22 @@ export function HamburgerButton({ onClick }: { onClick: () => void }) {
         <line x1="3" y1="12" x2="21" y2="12" />
         <line x1="3" y1="18" x2="21" y2="18" />
       </svg>
+      {status && (
+        <span
+          className={status === 'attention' ? 'crucible-status-dot-pulse' : ''}
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            background: BADGE_COLORS[status],
+            border: '2px solid var(--color-bg-tertiary)',
+          }}
+          aria-hidden
+        />
+      )}
     </button>
   )
 }

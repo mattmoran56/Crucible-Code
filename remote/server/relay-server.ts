@@ -6,7 +6,13 @@ import { networkInterfaces } from 'node:os'
 import { WebSocketServer, type WebSocket } from 'ws'
 import Store from 'electron-store'
 import { REMOTE_DEFAULT_PORT } from '../protocol/channels'
-import { generatePairingCode, consumePairingCode, currentPairingCode } from './pairing'
+import {
+  generatePairingCode,
+  consumePairingCode,
+  currentPairingCode,
+  getPairingMode,
+  type PairingMode,
+} from './pairing'
 import { issueToken, verifyToken, listDevices, revokeAll } from './auth'
 import { attachBridge } from './bridge'
 import {
@@ -256,6 +262,14 @@ export interface RemoteStatus {
   port: number
   urls: string[]
   pairingCode: string | null
+  pairingMode: PairingMode
+  /**
+   * Deep-link URL that encodes the active pairing secret (and cloud handle, if
+   * cloud is enabled). Phones scan this with their native camera — the PWA
+   * loads and auto-pairs from the `#pair=` hash. `null` when LAN relay isn't
+   * running or no secret is active.
+   */
+  qrPayload: string | null
   devices: { token: string; label: string; createdAt: number }[]
   cloud: {
     enabled: boolean
@@ -268,6 +282,28 @@ export interface RemoteStatus {
   pendingPairings: PendingPairing[]
 }
 
+function buildQrPayload(): string | null {
+  const code = currentPairingCode()
+  if (!code) return null
+  const urls = getLanUrls()
+  if (urls.length === 0) return null
+  // Pick the first LAN URL (usually en0). Phone has to be on the same LAN
+  // anyway for the QR deep link to work.
+  const base = urls[0].replace(/\/$/, '')
+  const data: { v: 1; secret: string; handle?: string } = { v: 1, secret: code }
+  if (isCloudEnabled()) {
+    const handle = getCloudHandle()
+    if (handle) data.handle = handle
+  }
+  const json = JSON.stringify(data)
+  const b64 = Buffer.from(json, 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+  return `${base}/#pair=${b64}`
+}
+
 export function getRemoteStatus(): RemoteStatus {
   return {
     enabled: isRemoteEnabled(),
@@ -275,6 +311,8 @@ export function getRemoteStatus(): RemoteStatus {
     port: getRelayPort(),
     urls: getLanUrls(),
     pairingCode: currentPairingCode(),
+    pairingMode: getPairingMode(),
+    qrPayload: buildQrPayload(),
     devices: listDevices(),
     cloud: {
       enabled: isCloudEnabled(),
