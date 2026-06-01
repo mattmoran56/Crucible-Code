@@ -8,6 +8,7 @@ import { SessionSidebar } from './components/SessionSidebar'
 import { SessionWorkspace } from './components/SessionWorkspace'
 import { SettingsPanel } from './components/SettingsPanel'
 import { MobileNav, HamburgerButton } from './components/MobileNav'
+import { NewSessionPage } from './pages/NewSessionPage'
 
 interface Project {
   id: string
@@ -25,6 +26,7 @@ interface Session {
 type Route =
   | { name: 'home' }
   | { name: 'project'; projectId: string; view: 'sessions' | 'settings' }
+  | { name: 'new-session'; projectId: string }
   | { name: 'session'; projectId: string; sessionId: string }
 
 function parseHash(): Route {
@@ -32,6 +34,9 @@ function parseHash(): Route {
   const parts = h.split('/').filter(Boolean)
   if (parts[0] === 'project' && parts[1] && parts[2] === 'session' && parts[3]) {
     return { name: 'session', projectId: parts[1], sessionId: parts[3] }
+  }
+  if (parts[0] === 'project' && parts[1] && parts[2] === 'new-session') {
+    return { name: 'new-session', projectId: parts[1] }
   }
   if (parts[0] === 'project' && parts[1] && parts[2] === 'settings') {
     return { name: 'project', projectId: parts[1], view: 'settings' }
@@ -46,6 +51,7 @@ function buildHash(r: Route): string {
   if (r.name === 'home') return ''
   if (r.name === 'project' && r.view === 'settings') return `/project/${r.projectId}/settings`
   if (r.name === 'project') return `/project/${r.projectId}`
+  if (r.name === 'new-session') return `/project/${r.projectId}/new-session`
   return `/project/${r.projectId}/session/${r.sessionId}`
 }
 
@@ -97,7 +103,9 @@ export function App() {
   }, [connected])
 
   const activeProjectId =
-    route.name === 'project' || route.name === 'session' ? route.projectId : null
+    route.name === 'project' || route.name === 'session' || route.name === 'new-session'
+      ? route.projectId
+      : null
 
   useEffect(() => {
     if (!activeProjectId) return
@@ -143,13 +151,37 @@ export function App() {
     wsClient.disconnect()
   }
 
+  const activeProject = activeProjectId ? projects.find((p) => p.id === activeProjectId) ?? null : null
   const activeSessions = activeProjectId ? sessionsByProject[activeProjectId] ?? null : null
+
+  const refreshSessions = (projectId: string) => {
+    api.sessions
+      .list(projectId)
+      .then((list) =>
+        setSessionsByProject((prev) => ({ ...prev, [projectId]: list as Session[] }))
+      )
+      .catch(() => {})
+  }
+
+  const handleSessionCreated = (
+    projectId: string,
+    session: { id: string; name: string; branchName: string; worktreePath: string }
+  ) => {
+    setSessionsByProject((prev) => ({
+      ...prev,
+      [projectId]: [...(prev[projectId] ?? []), session],
+    }))
+    navigate({ name: 'session', projectId, sessionId: session.id })
+    setMobileNavOpen(false)
+    refreshSessions(projectId)
+  }
   const activeSessionId = route.name === 'session' ? route.sessionId : null
   const activeSession =
     activeSessionId && activeSessions
       ? activeSessions.find((s) => s.id === activeSessionId) ?? null
       : null
   const settingsOpen = route.name === 'project' && route.view === 'settings'
+  const newSessionOpen = route.name === 'new-session'
 
   return (
     <div className="flex flex-col h-screen bg-bg text-text">
@@ -221,6 +253,14 @@ export function App() {
             setMobileNavOpen(false)
           }
         }}
+        onNewSession={
+          activeProject
+            ? () => {
+                setMobileNavOpen(false)
+                navigate({ name: 'new-session', projectId: activeProject.id })
+              }
+            : undefined
+        }
       />
 
       {/* Body — sidebar (md+) + workspace */}
@@ -232,17 +272,31 @@ export function App() {
                 sessions={activeSessions}
                 activeSessionId={activeSessionId}
                 settingsOpen={settingsOpen}
+                newSessionOpen={newSessionOpen}
                 onSelectSession={(sid) =>
                   navigate({ name: 'session', projectId: activeProjectId, sessionId: sid })
                 }
                 onOpenSettings={() =>
                   navigate({ name: 'project', projectId: activeProjectId, view: 'settings' })
                 }
+                onNewSession={
+                  activeProject
+                    ? () => navigate({ name: 'new-session', projectId: activeProject.id })
+                    : undefined
+                }
               />
             </div>
             <section className="flex-1 min-w-0">
               {settingsOpen ? (
                 <SettingsPanel projectId={activeProjectId} />
+              ) : newSessionOpen && activeProject ? (
+                <NewSessionPage
+                  project={activeProject}
+                  onCancel={() =>
+                    navigate({ name: 'project', projectId: activeProject.id, view: 'sessions' })
+                  }
+                  onCreated={(session) => handleSessionCreated(activeProject.id, session)}
+                />
               ) : activeSession ? (
                 <SessionWorkspace session={activeSession} />
               ) : (
@@ -258,6 +312,7 @@ export function App() {
           </div>
         )}
       </div>
+
     </div>
   )
 }

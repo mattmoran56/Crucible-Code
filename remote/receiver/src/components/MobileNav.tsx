@@ -22,6 +22,7 @@ interface Props {
   settingsOpen: boolean
   onSelectSession: (sessionId: string) => void
   onOpenSettings: () => void
+  onNewSession?: () => void
 }
 
 export function MobileNav({
@@ -35,6 +36,7 @@ export function MobileNav({
   settingsOpen,
   onSelectSession,
   onOpenSettings,
+  onNewSession,
 }: Props) {
   useEffect(() => {
     if (!open) return
@@ -101,10 +103,23 @@ export function MobileNav({
         </div>
 
         {/* Sessions */}
-        <div className="border-b border-border shrink-0" style={{ padding: '14px 16px 6px' }}>
+        <div
+          className="border-b border-border shrink-0 flex items-center justify-between"
+          style={{ padding: '14px 16px 6px' }}
+        >
           <h2 className="text-[11px] uppercase tracking-wider text-text-muted font-medium">
             Sessions
           </h2>
+          {onNewSession && (
+            <button
+              onClick={onNewSession}
+              aria-label="New session"
+              className="text-accent text-xl leading-none flex items-center justify-center"
+              style={{ width: 32, height: 32 }}
+            >
+              +
+            </button>
+          )}
         </div>
         <div className="flex-1 overflow-auto">
           {!sessions && (

@@ -262,6 +262,51 @@ export const api = {
     list: (projectId: string) => wsClient.invoke(IPC.SESSION_LIST, [projectId]),
     save: (projectId: string, sessions: unknown[]) =>
       wsClient.invoke(IPC.SESSION_SAVE, [projectId, sessions]),
+    create: async (
+      projectId: string,
+      repoPath: string,
+      name: string,
+      baseBranch?: string,
+      startupCommand?: string
+    ): Promise<{ id: string; name: string; branchName: string; worktreePath: string }> => {
+      const worktree = (await wsClient.invoke(IPC.WORKTREE_CREATE, [
+        repoPath,
+        name,
+        baseBranch,
+      ])) as { path: string; branch: string }
+      const existing = (await wsClient.invoke(IPC.SESSION_LIST, [projectId])) as Array<
+        Record<string, unknown>
+      >
+      const session = {
+        id: crypto.randomUUID(),
+        name,
+        branchName: worktree.branch,
+        worktreePath: worktree.path,
+        projectId,
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        baseBranch,
+      }
+      await wsClient.invoke(IPC.SESSION_SAVE, [projectId, [...existing, session]])
+      return {
+        id: session.id,
+        name: session.name,
+        branchName: session.branchName,
+        worktreePath: session.worktreePath,
+      }
+    },
+  },
+  git: {
+    defaultBranch: (repoPath: string) =>
+      wsClient.invoke(IPC.GIT_DEFAULT_BRANCH, [repoPath]) as Promise<string>,
+    listBranches: (repoPath: string) =>
+      wsClient.invoke(IPC.GIT_LIST_BRANCHES, [repoPath]) as Promise<string[]>,
+  },
+  startupPrompts: {
+    list: (projectId: string) =>
+      wsClient.invoke(IPC.STARTUP_PROMPT_LIST, [projectId]) as Promise<
+        import('@shared/types').StartupPrompt[]
+      >,
   },
   notion: {
     loadConfig: (projectId: string) => wsClient.invoke(IPC.NOTION_CONFIG_LOAD, [projectId]),

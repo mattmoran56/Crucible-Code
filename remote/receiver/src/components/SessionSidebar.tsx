@@ -1,4 +1,5 @@
 import { Sidebar, SidebarSection } from '@renderer/components/ui/Sidebar'
+import { IconButton } from '@renderer/components/ui/IconButton'
 
 interface Session {
   id: string
@@ -10,26 +11,43 @@ interface Props {
   sessions: Session[] | null
   activeSessionId: string | null
   settingsOpen: boolean
+  newSessionOpen?: boolean
   onSelectSession: (sessionId: string) => void
   onOpenSettings: () => void
+  onNewSession?: () => void
 }
 
 export function SessionSidebar({
   sessions,
   activeSessionId,
   settingsOpen,
+  newSessionOpen,
   onSelectSession,
   onOpenSettings,
+  onNewSession,
 }: Props) {
   return (
     <Sidebar className="w-56 shrink-0 border-r border-border">
-      <SidebarSection title="Sessions">
+      <SidebarSection
+        title="Sessions"
+        action={
+          onNewSession ? (
+            <IconButton
+              label="New session"
+              onClick={onNewSession}
+              className="text-accent hover:text-accent-hover text-sm"
+            >
+              +
+            </IconButton>
+          ) : undefined
+        }
+      >
         {!sessions && <div className="text-xs text-text-muted">Loading…</div>}
         {sessions && sessions.length === 0 && (
           <div className="text-xs text-text-muted">No sessions in this project.</div>
         )}
         {(sessions ?? []).map((s) => {
-          const isActive = !settingsOpen && s.id === activeSessionId
+          const isActive = !settingsOpen && !newSessionOpen && s.id === activeSessionId
           return (
             <button
               key={s.id}
