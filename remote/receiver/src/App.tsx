@@ -89,6 +89,72 @@ export function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
+  // Edge-swipe to open the mobile drawer (and swipe-left to close it).
+  // Swiping right from the left edge opens the drawer instead of triggering
+  // the browser's back gesture. Only active below the md breakpoint where
+  // the drawer exists.
+  useEffect(() => {
+    const EDGE_PX = 24
+    const THRESHOLD_PX = 50
+    const SLOPE = 1.2 // horizontal must dominate vertical by this factor
+    let startX = 0
+    let startY = 0
+    let tracking: 'open' | 'close' | null = null
+    let openAtStart = false
+
+    const onStart = (e: TouchEvent) => {
+      if (window.innerWidth >= 768) return
+      if (e.touches.length !== 1) return
+      const t = e.touches[0]
+      openAtStart = mobileNavOpen
+      if (!openAtStart && t.clientX <= EDGE_PX) {
+        tracking = 'open'
+        startX = t.clientX
+        startY = t.clientY
+      } else if (openAtStart) {
+        tracking = 'close'
+        startX = t.clientX
+        startY = t.clientY
+      } else {
+        tracking = null
+      }
+    }
+    const onMove = (e: TouchEvent) => {
+      if (!tracking) return
+      const t = e.touches[0]
+      const dx = t.clientX - startX
+      const dy = t.clientY - startY
+      if (Math.abs(dx) > Math.abs(dy) * SLOPE && Math.abs(dx) > 10) {
+        // Horizontal swipe — block browser back-swipe / scroll while we own it.
+        if (e.cancelable) e.preventDefault()
+      }
+    }
+    const onEnd = (e: TouchEvent) => {
+      if (!tracking) return
+      const t = e.changedTouches[0]
+      const dx = t.clientX - startX
+      const dy = t.clientY - startY
+      const horizontal = Math.abs(dx) > Math.abs(dy) * SLOPE
+      if (tracking === 'open' && horizontal && dx > THRESHOLD_PX) {
+        setMobileNavOpen(true)
+      } else if (tracking === 'close' && horizontal && dx < -THRESHOLD_PX) {
+        setMobileNavOpen(false)
+      }
+      tracking = null
+    }
+
+    window.addEventListener('touchstart', onStart, { passive: true })
+    window.addEventListener('touchmove', onMove, { passive: false })
+    window.addEventListener('touchend', onEnd, { passive: true })
+    window.addEventListener('touchcancel', onEnd, { passive: true })
+    return () => {
+      window.removeEventListener('touchstart', onStart)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend', onEnd)
+      window.removeEventListener('touchcancel', onEnd)
+    }
+  }, [mobileNavOpen])
+
   useEffect(() => {
     if (!connected) return
     api.projects
