@@ -560,6 +560,8 @@ const api = {
       ipcRenderer.invoke(IPC.REMOTE_APPROVE_PAIRING, id),
     denyPairing: (id: string): Promise<RemoteStatus> =>
       ipcRenderer.invoke(IPC.REMOTE_DENY_PAIRING, id),
+    setPairingMode: (mode: 'qr' | 'code'): Promise<RemoteStatus> =>
+      ipcRenderer.invoke(IPC.REMOTE_SET_PAIRING_MODE, mode),
     onStatusChanged: (callback: (status: RemoteStatus) => void) => {
       const listener = (_e: unknown, status: RemoteStatus) => callback(status)
       ipcRenderer.on(IPC.REMOTE_STATUS_CHANGED, listener)
@@ -588,6 +590,8 @@ interface RemoteStatus {
   port: number
   urls: string[]
   pairingCode: string | null
+  pairingMode: 'qr' | 'code'
+  qrPayload: string | null
   devices: { token: string; label: string; createdAt: number }[]
   cloud: {
     enabled: boolean

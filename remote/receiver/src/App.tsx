@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { wsClient, api } from './api/wsClient'
+import { wsClient, api, pair, pairCloud } from './api/wsClient'
 import {
   initRemoteNotifications,
   requestNotificationPermission,
@@ -32,6 +32,31 @@ type Route =
   | { name: 'home' }
   | { name: 'project'; projectId: string; view: 'sessions' | 'settings' }
   | { name: 'session'; projectId: string; sessionId: string }
+
+/**
+ * Parse `#pair=<base64url(JSON)>` written into the URL by a QR-code scan.
+ * Returns null if absent or malformed. Strips the hash from the URL as a
+ * side-effect so a reload doesn't replay the pair attempt (and so the secret
+ * stops being visible in the address bar).
+ */
+function consumePairPayload(): { secret: string; handle?: string } | null {
+  const h = location.hash.replace(/^#/, '')
+  const params = new URLSearchParams(h)
+  const raw = params.get('pair')
+  if (!raw) return null
+  try {
+    const b64 = raw.replace(/-/g, '+').replace(/_/g, '/')
+    const json = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))
+    const data = JSON.parse(json) as { v?: number; secret?: string; handle?: string }
+    // Clear the hash so reloads don't re-trigger and the URL bar stops leaking
+    // the secret. preserveScroll by using replaceState.
+    history.replaceState(null, '', location.pathname + location.search)
+    if (!data.secret) return null
+    return { secret: data.secret, handle: data.handle }
+  } catch {
+    return null
+  }
+}
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#/, '')
@@ -67,10 +92,32 @@ export function App() {
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, Session[]>>({})
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
+  const [autoPairError, setAutoPairError] = useState<string | null>(null)
+
   useEffect(() => {
-    void wsClient.detectMode().then(setMode)
     initRemoteNotifications()
     initSessionStatus()
+    const pairPayload = consumePairPayload()
+    void wsClient.detectMode().then(async (m) => {
+      setMode(m)
+      if (!pairPayload) return
+      const label = navigator.userAgent.split(/[()]/)[1] || 'browser'
+      try {
+        if (m === 'cloud') {
+          if (!pairPayload.handle) {
+            setAutoPairError('QR is missing a cloud handle.')
+            return
+          }
+          await pairCloud(pairPayload.handle.trim().toLowerCase(), pairPayload.secret)
+          setCloudHandle(getStoredHandle())
+        } else {
+          await pair(pairPayload.secret, label)
+          setToken(wsClient.getToken())
+        }
+      } catch (err) {
+        setAutoPairError(err instanceof Error ? err.message : String(err))
+      }
+    })
   }, [])
 
   useEffect(() => {
@@ -199,11 +246,11 @@ export function App() {
   }
 
   if (mode === 'lan' && !token) {
-    return <PairingPage onPaired={() => setToken(wsClient.getToken())} />
+    return <PairingPage initialError={autoPairError} onPaired={() => setToken(wsClient.getToken())} />
   }
 
   if (mode === 'cloud' && !connected && (!cloudHandle || !getStoredTicket())) {
-    return <HandlePage onPaired={() => setCloudHandle(getStoredHandle())} />
+    return <HandlePage initialError={autoPairError} onPaired={() => setCloudHandle(getStoredHandle())} />
   }
 
   const handleUnpair = () => {

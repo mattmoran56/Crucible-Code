@@ -20,7 +20,12 @@ import {
   setCloudStatusListener,
   refreshPhoneTicketForNewCode,
 } from '../../../remote/server/cloud-client'
-import { generatePairingCode, currentPairingCode } from '../../../remote/server/pairing'
+import {
+  generatePairingCode,
+  currentPairingCode,
+  setPairingMode,
+  type PairingMode,
+} from '../../../remote/server/pairing'
 import {
   setRequireApproval,
   approvePairing,
@@ -121,6 +126,16 @@ export function registerRemoteHandlers(window: BrowserWindow) {
   handle(IPC.REMOTE_DENY_PAIRING, async (_e, id: string): Promise<RemoteStatus> => {
     denyPairing(id)
     return getRemoteStatus()
+  })
+
+  handle(IPC.REMOTE_SET_PAIRING_MODE, async (_e, mode: PairingMode): Promise<RemoteStatus> => {
+    setPairingMode(mode)
+    // setPairingMode mints a fresh secret in the new mode; push the new ticket
+    // to the relay so cloud-mode phones using the new secret still connect.
+    await refreshPhoneTicketForNewCode()
+    const status = getRemoteStatus()
+    pushStatus()
+    return status
   })
 
   handle(IPC.REMOTE_REGENERATE_HANDLE, async (): Promise<RemoteStatus> => {

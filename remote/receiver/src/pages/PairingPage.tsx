@@ -1,13 +1,42 @@
 import { useState } from 'react'
-import { pair } from '../api/wsClient'
+import { pair, pairCloud } from '../api/wsClient'
 import { Button } from '@renderer/components/ui/Button'
 import { Input } from '@renderer/components/ui/Input'
+import { QrScanner } from '../components/QrScanner'
 
-export function PairingPage({ onPaired }: { onPaired: () => void }) {
+export function PairingPage({
+  onPaired,
+  initialError = null,
+}: {
+  onPaired: () => void
+  initialError?: string | null
+}) {
   const [code, setCode] = useState('')
   const [label, setLabel] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError)
   const [busy, setBusy] = useState(false)
+  const [scanning, setScanning] = useState(false)
+
+  const onScanned = async (payload: { secret: string; handle?: string }) => {
+    setScanning(false)
+    setError(null)
+    setBusy(true)
+    try {
+      const defaultLabel = label || navigator.userAgent.split(/[()]/)[1] || 'browser'
+      if (payload.handle) {
+        // QR carries a cloud handle — prefer the cloud path even from the LAN
+        // pairing page, since the user obviously has cloud enabled.
+        await pairCloud(payload.handle.trim().toLowerCase(), payload.secret)
+      } else {
+        await pair(payload.secret, defaultLabel)
+      }
+      onPaired()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,6 +53,10 @@ export function PairingPage({ onPaired }: { onPaired: () => void }) {
     }
   }
 
+  if (scanning) {
+    return <QrScanner onScanned={onScanned} onClose={() => setScanning(false)} />
+  }
+
   return (
     <div className="min-h-screen bg-bg text-text flex items-center justify-center p-6" data-theme="dark">
       <div className="w-full max-w-sm">
@@ -35,8 +68,16 @@ export function PairingPage({ onPaired }: { onPaired: () => void }) {
             </span>
           </div>
           <p className="text-sm text-text-muted">
-            Enter the 6-character pairing code shown in the Remote popover on your desktop.
+            Scan the QR shown in the Remote popover, or type the pairing code below.
           </p>
+          <Button
+            type="button"
+            onClick={() => setScanning(true)}
+            className="w-full"
+            style={{ marginTop: 12 }}
+          >
+            Scan QR
+          </Button>
         </div>
 
         <form
@@ -48,7 +89,6 @@ export function PairingPage({ onPaired }: { onPaired: () => void }) {
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder="ABCDEF"
-            maxLength={6}
             style={{ fontSize: 22, letterSpacing: 6, textAlign: 'center', textTransform: 'uppercase' }}
           />
           <Input
@@ -58,7 +98,7 @@ export function PairingPage({ onPaired }: { onPaired: () => void }) {
           />
           <Button
             type="submit"
-            disabled={busy || code.length !== 6}
+            disabled={busy || code.length < 6}
             loading={busy}
             className="w-full"
           >

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import QRCode from 'qrcode'
 
 interface PendingPairing {
   id: string
@@ -14,6 +15,8 @@ interface RemoteStatus {
   port: number
   urls: string[]
   pairingCode: string | null
+  pairingMode: 'qr' | 'code'
+  qrPayload: string | null
   devices: { token: string; label: string; createdAt: number }[]
   cloud: {
     enabled: boolean
@@ -30,6 +33,7 @@ export function RemoteTogglePopover() {
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<RemoteStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
 
   // The mock app + Storybook don't expose the remote namespace on window.api;
@@ -47,6 +51,7 @@ export function RemoteTogglePopover() {
         approvePairing: (id: string) => Promise<RemoteStatus>
         denyPairing: (id: string) => Promise<RemoteStatus>
         onPairingRequested: (cb: (pending: PendingPairing[]) => void) => () => void
+        setPairingMode: (mode: 'qr' | 'code') => Promise<RemoteStatus>
       }
     | undefined
 
@@ -63,6 +68,25 @@ export function RemoteTogglePopover() {
       offReq()
     }
   }, [remoteApi])
+
+  useEffect(() => {
+    const payload = status?.qrPayload
+    if (!payload) {
+      setQrDataUrl(null)
+      return
+    }
+    let cancelled = false
+    QRCode.toDataURL(payload, { margin: 1, width: 200, errorCorrectionLevel: 'M' })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url)
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [status?.qrPayload])
 
   useEffect(() => {
     if (!open) return
@@ -124,6 +148,12 @@ export function RemoteTogglePopover() {
 
   const handleDeny = async (id: string) => {
     setStatus(await remoteApi!.denyPairing(id))
+  }
+
+  const handleTogglePairingMode = async () => {
+    if (!status) return
+    const next = status.pairingMode === 'qr' ? 'code' : 'qr'
+    setStatus(await remoteApi!.setPairingMode(next))
   }
 
   if (!remoteApi) return null
@@ -282,6 +312,30 @@ export function RemoteTogglePopover() {
               {status.requireApproval ? 'On' : 'Off'}
             </label>
           </div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '6px 0',
+              borderBottom: '1px dashed rgba(0,0,0,0.08)',
+            }}
+          >
+            <span
+              style={{ color: '#555' }}
+              title="QR mode shares a much larger secret in a single scan. Short code is easier to type but lower entropy."
+            >
+              Use short code instead of QR
+            </span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={status.pairingMode === 'code'}
+                onChange={handleTogglePairingMode}
+              />
+              {status.pairingMode === 'code' ? 'On' : 'Off'}
+            </label>
+          </div>
           {status.running ? (
             <>
               <div style={{ marginTop: 10, color: '#555' }}>Open on another device:</div>
@@ -293,23 +347,31 @@ export function RemoteTogglePopover() {
                   </li>
                 ))}
               </ul>
-              <div style={{ marginTop: 10, color: '#555' }}>Pairing code:</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <code
-                  style={{
-                    fontSize: 18,
-                    letterSpacing: 2,
-                    padding: '4px 10px',
-                    background: '#f3f4f6',
-                    borderRadius: 4,
-                  }}
-                >
-                  {status.pairingCode ?? '——————'}
-                </code>
-                <button type="button" onClick={handleRegenerate} style={{ fontSize: 12 }}>
-                  Regenerate
-                </button>
-              </div>
+              {status.pairingMode === 'code' ? (
+                <>
+                  <div style={{ marginTop: 10, color: '#555' }}>Pairing code:</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <code
+                      style={{
+                        fontSize: 18,
+                        letterSpacing: 2,
+                        padding: '4px 10px',
+                        background: '#f3f4f6',
+                        borderRadius: 4,
+                      }}
+                    >
+                      {status.pairingCode ?? '——————'}
+                    </code>
+                    <button type="button" onClick={handleRegenerate} style={{ fontSize: 12 }}>
+                      Regenerate
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div style={{ marginTop: 10, fontSize: 11, color: '#888' }}>
+                  QR mode is on — scan the QR in the Cloud relay section below to pair, or switch to short code in settings.
+                </div>
+              )}
               <div style={{ marginTop: 12, color: '#555' }}>
                 Paired devices: {status.devices.length}
               </div>
@@ -369,23 +431,74 @@ export function RemoteTogglePopover() {
                     Regenerate
                   </button>
                 </div>
-                <div style={{ marginTop: 10, color: '#555' }}>Pairing code:</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                  <code
-                    style={{
-                      fontSize: 18,
-                      letterSpacing: 2,
-                      padding: '4px 10px',
-                      background: '#f3f4f6',
-                      borderRadius: 4,
-                    }}
-                  >
-                    {status.pairingCode ?? '——————'}
-                  </code>
-                  <button type="button" onClick={handleRegenerate} style={{ fontSize: 12 }}>
-                    Regenerate
-                  </button>
-                </div>
+                {status.pairingMode === 'code' ? (
+                  <>
+                    <div style={{ marginTop: 10, color: '#555' }}>Pairing code:</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <code
+                        style={{
+                          fontSize: 18,
+                          letterSpacing: 2,
+                          padding: '4px 10px',
+                          background: '#f3f4f6',
+                          borderRadius: 4,
+                        }}
+                      >
+                        {status.pairingCode ?? '——————'}
+                      </code>
+                      <button type="button" onClick={handleRegenerate} style={{ fontSize: 12 }}>
+                        Regenerate
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ marginTop: 10, color: '#555' }}>Scan to pair:</div>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      {qrDataUrl ? (
+                        <img
+                          src={qrDataUrl}
+                          alt="Pairing QR code"
+                          style={{ width: 200, height: 200, background: 'white', borderRadius: 4 }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: 200,
+                            height: 200,
+                            background: '#f3f4f6',
+                            borderRadius: 4,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#888',
+                            fontSize: 11,
+                            padding: 8,
+                            textAlign: 'center',
+                          }}
+                        >
+                          {status.urls.length === 0
+                            ? 'Need LAN relay running to mint a QR'
+                            : 'Generating…'}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: '#888', textAlign: 'center' }}>
+                        Scan from the PWA on your phone — encodes handle + a 52-char secret.
+                      </div>
+                      <button type="button" onClick={handleRegenerate} style={{ fontSize: 12 }}>
+                        Regenerate secret
+                      </button>
+                    </div>
+                  </>
+                )}
                 <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, color: '#555' }}>
                   <span
                     style={{
