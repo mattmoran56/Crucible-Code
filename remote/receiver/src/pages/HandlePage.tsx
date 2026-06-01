@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { pairCloud } from '../api/wsClient'
 import { Button } from '@renderer/components/ui/Button'
 import { Input } from '@renderer/components/ui/Input'
+import { QrScanner } from '../components/QrScanner'
 
 /**
  * Cloud-mode entry. The user types the desktop's word handle plus the 6-char
@@ -20,6 +21,25 @@ export function HandlePage({
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(initialError)
   const [busy, setBusy] = useState(false)
+  const [scanning, setScanning] = useState(false)
+
+  const onScanned = async (payload: { secret: string; handle?: string }) => {
+    setScanning(false)
+    if (!payload.handle) {
+      setError('QR did not include a cloud handle. Make sure cloud relay is on in the desktop popover.')
+      return
+    }
+    setError(null)
+    setBusy(true)
+    try {
+      await pairCloud(payload.handle.trim().toLowerCase(), payload.secret)
+      onPaired()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,6 +61,10 @@ export function HandlePage({
   }
 
   const handleValid = /^[a-z]+(-[a-z]+){2,}$/.test(handle.trim().toLowerCase())
+
+  if (scanning) {
+    return <QrScanner onScanned={onScanned} onClose={() => setScanning(false)} />
+  }
 
   return (
     <div
@@ -66,8 +90,16 @@ export function HandlePage({
             </span>
           </div>
           <p className="text-sm text-text-muted" style={{ marginTop: 8, lineHeight: 1.5 }}>
-            Enter your desktop's handle and the 6-character pairing code shown in its Remote popover.
+            Scan the QR shown in the Remote popover, or type the handle + code below.
           </p>
+          <Button
+            type="button"
+            onClick={() => setScanning(true)}
+            className="w-full"
+            style={{ padding: '14px 16px', fontSize: 16, marginTop: 16 }}
+          >
+            Scan QR
+          </Button>
         </div>
 
         <form
