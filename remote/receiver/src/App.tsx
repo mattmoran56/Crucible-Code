@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
 import { wsClient, api } from './api/wsClient'
+import {
+  initRemoteNotifications,
+  requestNotificationPermission,
+  useNotificationPermission,
+} from './api/notifications'
+import { initSessionStatus, clearContextStatus } from './api/sessionStatus'
 import { PairingPage } from './pages/PairingPage'
 import { HandlePage } from './pages/HandlePage'
 import { getStoredHandle, getCloudToken, getStoredTicket } from './api/cloud'
@@ -63,6 +69,8 @@ export function App() {
 
   useEffect(() => {
     void wsClient.detectMode().then(setMode)
+    initRemoteNotifications()
+    initSessionStatus()
   }, [])
 
   useEffect(() => {
@@ -176,6 +184,9 @@ export function App() {
   }, [activeProjectId])
 
   const navigate = (next: Route) => {
+    // Mirror desktop behaviour: clicking into a session clears its status
+    // indicator so the sidebar dot reflects "user has seen this".
+    if (next.name === 'session') clearContextStatus(next.sessionId)
     location.hash = buildHash(next)
   }
 
@@ -242,6 +253,7 @@ export function App() {
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1 shrink-0" style={{ padding: '0 8px' }}>
+          <NotificationsButton />
           <button
             onClick={handleUnpair}
             className="text-text-muted hover:text-text text-sm md:text-xs"
@@ -325,6 +337,28 @@ export function App() {
         )}
       </div>
     </div>
+  )
+}
+
+function NotificationsButton() {
+  const permission = useNotificationPermission()
+  if (permission === 'granted') return null
+  const label = permission === 'denied' ? 'Notifications blocked' : 'Enable notifications'
+  return (
+    <button
+      onClick={async () => {
+        const result = await requestNotificationPermission()
+        if (result === 'denied') {
+          alert(
+            'Notifications are blocked. On iOS: add this app to your home screen, then re-open and tap "Enable notifications".',
+          )
+        }
+      }}
+      className="text-text-muted hover:text-text text-sm md:text-xs"
+      style={{ padding: '8px 12px' }}
+    >
+      {label}
+    </button>
   )
 }
 
