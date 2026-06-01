@@ -12,6 +12,7 @@
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "clsx": "^2.1.1",
+    "jsqr": "^1.4.0",
     "libsodium-wrappers": "^0.8.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
