@@ -2,6 +2,7 @@ import simpleGit from 'simple-git'
 import { join, dirname, basename, resolve as resolvePath } from 'path'
 import { mkdir, access, realpath } from 'fs/promises'
 import type { WorktreeInfo } from '../../shared/types'
+import { getDefaultBranch } from './git.service'
 
 function worktreeDir(repoPath: string): string {
   const repoName = basename(repoPath)
@@ -77,28 +78,37 @@ export async function createWorktree(
     await g.raw(['commit', '--allow-empty', '-m', 'Initial commit'])
   }
 
-  // Determine the base ref
+  // Determine the base ref. When the caller doesn't specify one, use the
+  // repository's default branch (from `origin/HEAD`) rather than whatever the
+  // main repo happens to be checked out on — otherwise new sessions inherit
+  // the staleness of whatever feature branch the user last looked at.
   let base = baseBranch || ''
   if (!base) {
-    // Detect the default branch name
-    try {
-      base = (await g.raw(['symbolic-ref', '--short', 'HEAD'])).trim()
-    } catch {
-      base = 'HEAD'
-    }
+    base = await getDefaultBranch(repoPath)
   }
 
-  // Fetch the latest version of the base branch from origin
+  // Fetch the latest version of the base branch from origin and prefer the
+  // freshly-fetched remote ref when creating the worktree, so we don't branch
+  // off a stale local copy if `update-ref` fails for any reason.
+  let fetchedRemote = false
   try {
     await g.raw(['fetch', 'origin', base])
-    // Fast-forward the local ref so the worktree starts from the latest
-    await g.raw(['update-ref', `refs/heads/${base}`, `origin/${base}`])
+    fetchedRemote = true
+    // Fast-forward the local ref so subsequent local operations see the latest.
+    try {
+      await g.raw(['update-ref', `refs/heads/${base}`, `origin/${base}`])
+    } catch {
+      // Local ref may be checked out elsewhere; the worktree below still
+      // branches off origin/<base> so we're fine.
+    }
   } catch {
     // Fetch may fail if offline or branch doesn't exist on remote — continue
   }
 
+  const startPoint = fetchedRemote ? `origin/${base}` : base
+
   try {
-    await g.raw(['worktree', 'add', '-b', branchName, wtPath, base])
+    await g.raw(['worktree', 'add', '-b', branchName, wtPath, startPoint])
   } catch (err) {
     // If the worktree path exists the add succeeded — the error came from a
     // post-checkout hook (e.g. git-lfs not installed). Ignore it.

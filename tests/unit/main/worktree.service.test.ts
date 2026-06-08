@@ -90,6 +90,45 @@ describe('worktree.service', () => {
     expect(Object.keys(branches.branches)).not.toContain('session/feat/gone')
   })
 
+  it('createWorktree without a base branches off the remote default branch tip, not the local checkout', async () => {
+    // Simulate a typical user setup: an `origin` remote whose default branch
+    // is `main`, but the user is checked out on a feature branch that's
+    // behind `main`. Notion-fired sessions pass no base branch, so the
+    // worktree should still start from `origin/main`, not the stale local ref.
+    const remotePath = join(tmpRoot, 'remote.git')
+    await mkdir(remotePath, { recursive: true })
+    await simpleGit(remotePath).raw(['init', '--bare'])
+
+    const g = simpleGit(repoPath)
+    await g.raw(['remote', 'add', 'origin', remotePath])
+    await g.raw(['push', 'origin', 'main:main'])
+
+    // Move the local main forward, then push so origin/main is ahead of what
+    // we'll roll the local main back to.
+    await writeFile(join(repoPath, 'NEW.md'), 'new on main\n')
+    await g.add('NEW.md')
+    await g.commit('main moved forward')
+    await g.raw(['push', 'origin', 'main'])
+    const remoteMainSha = (await g.revparse(['HEAD'])).trim()
+
+    // Roll the local main ref back to its initial commit so it's stale
+    // relative to origin/main, then switch to a feature branch off that
+    // stale local main. This mimics the real failure: the user's local main
+    // hasn't been pulled, and they're sitting on a feature branch that's
+    // behind the actual remote default.
+    await g.raw(['reset', '--hard', 'HEAD~1'])
+    await g.checkoutLocalBranch('feature-a')
+
+    // Mark `main` as the remote's default so getDefaultBranch() can find it.
+    await g.raw(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'])
+
+    // No baseBranch passed — mirrors the Notion auto-pickup path.
+    const info = await createWorktree(repoPath, 'auto/notion')
+
+    const wtSha = (await simpleGit(info.path).revparse(['HEAD'])).trim()
+    expect(wtSha).toBe(remoteMainSha)
+  })
+
   it('removeWorktree leaves non-session branches alone', async () => {
     // Create a regular branch and attach a worktree to it manually.
     const g = simpleGit(repoPath)
