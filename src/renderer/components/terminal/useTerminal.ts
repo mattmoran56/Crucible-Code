@@ -124,10 +124,17 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       if (id !== terminalId) return
       smartScroll.write(data)
 
-      // Intervention detection
-      lineBuffer.current += data
-      if (lineBuffer.current.length > 2000) {
-        lineBuffer.current = lineBuffer.current.slice(-2000)
+      // Intervention detection. PTY data is batched on the main side into
+      // ~16ms windows, so this runs ~60Hz at worst; only the trailing 2KB
+      // can possibly match an intervention pattern, so we cap the running
+      // line buffer at 2KB without ever building a larger temporary string.
+      const INTERVENTION_WINDOW = 2000
+      if (data.length >= INTERVENTION_WINDOW) {
+        lineBuffer.current = data.slice(-INTERVENTION_WINDOW)
+      } else if (lineBuffer.current.length + data.length > INTERVENTION_WINDOW) {
+        lineBuffer.current = (lineBuffer.current + data).slice(-INTERVENTION_WINDOW)
+      } else {
+        lineBuffer.current += data
       }
       for (const pattern of INTERVENTION_PATTERNS) {
         if (pattern.test(lineBuffer.current)) {

@@ -24,14 +24,29 @@ interface TerminalInstance {
   contextId: string
   /** Workspace tab id (e.g. 'agent', 'agent:1', 'review'). Used for per-agent hook routing. */
   tabId: string
-  /** Rolling tail of recent PTY output so remote attachers see what just happened. */
-  buffer: string
+  /**
+   * Rolling tail of recent PTY output so remote attachers see what just
+   * happened. Stored as chunks + a running byte counter to keep appends O(1)
+   * amortized — concatenating into a single 64KB string on every PTY chunk
+   * was a measurable CPU hotspot during Claude streaming.
+   */
+  bufferChunks: string[]
+  bufferSize: number
 }
 
 const BUFFER_CAP = 64 * 1024
+// Compact the rolling buffer when it grows past this size; trades a rare
+// O(n) join for O(1) appends in between.
+const BUFFER_COMPACT_AT = BUFFER_CAP * 2
 
 function appendToBuffer(instance: TerminalInstance, chunk: string): void {
-  instance.buffer = (instance.buffer + chunk).slice(-BUFFER_CAP)
+  instance.bufferChunks.push(chunk)
+  instance.bufferSize += chunk.length
+  if (instance.bufferSize > BUFFER_COMPACT_AT) {
+    const compacted = instance.bufferChunks.join('').slice(-BUFFER_CAP)
+    instance.bufferChunks = [compacted]
+    instance.bufferSize = compacted.length
+  }
 }
 
 export interface PersistedTerminal {
@@ -163,13 +178,41 @@ function spawnPty(
     env,
   })
 
+  // Coalesce PTY data into ~16ms (one render frame) windows before crossing
+  // the IPC boundary. Claude streaming can fire 100+ data callbacks per
+  // second; one IPC + structured-clone per chunk used to dominate main-process
+  // CPU. We still append to the rolling buffer synchronously so getTerminalBuffer
+  // returns up-to-date bytes to late attachers.
+  let pendingChunks: string[] = []
+  let flushTimer: NodeJS.Timeout | null = null
+
+  const flushPending = (): void => {
+    flushTimer = null
+    if (pendingChunks.length === 0) return
+    const out = pendingChunks.length === 1 ? pendingChunks[0] : pendingChunks.join('')
+    pendingChunks = []
+    safeSend(instance.window, IPC.TERMINAL_DATA, terminalId, out)
+  }
+
   ptyProcess.onData((data) => {
     const current = terminals.get(terminalId)
     if (current) appendToBuffer(current, data)
-    safeSend(instance.window, IPC.TERMINAL_DATA, terminalId, data)
+    pendingChunks.push(data)
+    if (!flushTimer) {
+      flushTimer = setTimeout(flushPending, 16)
+    }
   })
 
   ptyProcess.onExit(({ exitCode }) => {
+    // Drain anything left in the IPC batch before the exit/restart banner so
+    // the renderer never loses the trailing bytes that landed inside the
+    // last coalesce window.
+    if (flushTimer) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
+    flushPending()
+
     // During shutdown, skip all exit handling to avoid errors
     if (shuttingDown) return
 
@@ -259,7 +302,13 @@ export function spawnTerminal(
   }
   const ptyProcess = spawnPty(terminalId, instanceBase, resume)
 
-  const instance: TerminalInstance = { ...instanceBase, pty: ptyProcess, stopped: false, buffer: '' }
+  const instance: TerminalInstance = {
+    ...instanceBase,
+    pty: ptyProcess,
+    stopped: false,
+    bufferChunks: [],
+    bufferSize: 0,
+  }
   terminals.set(terminalId, instance)
   persistTerminal(terminalId, instance)
   return terminalId
@@ -322,7 +371,14 @@ export function listTerminalsForSession(sessionId: string): Array<{
 
 /** Return the recent output tail for a terminal so a late-attacher can render context. */
 export function getTerminalBuffer(terminalId: string): string {
-  return terminals.get(terminalId)?.buffer ?? ''
+  const instance = terminals.get(terminalId)
+  if (!instance || instance.bufferChunks.length === 0) return ''
+  if (instance.bufferChunks.length === 1) return instance.bufferChunks[0]
+  // Compact on read so subsequent reads (and the next appendToBuffer) are cheap.
+  const compacted = instance.bufferChunks.join('').slice(-BUFFER_CAP)
+  instance.bufferChunks = [compacted]
+  instance.bufferSize = compacted.length
+  return compacted
 }
 
 export function writeTerminal(terminalId: string, data: string): void {
