@@ -482,7 +482,12 @@ export function GitPanelView({ repoPath, baseBranch, sessionId, visible }: GitPa
     }
 
     refresh()
-    const id = setInterval(refresh, POLL_INTERVAL)
+    // 3s poll is fine while the panel is in front of the user, but pointless
+    // while the window is hidden — pause to save CPU.
+    const id = setInterval(() => {
+      if (document.hidden) return
+      refresh()
+    }, POLL_INTERVAL)
     return () => clearInterval(id)
   }, [repoPath, visible, previewActive])
 

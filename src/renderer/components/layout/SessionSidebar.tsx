@@ -160,6 +160,10 @@ export function SessionSidebar() {
     const startPolling = () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
       pollIntervalRef.current = setInterval(() => {
+        // Skip polling while the window is hidden/minimized — GitHub API
+        // hits + the resulting store update + sidebar re-render add up over
+        // hours of background time.
+        if (document.hidden) return
         loadPRs(activeProject.repoPath)
       }, PR_POLL_INTERVAL)
     }
@@ -182,6 +186,7 @@ export function SessionSidebar() {
     const prefix = activeProject.claudeWebBranchPrefix
     loadClaudeWebSessions(repoPath, prefix, currentUser)
     const interval = setInterval(() => {
+      if (document.hidden) return
       loadClaudeWebSessions(repoPath, prefix, currentUser)
     }, PR_POLL_INTERVAL)
     return () => clearInterval(interval)
@@ -479,6 +484,7 @@ export function SessionSidebar() {
 
     const check = async () => {
       if (!activeProject) return
+      if (document.hidden) return
       const now = Date.now()
       const delayMs = mergedCleanupDelay * 60_000
 
