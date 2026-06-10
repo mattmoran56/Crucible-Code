@@ -51,3 +51,91 @@ describe('toastStore', () => {
     expect(messages).toEqual(['b'])
   })
 })
+
+describe('toastStore edge cases', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    useToastStore.setState({ toasts: [] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    useToastStore.setState({ toasts: [] })
+  })
+
+  it('supports all three toast types', () => {
+    useToastStore.getState().addToast('error', 'e')
+    useToastStore.getState().addToast('success', 's')
+    useToastStore.getState().addToast('info', 'i')
+    expect(useToastStore.getState().toasts.map((t) => t.type)).toEqual([
+      'error',
+      'success',
+      'info',
+    ])
+  })
+
+  it('removeToast with an unknown id leaves the list unchanged', () => {
+    useToastStore.getState().addToast('info', 'stay')
+    useToastStore.getState().removeToast('not-a-real-id')
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(['stay'])
+  })
+
+  it('removeToast on an empty store is a harmless no-op', () => {
+    useToastStore.getState().removeToast('anything')
+    expect(useToastStore.getState().toasts).toEqual([])
+  })
+
+  it('a manually removed toast does not break later auto-dismissal of others', () => {
+    useToastStore.getState().addToast('info', 'first')
+    vi.advanceTimersByTime(1_000)
+    useToastStore.getState().addToast('info', 'second')
+    const [first] = useToastStore.getState().toasts
+    useToastStore.getState().removeToast(first.id)
+    // first's timer fires at t=5s; second should survive until t=6s
+    vi.advanceTimersByTime(4_000)
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(['second'])
+    vi.advanceTimersByTime(1_000)
+    expect(useToastStore.getState().toasts).toEqual([])
+  })
+
+  it('staggered toasts expire individually in creation order', () => {
+    useToastStore.getState().addToast('info', 'a')
+    vi.advanceTimersByTime(2_000)
+    useToastStore.getState().addToast('info', 'b')
+    vi.advanceTimersByTime(2_000)
+    useToastStore.getState().addToast('info', 'c')
+    vi.advanceTimersByTime(1_000) // t=5s: a expires
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(['b', 'c'])
+    vi.advanceTimersByTime(2_000) // t=7s: b expires
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual(['c'])
+    vi.advanceTimersByTime(2_000) // t=9s: c expires
+    expect(useToastStore.getState().toasts).toEqual([])
+  })
+
+  it('toasts added in the same tick all dismiss together after 5 seconds', () => {
+    useToastStore.getState().addToast('info', 'x')
+    useToastStore.getState().addToast('info', 'y')
+    useToastStore.getState().addToast('info', 'z')
+    vi.advanceTimersByTime(5_000)
+    expect(useToastStore.getState().toasts).toEqual([])
+  })
+
+  it('generates unique ids across many rapid toasts', () => {
+    for (let i = 0; i < 20; i++) {
+      useToastStore.getState().addToast('info', `msg-${i}`)
+    }
+    const ids = useToastStore.getState().toasts.map((t) => t.id)
+    expect(new Set(ids).size).toBe(20)
+  })
+
+  it('preserves insertion order of pending toasts', () => {
+    useToastStore.getState().addToast('error', 'one')
+    useToastStore.getState().addToast('success', 'two')
+    useToastStore.getState().addToast('info', 'three')
+    expect(useToastStore.getState().toasts.map((t) => t.message)).toEqual([
+      'one',
+      'two',
+      'three',
+    ])
+  })
+})
