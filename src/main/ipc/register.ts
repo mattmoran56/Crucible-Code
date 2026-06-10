@@ -17,6 +17,7 @@ import { registerReviewLoopHandlers } from './review-loop.ipc'
 import { registerClaudeWebHandlers } from './claudeWeb.ipc'
 import { registerSchedulerHandlers } from './scheduler.ipc'
 import { registerNotionHandlers } from './notion.ipc'
+import { registerFoundryHandlers } from './foundry.ipc'
 import { registerRemoteHandlers } from './remote.ipc'
 import {
   registerContextMapping,
@@ -42,6 +43,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerClaudeWebHandlers()
   registerSchedulerHandlers(window)
   registerNotionHandlers(window)
+  registerFoundryHandlers(window)
   registerRemoteHandlers(window)
 
   // Context mapping management for notification routing.

@@ -8,6 +8,7 @@ import { RightActivityBar } from './components/layout/RightActivityBar'
 import { NotesPanel } from './components/notes/NotesPanel'
 import { UsagePanel } from './components/usage/UsagePanel'
 import { PermissionsPanel } from './components/permissions/PermissionsPanel'
+import { FoundryPanel } from './components/foundry/FoundryPanel'
 import { useUsageStore } from './stores/usageStore'
 import { ResizeHandle, IconButton } from './components/ui'
 import { useProjectStore } from './stores/projectStore'
@@ -26,6 +27,7 @@ import { useButtonShortcuts } from './hooks/useButtonShortcuts'
 import { useReviewLoopStore } from './stores/reviewLoopStore'
 import { useSchedulerBootstrap } from './hooks/useSchedulerBootstrap'
 import { useNotionBootstrap } from './hooks/useNotionBootstrap'
+import { useFoundryBootstrap } from './hooks/useFoundryBootstrap'
 import { UsageLimitToast } from './components/usage/UsageLimitToast'
 
 export default function App() {
@@ -41,6 +43,7 @@ export default function App() {
   useButtonShortcuts()
   useSchedulerBootstrap()
   useNotionBootstrap()
+  useFoundryBootstrap()
 
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
   const rightPanel = useResizable({ direction: 'horizontal', initialSize: 300, minSize: 200, maxSize: 600, inverted: true })
@@ -211,7 +214,7 @@ export default function App() {
                   style={{ padding: '10px 12px' }}
                 >
                   <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel === 'permissions' ? 'Permissions' : activeRightPanel}
+                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel === 'permissions' ? 'Permissions' : activeRightPanel === 'foundry' ? 'Foundry' : activeRightPanel}
                   </span>
                   <IconButton label="Close panel" onClick={() => setActiveRightPanel(null)}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -223,6 +226,7 @@ export default function App() {
                   {activeRightPanel === 'notes' && <NotesPanel />}
                   {activeRightPanel === 'usage' && <UsagePanel />}
                   {activeRightPanel === 'permissions' && <PermissionsPanel />}
+                  {activeRightPanel === 'foundry' && <FoundryPanel />}
                 </div>
               </div>
             </>

@@ -1,0 +1,1011 @@
+/**
+ * Foundry — autopilot orchestrator over a Notion task set.
+ *
+ * Lifecycle of a task ("pipeline"):
+ *   spawn-requested → implementing → pushing → creating-pr → reviewing →
+ *   finalizing → done
+ *
+ * The deterministic FSM lives here; the brain (which tasks to start, in what
+ * order) is the Foreman pass, see foundry-foreman.service.ts.
+ */
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import type { BrowserWindow } from 'electron'
+import Store from 'electron-store'
+import { IPC } from '../../shared/constants'
+import type {
+  FoundryConfig,
+  FoundryFireTaskPayload,
+  FoundryPipeline,
+  FoundryPipelinePhase,
+  FoundryPipelineAction,
+  FoundryRuntimeState,
+  FoundryTaskStartedAck,
+  FoundryWorkerPermissionMode,
+  NotionPropertyFilter,
+  NotionTaskPayload,
+  ReviewLoopState,
+} from '../../shared/types'
+import { getStorePath } from '../store-path'
+import { eventBus, emitToRenderer } from './event-bus'
+import {
+  appendMarkdownBlocks,
+  getEffectiveFilterGroups,
+  queryDatabase,
+  resolvePlaceholders,
+  slugify,
+  updatePageProperties,
+} from './notion.service'
+import { addPickedUp, loadConfig as loadNotionConfig } from './notion-poller.service'
+import {
+  createDraftPR,
+  findPRForBranch,
+  markPRReady,
+} from './github.service'
+import { startReviewLoopLite } from './review-loop-lite.service'
+
+const execFileAsync = promisify(execFile)
+
+const WATCH_INTERVAL_MS = 20_000
+const REQUEST_PASS_DEBOUNCE_MS = 5_000
+const WATCHDOG_INTERVAL_MS = 60_000
+const ACK_TIMEOUT_MS = 30_000
+const ACK_REFIRE_MAX = 3
+const STARTUP_RENDERER_BUFFER_MS = 2_500
+const DEFAULT_IMPLEMENT_TIMEOUT_MIN = 60
+const DEFAULT_MAX_CONCURRENCY = 2
+const FOUNDRY_PIPELINE_MARKER_PREFIX = 'foundry-pipeline:'
+
+const PERMISSION_MODE_ARGS: Record<FoundryWorkerPermissionMode, string[]> = {
+  bypassPermissions: ['--dangerously-skip-permissions'],
+  acceptEdits: ['--permission-mode', 'acceptEdits'],
+  default: [],
+}
+
+interface ConfigStoreShape {
+  foundries: FoundryConfig[]
+}
+interface StateStoreShape {
+  states: Record<string, FoundryRuntimeState>
+}
+
+const configStore = new Store<ConfigStoreShape>({
+  cwd: getStorePath(),
+  name: 'foundry-config',
+  defaults: { foundries: [] },
+})
+
+const stateStore = new Store<StateStoreShape>({
+  cwd: getStorePath(),
+  name: 'foundry-state',
+  defaults: { states: {} },
+})
+
+interface FoundryRuntime {
+  config: FoundryConfig
+  state: FoundryRuntimeState
+  watchTimer?: ReturnType<typeof setInterval>
+  watchdogTimer?: ReturnType<typeof setInterval>
+  passDebounceTimer?: ReturnType<typeof setTimeout>
+  passRerunRequested?: boolean
+  pipelineAcks: Map<string, { fired: number; timer?: ReturnType<typeof setTimeout> }>
+  advancing: Set<string>
+}
+
+const runtimes = new Map<string, FoundryRuntime>()
+let mainWindow: BrowserWindow | null = null
+let started = false
+let unsubReviewLoop: (() => void) | null = null
+let unsubSessionStatus: (() => void) | null = null
+
+/** Listener slot for the foreman module — populated by registerForemanRunner. */
+let runForemanPass:
+  | ((opts: { foundryId: string; trigger: import('../../shared/types').FoundryPassTrigger }) => Promise<void>)
+  | null = null
+
+export function registerForemanRunner(
+  runner: (opts: { foundryId: string; trigger: import('../../shared/types').FoundryPassTrigger }) => Promise<void>
+): void {
+  runForemanPass = runner
+}
+
+// ── Public API ──────────────────────────────────────────────────────────────
+
+export function listConfigs(): FoundryConfig[] {
+  return loadAllConfigsFresh()
+}
+
+function loadAllConfigsFresh(): FoundryConfig[] {
+  const fresh = new Store<ConfigStoreShape>({
+    cwd: getStorePath(),
+    name: 'foundry-config',
+    defaults: { foundries: [] },
+  })
+  return fresh.get('foundries', [])
+}
+
+function loadStateFresh(foundryId: string): FoundryRuntimeState | null {
+  const fresh = new Store<StateStoreShape>({
+    cwd: getStorePath(),
+    name: 'foundry-state',
+    defaults: { states: {} },
+  })
+  const all = fresh.get('states', {})
+  return all[foundryId] ?? null
+}
+
+export function saveConfig(config: FoundryConfig): FoundryConfig[] {
+  const all = configStore.get('foundries', [])
+  const idx = all.findIndex((f) => f.id === config.id)
+  if (idx >= 0) all[idx] = config
+  else all.push(config)
+  configStore.set('foundries', all)
+  syncRuntimeForConfig(config)
+  return all
+}
+
+export function deleteConfig(foundryId: string): FoundryConfig[] {
+  const all = configStore.get('foundries', []).filter((f) => f.id !== foundryId)
+  configStore.set('foundries', all)
+  const rt = runtimes.get(foundryId)
+  if (rt) {
+    teardownRuntime(rt)
+    // Existing pipelines become orphaned (worktrees/sessions stay so the user
+    // can salvage them).
+    for (const p of rt.state.pipelines) {
+      if (!isTerminal(p.phase)) p.phase = 'orphaned'
+    }
+    saveState(rt)
+    runtimes.delete(foundryId)
+  }
+  const states = stateStore.get('states', {})
+  delete states[foundryId]
+  stateStore.set('states', states)
+  return all
+}
+
+export function setPaused(foundryId: string, paused: boolean): void {
+  const cfg = loadAllConfigsFresh().find((f) => f.id === foundryId)
+  if (!cfg) return
+  saveConfig({ ...cfg, paused })
+}
+
+export function getState(foundryId: string): FoundryRuntimeState | null {
+  return runtimes.get(foundryId)?.state ?? loadStateFresh(foundryId)
+}
+
+export function runPassNow(foundryId: string): void {
+  const rt = runtimes.get(foundryId)
+  if (!rt) return
+  requestPass(rt, 'manual', /*immediate*/ true)
+}
+
+export function pipelineAction(
+  foundryId: string,
+  pipelineId: string,
+  action: FoundryPipelineAction
+): void {
+  const rt = runtimes.get(foundryId)
+  if (!rt) return
+  const p = rt.state.pipelines.find((pp) => pp.id === pipelineId)
+  if (!p) return
+  switch (action) {
+    case 'cancel':
+      p.phase = 'cancelled'
+      p.attention = undefined
+      log(p, 'Pipeline cancelled by user.')
+      saveAndEmit(rt)
+      break
+    case 'resume':
+      if (p.phase === 'cancelled' || p.attention) {
+        p.attention = undefined
+        // Pick up where we left off — verify implements before moving on.
+        void advanceFromImplementing(rt, p).catch((err) => {
+          log(p, `Resume failed: ${err instanceof Error ? err.message : String(err)}`)
+          saveAndEmit(rt)
+        })
+        log(p, 'Resume requested.')
+        saveAndEmit(rt)
+      }
+      break
+    case 'retry-phase':
+      void retryPhase(rt, p)
+      break
+    case 'skip-phase':
+      void skipPhase(rt, p)
+      break
+  }
+}
+
+export function ackTaskStarted(foundryId: string, ack: FoundryTaskStartedAck): void {
+  const rt = runtimes.get(foundryId)
+  if (!rt) return
+  const p = rt.state.pipelines.find((pp) => pp.id === ack.pipelineId)
+  if (!p) return
+  const stash = rt.pipelineAcks.get(ack.pipelineId)
+  if (stash?.timer) clearTimeout(stash.timer)
+  rt.pipelineAcks.delete(ack.pipelineId)
+  p.sessionId = ack.sessionId
+  p.branch = ack.branch
+  p.worktreePath = ack.worktreePath
+  p.baseBranch = ack.baseBranch
+  p.phase = 'implementing'
+  log(p, `Worker session ${ack.sessionId.slice(0, 8)}… spawned on ${ack.branch}.`)
+  saveAndEmit(rt)
+  // Apply deferred Notion updates (branch / sessionId placeholders) for pickup.
+  void applyDeferredPickupUpdates(rt, p).catch((err) =>
+    log(p, `Deferred pickup updates failed: ${err instanceof Error ? err.message : String(err)}`)
+  )
+}
+
+// ── Watcher + start/stop ────────────────────────────────────────────────────
+
+export function startFoundryService(window: BrowserWindow): void {
+  if (started) return
+  started = true
+  mainWindow = window
+
+  // Resync runtimes from saved configs.
+  for (const cfg of loadAllConfigsFresh()) syncRuntimeForConfig(cfg)
+
+  // Subscribe to review-loop completion to advance reviewing → finalizing.
+  unsubReviewLoop = subscribeOnBus(IPC.REVIEW_LOOP_STATE_UPDATE, (state: ReviewLoopState) => {
+    void onReviewLoopUpdate(state)
+  })
+  // Subscribe to per-session hook events — used as "stop" hints for the
+  // implementing phase. (See verifyImplementDone for the verification core.)
+  unsubSessionStatus = subscribeOnBus(
+    IPC.NOTIFICATION_SESSION_STATUS,
+    (contextId: string, _tabId: string, hookType: string) => {
+      if (hookType !== 'stop' && hookType !== 'notification') return
+      void onSessionHookEvent(contextId, hookType)
+    }
+  )
+
+  // After the renderer is ready, fire startup-time triggers + rehydrate.
+  setTimeout(() => {
+    for (const rt of runtimes.values()) {
+      rehydrateAfterStartup(rt)
+      requestPass(rt, 'startup', /*immediate*/ false)
+    }
+  }, STARTUP_RENDERER_BUFFER_MS)
+}
+
+export function stopFoundryService(): void {
+  for (const rt of runtimes.values()) teardownRuntime(rt)
+  runtimes.clear()
+  if (unsubReviewLoop) unsubReviewLoop()
+  if (unsubSessionStatus) unsubSessionStatus()
+  unsubReviewLoop = null
+  unsubSessionStatus = null
+  mainWindow = null
+  started = false
+}
+
+function subscribeOnBus(channel: string, listener: (...args: any[]) => void): () => void {
+  eventBus.on(channel, listener)
+  return () => eventBus.off(channel, listener)
+}
+
+function syncRuntimeForConfig(config: FoundryConfig): void {
+  const existing = runtimes.get(config.id)
+  if (existing) {
+    existing.config = config
+    if (config.enabled && !config.paused) {
+      ensureWatchTimer(existing)
+    } else {
+      stopTimers(existing)
+    }
+    saveAndEmit(existing)
+    return
+  }
+  const state: FoundryRuntimeState = loadStateFresh(config.id) ?? {
+    foundryId: config.id,
+    pageStatusSnapshot: {},
+    documentedHashes: {},
+    pipelines: [],
+    passes: [],
+  }
+  const rt: FoundryRuntime = {
+    config,
+    state,
+    pipelineAcks: new Map(),
+    advancing: new Set(),
+  }
+  runtimes.set(config.id, rt)
+  if (config.enabled && !config.paused) {
+    ensureWatchTimer(rt)
+    // Newly-enabled foundries should fire a pass once the renderer is up.
+    setTimeout(() => requestPass(rt, 'enabled', false), STARTUP_RENDERER_BUFFER_MS)
+  }
+  saveAndEmit(rt)
+}
+
+function ensureWatchTimer(rt: FoundryRuntime): void {
+  if (!rt.watchTimer) {
+    rt.watchTimer = setInterval(() => void tick(rt), WATCH_INTERVAL_MS)
+  }
+  if (!rt.watchdogTimer) {
+    rt.watchdogTimer = setInterval(() => void watchdog(rt), WATCHDOG_INTERVAL_MS)
+  }
+}
+
+function stopTimers(rt: FoundryRuntime): void {
+  if (rt.watchTimer) clearInterval(rt.watchTimer)
+  if (rt.watchdogTimer) clearInterval(rt.watchdogTimer)
+  if (rt.passDebounceTimer) clearTimeout(rt.passDebounceTimer)
+  rt.watchTimer = undefined
+  rt.watchdogTimer = undefined
+  rt.passDebounceTimer = undefined
+}
+
+function teardownRuntime(rt: FoundryRuntime): void {
+  stopTimers(rt)
+  for (const a of rt.pipelineAcks.values()) {
+    if (a.timer) clearTimeout(a.timer)
+  }
+  rt.pipelineAcks.clear()
+}
+
+// ── Snapshot diff watcher ───────────────────────────────────────────────────
+
+export async function tick(rt: FoundryRuntime): Promise<void> {
+  // Re-read config so MCP-driven JSON edits land without a restart.
+  const fresh = loadAllConfigsFresh().find((f) => f.id === rt.config.id)
+  if (!fresh) return
+  rt.config = fresh
+  if (!fresh.enabled || fresh.paused) return
+
+  const notion = notionAccess(fresh)
+  if (!notion) return
+
+  let pages: NotionTaskPayload[]
+  try {
+    pages = await queryDatabase(notion.apiToken, notion.databaseId, fresh.taskSetFilters, notion.titlePropertyName)
+  } catch (err) {
+    rt.state.lastError = `task-set query failed: ${err instanceof Error ? err.message : String(err)}`
+    saveAndEmit(rt)
+    return
+  }
+
+  const prevSnapshot = rt.state.pageStatusSnapshot
+  const isFirstTick = Object.keys(prevSnapshot).length === 0
+  const newSnapshot: Record<string, string> = {}
+  const completionProp = fresh.completionTransition.property
+  const completedStatuses = new Set(fresh.completedStatuses ?? [])
+  const transitionFires: string[] = []
+
+  for (const p of pages) {
+    const status = extractStatusLike(p.rawProperties, completionProp)
+    newSnapshot[p.id] = status
+    if (isFirstTick) continue
+    const prior = prevSnapshot[p.id]
+    if (prior === status) continue
+    const t = fresh.completionTransition
+    if (t.toValue && status === t.toValue && (!t.fromValue || prior === t.fromValue)) {
+      transitionFires.push(p.id)
+      continue
+    }
+    if (fresh.triggerOnCompletedStatusEnter !== false && completedStatuses.has(status) && !completedStatuses.has(prior ?? '')) {
+      transitionFires.push(p.id)
+    }
+  }
+  rt.state.pageStatusSnapshot = newSnapshot
+  saveAndEmit(rt)
+
+  if (transitionFires.length > 0) {
+    requestPass(rt, 'transition', /*immediate*/ false)
+  }
+}
+
+function extractStatusLike(props: Record<string, unknown>, propName: string): string {
+  const prop = props[propName] as Record<string, unknown> | undefined
+  if (!prop || typeof prop !== 'object') return ''
+  const type = String(prop.type ?? '')
+  if (type === 'status' || type === 'select') {
+    const val = (prop as any)[type] as { name?: string } | null
+    return val?.name ?? ''
+  }
+  if (type === 'checkbox') return prop.checkbox ? 'true' : 'false'
+  if (type === 'rich_text' || type === 'title') {
+    const rt = (prop as any)[type] as Array<{ plain_text?: string }> | undefined
+    return (rt ?? []).map((s) => s.plain_text ?? '').join('')
+  }
+  return ''
+}
+
+// ── Pass requests (debounced + single-flight) ───────────────────────────────
+
+export function requestPass(
+  rt: FoundryRuntime,
+  trigger: import('../../shared/types').FoundryPassTrigger,
+  immediate: boolean
+): void {
+  const fire = (): void => {
+    if (rt.state.passInFlight) {
+      rt.passRerunRequested = true
+      return
+    }
+    rt.state.passInFlight = true
+    saveAndEmit(rt)
+    const runner = runForemanPass
+    if (!runner) {
+      rt.state.passInFlight = false
+      rt.state.lastError = 'foreman runner not registered'
+      saveAndEmit(rt)
+      return
+    }
+    void runner({ foundryId: rt.config.id, trigger }).finally(() => {
+      rt.state.passInFlight = false
+      saveAndEmit(rt)
+      if (rt.passRerunRequested) {
+        rt.passRerunRequested = false
+        requestPass(rt, 'transition', false)
+      }
+    })
+  }
+  if (immediate) {
+    if (rt.passDebounceTimer) clearTimeout(rt.passDebounceTimer)
+    rt.passDebounceTimer = undefined
+    fire()
+    return
+  }
+  if (rt.passDebounceTimer) clearTimeout(rt.passDebounceTimer)
+  rt.passDebounceTimer = setTimeout(fire, REQUEST_PASS_DEBOUNCE_MS)
+}
+
+// ── Pipeline lifecycle ──────────────────────────────────────────────────────
+
+export interface StartPipelineOptions {
+  foundryId: string
+  page: NotionTaskPayload
+  reason: string
+}
+
+export async function startPipeline(opts: StartPipelineOptions): Promise<FoundryPipeline | null> {
+  const rt = runtimes.get(opts.foundryId)
+  if (!rt) return null
+  if (rt.state.pipelines.some((p) => p.page.id === opts.page.id && !isTerminal(p.phase))) {
+    return null
+  }
+  if (countActivePipelines(rt) >= (rt.config.maxConcurrentTasks ?? DEFAULT_MAX_CONCURRENCY)) {
+    return null
+  }
+  const notion = notionAccess(rt.config)
+  if (!notion) return null
+
+  const ctx = buildPlaceholderContext(opts.page)
+  const branchTemplate = rt.config.branchNameTemplate ?? 'foundry/{{taskTitleSlug}}'
+  const suggestedBranchName = resolvePlaceholders(branchTemplate, ctx) || `foundry/${opts.page.id.slice(0, 8)}`
+  const suggestedSessionName = opts.page.title ? slugify(opts.page.title) || `foundry-${opts.page.id.slice(0, 8)}` : `foundry-${opts.page.id.slice(0, 8)}`
+  const resolvedImplementPrompt = resolvePlaceholders(rt.config.implementCommandTemplate, ctx) + IMPLEMENT_PROMPT_SUFFIX
+
+  // Apply immediate pickup updates BEFORE firing (matches notion-poller).
+  const immediate = (rt.config.pickupUpdates ?? []).filter((u) => !valueReferencesSession(u.value))
+  try {
+    if (immediate.length > 0) {
+      await updatePageProperties(notion.apiToken, opts.page.id, immediate, ctx)
+    }
+  } catch (err) {
+    rt.state.lastError = `pickup-updates failed for ${opts.page.id}: ${err instanceof Error ? err.message : String(err)}`
+    saveAndEmit(rt)
+    return null
+  }
+
+  // Cross-feature guard: tell the classic notion poller this page is claimed.
+  addPickedUp(rt.config.projectId, [opts.page.id])
+
+  const pipeline: FoundryPipeline = {
+    id: `pipe-${rt.config.id}-${opts.page.id.slice(0, 8)}-${Date.now().toString(36)}`,
+    foundryId: rt.config.id,
+    page: opts.page,
+    phase: 'spawn-requested',
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    log: [`Pipeline started — ${opts.reason}`],
+    baseBranch: rt.config.baseBranch,
+  }
+  rt.state.pipelines.push(pipeline)
+  saveAndEmit(rt)
+
+  const payload: FoundryFireTaskPayload = {
+    foundryId: rt.config.id,
+    pipelineId: pipeline.id,
+    projectId: rt.config.projectId,
+    page: opts.page,
+    resolvedImplementPrompt,
+    suggestedBranchName,
+    suggestedSessionName,
+    baseBranch: rt.config.baseBranch,
+    workerPermissionMode: rt.config.workerPermissionMode,
+  }
+  fireWorkerSpawn(rt, pipeline, payload)
+  return pipeline
+}
+
+function fireWorkerSpawn(rt: FoundryRuntime, pipeline: FoundryPipeline, payload: FoundryFireTaskPayload): void {
+  const win = mainWindow
+  if (!win || win.isDestroyed()) return
+  const prior = rt.pipelineAcks.get(pipeline.id)
+  const fired = (prior?.fired ?? 0) + 1
+  if (prior?.timer) clearTimeout(prior.timer)
+  const timer = setTimeout(() => {
+    const pp = rt.state.pipelines.find((x) => x.id === pipeline.id)
+    if (!pp || pp.phase !== 'spawn-requested') return
+    if (fired >= ACK_REFIRE_MAX) {
+      pp.attention = { reason: 'worker-spawn ack never arrived', since: new Date().toISOString() }
+      log(pp, `Worker spawn never acked after ${ACK_REFIRE_MAX} attempts.`)
+      saveAndEmit(rt)
+      rt.pipelineAcks.delete(pipeline.id)
+      return
+    }
+    fireWorkerSpawn(rt, pp, payload)
+  }, ACK_TIMEOUT_MS)
+  rt.pipelineAcks.set(pipeline.id, { fired, timer })
+  emitToRenderer(win, IPC.FOUNDRY_FIRE_TASK, payload)
+}
+
+const IMPLEMENT_PROMPT_SUFFIX = `
+
+When the ticket is fully implemented: stage and commit all changes with a clear message. Do not push, open a PR, or update Notion — the Foundry handles those. If you are blocked or need a decision, say so clearly and stop.`
+
+async function applyDeferredPickupUpdates(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
+  const notion = notionAccess(rt.config)
+  if (!notion) return
+  const ctx = {
+    ...buildPlaceholderContext(p.page),
+    branch: p.branch ?? '',
+    sessionId: p.sessionId ?? '',
+  }
+  const deferred = (rt.config.pickupUpdates ?? []).filter((u) => valueReferencesSession(u.value))
+  if (deferred.length > 0) {
+    await updatePageProperties(notion.apiToken, p.page.id, deferred, ctx)
+  }
+}
+
+// ── Implement verification (stop hint + watchdog) ──────────────────────────
+
+async function onSessionHookEvent(contextId: string, _hookType: string): Promise<void> {
+  // Find a pipeline whose worker session matches contextId.
+  for (const rt of runtimes.values()) {
+    const p = rt.state.pipelines.find((pp) => pp.sessionId === contextId && pp.phase === 'implementing')
+    if (p) {
+      void advanceFromImplementing(rt, p)
+      return
+    }
+  }
+}
+
+async function watchdog(rt: FoundryRuntime): Promise<void> {
+  const timeoutMin = rt.config.implementTimeoutMinutes ?? DEFAULT_IMPLEMENT_TIMEOUT_MIN
+  const now = Date.now()
+  for (const p of rt.state.pipelines) {
+    if (p.phase !== 'implementing') continue
+    const startedMs = Date.parse(p.startedAt)
+    if (Number.isFinite(startedMs) && now - startedMs > timeoutMin * 60_000) {
+      if (!p.attention) {
+        p.attention = { reason: `implement timeout (${timeoutMin}m)`, since: new Date().toISOString() }
+        log(p, `Watchdog: implement timeout after ${timeoutMin}m.`)
+        saveAndEmit(rt)
+      }
+      continue
+    }
+    void advanceFromImplementing(rt, p)
+  }
+}
+
+async function advanceFromImplementing(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
+  if (rt.advancing.has(p.id)) return
+  if (p.phase !== 'implementing') return
+  rt.advancing.add(p.id)
+  try {
+    const verify = await verifyImplementDone(p)
+    // Re-check phase — could have changed during await.
+    const fresh = rt.state.pipelines.find((pp) => pp.id === p.id)
+    if (!fresh || fresh.phase !== 'implementing') return
+    switch (verify.kind) {
+      case 'missing-worktree':
+        fresh.phase = 'orphaned'
+        log(fresh, 'Worktree gone — pipeline orphaned.')
+        break
+      case 'no-commits':
+        if (!fresh.attention) {
+          fresh.attention = { reason: 'no-commits — likely awaiting input', since: new Date().toISOString() }
+          log(fresh, 'Verification: no commits yet. Keep listening.')
+        }
+        break
+      case 'dirty':
+        if (!fresh.attention) {
+          fresh.attention = { reason: 'uncommitted changes — worker left dirty tree', since: new Date().toISOString() }
+          log(fresh, 'Verification: uncommitted changes in worktree.')
+        }
+        break
+      case 'clean':
+        fresh.attention = undefined
+        log(fresh, `Verified ${verify.commitsAhead} commit(s) ahead of ${verify.baseRef} — pushing.`)
+        await runPushPhase(rt, fresh)
+        break
+    }
+    saveAndEmit(rt)
+  } finally {
+    rt.advancing.delete(p.id)
+  }
+}
+
+interface VerifyResult {
+  kind: 'clean' | 'no-commits' | 'dirty' | 'missing-worktree'
+  commitsAhead?: number
+  baseRef?: string
+}
+
+async function verifyImplementDone(p: FoundryPipeline): Promise<VerifyResult> {
+  if (!p.worktreePath) return { kind: 'missing-worktree' }
+  const baseRef = p.baseBranch ? `origin/${p.baseBranch}` : p.baseBranch ?? 'origin/HEAD'
+  let commitsAhead = 0
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-list', '--count', `${baseRef}..HEAD`], { cwd: p.worktreePath })
+    commitsAhead = Number(stdout.trim()) || 0
+  } catch {
+    // Try a fallback against the local base.
+    if (p.baseBranch) {
+      try {
+        const { stdout } = await execFileAsync('git', ['rev-list', '--count', `${p.baseBranch}..HEAD`], { cwd: p.worktreePath })
+        commitsAhead = Number(stdout.trim()) || 0
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/no such file/i.test(msg) || /not a git repository/i.test(msg)) {
+          return { kind: 'missing-worktree' }
+        }
+      }
+    }
+  }
+  let dirty = false
+  try {
+    const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: p.worktreePath })
+    dirty = stdout.trim().length > 0
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/no such file/i.test(msg) || /not a git repository/i.test(msg)) {
+      return { kind: 'missing-worktree' }
+    }
+  }
+  if (commitsAhead === 0) return { kind: 'no-commits', baseRef, commitsAhead }
+  if (dirty) return { kind: 'dirty', baseRef, commitsAhead }
+  return { kind: 'clean', baseRef, commitsAhead }
+}
+
+// ── Pushing / PR creation / review-loop / finalize ──────────────────────────
+
+async function runPushPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
+  if (!p.worktreePath || !p.branch) return
+  p.phase = 'pushing'
+  saveAndEmit(rt)
+  try {
+    await execFileAsync('git', ['push', '-u', 'origin', p.branch], { cwd: p.worktreePath })
+    log(p, `Pushed ${p.branch} to origin.`)
+    await runCreatePRPhase(rt, p)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    p.attention = { reason: `push failed: ${msg}`, since: new Date().toISOString() }
+    log(p, `Push failed: ${msg}`)
+    saveAndEmit(rt)
+  }
+}
+
+async function runCreatePRPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
+  if (!p.worktreePath || !p.branch) return
+  p.phase = 'creating-pr'
+  saveAndEmit(rt)
+  try {
+    const existing = await findPRForBranch(p.worktreePath, p.branch)
+    let info = existing
+    if (!info) {
+      const body = `${p.page.url ? `Notion: ${p.page.url}\n\n` : ''}Implements ticket: ${p.page.title || p.page.id}\n\n<!-- ${FOUNDRY_PIPELINE_MARKER_PREFIX}${p.id} -->`
+      const baseBranch = p.baseBranch ?? rt.config.baseBranch ?? 'main'
+      info = await createDraftPR(p.worktreePath, {
+        title: p.page.title || `Foundry: ${p.page.id}`,
+        body,
+        base: baseBranch,
+        head: p.branch,
+      })
+    }
+    p.prNumber = info.number
+    p.prUrl = info.url
+    log(p, `PR #${info.number} ready: ${info.url}`)
+    await runReviewPhase(rt, p)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    p.attention = { reason: `create-pr failed: ${msg}`, since: new Date().toISOString() }
+    log(p, `Create-PR failed: ${msg}`)
+    saveAndEmit(rt)
+  }
+}
+
+async function runReviewPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
+  if (!p.worktreePath || !p.branch || !p.sessionId || !p.prNumber) return
+  p.phase = 'reviewing'
+  saveAndEmit(rt)
+  const baseBranch = p.baseBranch ?? rt.config.baseBranch ?? 'main'
+  const cfg = {
+    enabled: true,
+    variant: 'lite' as const,
+    maxIterations: rt.config.reviewLoopOverride?.maxIterations ?? 5,
+    consecutiveCleanRounds: rt.config.reviewLoopOverride?.consecutiveCleanRounds ?? 2,
+    costCapUsd: rt.config.reviewLoopOverride?.costCapUsd ?? 5,
+  }
+  try {
+    await startReviewLoopLite({
+      sessionId: p.sessionId,
+      worktreePath: p.worktreePath,
+      branch: p.branch,
+      baseBranch,
+      config: cfg,
+      prNumber: p.prNumber,
+    })
+    log(p, `Review loop started for PR #${p.prNumber}.`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    p.attention = { reason: `review-loop start failed: ${msg}`, since: new Date().toISOString() }
+    log(p, `Review-loop start failed: ${msg}`)
+    saveAndEmit(rt)
+  }
+}
+
+async function onReviewLoopUpdate(state: ReviewLoopState): Promise<void> {
+  if (state.status === 'running') return
+  for (const rt of runtimes.values()) {
+    const p = rt.state.pipelines.find((pp) => pp.sessionId === state.sessionId && pp.phase === 'reviewing')
+    if (!p) continue
+    const proceed =
+      state.status === 'completed' ||
+      (rt.config.onReviewNonConvergence === 'proceed' && state.status !== 'cancelled')
+    if (proceed) {
+      log(p, `Review loop ${state.status} (${state.stopReason ?? 'no-reason'}) — finalizing.`)
+      await runFinalizePhase(rt, p)
+    } else {
+      p.attention = { reason: `review-loop ${state.status} (${state.stopReason ?? '?'})`, since: new Date().toISOString() }
+      log(p, `Review loop ended without converging — attention required.`)
+      saveAndEmit(rt)
+    }
+  }
+}
+
+async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
+  if (!p.prNumber || !p.worktreePath) return
+  p.phase = 'finalizing'
+  saveAndEmit(rt)
+  try {
+    await markPRReady(p.worktreePath, p.prNumber)
+    log(p, `PR #${p.prNumber} marked ready-for-review.`)
+    const notion = notionAccess(rt.config)
+    if (notion) {
+      const ctx = {
+        ...buildPlaceholderContext(p.page),
+        branch: p.branch ?? '',
+        sessionId: p.sessionId ?? '',
+        prUrl: p.prUrl ?? '',
+        prNumber: String(p.prNumber),
+      }
+      try {
+        if ((rt.config.readyForReviewUpdates ?? []).length > 0) {
+          await updatePageProperties(
+            notion.apiToken,
+            p.page.id,
+            rt.config.readyForReviewUpdates,
+            ctx
+          )
+        }
+      } catch (err) {
+        log(p, `Notion ready-updates failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    p.phase = 'done'
+    log(p, 'Pipeline complete.')
+    saveAndEmit(rt)
+    // Free slot → maybe foreman picks up next task.
+    requestPass(rt, 'slot-freed', false)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    p.attention = { reason: `finalize failed: ${msg}`, since: new Date().toISOString() }
+    log(p, `Finalize failed: ${msg}`)
+    saveAndEmit(rt)
+  }
+}
+
+// ── Pipeline retry / skip actions ───────────────────────────────────────────
+
+async function retryPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
+  p.attention = undefined
+  switch (p.phase) {
+    case 'pushing':
+      return runPushPhase(rt, p)
+    case 'creating-pr':
+      return runCreatePRPhase(rt, p)
+    case 'reviewing':
+      return runReviewPhase(rt, p)
+    case 'finalizing':
+      return runFinalizePhase(rt, p)
+    case 'implementing':
+      return advanceFromImplementing(rt, p)
+    default:
+      log(p, `No retry handler for phase ${p.phase}.`)
+      saveAndEmit(rt)
+  }
+}
+
+async function skipPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
+  p.attention = undefined
+  // Skip = jump to finalize. Useful when review-loop wedged or PR ready by hand.
+  log(p, `Skipping phase ${p.phase} → finalizing.`)
+  await runFinalizePhase(rt, p)
+}
+
+// ── Rehydration ─────────────────────────────────────────────────────────────
+
+function rehydrateAfterStartup(rt: FoundryRuntime): void {
+  for (const p of rt.state.pipelines) {
+    switch (p.phase) {
+      case 'spawn-requested': {
+        log(p, 'Re-firing worker spawn after app start.')
+        // Reissue fire-task with the same payload shape (no longer have the
+        // resolved prompt though — rebuild from config).
+        const ctx = buildPlaceholderContext(p.page)
+        const resolvedImplementPrompt =
+          resolvePlaceholders(rt.config.implementCommandTemplate, ctx) + IMPLEMENT_PROMPT_SUFFIX
+        const branchTemplate = rt.config.branchNameTemplate ?? 'foundry/{{taskTitleSlug}}'
+        const suggestedBranchName = resolvePlaceholders(branchTemplate, ctx) || `foundry/${p.page.id.slice(0, 8)}`
+        const suggestedSessionName = p.page.title ? slugify(p.page.title) || `foundry-${p.page.id.slice(0, 8)}` : `foundry-${p.page.id.slice(0, 8)}`
+        const payload: FoundryFireTaskPayload = {
+          foundryId: rt.config.id,
+          pipelineId: p.id,
+          projectId: rt.config.projectId,
+          page: p.page,
+          resolvedImplementPrompt,
+          suggestedBranchName,
+          suggestedSessionName,
+          baseBranch: rt.config.baseBranch,
+          workerPermissionMode: rt.config.workerPermissionMode,
+        }
+        fireWorkerSpawn(rt, p, payload)
+        break
+      }
+      case 'implementing':
+        // Watchdog will re-verify.
+        break
+      case 'pushing':
+        void runPushPhase(rt, p)
+        break
+      case 'creating-pr':
+        void runCreatePRPhase(rt, p)
+        break
+      case 'reviewing':
+        // Review-loop state is in-memory; restart it.
+        void runReviewPhase(rt, p)
+        break
+      case 'finalizing':
+        void runFinalizePhase(rt, p)
+        break
+      default:
+        break
+    }
+  }
+  if (rt.state.passInFlight) {
+    rt.state.passInFlight = false
+    if (rt.state.passes.length > 0) {
+      const last = rt.state.passes[rt.state.passes.length - 1]
+      if (last.status === 'running') {
+        last.status = 'aborted'
+        last.endedAt = new Date().toISOString()
+      }
+    }
+  }
+  saveAndEmit(rt)
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function notionAccess(cfg: FoundryConfig): { apiToken: string; databaseId: string; titlePropertyName?: string } | null {
+  const override = cfg.notionOverride
+  const base = loadNotionConfig(cfg.projectId)
+  const apiToken = override?.apiToken ?? base?.apiToken
+  const databaseId = override?.databaseId ?? base?.databaseId
+  if (!apiToken || !databaseId) return null
+  const titlePropertyName = override?.titlePropertyName ?? base?.titlePropertyName
+  return { apiToken, databaseId, titlePropertyName }
+}
+
+function buildPlaceholderContext(page: NotionTaskPayload): {
+  taskId: string
+  taskUrl: string
+  taskTitle: string
+  taskTitleSlug: string
+} {
+  return {
+    taskId: page.id,
+    taskUrl: page.url,
+    taskTitle: page.title,
+    taskTitleSlug: slugify(page.title || page.id),
+  }
+}
+
+function valueReferencesSession(value: string): boolean {
+  return /\{\{(branch|sessionId|prUrl|prNumber)\}\}/.test(value)
+}
+
+export function countActivePipelines(rt: FoundryRuntime): number {
+  // Pipelines flagged for attention still occupy a slot — they're in-flight,
+  // just waiting on a human. Only terminal phases free the slot.
+  return rt.state.pipelines.filter((p) => !isTerminal(p.phase)).length
+}
+
+function isTerminal(phase: FoundryPipelinePhase): boolean {
+  return phase === 'done' || phase === 'cancelled' || phase === 'orphaned'
+}
+
+function log(p: FoundryPipeline, message: string): void {
+  p.log.push(`[${new Date().toISOString()}] ${message}`)
+  p.updatedAt = new Date().toISOString()
+}
+
+function saveState(rt: FoundryRuntime): void {
+  const all = stateStore.get('states', {})
+  all[rt.config.id] = rt.state
+  stateStore.set('states', all)
+}
+
+function saveAndEmit(rt: FoundryRuntime): void {
+  saveState(rt)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    emitToRenderer(mainWindow, IPC.FOUNDRY_STATE_UPDATE, rt.config.id, structuredClone(rt.state))
+  }
+}
+
+// Exposed for foreman service.
+export function getRuntime(foundryId: string): FoundryRuntime | undefined {
+  return runtimes.get(foundryId)
+}
+
+/** Flush in-memory runtime state to disk and emit the FOUNDRY_STATE_UPDATE event. */
+export function flushState(foundryId: string): void {
+  const rt = runtimes.get(foundryId)
+  if (!rt) return
+  saveAndEmit(rt)
+}
+
+export function notionAccessFor(cfg: FoundryConfig): {
+  apiToken: string
+  databaseId: string
+  titlePropertyName?: string
+} | null {
+  return notionAccess(cfg)
+}
+
+export type FoundryRuntimeRef = FoundryRuntime
+
+// Exposed for tests.
+export function _resetForTests(): void {
+  for (const rt of runtimes.values()) teardownRuntime(rt)
+  runtimes.clear()
+  if (unsubReviewLoop) unsubReviewLoop()
+  if (unsubSessionStatus) unsubSessionStatus()
+  unsubReviewLoop = null
+  unsubSessionStatus = null
+  mainWindow = null
+  started = false
+  runForemanPass = null
+}
+
+// Best-effort comment writer used by the foreman pass to document plans.
+export async function tryAppendTicketMarkdown(
+  cfg: FoundryConfig,
+  pageId: string,
+  markdown: string
+): Promise<void> {
+  const notion = notionAccess(cfg)
+  if (!notion) return
+  try {
+    await appendMarkdownBlocks(notion.apiToken, pageId, markdown, {})
+  } catch (err) {
+    console.error(`[foundry] append markdown failed for ${pageId}`, err)
+  }
+}

@@ -19,7 +19,8 @@
  * if the worktree contains uncommitted changes that weren't there at start,
  * make a trailing commit so nothing is left behind.
  */
-import { spawn, ChildProcessWithoutNullStreams, execFile } from 'node:child_process'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
@@ -31,23 +32,11 @@ import {
   type ReviewLoopState,
   type ReviewLoopStopReason,
 } from '../../shared/types'
+import { killChildTree, runHeadlessClaude, DEFAULT_PHASE_TIMEOUT_MS } from './claude-headless.service'
 
 const execFileAsync = promisify(execFile)
 
-const PHASE_TIMEOUT_MS = 30 * 60 * 1000
-
-function killChildTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals = 'SIGTERM'): void {
-  if (!child || child.killed || child.pid == null) return
-  try {
-    if (process.platform !== 'win32') {
-      process.kill(-child.pid, signal)
-    } else {
-      child.kill(signal)
-    }
-  } catch {
-    // Already exited.
-  }
-}
+const PHASE_TIMEOUT_MS = DEFAULT_PHASE_TIMEOUT_MS
 
 interface ActiveLoop {
   sessionId: string
@@ -348,204 +337,52 @@ interface ClaudeResult {
   error?: string
 }
 
-function runClaude(
+async function runClaude(
   loop: ActiveLoop,
   round: ReviewLoopRound,
   prompt: string,
   resumeId: string | undefined
 ): Promise<ClaudeResult> {
-  return new Promise((resolve) => {
-    const MAX_BUF_BYTES = 5 * 1024 * 1024
-    let stderrBuf = ''
-    let lineBuf = ''
-    let costUsd = 0
-    let sessionId: string | undefined
-    let lastEmit = 0
-    let pendingEmit: NodeJS.Timeout | null = null
-    let bufferOverflow = false
-
-    const scheduleEmit = () => {
-      const now = Date.now()
-      const elapsed = now - lastEmit
-      if (elapsed >= 200) {
-        lastEmit = now
-        emitState(loop)
-        return
-      }
-      if (pendingEmit) return
-      pendingEmit = setTimeout(() => {
-        pendingEmit = null
-        lastEmit = Date.now()
-        emitState(loop)
-      }, 200 - elapsed)
+  let lastEmit = 0
+  let pendingEmit: NodeJS.Timeout | null = null
+  const scheduleEmit = (): void => {
+    const now = Date.now()
+    const elapsed = now - lastEmit
+    if (elapsed >= 200) {
+      lastEmit = now
+      emitState(loop)
+      return
     }
+    if (pendingEmit) return
+    pendingEmit = setTimeout(() => {
+      pendingEmit = null
+      lastEmit = Date.now()
+      emitState(loop)
+    }, 200 - elapsed)
+  }
 
-    const pushTranscript = (line: string) => {
-      const trimmed = line.replace(/\s+$/g, '')
-      if (!trimmed) return
-      round.transcript.push(`[${new Date().toISOString().slice(11, 19)}] ${trimmed}`)
+  const result = await runHeadlessClaude({
+    cwd: loop.state.worktreePath,
+    prompt,
+    resumeId,
+    timeoutMs: PHASE_TIMEOUT_MS,
+    onTranscript: (line) => {
+      round.transcript.push(line)
       scheduleEmit()
-    }
-
-    const handleEvent = (evt: any) => {
-      if (!evt || typeof evt !== 'object') return
-      switch (evt.type) {
-        case 'system':
-          if (evt.subtype === 'init') {
-            if (typeof evt.session_id === 'string') sessionId = evt.session_id
-            pushTranscript(`▶ session ${evt.session_id ?? ''} started${evt.model ? ` (${evt.model})` : ''}`)
-          }
-          break
-        case 'assistant': {
-          const content = evt.message?.content
-          if (!Array.isArray(content)) return
-          for (const block of content) {
-            if (block.type === 'text' && typeof block.text === 'string') {
-              for (const line of block.text.split('\n')) pushTranscript(line)
-            } else if (block.type === 'tool_use') {
-              const name = block.name ?? 'tool'
-              const summary = summarizeToolInput(block.input)
-              pushTranscript(`🔧 ${name}${summary ? ` ${summary}` : ''}`)
-            }
-          }
-          break
-        }
-        case 'user': {
-          const content = evt.message?.content
-          if (!Array.isArray(content)) return
-          for (const block of content) {
-            if (block.type === 'tool_result' && block.is_error) {
-              const text = typeof block.content === 'string'
-                ? block.content
-                : Array.isArray(block.content)
-                  ? block.content.map((c: any) => c?.text ?? '').join(' ')
-                  : ''
-              pushTranscript(`⚠ tool error: ${text.slice(0, 300)}`)
-            }
-          }
-          break
-        }
-        case 'result':
-          if (typeof evt.total_cost_usd === 'number') costUsd = evt.total_cost_usd
-          else if (typeof evt.cost === 'number') costUsd = evt.cost
-          break
-      }
-    }
-
-    const consumeStdout = (chunk: Buffer) => {
-      if (bufferOverflow) return
-      lineBuf += chunk.toString('utf-8')
-      let nlIdx: number
-      while ((nlIdx = lineBuf.indexOf('\n')) >= 0) {
-        const line = lineBuf.slice(0, nlIdx).trim()
-        lineBuf = lineBuf.slice(nlIdx + 1)
-        if (!line) continue
-        try {
-          handleEvent(JSON.parse(line))
-        } catch {
-          pushTranscript(line)
-        }
-      }
-      if (lineBuf.length > MAX_BUF_BYTES) {
-        bufferOverflow = true
-        lineBuf = ''
-        pushTranscript(`✖ stdout exceeded ${MAX_BUF_BYTES} bytes without a newline — terminating`)
-        killChildTree(child)
-      }
-    }
-
-    const args = ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
-    if (resumeId) args.push('--resume', resumeId)
-
-    const child = spawn('claude', args, {
-      cwd: loop.state.worktreePath,
-      env: { ...process.env },
-      detached: process.platform !== 'win32',
-    })
-    loop.child = child
-
-    let timedOut = false
-    const phaseTimer = setTimeout(() => {
-      timedOut = true
-      pushTranscript(`✖ phase timed out after ${Math.round(PHASE_TIMEOUT_MS / 60000)}m — terminating`)
-      killChildTree(child)
-    }, PHASE_TIMEOUT_MS)
-
-    child.stdout.on('data', consumeStdout)
-    child.stderr.on('data', (chunk: Buffer) => {
-      const text = chunk.toString('utf-8')
-      if (stderrBuf.length < MAX_BUF_BYTES) {
-        stderrBuf = (stderrBuf + text).slice(-MAX_BUF_BYTES)
-      }
-      for (const line of text.split('\n')) {
-        if (line.trim()) pushTranscript(`stderr: ${line.trim()}`)
-      }
-    })
-    child.on('error', (err) => {
-      pushTranscript(`✖ ${err.message}`)
-      clearTimeout(phaseTimer)
-      if (pendingEmit) clearTimeout(pendingEmit)
-      emitState(loop)
-      resolve({ ok: false, costUsd, error: err.message })
-    })
-    child.on('exit', (code, signal) => {
-      loop.child = undefined
-      clearTimeout(phaseTimer)
-
-      if (lineBuf.trim()) {
-        try {
-          handleEvent(JSON.parse(lineBuf.trim()))
-        } catch {
-          pushTranscript(lineBuf.trim())
-        }
-        lineBuf = ''
-      }
-
-      if (pendingEmit) clearTimeout(pendingEmit)
-      emitState(loop)
-
-      if (signal === 'SIGTERM') {
-        const error = timedOut
-          ? `phase timed out after ${Math.round(PHASE_TIMEOUT_MS / 60000)}m`
-          : bufferOverflow
-            ? 'stdout buffer exceeded'
-            : 'cancelled'
-        resolve({ ok: false, costUsd, sessionId, error })
-        return
-      }
-      if (code !== 0) {
-        resolve({
-          ok: false,
-          costUsd,
-          sessionId,
-          error: stderrBuf.trim() || `claude exited with code ${code}`,
-        })
-        return
-      }
-      resolve({ ok: true, costUsd, sessionId })
-    })
-
-    child.stdin.write(prompt)
-    child.stdin.end()
+    },
+    onChild: (child) => {
+      loop.child = child
+    },
   })
-}
 
-function summarizeToolInput(input: unknown): string {
-  if (!input || typeof input !== 'object') return ''
-  const obj = input as Record<string, unknown>
-  for (const key of ['file_path', 'path', 'command', 'pattern', 'description', 'subagent_type']) {
-    const val = obj[key]
-    if (typeof val === 'string' && val.trim()) return truncate(val.trim(), 120)
-  }
-  try {
-    return truncate(JSON.stringify(obj), 120)
-  } catch {
-    return ''
-  }
-}
+  loop.child = undefined
+  if (pendingEmit) clearTimeout(pendingEmit)
+  emitState(loop)
 
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`
+  if (!result.ok) {
+    return { ok: false, costUsd: result.costUsd, sessionId: result.sessionId, error: result.error }
+  }
+  return { ok: true, costUsd: result.costUsd, sessionId: result.sessionId }
 }
 
 /* ── State helpers ──────────────────────────────────────────────────────── */
