@@ -32,6 +32,7 @@ async function bootApp(page: Page) {
 
 async function openSettings(page: Page) {
   await page.locator('button[title="Settings"]').click()
+  await page.getByRole('button', { name: 'Notion', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Notion Integration' })).toBeVisible({
     timeout: 10_000,
   })
@@ -40,18 +41,22 @@ async function openSettings(page: Page) {
 test.describe('Notion integration — settings UI', () => {
   test.beforeEach(async ({ page }) => bootApp(page))
 
-  test('renders a "Notion Integration" section with one card per project', async ({ page }) => {
+  test('renders a "Notion Integration" section with the project picker listing every project', async ({ page }) => {
     await openSettings(page)
-    // Scroll the heading into view; the body is long.
     await page.getByRole('heading', { name: 'Notion Integration' }).scrollIntoViewIfNeeded()
-    // There are three mock projects — each should get a row.
     await expect(
       page.locator('text=Notion Integration').first()
     ).toBeVisible()
+    // The redesigned settings panel shows one project at a time via a
+    // project picker. Verify every mock project is selectable. Restrict
+    // to selects that are actually visible — hidden panels also contain
+    // <select> elements that would otherwise be picked up first.
+    const picker = page.locator('select:visible').first()
+    const optionNames = await picker.evaluate((el: HTMLSelectElement) =>
+      Array.from(el.options).map((o) => o.textContent ?? '')
+    )
     for (const name of ['CodeCrucible', 'my-api-service', 'design-system']) {
-      // The settings section repeats project names, so we scope by the parent
-      // heading + name occurring after it.
-      await expect(page.locator(`p:has-text("${name}")`).first()).toBeVisible()
+      expect(optionNames).toContain(name)
     }
   })
 
@@ -66,16 +71,19 @@ test.describe('Notion integration — settings UI', () => {
     ).first()
     await section.getByRole('button', { name: 'Configure' }).first().click()
 
-    // API token field is the first password input in the section.
-    const tokenInput = page.locator('input[type="password"]').first()
+    // API token field is the first visible password input in the section
+    // — other (hidden) settings panels also render password inputs.
+    const tokenInput = page.locator('input[type="password"]:visible').first()
     await tokenInput.fill('secret_test_token')
 
     // Database id field — find an Input whose preceding label says "Database ID …"
     await page.getByPlaceholder(/32-char id or/).fill('1234567890abcdef1234567890abcdef')
 
     // Flip the toggle to On — there's only one ToggleGroup near the top with
-    // "On"/"Off"; choose the On radio.
-    const onRadio = page.locator('button[role="radio"][aria-checked="false"]', { hasText: 'On' }).first()
+    // "On"/"Off"; choose the On radio. Restrict to the visible panel.
+    const onRadio = page
+      .locator('button[role="radio"][aria-checked="false"]:visible', { hasText: 'On' })
+      .first()
     if (await onRadio.count()) {
       await onRadio.click()
     }
