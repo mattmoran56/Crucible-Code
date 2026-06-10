@@ -32,6 +32,7 @@ async function bootApp(page: Page) {
 
 async function openSettings(page: Page) {
   await page.locator('button[title="Settings"]').click()
+  await page.getByRole('button', { name: 'Notion', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Notion Integration' })).toBeVisible({
     timeout: 10_000,
   })
@@ -40,18 +41,17 @@ async function openSettings(page: Page) {
 test.describe('Notion integration — settings UI', () => {
   test.beforeEach(async ({ page }) => bootApp(page))
 
-  test('renders a "Notion Integration" section with one card per project', async ({ page }) => {
+  test('renders a "Notion Integration" section with the project picker listing every project', async ({ page }) => {
     await openSettings(page)
-    // Scroll the heading into view; the body is long.
     await page.getByRole('heading', { name: 'Notion Integration' }).scrollIntoViewIfNeeded()
-    // There are three mock projects — each should get a row.
     await expect(
       page.locator('text=Notion Integration').first()
     ).toBeVisible()
+    // The redesigned settings panel shows one project at a time via a
+    // project picker. Verify every mock project is selectable.
+    const picker = page.locator('select').first()
     for (const name of ['CodeCrucible', 'my-api-service', 'design-system']) {
-      // The settings section repeats project names, so we scope by the parent
-      // heading + name occurring after it.
-      await expect(page.locator(`p:has-text("${name}")`).first()).toBeVisible()
+      await expect(picker.locator(`option:has-text("${name}")`)).toHaveCount(1)
     }
   })
 
