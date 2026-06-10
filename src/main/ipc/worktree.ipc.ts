@@ -31,4 +31,19 @@ export function registerWorktreeHandlers() {
       return worktreeService.renameWorktreeBranch(repoPath, worktreePath, fallbackBranch, newBranch)
     }
   )
+
+  handle(
+    IPC.WORKTREE_CREATE_FOR_PR,
+    async (_e, repoPath: string, prNumber: number, headRefName: string) => {
+      return worktreeService.createPRWorktree(repoPath, prNumber, headRefName)
+    }
+  )
+
+  handle(IPC.WORKTREE_LIST_PR, async (_e, repoPath: string) => {
+    return worktreeService.listPRWorktrees(repoPath)
+  })
+
+  handle(IPC.WORKTREE_REMOVE_PR, async (_e, repoPath: string, prNumber: number) => {
+    return worktreeService.removePRWorktree(repoPath, prNumber)
+  })
 }
