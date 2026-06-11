@@ -155,16 +155,24 @@ export function FoundrySettings({ projects }: Props) {
           className="border border-border rounded-md"
           style={{ padding: '10px 14px' }}
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-text">{cfg.name}</p>
-              <p className="text-[11px] text-text-muted">
-                {cfg.enabled ? 'enabled' : 'disabled'}
-                {cfg.paused ? ' · paused' : ''} · max {cfg.maxConcurrentTasks} · transition{' '}
-                {cfg.completionTransition.fromValue ?? '*'} → {cfg.completionTransition.toValue}
-              </p>
-            </div>
-            <div className="flex gap-1">
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none min-w-0">
+              <input
+                type="checkbox"
+                checked={cfg.enabled}
+                onChange={(e) => void save({ ...cfg, enabled: e.target.checked })}
+                aria-label={cfg.enabled ? `Disable ${cfg.name}` : `Enable ${cfg.name}`}
+              />
+              <span className="min-w-0">
+                <span className="block text-xs font-medium text-text truncate">{cfg.name}</span>
+                <span className="block text-[11px] text-text-muted truncate">
+                  {cfg.enabled ? 'enabled' : 'disabled'}
+                  {cfg.paused ? ' · paused' : ''} · max {cfg.maxConcurrentTasks} · transition{' '}
+                  {cfg.completionTransition.fromValue ?? '*'} → {cfg.completionTransition.toValue}
+                </span>
+              </span>
+            </label>
+            <div className="flex gap-1 shrink-0">
               <Button size="sm" variant="ghost" onClick={() => setEditingId(cfg.id)}>
                 Edit
               </Button>
@@ -251,15 +259,6 @@ function FoundryEditor({ cfg, schema, apiToken, onSave, onClose }: EditorProps) 
           value={draft.name}
           onChange={(e) => update({ name: e.target.value })}
         />
-
-        <label className="flex items-center gap-2 text-xs text-text">
-          <input
-            type="checkbox"
-            checked={draft.enabled}
-            onChange={(e) => update({ enabled: e.target.checked })}
-          />
-          Enabled
-        </label>
 
         <Input
           label="Implement command template"

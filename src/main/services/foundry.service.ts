@@ -8,6 +8,8 @@
  * The deterministic FSM lives here; the brain (which tasks to start, in what
  * order) is the Foreman pass, see foundry-foreman.service.ts.
  */
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import type { BrowserWindow } from 'electron'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
@@ -36,6 +38,9 @@ import {
 } from './notion.service'
 import { addPickedUp, loadConfig as loadNotionConfig } from './notion-poller.service'
 import { findPRForBranch, markPRReady } from './github.service'
+import { getDefaultBranch } from './git.service'
+
+const execFileAsync = promisify(execFile)
 import { startReviewLoopLite } from './review-loop-lite.service'
 import { runHeadlessClaude } from './claude-headless.service'
 
@@ -488,6 +493,23 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
   const notion = notionAccess(rt.config)
   if (!notion) return null
 
+  // Make sure the configured base branch exists before we hand off to the
+  // worktree create — otherwise the renderer's worktree.create would fail
+  // and the pipeline would never start. No-op when baseBranch is unset
+  // (worktree.create falls back to the repo default).
+  if (rt.config.baseBranch?.trim()) {
+    const repoPath = projectRepoPath(rt.config.projectId)
+    if (repoPath) {
+      try {
+        await ensureBaseBranchExists(repoPath, rt.config.baseBranch.trim())
+      } catch (err) {
+        rt.state.lastError = `base branch "${rt.config.baseBranch}" could not be ensured: ${err instanceof Error ? err.message : String(err)}`
+        saveAndEmit(rt)
+        return null
+      }
+    }
+  }
+
   const ctx = buildPlaceholderContext(opts.page)
   const branchTemplate = rt.config.branchNameTemplate ?? 'foundry/{{taskTitleSlug}}'
   const suggestedBranchName = resolvePlaceholders(branchTemplate, ctx) || `foundry/${opts.page.id.slice(0, 8)}`
@@ -854,6 +876,76 @@ function rehydrateAfterStartup(rt: FoundryRuntime): void {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+interface ProjectsStoreShape {
+  projects: Array<{ id: string; repoPath: string }>
+}
+
+function projectRepoPath(projectId: string): string | null {
+  try {
+    const fresh = new Store<ProjectsStoreShape>({
+      cwd: getStorePath(),
+      name: 'projects',
+      defaults: { projects: [] },
+    })
+    const proj = fresh.get('projects', []).find((p) => p.id === projectId)
+    return proj?.repoPath ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Make sure the configured base branch exists somewhere git can branch off it.
+ *
+ * Order of attempts:
+ *   1. Already on origin (best case — fetch + done).
+ *   2. Exists locally only — push to origin so future fetches see it.
+ *   3. Doesn't exist anywhere — create off `origin/<defaultBranch>` and push.
+ *
+ * Throws if every attempt fails (e.g. no remote, no default branch). The
+ * caller surfaces this as a pipeline-level attention so the user knows
+ * the foundry can't run until they fix the base.
+ */
+export async function ensureBaseBranchExists(repoPath: string, baseBranch: string): Promise<void> {
+  // 1) On origin already?
+  try {
+    await execFileAsync('git', ['fetch', 'origin', baseBranch], { cwd: repoPath })
+    return
+  } catch {
+    // not on origin
+  }
+  // 2) Local only?
+  try {
+    await execFileAsync('git', ['rev-parse', '--verify', `refs/heads/${baseBranch}`], { cwd: repoPath })
+    // Push it so subsequent fetches succeed.
+    await execFileAsync('git', ['push', '-u', 'origin', baseBranch], { cwd: repoPath })
+    return
+  } catch {
+    // not local either
+  }
+  // 3) Create from the repo default.
+  const defaultBranch = await getDefaultBranch(repoPath)
+  if (!defaultBranch) {
+    throw new Error('cannot determine repo default branch')
+  }
+  // Fetch the default first so we branch off the latest origin tip.
+  try {
+    await execFileAsync('git', ['fetch', 'origin', defaultBranch], { cwd: repoPath })
+  } catch {
+    // Best-effort — keep going against local refs.
+  }
+  // Create the branch ref. Prefer origin/<default>; fall back to local <default>.
+  let startPoint = `origin/${defaultBranch}`
+  try {
+    await execFileAsync('git', ['rev-parse', '--verify', `refs/remotes/origin/${defaultBranch}`], { cwd: repoPath })
+  } catch {
+    startPoint = defaultBranch
+  }
+  await execFileAsync('git', ['branch', baseBranch, startPoint], { cwd: repoPath })
+  // Push to origin so workers (and other tooling) can use it.
+  await execFileAsync('git', ['push', '-u', 'origin', baseBranch], { cwd: repoPath })
+}
 
 function notionAccess(cfg: FoundryConfig): { apiToken: string; databaseId: string; titlePropertyName?: string } | null {
   const override = cfg.notionOverride
