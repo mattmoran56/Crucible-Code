@@ -43,6 +43,7 @@ import { findPRForBranch, markPRReady } from './github.service'
 import { getDefaultBranch } from './git.service'
 import { startReviewLoopLite } from './review-loop-lite.service'
 import { runHeadlessClaude } from './claude-headless.service'
+import { listTerminalsForSession, writeTerminal } from './terminal.service'
 
 const execFileAsync = promisify(execFile)
 
@@ -690,6 +691,32 @@ async function applyDeferredPickupUpdates(rt: FoundryRuntime, p: FoundryPipeline
 
 // ── PR polling (the only thing we watch during 'implementing') ──────────────
 
+/**
+ * Resolves true the next time the given contextId emits a 'stop' hook event,
+ * or false on timeout. Used by runFinalizePhase to know when the worker
+ * finished the injected ready-for-review prompt.
+ */
+function waitForSessionStop(contextId: string, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    const listener = (cid: string, _tabId: string, hookType: string): void => {
+      if (settled) return
+      if (cid !== contextId || hookType !== 'stop') return
+      settled = true
+      eventBus.off(IPC.NOTIFICATION_SESSION_STATUS, listener)
+      clearTimeout(timer)
+      resolve(true)
+    }
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      eventBus.off(IPC.NOTIFICATION_SESSION_STATUS, listener)
+      resolve(false)
+    }, timeoutMs)
+    eventBus.on(IPC.NOTIFICATION_SESSION_STATUS, listener)
+  })
+}
+
 async function onSessionHookEvent(contextId: string, _hookType: string): Promise<void> {
   // Stop hooks fire roughly when the worker says it's done with a turn — a
   // good moment to opportunistically check for the PR (the worker should
@@ -800,12 +827,13 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
   p.phase = 'finalizing'
   saveAndEmit(rt)
   try {
-    // Optional fresh-claude finalization on the same worktree, BEFORE we
-    // flip the PR to ready and before Notion gets the ready-for-review
-    // updates. The user's command might post a PR summary, add labels,
-    // run codegen, etc. — we don't care; just run it to completion.
+    // Inject the ready-for-review command into the WORKER's existing PTY
+    // (the same claude session that did the implement). The user can watch
+    // it run in the workspace and type ad-hoc feedback if they want. We
+    // wait for the next stop hook event on that session to know the worker
+    // is done with the command — same signal the implement phase uses.
     const tpl = rt.config.readyForReviewCommandTemplate?.trim()
-    if (tpl) {
+    if (tpl && p.sessionId) {
       const ctx = {
         ...buildPlaceholderContext(p.page),
         branch: p.branch ?? '',
@@ -814,27 +842,35 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
         prNumber: String(p.prNumber),
       }
       const cmd = resolvePlaceholders(tpl, ctx)
-      log(p, `Running ready-for-review command: ${cmd}`)
-      saveAndEmit(rt)
-      const result = await runHeadlessClaude({
-        cwd: p.worktreePath,
-        prompt: cmd,
-        timeoutMs: 15 * 60 * 1000,
-        onTranscript: () => {
-          // transcript discarded — surfaced via the worker session log if
-          // the user opens it; the pipeline log gets the cmd line only.
-        },
-      })
-      if (!result.ok) {
+      const terminals = listTerminalsForSession(p.sessionId)
+      const agentTerminal = terminals.find((t) => t.tabId === 'agent')
+      if (!agentTerminal) {
         p.attention = {
-          reason: `ready-for-review command failed: ${result.error ?? 'unknown'}`,
+          reason: 'worker session terminal is gone — cannot inject ready-for-review command',
           since: new Date().toISOString(),
         }
-        log(p, `Ready-for-review command failed: ${result.error ?? 'unknown'}`)
+        log(p, `Ready-for-review: no live agent terminal for session ${p.sessionId}.`)
+        saveAndEmit(rt)
+        return
+      }
+      log(p, `Injecting ready-for-review command into session ${p.sessionId.slice(0, 8)}…`)
+      saveAndEmit(rt)
+      // Claude's TTY interprets a bare CR as "submit" — internal newlines in
+      // the prompt are fine, we just need exactly one trailing CR.
+      writeTerminal(agentTerminal.terminalId, cmd.replace(/\r?\n/g, '\n') + '\r')
+      const ok = await waitForSessionStop(p.sessionId, 15 * 60_000)
+      if (!ok) {
+        p.attention = {
+          reason: 'ready-for-review command did not complete within 15 minutes',
+          since: new Date().toISOString(),
+        }
+        log(p, 'Ready-for-review timed out.')
         saveAndEmit(rt)
         return
       }
       log(p, 'Ready-for-review command finished.')
+    } else if (tpl) {
+      log(p, 'Ready-for-review skipped — no worker session id on pipeline.')
     }
 
     await markPRReady(p.worktreePath, p.prNumber)
