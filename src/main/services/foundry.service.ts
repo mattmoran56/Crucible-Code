@@ -2,8 +2,10 @@
  * Foundry — autopilot orchestrator over a Notion task set.
  *
  * Lifecycle of a task ("pipeline"):
- *   spawn-requested → implementing → pushing → creating-pr → reviewing →
- *   finalizing → done
+ *   spawn-requested → implementing → reviewing → finalizing → done
+ *
+ * The worker session is responsible for committing, pushing, and opening the
+ * draft PR; the foundry polls findPRForBranch (15s) and advances on detection.
  *
  * The deterministic FSM lives here; the brain (which tasks to start, in what
  * order) is the Foreman pass, see foundry-foreman.service.ts.
@@ -39,10 +41,10 @@ import {
 import { addPickedUp, loadConfig as loadNotionConfig } from './notion-poller.service'
 import { findPRForBranch, markPRReady } from './github.service'
 import { getDefaultBranch } from './git.service'
-
-const execFileAsync = promisify(execFile)
 import { startReviewLoopLite } from './review-loop-lite.service'
 import { runHeadlessClaude } from './claude-headless.service'
+
+const execFileAsync = promisify(execFile)
 
 const WATCH_INTERVAL_MS = 20_000
 const REQUEST_PASS_DEBOUNCE_MS = 5_000
@@ -543,6 +545,10 @@ export interface StartPipelineOptions {
   foundryId: string
   page: NotionTaskPayload
   reason: string
+  /** Foreman's chosen branch (e.g. `feat/attempts-table`). Overrides the foundry's branchNameTemplate. */
+  branchName?: string
+  /** Foreman's chosen session label (short kebab-case). Overrides the slugified title. */
+  sessionName?: string
 }
 
 export async function startPipeline(opts: StartPipelineOptions): Promise<FoundryPipeline | null> {
@@ -575,10 +581,16 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
   }
 
   const ctx = buildPlaceholderContext(opts.page)
+  // Foreman-supplied names win; foundry template + slugified title are fallbacks.
   const branchTemplate = rt.config.branchNameTemplate ?? 'foundry/{{taskTitleSlug}}'
-  const suggestedBranchName = resolvePlaceholders(branchTemplate, ctx) || `foundry/${opts.page.id.slice(0, 8)}`
-  const suggestedSessionName = opts.page.title ? slugify(opts.page.title) || `foundry-${opts.page.id.slice(0, 8)}` : `foundry-${opts.page.id.slice(0, 8)}`
-  const resolvedImplementPrompt = resolvePlaceholders(rt.config.implementCommandTemplate, ctx) + IMPLEMENT_PROMPT_SUFFIX
+  const suggestedBranchName =
+    opts.branchName?.trim() ||
+    resolvePlaceholders(branchTemplate, ctx) ||
+    `foundry/${opts.page.id.slice(0, 8)}`
+  const suggestedSessionName =
+    opts.sessionName?.trim() ||
+    (opts.page.title ? slugify(opts.page.title) || `foundry-${opts.page.id.slice(0, 8)}` : `foundry-${opts.page.id.slice(0, 8)}`)
+  const resolvedImplementPrompt = resolvePlaceholders(rt.config.implementCommandTemplate, ctx)
 
   // Apply immediate pickup updates BEFORE firing (matches notion-poller).
   const immediate = (rt.config.pickupUpdates ?? []).filter((u) => !valueReferencesSession(u.value))
@@ -645,7 +657,12 @@ function fireWorkerSpawn(rt: FoundryRuntime, pipeline: FoundryPipeline, payload:
   emitToRenderer(win, IPC.FOUNDRY_FIRE_TASK, payload)
 }
 
-const IMPLEMENT_PROMPT_SUFFIX = `
+/**
+ * The default text we put in the implementCommandTemplate field of a freshly
+ * created foundry. Surfaced as-is in the UI textarea so the user sees exactly
+ * what gets sent to the worker — no hidden post-processing.
+ */
+export const DEFAULT_IMPLEMENT_COMMAND_TEMPLATE = `/notion-ticket {{taskUrl}}
 
 When the ticket is fully implemented:
 1. Stage and commit all your changes with a clear message.
@@ -654,6 +671,8 @@ When the ticket is fully implemented:
 4. Do not mark the PR ready for review yet, and do not update the Notion ticket status — the Foundry handles both once a separate review loop has converged.
 
 If you are blocked or need a decision, say so clearly and stop without pushing.`
+
+export const DEFAULT_READY_FOR_REVIEW_COMMAND_TEMPLATE = `Update the PR review checklist. Use ✓, ✗, and ⊘ — use ⊘ where the question is not applicable or we haven't touched that area. Add a short note only if absolutely necessary; otherwise leave blank. Note that we have reviewed with Claude Code, then mark the PR as ready for review.`
 
 async function applyDeferredPickupUpdates(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
   const notion = notionAccess(rt.config)
@@ -907,7 +926,7 @@ function rehydrateAfterStartup(rt: FoundryRuntime): void {
         // resolved prompt though — rebuild from config).
         const ctx = buildPlaceholderContext(p.page)
         const resolvedImplementPrompt =
-          resolvePlaceholders(rt.config.implementCommandTemplate, ctx) + IMPLEMENT_PROMPT_SUFFIX
+          resolvePlaceholders(rt.config.implementCommandTemplate, ctx)
         const branchTemplate = rt.config.branchNameTemplate ?? 'foundry/{{taskTitleSlug}}'
         const suggestedBranchName = resolvePlaceholders(branchTemplate, ctx) || `foundry/${p.page.id.slice(0, 8)}`
         const suggestedSessionName = p.page.title ? slugify(p.page.title) || `foundry-${p.page.id.slice(0, 8)}` : `foundry-${p.page.id.slice(0, 8)}`
@@ -1084,6 +1103,10 @@ function saveAndEmit(rt: FoundryRuntime): void {
 // Exposed for foreman service.
 export function getRuntime(foundryId: string): FoundryRuntime | undefined {
   return runtimes.get(foundryId)
+}
+
+export function getMainWindow(): BrowserWindow | null {
+  return mainWindow
 }
 
 /** Flush in-memory runtime state to disk and emit the FOUNDRY_STATE_UPDATE event. */

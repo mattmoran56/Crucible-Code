@@ -7,9 +7,11 @@
  * deterministic foundry.service validates the decision and executes it.
  */
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, watch as fsWatch } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { spawnTerminal, killTerminal, getTerminalBuffer } from './terminal.service'
+import { getMainWindow } from './foundry.service'
 import type {
   ForemanDecision,
   FoundryConfig,
@@ -143,6 +145,13 @@ A JSON context at "${contextPath}" describes the task set:
    - Not already in runningPipelines.
    - Eligible to start (their dependencies are satisfied — any "depends on" task is in completedStatuses or is irrelevant; their status matches the foundry's pickup criteria).
    - Non-conflicting with each other (independent files/areas where possible).
+   For each task you decide to start, pick a branch name and a short session name. Use a CONVENTIONAL prefix:
+     - \`feat/<slug>\` for new functionality (most common — additive features, new endpoints, new UI).
+     - \`fix/<slug>\` for bug fixes / regressions.
+     - \`refactor/<slug>\` for code reorganisation that changes no external behaviour.
+     - \`chore/<slug>\` for non-feature housekeeping (deps, infra, build).
+     - \`docs/<slug>\` for documentation-only.
+   The slug is short kebab-case (4–6 words max) describing the unit of work — e.g. \`feat/attempts-table\`, \`fix/null-row-skip\`. Do NOT just slugify the ticket title; pick something tighter that reads like a real human-named branch. The session name should be the same slug WITHOUT the prefix (e.g. \`attempts-table\`).
 4. For tasks where you reached a meaningful judgement (planning notes, dependency declarations), include a \`ticketNotes\` entry. Only emit notes you have NOT documented before (the foundry deduplicates on content hash, but you should still avoid noise).
 5. Starting ZERO tasks is a valid outcome — say so in \`summary\`. Do not start tasks that aren't eligible just to fill slots.
 
@@ -157,7 +166,12 @@ Write a single JSON object to "${decisionPath}":
     { "pageId": "<page-id>", "comment": "**Foundry plan** — short reasoning. Dependencies: ...", "dependsOn": ["<page-id>"] }
   ],
   "start": [
-    { "pageId": "<page-id>", "reason": "why this one, now" }
+    {
+      "pageId": "<page-id>",
+      "reason": "why this one, now",
+      "branchName": "feat/<slug>",
+      "sessionName": "<slug>"
+    }
   ],
   "blocked": [
     { "pageId": "<page-id>", "reason": "what it's waiting on" }
@@ -199,7 +213,7 @@ export function validateDecision(
   const validPageIds = new Set(ctx.tasks.map((t) => t.pageId))
   const runningSet = new Set(ctx.runningPipelines.map((p) => p.pageId))
 
-  const filteredStart: Array<{ pageId: string; reason: string }> = []
+  const filteredStart: ForemanDecision['start'] = []
   for (const s of start) {
     if (!s || typeof s !== 'object') continue
     const obj = s as Record<string, unknown>
@@ -217,7 +231,19 @@ export function validateDecision(
       warnings.push(`drop start: exceeds freeSlots (${ctx.freeSlots}) — ${pageId}`)
       continue
     }
-    filteredStart.push({ pageId, reason })
+    const rawBranch = typeof obj.branchName === 'string' ? obj.branchName.trim() : ''
+    const rawSession = typeof obj.sessionName === 'string' ? obj.sessionName.trim() : ''
+    const branchName = sanitizeBranchName(rawBranch)
+    const sessionName = sanitizeSlug(rawSession) || (branchName ? branchName.split('/').pop() : '')
+    if (rawBranch && !branchName) {
+      warnings.push(`drop branchName: invalid format — ${rawBranch}`)
+    }
+    filteredStart.push({
+      pageId,
+      reason,
+      branchName: branchName || undefined,
+      sessionName: sessionName || undefined,
+    })
   }
 
   const filteredNotes: Array<{ pageId: string; comment: string; dependsOn?: string[] }> = []
@@ -308,65 +334,72 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
   rt.state.passes.push(passRecord)
   saveStateEmit(rt)
 
-  // Long-lived foreman: every pass resumes the same claude session so the
-  // model retains memory of previous decisions ("you said earlier that p4
-  // depends on p1"). The session id is captured on the first pass and
-  // stored on the runtime state.
-  const resumeId = rt.state.foremanClaudeSessionId
   const prompt = buildPassPrompt(contextPath, decisionPath, built.context, {
     passIndex,
-    isFirstPass: !resumeId,
+    isFirstPass: passIndex === 1,
   })
-  // Throttled live-emit so the renderer can stream the transcript as the
-  // foreman thinks, not just at pass completion. 200ms matches what the
-  // review-loop service does.
-  let lastEmit = 0
-  let pendingEmit: NodeJS.Timeout | null = null
-  const scheduleEmit = (): void => {
-    const now = Date.now()
-    const elapsed = now - lastEmit
-    if (elapsed >= 200) {
-      lastEmit = now
-      saveStateEmit(rt)
-      return
-    }
-    if (pendingEmit) return
-    pendingEmit = setTimeout(() => {
-      pendingEmit = null
-      lastEmit = Date.now()
-      saveStateEmit(rt)
-    }, 200 - elapsed)
-  }
-  const result = await runHeadlessClaude({
-    cwd: pickCwd(cfg),
-    prompt,
-    resumeId,
-    timeoutMs: PASS_TIMEOUT_MS,
-    onTranscript: (line) => {
-      passRecord.transcript.push(line)
-      scheduleEmit()
-    },
-  })
-  if (pendingEmit) clearTimeout(pendingEmit)
-  passRecord.costUsd = result.costUsd
-  passRecord.claudeSessionId = result.sessionId
-  // Persist the session id so subsequent passes can --resume into it. Once
-  // set, never overwrite — we want the conversation to keep growing.
-  if (!rt.state.foremanClaudeSessionId && result.sessionId) {
-    rt.state.foremanClaudeSessionId = result.sessionId
-  }
-  if (!result.ok) {
+
+  const window = getMainWindow()
+  if (!window) {
     passRecord.status = 'error'
     passRecord.endedAt = new Date().toISOString()
-    passRecord.errorMessage = result.error
-    console.error(`[foundry-foreman:${cfg.id}] pass #${passIndex} headless claude failed: ${result.error ?? 'unknown'}`)
+    passRecord.errorMessage = 'main window unavailable'
     saveStateEmit(rt)
     return
   }
+
+  // Spawn an INTERACTIVE claude PTY in the project repo. The prompt is piped
+  // via heredoc so claude reads it on stdin before binding raw-mode TTY —
+  // same trick the queued-session fire path uses. The user can also type
+  // into this terminal while it runs to nudge the foreman.
+  const foremanSessionId = `foundry-foreman-${cfg.id}`
+  const terminalId = spawnTerminal(
+    window,
+    foremanSessionId,
+    pickCwd(cfg),
+    'claude',
+    'dark',
+    undefined, // claudeConfigDir — inherit user's default
+    prompt,
+    pickCwd(cfg), // repoPath
+    false,
+    foremanSessionId,
+    'foreman'
+  )
+  rt.state.foremanTerminalId = terminalId
+  console.log(`[foundry-foreman:${cfg.id}] pass #${passIndex} PTY ${terminalId} spawned`)
+  saveStateEmit(rt)
+
+  // Wait for decision.json to appear (the foreman wrote it) or for the
+  // pass timeout to expire. fs.watch fires on rename/change events; we
+  // double-check with existsSync because the file may take a beat to flush.
+  const finished = await waitForDecision(passDir, decisionPath, PASS_TIMEOUT_MS)
+
+  // Kill the PTY whether the foreman finished or we timed out. killTerminal
+  // marks `stopped` so the auto-restart in terminal.service is suppressed.
+  killTerminal(terminalId)
+  // Stash the raw terminal buffer onto the pass record so the panel has
+  // SOMETHING to show after the PTY is gone (ANSI-ish but readable).
+  const tailBuf = getTerminalBuffer(terminalId)
+  if (tailBuf) {
+    for (const line of tailBuf.split('\n')) passRecord.transcript.push(line)
+  }
+  rt.state.foremanTerminalId = undefined
+  saveStateEmit(rt)
+
+  if (!finished) {
+    passRecord.status = 'error'
+    passRecord.endedAt = new Date().toISOString()
+    passRecord.errorMessage = `pass timed out after ${Math.round(PASS_TIMEOUT_MS / 60000)}m without a decision.json`
+    console.error(`[foundry-foreman:${cfg.id}] pass #${passIndex} timed out`)
+    saveStateEmit(rt)
+    return
+  }
+
   if (!existsSync(decisionPath)) {
     passRecord.status = 'error'
     passRecord.endedAt = new Date().toISOString()
-    passRecord.errorMessage = 'decision.json missing after claude run'
+    passRecord.errorMessage = 'decision.json missing after foreman PTY exit'
     console.error(`[foundry-foreman:${cfg.id}] pass #${passIndex} decision.json missing at ${decisionPath}`)
     saveStateEmit(rt)
     return
@@ -409,7 +442,13 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
   for (const s of decision.start) {
     const page = pagesById.get(s.pageId)
     if (!page) continue
-    const pipe = await startPipeline({ foundryId: cfg.id, page, reason: s.reason })
+    const pipe = await startPipeline({
+      foundryId: cfg.id,
+      page,
+      reason: s.reason,
+      branchName: s.branchName,
+      sessionName: s.sessionName,
+    })
     if (pipe) passRecord.startedPageIds.push(s.pageId)
   }
 
@@ -417,7 +456,7 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
   passRecord.endedAt = new Date().toISOString()
   passRecord.summary = `${decision.summary}${validation.warnings.length > 0 ? ` (warnings: ${validation.warnings.length})` : ''}`
   console.log(
-    `[foundry-foreman:${cfg.id}] pass #${passIndex} completed: started=${passRecord.startedPageIds.length}, warnings=${validation.warnings.length}, cost=$${result.costUsd.toFixed(4)}`
+    `[foundry-foreman:${cfg.id}] pass #${passIndex} completed: started=${passRecord.startedPageIds.length}, warnings=${validation.warnings.length}`
   )
   saveStateEmit(rt)
 }
@@ -494,4 +533,61 @@ function extractStatusLike(props: Record<string, unknown>, propName: string): st
 
 function sha1(input: string): string {
   return createHash('sha1').update(input).digest('hex')
+}
+
+/**
+ * Watch `passDir` for the foreman to write `decision.json` (or rewrite
+ * it after editing). Resolves true on detection, false on timeout. Polls
+ * existsSync on every event in case the watcher fires before the file is
+ * fully flushed, and as a 500ms safety-net fallback in case the OS
+ * dropped a watcher event.
+ */
+function waitForDecision(passDir: string, decisionPath: string, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    const finish = (ok: boolean): void => {
+      if (settled) return
+      settled = true
+      try { watcher.close() } catch { /* already closed */ }
+      clearInterval(pollTimer)
+      clearTimeout(timeoutTimer)
+      resolve(ok)
+    }
+    const watcher = fsWatch(passDir, (_event, filename) => {
+      if (filename === 'decision.json' && existsSync(decisionPath)) finish(true)
+    })
+    watcher.on('error', () => {
+      // Fall back to polling only.
+    })
+    const pollTimer = setInterval(() => {
+      if (existsSync(decisionPath)) finish(true)
+    }, 500)
+    const timeoutTimer = setTimeout(() => finish(false), timeoutMs)
+  })
+}
+
+const BRANCH_PREFIXES = new Set(['feat', 'fix', 'refactor', 'chore', 'docs', 'test', 'perf', 'style'])
+
+function sanitizeSlug(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+}
+
+/**
+ * Accept `<prefix>/<slug>` where prefix is a known conventional category.
+ * Returns the sanitised branch name, or an empty string if we can't make
+ * sense of the input. Caller falls back to the foundry template.
+ */
+function sanitizeBranchName(s: string): string {
+  if (!s) return ''
+  const slash = s.indexOf('/')
+  if (slash <= 0) return ''
+  const prefix = s.slice(0, slash).toLowerCase()
+  if (!BRANCH_PREFIXES.has(prefix)) return ''
+  const slug = sanitizeSlug(s.slice(slash + 1))
+  if (!slug) return ''
+  return `${prefix}/${slug}`
 }

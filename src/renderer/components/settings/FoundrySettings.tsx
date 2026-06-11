@@ -18,6 +18,18 @@ interface Props {
   projects: Project[]
 }
 
+const DEFAULT_IMPLEMENT_COMMAND_TEMPLATE = `/notion-ticket {{taskUrl}}
+
+When the ticket is fully implemented:
+1. Stage and commit all your changes with a clear message.
+2. Push the branch to origin.
+3. Open a DRAFT pull request against the base branch. The PR title should summarise the ticket; the PR body should include the Notion ticket URL and a short summary of what you changed.
+4. Do not mark the PR ready for review yet, and do not update the Notion ticket status — the Foundry handles both once a separate review loop has converged.
+
+If you are blocked or need a decision, say so clearly and stop without pushing.`
+
+const DEFAULT_READY_FOR_REVIEW_COMMAND_TEMPLATE = `Update the PR review checklist. Use ✓, ✗, and ⊘ — use ⊘ where the question is not applicable or we haven't touched that area. Add a short note only if absolutely necessary; otherwise leave blank. Note that we have reviewed with Claude Code, then mark the PR as ready for review.`
+
 function newConfig(projectId: string): FoundryConfig {
   return {
     id: crypto.randomUUID(),
@@ -29,8 +41,8 @@ function newConfig(projectId: string): FoundryConfig {
     completedStatuses: ['Done', 'Testing'],
     pickupUpdates: [],
     readyForReviewUpdates: [],
-    implementCommandTemplate: '/notion-ticket {{taskUrl}}',
-    readyForReviewCommandTemplate: '',
+    implementCommandTemplate: DEFAULT_IMPLEMENT_COMMAND_TEMPLATE,
+    readyForReviewCommandTemplate: DEFAULT_READY_FOR_REVIEW_COMMAND_TEMPLATE,
     branchNameTemplate: 'foundry/{{taskTitleSlug}}',
     maxConcurrentTasks: 2,
     // Workers inherit the user's global claude permission posture (auto
@@ -281,18 +293,20 @@ function FoundryEditor({ cfg, schema, apiToken, onSave, onClose }: EditorProps) 
           onChange={(e) => update({ name: e.target.value })}
         />
 
-        <Input
-          label="Implement command template"
-          hint="Typed into the worker session. Supports {{taskUrl}}, {{taskTitle}}, {{taskId}}, {{taskTitleSlug}}."
+        <PromptTextarea
+          label="Implement prompt"
+          hint="Sent verbatim to the worker session as its first message. Supports {{taskUrl}}, {{taskTitle}}, {{taskId}}, {{taskTitleSlug}}. The worker is responsible for committing, pushing, and opening a draft PR — the prompt should say so."
           value={draft.implementCommandTemplate}
-          onChange={(e) => update({ implementCommandTemplate: e.target.value })}
+          fallback={DEFAULT_IMPLEMENT_COMMAND_TEMPLATE}
+          onChange={(v) => update({ implementCommandTemplate: v })}
         />
 
-        <Input
-          label="Ready-for-review command (optional)"
-          hint="Fresh headless claude on the same worktree after the review loop, before marking the PR ready. Supports {{prUrl}}, {{prNumber}}, {{branch}} on top of the task placeholders. Blank = skip."
+        <PromptTextarea
+          label="Ready-for-review prompt (optional)"
+          hint="Run as a fresh claude on the worktree after the review loop converges. Supports {{prUrl}}, {{prNumber}}, {{branch}} on top of the task placeholders. Empty = skip this step."
           value={draft.readyForReviewCommandTemplate ?? ''}
-          onChange={(e) => update({ readyForReviewCommandTemplate: e.target.value })}
+          fallback={DEFAULT_READY_FOR_REVIEW_COMMAND_TEMPLATE}
+          onChange={(v) => update({ readyForReviewCommandTemplate: v })}
         />
 
         <Input
@@ -562,6 +576,52 @@ function MultiSelectField({ label, hint, value, options, onChange, emptyHint }: 
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+interface PromptTextareaProps {
+  label: string
+  hint?: string
+  value: string
+  fallback: string
+  onChange: (value: string) => void
+}
+
+/**
+ * Multi-line textarea for foundry prompt templates. Shows the full text
+ * verbatim — there is no hidden suffix appended elsewhere. A "Reset to
+ * default" link lets the user snap back to the canonical prompt without
+ * having to look it up.
+ */
+function PromptTextarea({ label, hint, value, fallback, onChange }: PromptTextareaProps) {
+  const isDefault = value === fallback
+  return (
+    <div>
+      <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+        <label className="text-[11px] font-medium text-text-muted">{label}</label>
+        {!isDefault && fallback && (
+          <button
+            type="button"
+            className="text-[10px] text-accent hover:underline"
+            onClick={() => onChange(fallback)}
+          >
+            Reset to default
+          </button>
+        )}
+      </div>
+      {hint && (
+        <p className="text-[11px] text-text-muted" style={{ marginBottom: 6 }}>
+          {hint}
+        </p>
+      )}
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={8}
+        className="w-full bg-bg border border-border rounded-md text-xs text-text font-mono focus:outline-none focus:border-accent"
+        style={{ padding: '8px 10px', resize: 'vertical', minHeight: 120 }}
+      />
     </div>
   )
 }

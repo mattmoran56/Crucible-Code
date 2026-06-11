@@ -1,6 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
 import { useFoundryStore } from '../../stores/foundryStore'
 import { useProjectStore } from '../../stores/projectStore'
+import { useSettingsStore } from '../../stores/settingsStore'
+import { THEMES } from '../../../shared/themes'
 import { Button } from '../ui/Button'
 import type {
   FoundryConfig,
@@ -221,10 +225,82 @@ function FoundryView({
             )}
           </div>
 
-          {/* Bottom half: pinned foreman transcript */}
-          <ForemanTranscriptPane state={state} />
+          {/* Bottom half: live foreman PTY while a pass is running, otherwise
+              the latest pass transcript (read-only). */}
+          {state?.foremanTerminalId ? (
+            <ForemanPtyPane terminalId={state.foremanTerminalId} />
+          ) : (
+            <ForemanTranscriptPane state={state} />
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+function ForemanPtyPane({ terminalId }: { terminalId: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const termRef = useRef<Terminal | null>(null)
+  const fitRef = useRef<FitAddon | null>(null)
+  const theme = useSettingsStore((s) => s.theme)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const terminalTheme =
+      THEMES.find((t) => t.name === theme)?.terminal ?? THEMES[0].terminal
+    const term = new Terminal({
+      theme: terminalTheme,
+      fontSize: 11,
+      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      cursorBlink: true,
+      scrollback: 20000,
+    })
+    const fit = new FitAddon()
+    term.loadAddon(fit)
+    term.open(containerRef.current)
+    requestAnimationFrame(() => fit.fit())
+
+    term.onData((data) => {
+      void window.api.terminal.write(terminalId, data)
+    })
+    const offData = window.api.terminal.onData((tid, data) => {
+      if (tid === terminalId) term.write(data)
+    })
+    // Don't attempt to write on exit — leave any final claude output as the
+    // last thing on screen. State will swap us back to the transcript view.
+    const offExit = window.api.terminal.onExit(() => {})
+
+    termRef.current = term
+    fitRef.current = fit
+
+    const onResize = () => fit.fit()
+    window.addEventListener('resize', onResize)
+
+    return () => {
+      offData()
+      offExit()
+      window.removeEventListener('resize', onResize)
+      term.dispose()
+      termRef.current = null
+      fitRef.current = null
+    }
+  }, [terminalId, theme])
+
+  return (
+    <div
+      className="border-t border-border flex flex-col shrink-0"
+      style={{ height: 320 }}
+    >
+      <div className="px-3 py-1.5 flex items-center justify-between border-b border-border">
+        <div className="text-[11px] uppercase tracking-wide text-text-muted">
+          Foreman <span className="normal-case">— interactive</span>
+        </div>
+        <span className="text-[11px] text-amber-300 flex items-center gap-1.5">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+          live
+        </span>
+      </div>
+      <div ref={containerRef} className="flex-1 min-h-0" style={{ padding: 4 }} />
     </div>
   )
 }

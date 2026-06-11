@@ -714,12 +714,26 @@ export interface FoundryRuntimeState {
    * explicit user action.
    */
   foremanClaudeSessionId?: string
+  /**
+   * Live PTY id when a pass is currently running (an interactive `claude`
+   * terminal the foreman is driving — the user can also type into it). Set
+   * when the pass starts; cleared when the foreman writes decision.json or
+   * the pass times out.
+   */
+  foremanTerminalId?: string
 }
 
 export interface ForemanDecision {
   planMarkdown?: string
   ticketNotes?: Array<{ pageId: string; comment: string; dependsOn?: string[] }>
-  start: Array<{ pageId: string; reason: string }>
+  start: Array<{
+    pageId: string
+    reason: string
+    /** `feat/`, `fix/`, `refactor/`, etc. prefix + short kebab-case slug. */
+    branchName?: string
+    /** Short kebab-case session label shown in the sidebar. */
+    sessionName?: string
+  }>
   blocked?: Array<{ pageId: string; reason: string }>
   summary: string
 }
