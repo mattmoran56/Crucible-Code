@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { ToggleGroup } from '../ui/ToggleGroup'
 import { useFoundryStore } from '../../stores/foundryStore'
 import { FilterGroupsEditor } from './NotionIntegrationSettings'
 import type {
@@ -156,23 +157,14 @@ export function FoundrySettings({ projects }: Props) {
           style={{ padding: '10px 14px' }}
         >
           <div className="flex items-center justify-between gap-3">
-            <label className="flex items-center gap-2 cursor-pointer select-none min-w-0">
-              <input
-                type="checkbox"
-                checked={cfg.enabled}
-                onChange={(e) => void save({ ...cfg, enabled: e.target.checked })}
-                aria-label={cfg.enabled ? `Disable ${cfg.name}` : `Enable ${cfg.name}`}
-              />
-              <span className="min-w-0">
-                <span className="block text-xs font-medium text-text truncate">{cfg.name}</span>
-                <span className="block text-[11px] text-text-muted truncate">
-                  {cfg.enabled ? 'enabled' : 'disabled'}
-                  {cfg.paused ? ' · paused' : ''} · max {cfg.maxConcurrentTasks} · transition{' '}
-                  {cfg.completionTransition.fromValue ?? '*'} → {cfg.completionTransition.toValue}
-                </span>
-              </span>
-            </label>
-            <div className="flex gap-1 shrink-0">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-text truncate">{cfg.name}</p>
+              <p className="text-[11px] text-text-muted truncate">
+                {cfg.paused ? 'paused · ' : ''}max {cfg.maxConcurrentTasks} · transition{' '}
+                {cfg.completionTransition.fromValue ?? '*'} → {cfg.completionTransition.toValue}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
               <Button size="sm" variant="ghost" onClick={() => setEditingId(cfg.id)}>
                 Edit
               </Button>
@@ -184,6 +176,14 @@ export function FoundrySettings({ projects }: Props) {
               >
                 Delete
               </Button>
+              <ToggleGroup
+                options={[
+                  { value: 'off', label: 'Off' },
+                  { value: 'on', label: 'On' },
+                ]}
+                value={cfg.enabled ? 'on' : 'off'}
+                onChange={(v) => void save({ ...cfg, enabled: v === 'on' })}
+              />
             </div>
           </div>
         </div>
