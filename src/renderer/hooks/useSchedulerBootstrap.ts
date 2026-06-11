@@ -74,6 +74,20 @@ export async function fireQueuedSession(item: QueuedSession): Promise<void> {
       useSessionStore.setState({ sessions: updated })
     }
 
+    // Quiet-created sessions don't pass through the App.tsx / SessionSidebar
+    // render paths that call registerSession, so the notification routing for
+    // their hook events would be dropped. Register explicitly.
+    try {
+      await window.api.notification.registerSession(
+        newSession.id,
+        newSession.name,
+        project.id,
+        newSession.worktreePath
+      )
+    } catch {
+      // Best-effort
+    }
+
     if (!item.startupPrompt) {
       useToastStore.getState().addToast('success', `Started scheduled session "${item.name}"`)
       return

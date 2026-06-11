@@ -30,6 +30,7 @@
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
 - **Review loop** — One-click review → triage → fix cycle on a branch with stop conditions (clean rounds, iteration cap, cost cap) and a sticky PR comment for skipped findings
+- **Foundry** — Run a whole Notion backlog on autopilot. An interactive foreman Claude plans dependencies; multiple worker sessions run in parallel; each pipeline goes implement → draft PR → review loop → ready. Human reviews code and tests; everything else is automated. See [docs/FOUNDRY.md](docs/FOUNDRY.md)
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
@@ -468,6 +469,50 @@ The Review Loop tab in the session workspace shows live progress: status pill, c
 <td colspan="2"><img src="docs/screenshots/review-loop-settings.png" alt="Workspace defaults and per-project overrides for the review loop" /></td>
 </tr>
 </table>
+
+</details>
+
+<details>
+<summary><strong>Foundry — autopilot over a Notion backlog</strong></summary>
+
+The next layer above the [single-ticket Notion integration](#notion-task-integration). Where the Notion poller turns one Notion row into one Claude session, the **Foundry** turns an *entire backlog* into a planned, dependency-aware stream of work — sessions, draft PRs, review loops, finalisation, all coordinated. The human reviews code and tests. Foundry does everything else.
+
+**The two-brains design.** Every Foundry runs two distinct decision-makers against the same budget:
+
+- **Foreman** — a real, interactive Claude session you can watch and nudge. Reads the entire task set + your codebase, infers dependencies between tickets, picks which tickets to start *next and in what order*. It doesn't write code; it writes a `decision.json` that the pipeline FSM executes.
+- **Pipeline FSM** — pure TypeScript in the main process. Validates the foreman's decision (drops unknown page ids, caps concurrency, sanitises branch names), then drives each picked task through `spawn-requested → implementing → reviewing → finalizing → done`. Doesn't make decisions; just executes them.
+
+The LLM can suggest anything (start 50 tasks! re-document the same plan!). The validation layer is the safety boundary. The LLM's authority over real-world side effects is exactly zero — it writes a file; the FSM decides what's executable.
+
+**Pipeline phases.**
+
+- `spawn-requested` — apply Notion pickup updates (e.g. `Status: Not Started → In Progress`), ensure the base branch exists (auto-create + push off the repo default if not), tell the renderer to materialise a worktree + Claude session.
+- `implementing` — poll `gh pr list --head <branch>` every 15s. Worker session is responsible for committing, pushing, and opening its own draft PR. Stop-hook hints opportunistically check on each turn-completion. Timeout (default 60m) parks the pipeline as attention.
+- `reviewing` — kick off the [Lite Review Loop](#review-loop) against the freshly-opened draft PR. Foundry subscribes to its state-update bus and advances when it converges.
+- `finalizing` — inject your ready-for-review prompt into the worker's **existing** PTY (bracketed-paste escape sequences so multi-line content goes in as one paste), wait for verified completion (PTY buffer must grow by ≥200 bytes to filter stale stop events), then `verifyPRReady` against `gh`. If your prompt didn't mark the PR ready, the pipeline parks with attention rather than silently overriding you.
+- `done` — slot frees → another foreman pass fires automatically.
+
+**Trigger ladder.** A foreman pass fires on snapshot-diff transitions (20s tick + 5s debounce), slot-freed events, manual "Run pass" clicks, the off→on toggle, app startup, and a 10-minute safety-net cron regardless. Snapshot detection is actor-agnostic — a human moving the ticket, a Notion automation, a Linear sync, whatever — we just notice the value changed.
+
+**Live foreman PTY in the panel.** The Foundry side panel pins a real `claude` PTY in its bottom 320 px while a pass is running. You watch the foreman think in real time; type into it to nudge it; when it writes `decision.json` the PTY closes automatically. Between passes the pane falls back to the previous pass's transcript (read-only).
+
+**Reset.** The card has a Reset button when the foundry is off — wipes pipelines, pass history, snapshot, documented hashes; keeps the config. Useful when state has drifted from reality.
+
+<table>
+<tr>
+<td><img src="docs/screenshots/foundry-panel-pass-running.png" alt="Foundry panel with a foreman pass running — pulsing live indicator and streaming transcript" /></td>
+<td><img src="docs/screenshots/foundry-panel-active-pipelines.png" alt="Foundry panel with three active pipelines including one parked for attention" /></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/foundry-settings-configured.png" alt="Foundry settings card with on/off toggle, Edit, Reset, Delete actions" /></td>
+<td><img src="docs/screenshots/foundry-panel-off.png" alt="Foundry panel when the foundry is disabled" /></td>
+</tr>
+<tr>
+<td colspan="2"><img src="docs/screenshots/foundry-settings-editor.png" alt="Foundry editor with multi-line implement and ready-for-review prompts, task-set filter, eligibility filter, completion transition, pickup updates" /></td>
+</tr>
+</table>
+
+Full architecture, the foreman decision contract, validation rules, every failure mode, and source pointers are in [docs/FOUNDRY.md](docs/FOUNDRY.md).
 
 </details>
 

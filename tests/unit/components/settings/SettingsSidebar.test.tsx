@@ -37,6 +37,7 @@ describe('SettingsSidebar', () => {
       'Startup Prompts',
       'Notion',
       'Review Loop',
+      'Foundry',
       'About',
     ]
     for (const label of labels) {
@@ -44,9 +45,9 @@ describe('SettingsSidebar', () => {
     }
   })
 
-  it('renders exactly ten nav buttons when projects exist', () => {
+  it('renders exactly eleven nav buttons when projects exist', () => {
     renderSidebar({ hasProjects: true })
-    expect(screen.getAllByRole('button')).toHaveLength(10)
+    expect(screen.getAllByRole('button')).toHaveLength(11)
   })
 
   it('hides project-requiring items when there are no projects', () => {
@@ -120,6 +121,7 @@ describe('SettingsSidebar', () => {
       'Startup Prompts',
       'Notion',
       'Review Loop',
+      'Foundry',
       'About',
     ])
   })

@@ -6,6 +6,74 @@ import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDe
 
 const execFileAsync = promisify(execFile)
 
+// ── Foundry helpers ────────────────────────────────────────────────────────
+
+const PR_NUMBER_RE = /\/pull\/(\d+)\s*$/
+
+export interface FoundryPRInfo {
+  number: number
+  url: string
+  isDraft?: boolean
+}
+
+/**
+ * Create a draft PR. If one already exists for the head branch, returns the
+ * existing PR instead of throwing — keeping the call idempotent for retries.
+ */
+export async function createDraftPR(
+  worktreePath: string,
+  opts: { title: string; body: string; base: string; head: string }
+): Promise<FoundryPRInfo> {
+  try {
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['pr', 'create', '--draft', '--title', opts.title, '--body', opts.body, '--base', opts.base, '--head', opts.head],
+      { cwd: worktreePath, maxBuffer: 5 * 1024 * 1024 }
+    )
+    const url = stdout.trim().split('\n').pop() ?? ''
+    const m = url.match(PR_NUMBER_RE)
+    if (!m) throw new Error(`Unparseable gh pr create output: ${stdout}`)
+    return { number: Number(m[1]), url, isDraft: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/already exists/i.test(msg)) {
+      const existing = await findPRForBranch(worktreePath, opts.head)
+      if (existing) return existing
+    }
+    throw err
+  }
+}
+
+export async function findPRForBranch(
+  worktreePath: string,
+  branch: string
+): Promise<FoundryPRInfo | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'number,url,isDraft'],
+      { cwd: worktreePath }
+    )
+    const arr = JSON.parse(stdout) as Array<{ number: number; url: string; isDraft: boolean }>
+    if (arr.length === 0) return null
+    const first = arr[0]
+    return { number: first.number, url: first.url, isDraft: first.isDraft }
+  } catch {
+    return null
+  }
+}
+
+/** Flip a draft PR to ready-for-review. Idempotent: swallows "already ready". */
+export async function markPRReady(worktreePath: string, prNumber: number): Promise<void> {
+  try {
+    await execFileAsync('gh', ['pr', 'ready', String(prNumber)], { cwd: worktreePath })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/already ready/i.test(msg) || /is not in draft/i.test(msg)) return
+    throw err
+  }
+}
+
 export async function getCurrentGitHubUser(repoPath: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync(

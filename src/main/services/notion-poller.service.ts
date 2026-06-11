@@ -95,7 +95,7 @@ function setPickedUp(projectId: string, ids: string[]): void {
   pickedUpStore.set('idsByProject', all)
 }
 
-function addPickedUp(projectId: string, ids: string[]): void {
+export function addPickedUp(projectId: string, ids: string[]): void {
   const existing = getPickedUp(projectId)
   const set = new Set(existing)
   for (const id of ids) set.add(id)

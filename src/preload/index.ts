@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, FoundryConfig, FoundryFireTaskPayload, FoundryPipelineAction, FoundryRuntimeState, FoundryTaskStartedAck, FoundryWorkerPermissionMode } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -554,6 +554,63 @@ const api = {
       const listener = (_e: unknown, payload: NotionFireTaskPayload) => callback(payload)
       ipcRenderer.on(IPC.NOTION_FIRE_TASK, listener)
       return () => ipcRenderer.removeListener(IPC.NOTION_FIRE_TASK, listener)
+    },
+  },
+
+  foundry: {
+    list: (): Promise<FoundryConfig[]> => ipcRenderer.invoke(IPC.FOUNDRY_LIST),
+    save: (cfg: FoundryConfig): Promise<FoundryConfig[]> => ipcRenderer.invoke(IPC.FOUNDRY_SAVE, cfg),
+    delete: (foundryId: string): Promise<FoundryConfig[]> => ipcRenderer.invoke(IPC.FOUNDRY_DELETE, foundryId),
+    setPaused: (foundryId: string, paused: boolean): Promise<void> =>
+      ipcRenderer.invoke(IPC.FOUNDRY_SET_PAUSED, foundryId, paused),
+    runNow: (foundryId: string): Promise<void> => ipcRenderer.invoke(IPC.FOUNDRY_RUN_NOW, foundryId),
+    resetState: (foundryId: string): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke(IPC.FOUNDRY_RESET_STATE, foundryId),
+    getState: (foundryId: string): Promise<FoundryRuntimeState | null> =>
+      ipcRenderer.invoke(IPC.FOUNDRY_STATE_GET, foundryId),
+    taskStarted: (foundryId: string, ack: FoundryTaskStartedAck): Promise<void> =>
+      ipcRenderer.invoke(IPC.FOUNDRY_TASK_STARTED, foundryId, ack),
+    pipelineAction: (
+      foundryId: string,
+      pipelineId: string,
+      action: FoundryPipelineAction
+    ): Promise<void> =>
+      ipcRenderer.invoke(IPC.FOUNDRY_PIPELINE_ACTION, foundryId, pipelineId, action),
+    spawnWorker: (
+      sessionId: string,
+      cwd: string,
+      prompt: string,
+      claudeTheme: string,
+      claudeConfigDir: string | undefined,
+      repoPath: string | undefined,
+      contextId: string,
+      tabId: string,
+      permissionMode: FoundryWorkerPermissionMode
+    ): Promise<string> =>
+      ipcRenderer.invoke(
+        IPC.FOUNDRY_SPAWN_WORKER,
+        sessionId,
+        cwd,
+        prompt,
+        claudeTheme,
+        claudeConfigDir,
+        repoPath,
+        contextId,
+        tabId,
+        permissionMode
+      ),
+    openForeman: (foundryId: string): Promise<{ terminalId: string; contextId: string } | null> =>
+      ipcRenderer.invoke(IPC.FOUNDRY_OPEN_FOREMAN, foundryId),
+    onFireTask: (callback: (payload: FoundryFireTaskPayload) => void) => {
+      const listener = (_e: unknown, payload: FoundryFireTaskPayload) => callback(payload)
+      ipcRenderer.on(IPC.FOUNDRY_FIRE_TASK, listener)
+      return () => ipcRenderer.removeListener(IPC.FOUNDRY_FIRE_TASK, listener)
+    },
+    onStateUpdate: (callback: (foundryId: string, state: FoundryRuntimeState) => void) => {
+      const listener = (_e: unknown, foundryId: string, state: FoundryRuntimeState) =>
+        callback(foundryId, state)
+      ipcRenderer.on(IPC.FOUNDRY_STATE_UPDATE, listener)
+      return () => ipcRenderer.removeListener(IPC.FOUNDRY_STATE_UPDATE, listener)
     },
   },
 

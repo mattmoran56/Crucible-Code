@@ -32,6 +32,38 @@ interface TerminalInstance {
    */
   bufferChunks: string[]
   bufferSize: number
+  /** Extra args appended to `claude` (e.g. `--dangerously-skip-permissions`). Persisted for crash-recovery. */
+  claudeArgs?: string[]
+}
+
+/**
+ * Build the shell command used to launch claude for a `claude`-mode PTY.
+ * Pure — exported so unit tests can verify quoting + heredoc shape.
+ *
+ * Returns the body for `sh -lc '<here>'`.
+ */
+export function buildClaudeCommand(opts: {
+  isResume: boolean
+  isReview: boolean
+  commandString?: string
+  claudeArgs?: string[]
+}): string {
+  const argSuffix = (opts.claudeArgs ?? [])
+    .map((a) => shellQuote(a))
+    .join(' ')
+  const claudeWithArgs = argSuffix ? `claude ${argSuffix}` : 'claude'
+  if (opts.isReview) return claudeWithArgs
+  if (opts.isResume) return `${claudeWithArgs} --resume`
+  if (opts.commandString) {
+    return `${claudeWithArgs} <<'CRUCIBLE_PROMPT_EOF'\n${opts.commandString}\nCRUCIBLE_PROMPT_EOF`
+  }
+  return claudeWithArgs
+}
+
+function shellQuote(a: string): string {
+  // Single-quote and escape any embedded single quotes for POSIX shells.
+  if (/^[A-Za-z0-9_\-\/=:.,@+]+$/.test(a)) return a
+  return `'${a.replace(/'/g, `'\\''`)}'`
 }
 
 const BUFFER_CAP = 64 * 1024
@@ -59,6 +91,7 @@ export interface PersistedTerminal {
   repoPath?: string
   contextId: string
   tabId: string
+  claudeArgs?: string[]
 }
 
 const terminals = new Map<string, TerminalInstance>()
@@ -85,6 +118,7 @@ function persistTerminal(terminalId: string, instance: TerminalInstance): void {
     repoPath: instance.repoPath,
     contextId: instance.contextId,
     tabId: instance.tabId,
+    claudeArgs: instance.claudeArgs,
   })
 }
 
@@ -122,32 +156,14 @@ function spawnPty(
   let args: string[]
 
   if (instance.mode === 'claude' || instance.mode === 'review') {
-    // Use the shell to run claude so PATH is resolved
     command = shell
-    // First launch: plain `claude`. After exit/restart: `claude --resume`
-    // Review mode always starts fresh (no --resume).
-    //
-    // When `commandString` is set on a fresh `claude` launch, we pipe it into
-    // claude via heredoc so the prompt arrives as stdin before claude binds
-    // raw-mode TTY. Claude processes the prompt, generates a response, and
-    // exits — the onExit handler then auto-restarts with `claude --resume`,
-    // dropping the user back into an interactive session that already has
-    // the conversation history. This is the same trick the custom-button
-    // background-claude flow uses, made interactive-friendly by piggy-backing
-    // on the auto-restart logic.
-    if (instance.mode === 'review') {
-      args = ['-l', '-c', 'claude']
-    } else if (isResume) {
-      args = ['-l', '-c', 'claude --resume']
-    } else if (instance.commandString) {
-      args = [
-        '-l',
-        '-c',
-        `claude <<'CRUCIBLE_PROMPT_EOF'\n${instance.commandString}\nCRUCIBLE_PROMPT_EOF`,
-      ]
-    } else {
-      args = ['-l', '-c', 'claude']
-    }
+    const shellBody = buildClaudeCommand({
+      isResume,
+      isReview: instance.mode === 'review',
+      commandString: instance.commandString,
+      claudeArgs: instance.claudeArgs,
+    })
+    args = ['-l', '-c', shellBody]
   } else if (instance.mode === 'command' && instance.commandString) {
     // Run a specific command via shell -l -c "cmd", exits when done
     command = shell
@@ -163,6 +179,13 @@ function spawnPty(
       ? join(homedir(), instance.claudeConfigDir.slice(2))
       : instance.claudeConfigDir
     env.CLAUDE_CONFIG_DIR = resolved
+  } else {
+    // The project resolves to the "Default" Claude account, which the UI
+    // labels as ~/.claude. Explicitly drop any inherited CLAUDE_CONFIG_DIR
+    // so we actually land there — otherwise a dev launcher (or any parent
+    // shell that exports CLAUDE_CONFIG_DIR=~/.claude-personal) would
+    // silently hijack every "Default" worker.
+    delete env.CLAUDE_CONFIG_DIR
   }
   // Identify the context + agent tab for hook routing. The hook curl uses
   // ${CRUCIBLE_CONTEXT_ID}/${CRUCIBLE_TAB_ID} via shell expansion to attach
@@ -271,7 +294,8 @@ export function spawnTerminal(
   repoPath?: string,
   resume = false,
   contextId?: string,
-  tabId?: string
+  tabId?: string,
+  claudeArgs?: string[]
 ): string {
   const resolvedTabId = tabId ?? (mode === 'review' ? 'review' : 'agent')
   // Idempotent per (sessionId, tabId): if a live terminal already owns this
@@ -299,6 +323,7 @@ export function spawnTerminal(
     repoPath,
     contextId: contextId ?? sessionId,
     tabId: resolvedTabId,
+    claudeArgs,
   }
   const ptyProcess = spawnPty(terminalId, instanceBase, resume)
 

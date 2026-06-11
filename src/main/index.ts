@@ -10,6 +10,7 @@ import { setNotificationWindow } from './services/notification.service'
 import { killAllTerminals } from './services/terminal.service'
 import { stopAllWatching as stopAllPermissionWatching } from './services/permission-sync.service'
 import { stopScheduler } from './services/scheduler.service'
+import { stopFoundryService } from './services/foundry.service'
 import { eventBus } from './services/event-bus'
 import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
 import { unregisterCloud } from '../../remote/server/cloud-client'
@@ -81,6 +82,7 @@ app.on('before-quit', (event) => {
   stopAllPermissionWatching()
   stopNotificationServer()
   stopScheduler()
+  stopFoundryService()
   stopRelayServer()
 })
 
@@ -89,6 +91,7 @@ app.on('window-all-closed', () => {
   stopAllPermissionWatching()
   stopNotificationServer()
   stopScheduler()
+  stopFoundryService()
   stopRelayServer()
   app.quit()
 })

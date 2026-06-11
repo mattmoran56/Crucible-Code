@@ -543,4 +543,57 @@ export const mockApi = {
       },
     }
   })(),
+
+  foundry: (() => {
+    const configs: Array<Record<string, unknown>> = []
+    const states: Record<string, Record<string, unknown>> = {}
+    const fireListeners: Array<(payload: unknown) => void> = []
+    const stateListeners: Array<(foundryId: string, state: unknown) => void> = []
+    ;(globalThis as any).__foundryFireTask = (payload: unknown) => {
+      for (const cb of fireListeners) cb(payload)
+    }
+    ;(globalThis as any).__foundryEmitState = (foundryId: string, state: unknown) => {
+      states[foundryId] = state as Record<string, unknown>
+      for (const cb of stateListeners) cb(foundryId, state)
+    }
+    return {
+      list: async () => [...configs],
+      save: async (cfg: Record<string, unknown>) => {
+        const idx = configs.findIndex((c) => c.id === cfg.id)
+        if (idx >= 0) configs[idx] = cfg
+        else configs.push(cfg)
+        return [...configs]
+      },
+      delete: async (foundryId: string) => {
+        const idx = configs.findIndex((c) => c.id === foundryId)
+        if (idx >= 0) configs.splice(idx, 1)
+        delete states[foundryId]
+        return [...configs]
+      },
+      setPaused: async (foundryId: string, paused: boolean) => {
+        const cfg = configs.find((c) => c.id === foundryId)
+        if (cfg) cfg.paused = paused
+      },
+      runNow: async () => {},
+      getState: async (foundryId: string) => states[foundryId] ?? null,
+      taskStarted: async () => {},
+      pipelineAction: async () => {},
+      spawnWorker: async () => `mock-term-${Date.now()}`,
+      openForeman: async () => {},
+      onFireTask: (cb: (payload: unknown) => void) => {
+        fireListeners.push(cb)
+        return () => {
+          const idx = fireListeners.indexOf(cb)
+          if (idx >= 0) fireListeners.splice(idx, 1)
+        }
+      },
+      onStateUpdate: (cb: (foundryId: string, state: unknown) => void) => {
+        stateListeners.push(cb)
+        return () => {
+          const idx = stateListeners.indexOf(cb)
+          if (idx >= 0) stateListeners.splice(idx, 1)
+        }
+      },
+    }
+  })(),
 }
