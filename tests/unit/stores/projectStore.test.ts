@@ -135,3 +135,78 @@ describe('projectStore.loadAccounts / saveAccounts', () => {
     expect(useProjectStore.getState().claudeAccounts).toHaveLength(1)
   })
 })
+
+describe('projectStore.addProject (extended)', () => {
+  it('generates a uuid id and sends it to the backend', async () => {
+    selectFolder.mockResolvedValue('/projects/demo')
+    add.mockImplementation(async (p: any) => [p])
+    await useProjectStore.getState().addProject()
+    const sent = add.mock.calls[0][0]
+    expect(typeof sent.id).toBe('string')
+    expect(sent.id.length).toBeGreaterThan(0)
+    expect(useProjectStore.getState().activeProjectId).toBe(sent.id)
+  })
+
+  it('falls back to the full path as name when basename is empty (trailing slash)', async () => {
+    // Current behavior: '/x/y/'.split('/').pop() is '' → name falls back to the whole path
+    selectFolder.mockResolvedValue('/projects/demo/')
+    add.mockImplementation(async (p: any) => [p])
+    await useProjectStore.getState().addProject()
+    expect(add.mock.calls[0][0].name).toBe('/projects/demo/')
+  })
+
+  it('does not call add when selectFolder resolves to empty string', async () => {
+    selectFolder.mockResolvedValue('')
+    await useProjectStore.getState().addProject()
+    expect(add).not.toHaveBeenCalled()
+  })
+})
+
+describe('projectStore.loadProjects (extended)', () => {
+  it('keeps a stale activeProjectId even when it is missing from the new list', async () => {
+    // Current behavior: activeProjectId is only replaced when it is null
+    useProjectStore.setState({ activeProjectId: 'ghost' } as any)
+    list.mockResolvedValue([P({ id: 'p1' })])
+    await useProjectStore.getState().loadProjects()
+    expect(useProjectStore.getState().activeProjectId).toBe('ghost')
+  })
+
+  it('replaces the projects array with the api result', async () => {
+    useProjectStore.setState({ projects: [P({ id: 'old' })] } as any)
+    list.mockResolvedValue([P({ id: 'new1' }), P({ id: 'new2' })])
+    await useProjectStore.getState().loadProjects()
+    expect(useProjectStore.getState().projects.map((p: any) => p.id)).toEqual(['new1', 'new2'])
+  })
+})
+
+describe('projectStore.removeProject (extended)', () => {
+  it('leaves activeProjectId null when nothing was active', async () => {
+    useProjectStore.setState({ projects: [P({ id: 'p1' })], activeProjectId: null } as any)
+    remove.mockResolvedValue([])
+    await useProjectStore.getState().removeProject('p1')
+    expect(useProjectStore.getState().activeProjectId).toBeNull()
+  })
+
+  it('forwards the id to the api', async () => {
+    remove.mockResolvedValue([])
+    await useProjectStore.getState().removeProject('p7')
+    expect(remove).toHaveBeenCalledWith('p7')
+  })
+})
+
+describe('projectStore accounts (extended)', () => {
+  it('loadAccounts replaces any previously loaded accounts', async () => {
+    useProjectStore.setState({ claudeAccounts: [{ id: 'old' } as any] })
+    accountList.mockResolvedValue([{ id: 'fresh', label: 'f', configDir: '/f' }])
+    await useProjectStore.getState().loadAccounts()
+    expect(useProjectStore.getState().claudeAccounts.map((a: any) => a.id)).toEqual(['fresh'])
+  })
+
+  it('saveAccounts with an empty array clears local state', async () => {
+    useProjectStore.setState({ claudeAccounts: [{ id: 'a1' } as any] })
+    accountSave.mockResolvedValue(undefined)
+    await useProjectStore.getState().saveAccounts([])
+    expect(accountSave).toHaveBeenCalledWith([])
+    expect(useProjectStore.getState().claudeAccounts).toEqual([])
+  })
+})

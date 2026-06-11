@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StartupPromptSettings } from '../../../../src/renderer/components/settings/StartupPromptSettings'
 import { useStartupPromptStore } from '../../../../src/renderer/stores/startupPromptStore'
@@ -32,6 +32,19 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] })
 })
 
+// Seed both the store and the list() mock — the component re-loads each
+// project's prompts on mount, which would otherwise wipe pre-set state.
+function seedPrompts(projectId: string, prompts: StartupPrompt[]) {
+  useStartupPromptStore.setState({ byProject: { [projectId]: prompts } })
+  listMock.mockImplementation(async (pid: string) => (pid === projectId ? prompts : []))
+}
+
+// userEvent treats "{{" as keyboard-escape syntax, so set brace-heavy
+// command values via a change event instead.
+function setValue(el: HTMLElement, value: string) {
+  fireEvent.change(el, { target: { value } })
+}
+
 describe('StartupPromptSettings', () => {
   it('renders nothing when there are no projects', () => {
     const { container } = render(<StartupPromptSettings projects={[]} />)
@@ -61,26 +74,20 @@ describe('StartupPromptSettings', () => {
   })
 
   it('renders prompt rows with label and command from the store', () => {
-    useStartupPromptStore.setState({
-      byProject: { 'proj-a': [makePrompt({ label: 'Ticket', command: '/ticket 42' })] },
-    })
+    seedPrompts('proj-a', [makePrompt({ label: 'Ticket', command: '/ticket 42' })])
     render(<StartupPromptSettings projects={[projectA]} />)
     expect(screen.getByText('Ticket')).toBeInTheDocument()
     expect(screen.getByText('/ticket 42')).toBeInTheDocument()
   })
 
   it('shows the "needs input" badge for commands containing {{input}}', () => {
-    useStartupPromptStore.setState({
-      byProject: { 'proj-a': [makePrompt({ command: '/notion-ticket {{input}}' })] },
-    })
+    seedPrompts('proj-a', [makePrompt({ command: '/notion-ticket {{input}}' })])
     render(<StartupPromptSettings projects={[projectA]} />)
     expect(screen.getByText('needs input')).toBeInTheDocument()
   })
 
   it('omits the "needs input" badge for plain commands', () => {
-    useStartupPromptStore.setState({
-      byProject: { 'proj-a': [makePrompt({ command: 'npm test' })] },
-    })
+    seedPrompts('proj-a', [makePrompt({ command: 'npm test' })])
     render(<StartupPromptSettings projects={[projectA]} />)
     expect(screen.queryByText('needs input')).not.toBeInTheDocument()
   })
@@ -144,10 +151,7 @@ describe('StartupPromptSettings', () => {
     const dialog = screen.getByRole('dialog')
 
     expect(within(dialog).queryByLabelText('Input field label')).not.toBeInTheDocument()
-    await user.type(
-      within(dialog).getByPlaceholderText('/notion-ticket {{input}}'),
-      '/cmd {{input}}'
-    )
+    setValue(within(dialog).getByPlaceholderText('/notion-ticket {{input}}'), '/cmd {{input}}')
     expect(within(dialog).getByLabelText('Input field label')).toBeInTheDocument()
     expect(within(dialog).getByLabelText('Input placeholder (optional)')).toBeInTheDocument()
   })
@@ -158,7 +162,7 @@ describe('StartupPromptSettings', () => {
     await user.click(screen.getByRole('button', { name: '+ Add prompt' }))
     const dialog = screen.getByRole('dialog')
     await user.type(within(dialog).getByLabelText('Label'), 'Ticket')
-    await user.type(within(dialog).getByPlaceholderText('/notion-ticket {{input}}'), '/t {{input}}')
+    setValue(within(dialog).getByPlaceholderText('/notion-ticket {{input}}'), '/t {{input}}')
     await user.type(within(dialog).getByLabelText('Input field label'), 'Ticket URL')
     await user.type(within(dialog).getByLabelText('Input placeholder (optional)'), 'https://…')
     await user.click(within(dialog).getByRole('button', { name: 'Create' }))
@@ -178,11 +182,10 @@ describe('StartupPromptSettings', () => {
     const dialog = screen.getByRole('dialog')
     const commandBox = within(dialog).getByPlaceholderText('/notion-ticket {{input}}')
     await user.type(within(dialog).getByLabelText('Label'), 'X')
-    await user.type(commandBox, '/x {{input}}')
+    setValue(commandBox, '/x {{input}}')
     await user.type(within(dialog).getByLabelText('Input field label'), 'Some label')
     // Remove the {{input}} token again — the saved prompt must not keep inputLabel.
-    await user.clear(commandBox)
-    await user.type(commandBox, '/x plain')
+    setValue(commandBox, '/x plain')
     await user.click(within(dialog).getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(saveMock).toHaveBeenCalled())
@@ -204,11 +207,7 @@ describe('StartupPromptSettings', () => {
 
   it('Edit opens the dialog prefilled with the prompt values', async () => {
     const user = userEvent.setup()
-    useStartupPromptStore.setState({
-      byProject: {
-        'proj-a': [makePrompt({ id: 'sp-1', label: 'Old label', command: 'old-cmd' })],
-      },
-    })
+    seedPrompts('proj-a', [makePrompt({ id: 'sp-1', label: 'Old label', command: 'old-cmd' })])
     render(<StartupPromptSettings projects={[projectA]} />)
     await user.click(screen.getByRole('button', { name: 'Edit' }))
     const dialog = screen.getByRole('dialog', { name: 'Edit prompt' })
@@ -219,11 +218,9 @@ describe('StartupPromptSettings', () => {
 
   it('saving an edit keeps the id and order but applies new values', async () => {
     const user = userEvent.setup()
-    useStartupPromptStore.setState({
-      byProject: {
-        'proj-a': [makePrompt({ id: 'sp-1', label: 'Old label', command: 'old-cmd', order: 3 })],
-      },
-    })
+    seedPrompts('proj-a', [
+      makePrompt({ id: 'sp-1', label: 'Old label', command: 'old-cmd', order: 3 }),
+    ])
     render(<StartupPromptSettings projects={[projectA]} />)
     await user.click(screen.getByRole('button', { name: 'Edit' }))
     const dialog = screen.getByRole('dialog')
@@ -240,14 +237,10 @@ describe('StartupPromptSettings', () => {
 
   it('Delete removes the prompt and persists the remaining list', async () => {
     const user = userEvent.setup()
-    useStartupPromptStore.setState({
-      byProject: {
-        'proj-a': [
-          makePrompt({ id: 'sp-1', label: 'Keep me', order: 0 }),
-          makePrompt({ id: 'sp-2', label: 'Delete me', order: 1 }),
-        ],
-      },
-    })
+    seedPrompts('proj-a', [
+      makePrompt({ id: 'sp-1', label: 'Keep me', order: 0 }),
+      makePrompt({ id: 'sp-2', label: 'Delete me', order: 1 }),
+    ])
     render(<StartupPromptSettings projects={[projectA]} />)
     const row = screen.getByText('Delete me').closest('.group') as HTMLElement
     await user.click(within(row).getByRole('button', { name: 'Delete' }))
@@ -260,11 +253,10 @@ describe('StartupPromptSettings', () => {
 
   it('new prompts get order equal to the current list length', async () => {
     const user = userEvent.setup()
-    useStartupPromptStore.setState({
-      byProject: {
-        'proj-a': [makePrompt({ id: 'sp-1', order: 0 }), makePrompt({ id: 'sp-2', order: 1 })],
-      },
-    })
+    seedPrompts('proj-a', [
+      makePrompt({ id: 'sp-1', order: 0 }),
+      makePrompt({ id: 'sp-2', order: 1 }),
+    ])
     render(<StartupPromptSettings projects={[projectA]} />)
     await user.click(screen.getByRole('button', { name: '+ Add prompt' }))
     const dialog = screen.getByRole('dialog')

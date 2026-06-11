@@ -153,3 +153,94 @@ describe('prStore.clear', () => {
     expect(s.seenCache).toEqual({ p1: [1] })
   })
 })
+
+describe('prStore.loadPRs (extended)', () => {
+  it('does not flash loading when re-fetching the already-visible repo', async () => {
+    listPRs.mockResolvedValueOnce([PR(1)])
+    await usePRStore.getState().loadPRs('/repo/a')
+    listPRs.mockResolvedValueOnce([PR(1), PR(2)])
+    const second = usePRStore.getState().loadPRs('/repo/a')
+    // Same repo: visible list and loading flag stay stable during the refetch
+    expect(usePRStore.getState().loading).toBe(false)
+    expect(usePRStore.getState().pullRequests).toEqual([PR(1)])
+    await second
+    expect(usePRStore.getState().pullRequests).toEqual([PR(1), PR(2)])
+  })
+
+  it('marks hasLoaded immediately when a cache entry exists', async () => {
+    usePRStore.setState({ prCache: { '/repo/a': [] } })
+    listPRs.mockResolvedValue([])
+    const p = usePRStore.getState().loadPRs('/repo/a')
+    expect(usePRStore.getState().hasLoaded).toBe(true)
+    await p
+  })
+})
+
+describe('prStore.loadSeenPRs (extended)', () => {
+  it('shows the cached seen list instantly when revisiting a project', async () => {
+    usePRStore.setState({ seenCache: { p1: [5] } })
+    let resolve: (v: any) => void = () => {}
+    getSeenPRs.mockImplementationOnce(() => new Promise((r) => { resolve = r }))
+    const p = usePRStore.getState().loadSeenPRs('p1')
+    expect(usePRStore.getState().seenPRs).toEqual([5])
+    resolve([5, 6])
+    await p
+    expect(usePRStore.getState().seenPRs).toEqual([5, 6])
+  })
+
+  it('discards stale seen results after switching projects, but keeps the cache', async () => {
+    let resolveP1: (v: any) => void = () => {}
+    getSeenPRs.mockImplementationOnce(() => new Promise((r) => { resolveP1 = r }))
+    const p1Promise = usePRStore.getState().loadSeenPRs('p1')
+    getSeenPRs.mockResolvedValueOnce([42])
+    await usePRStore.getState().loadSeenPRs('p2')
+    resolveP1([1])
+    await p1Promise
+    expect(usePRStore.getState().currentProjectId).toBe('p2')
+    expect(usePRStore.getState().seenPRs).toEqual([42])
+    expect(usePRStore.getState().seenCache.p1).toEqual([1])
+  })
+})
+
+describe('prStore.loadCurrentUser (extended)', () => {
+  it('passes the repo path through to the api', async () => {
+    getCurrentUser.mockResolvedValue('bob')
+    await usePRStore.getState().loadCurrentUser('/repo/z')
+    expect(getCurrentUser).toHaveBeenCalledWith('/repo/z')
+  })
+
+  it('retries on a later call if the first fetch returned falsy', async () => {
+    getCurrentUser.mockResolvedValueOnce(null).mockResolvedValueOnce('carol')
+    await usePRStore.getState().loadCurrentUser('/repo')
+    await usePRStore.getState().loadCurrentUser('/repo')
+    expect(getCurrentUser).toHaveBeenCalledTimes(2)
+    expect(usePRStore.getState().currentUser).toBe('carol')
+  })
+})
+
+describe('prStore.markSeen (extended)', () => {
+  it('starts a fresh list from empty state', () => {
+    usePRStore.getState().markSeen('p1', 10)
+    expect(usePRStore.getState().seenPRs).toEqual([10])
+    expect(usePRStore.getState().seenCache.p1).toEqual([10])
+  })
+
+  it('only touches the cache entry of the given project', () => {
+    usePRStore.setState({ seenCache: { p2: [99] }, seenPRs: [] })
+    usePRStore.getState().markSeen('p1', 1)
+    expect(usePRStore.getState().seenCache.p2).toEqual([99])
+    expect(usePRStore.getState().seenCache.p1).toEqual([1])
+  })
+})
+
+describe('prStore.clear (extended)', () => {
+  it('keeps the collaborators cache and the current user', () => {
+    usePRStore.setState({
+      collaboratorsCache: { '/repo': [{ login: 'x' } as any] },
+      currentUser: 'alice',
+    })
+    usePRStore.getState().clear()
+    expect(usePRStore.getState().collaboratorsCache['/repo']).toEqual([{ login: 'x' }])
+    expect(usePRStore.getState().currentUser).toBe('alice')
+  })
+})
