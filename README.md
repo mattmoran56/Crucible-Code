@@ -300,6 +300,7 @@ Built-in git panel with commit history, changed files, and a GitHub-style diff v
 
 Full pull request review without leaving the IDE — comparable to GitHub's web UI for the day-to-day review loop.
 
+- **Opens in its own worktree** — Clicking a PR creates a worktree at `<repo-parent>/.codecrucible-worktrees/<repo>/pr-<n>/` (via `gh pr checkout`, so forks work too) rather than swapping the main repo onto the PR branch. The main repo's branch is left alone. The worktree is reused if you click the same PR again, and torn down automatically once the PR is merged, closed, or disappears upstream
 - **Conversation tab** — PR description, timeline, and CI checks with markdown rendering
 - **Reviewers** — Approved / Changes requested / Awaiting review groupings, plus a typeahead "Request review" picker
 - **Header summary** — At-a-glance "X approved · Y changes requested · Z pending" pill in the toolbar

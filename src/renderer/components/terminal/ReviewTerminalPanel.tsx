@@ -13,15 +13,17 @@ interface Props {
 const reviewsLaunched = new Set<string>()
 
 export function ReviewTerminalPanel({ visible = true }: Props) {
-  const { activeSessionId, activePRNumber, sessions } = useSessionStore()
+  const { activeSessionId, activePRNumber, activePRWorktreePath, sessions } = useSessionStore()
   const { projects, activeProjectId } = useProjectStore()
   const { spawnTerminal, getTerminal, terminals } = useTerminalStore()
   const { pullRequests } = usePRStore()
 
-  // Derive cwd and a stable key for the terminal
+  // Derive cwd and a stable key for the terminal. When the user is reviewing a
+  // PR (PR-only mode), prefer the dedicated PR worktree so the review terminal
+  // runs against the PR's branch instead of whatever the main repo is on.
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const activeProject = projects.find((p) => p.id === activeProjectId)
-  const cwd = activeSession?.worktreePath ?? activeProject?.repoPath
+  const cwd = activeSession?.worktreePath ?? activePRWorktreePath ?? activeProject?.repoPath
 
   // Match session branch to a PR in the list
   const sessionPR = activeSession

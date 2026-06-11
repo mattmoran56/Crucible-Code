@@ -34,7 +34,7 @@ const PR_POLL_INTERVAL = 30_000
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, openPR, openAsMainBranch, openBranch } =
+  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, openPR, openAsMainBranch, openBranch, reconcilePRWorktrees } =
     useSessionStore()
   const claudeWebSessions = useClaudeWebStore((s) => s.sessions)
   const claudeWebLoading = useClaudeWebStore((s) => s.loading)
@@ -153,18 +153,30 @@ export function SessionSidebar() {
       return
     }
 
-    loadPRs(activeProject.repoPath)
+    // loadPRs + reconcile: after each fetch, tear down any PR worktrees whose
+    // PR is no longer open (merged, closed, or deleted upstream). The PR cache
+    // includes merged PRs for the merged-tab UI, so we filter on state === 'OPEN'
+    // before passing to reconcile.
+    const refresh = async () => {
+      await loadPRs(activeProject.repoPath)
+      const openNumbers = usePRStore.getState()
+        .pullRequests.filter((pr) => pr.state === 'OPEN')
+        .map((pr) => pr.number)
+      await reconcilePRWorktrees(activeProject.repoPath, openNumbers)
+    }
+
+    refresh()
     loadSeenPRs(activeProject.id)
     loadCurrentUser(activeProject.repoPath)
 
     const startPolling = () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
       pollIntervalRef.current = setInterval(() => {
-        // Skip polling while the window is hidden/minimized — GitHub API
-        // hits + the resulting store update + sidebar re-render add up over
-        // hours of background time.
+        // Skip polling while the window is hidden/minimized — the GitHub API
+        // hit + worktree reconcile + sidebar re-render adds up over hours of
+        // background time.
         if (document.hidden) return
-        loadPRs(activeProject.repoPath)
+        refresh()
       }, PR_POLL_INTERVAL)
     }
     startPolling()
@@ -528,16 +540,22 @@ export function SessionSidebar() {
     // also refetch its details so reviews/checks/comments aren't stale.
     const review = usePRReviewStore.getState()
     const openPR = review.prNumber
-    const tasks: Promise<unknown>[] = [loadPRs(activeProject.repoPath)]
+    const repoPath = activeProject.repoPath
+    const refresh = async () => {
+      await loadPRs(repoPath)
+      const openNumbers = usePRStore.getState()
+        .pullRequests.filter((pr) => pr.state === 'OPEN')
+        .map((pr) => pr.number)
+      await reconcilePRWorktrees(repoPath, openNumbers)
+    }
+    const tasks: Promise<unknown>[] = [refresh()]
     if (openPR != null) {
-      tasks.push(review.loadPR(activeProject.repoPath, openPR, activeProject.id, true))
+      tasks.push(review.loadPR(repoPath, openPR, activeProject.id, true))
     }
     Promise.allSettled(tasks).finally(() => setRefreshingPRs(false))
     // Reset polling so next tick is a full interval from now
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
-    pollIntervalRef.current = setInterval(() => {
-      loadPRs(activeProject.repoPath)
-    }, PR_POLL_INTERVAL)
+    pollIntervalRef.current = setInterval(refresh, PR_POLL_INTERVAL)
   }
 
   const handlePRClick = async (pr: (typeof pullRequests)[0]) => {
