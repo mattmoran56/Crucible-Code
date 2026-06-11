@@ -17,7 +17,7 @@ vi.mock('../../../src/main/services/foundry.service', () => ({
   tryAppendTicketMarkdown: vi.fn(),
 }))
 
-import { validateDecision } from '../../../src/main/services/foundry-foreman.service'
+import { buildPassPrompt, validateDecision } from '../../../src/main/services/foundry-foreman.service'
 
 function ctx(overrides: any = {}): any {
   return {
@@ -89,6 +89,24 @@ describe('validateDecision', () => {
     const res = validateDecision({ start: [], summary: 'nothing eligible' }, ctx(), {})
     expect(res.applied.start).toHaveLength(0)
     expect(res.applied.summary).toBe('nothing eligible')
+  })
+
+  it('first-pass prompt omits the continuation paragraph', () => {
+    const prompt = buildPassPrompt('/ctx.json', '/dec.json', ctx(), {
+      passIndex: 1,
+      isFirstPass: true,
+    })
+    expect(prompt).not.toContain('This is pass #')
+    expect(prompt).toContain('Foundry Foreman')
+  })
+
+  it('subsequent-pass prompt includes the memory continuation', () => {
+    const prompt = buildPassPrompt('/ctx.json', '/dec.json', ctx(), {
+      passIndex: 4,
+      isFirstPass: false,
+    })
+    expect(prompt).toContain('This is pass #4')
+    expect(prompt).toContain('memory of previous passes')
   })
 
   it('filters dependsOn to known page ids', () => {

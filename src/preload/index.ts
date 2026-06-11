@@ -585,7 +585,7 @@ const api = {
         tabId,
         permissionMode
       ),
-    openForeman: (foundryId: string): Promise<void> =>
+    openForeman: (foundryId: string): Promise<{ terminalId: string; contextId: string } | null> =>
       ipcRenderer.invoke(IPC.FOUNDRY_OPEN_FOREMAN, foundryId),
     onFireTask: (callback: (payload: FoundryFireTaskPayload) => void) => {
       const listener = (_e: unknown, payload: FoundryFireTaskPayload) => callback(payload)

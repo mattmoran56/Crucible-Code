@@ -1,3 +1,4 @@
+import Store from 'electron-store'
 import { BrowserWindow } from 'electron'
 import { handle } from './handle'
 import { IPC } from '../../shared/constants'
@@ -7,12 +8,14 @@ import type {
   FoundryRuntimeState,
   FoundryTaskStartedAck,
   FoundryWorkerPermissionMode,
+  Project,
 } from '../../shared/types'
 import * as foundry from '../services/foundry.service'
 import { installForeman } from '../services/foundry-foreman.service'
 import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
 import { seedPermissions, startWatching } from '../services/permission-sync.service'
+import { getStorePath } from '../store-path'
 
 const PERMISSION_MODE_ARGS: Record<FoundryWorkerPermissionMode, string[]> = {
   bypassPermissions: ['--dangerously-skip-permissions'],
@@ -95,11 +98,49 @@ export function registerFoundryHandlers(window: BrowserWindow): void {
     }
   )
 
-  handle(IPC.FOUNDRY_OPEN_FOREMAN, async (_e, _foundryId: string): Promise<void> => {
-    // Stub: M3 implements the embedded foreman terminal. The renderer can
-    // already show the captured transcript; resuming requires the foreman
-    // module to expose its last claudeSessionId.
-  })
+  handle(
+    IPC.FOUNDRY_OPEN_FOREMAN,
+    async (_e, foundryId: string): Promise<{ terminalId: string; contextId: string } | null> => {
+      const state = foundry.getState(foundryId)
+      const configs = foundry.listConfigs()
+      const cfg = configs.find((c) => c.id === foundryId)
+      if (!cfg) return null
+      // Find the project's repo path — foreman uses it as its cwd so it can
+      // read the codebase when reasoning about dependencies.
+      const projectsStore = new Store<{ projects: Project[] }>({
+        cwd: getStorePath(),
+        name: 'projects',
+        defaults: { projects: [] },
+      })
+      const project = projectsStore.get('projects', []).find((p) => p.id === cfg.projectId)
+      if (!project?.repoPath) return null
+
+      // claude --resume <sessionId>  — passed via claudeArgs so we get exactly
+      // the foreman conversation, not a fresh session. If the foreman hasn't
+      // run yet (no captured session id), open a plain `claude` instead so
+      // the user can prime it manually.
+      const sessionId = state?.foremanClaudeSessionId
+      const claudeArgs = sessionId ? ['--resume', sessionId] : []
+
+      const contextId = `foundry-foreman-${foundryId}`
+      const tabId = 'foreman'
+      const terminalId = terminalService.spawnTerminal(
+        window,
+        contextId,
+        project.repoPath,
+        'claude',
+        'dark',
+        undefined, // claude config dir — inherit project default via env
+        undefined, // no commandString — the user will type into the PTY
+        project.repoPath,
+        false, // not a resume from terminal.service's perspective; we pass --resume via claudeArgs
+        contextId,
+        tabId,
+        claudeArgs
+      )
+      return { terminalId, contextId }
+    }
+  )
 }
 
 export function shutdownFoundry(): void {

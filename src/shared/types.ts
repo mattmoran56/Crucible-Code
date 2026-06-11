@@ -622,6 +622,13 @@ export interface FoundryConfig {
   readyForReviewUpdates: NotionPropertyUpdate[]
   /** Default `/notion-ticket {{taskUrl}}`. */
   implementCommandTemplate: string
+  /**
+   * Optional slash command (e.g. `/finalize-ticket {{taskUrl}}`) run as a
+   * fresh headless claude on the worktree AFTER the review loop converges
+   * and BEFORE the PR is marked ready / Notion gets the ready-for-review
+   * updates. Blank = skip.
+   */
+  readyForReviewCommandTemplate?: string
   /** Default `foundry/{{taskTitleSlug}}`. */
   branchNameTemplate?: string
   baseBranch?: string
@@ -639,8 +646,6 @@ export interface FoundryConfig {
 export type FoundryPipelinePhase =
   | 'spawn-requested'
   | 'implementing'
-  | 'pushing'
-  | 'creating-pr'
   | 'reviewing'
   | 'finalizing'
   | 'done'
@@ -675,6 +680,7 @@ export type FoundryPassTrigger =
   | 'transition'
   | 'slot-freed'
   | 'startup'
+  | 'safety-net'
 
 export type FoundryPassStatus = 'running' | 'completed' | 'error' | 'aborted'
 
@@ -701,6 +707,13 @@ export interface FoundryRuntimeState {
   passes: FoundryPassRecord[]
   passInFlight?: boolean
   lastError?: string
+  /**
+   * The claude session id the foreman uses across passes. Persisted so each
+   * pass can `--resume` and inherit the conversation history (memory of
+   * previous decisions). Set on the first successful pass; reset only on
+   * explicit user action.
+   */
+  foremanClaudeSessionId?: string
 }
 
 export interface ForemanDecision {

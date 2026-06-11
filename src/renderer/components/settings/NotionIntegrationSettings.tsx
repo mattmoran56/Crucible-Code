@@ -347,7 +347,7 @@ interface FilterGroupsEditorProps {
   onChange: (groups: NotionPropertyFilter[][]) => void
 }
 
-function FilterGroupsEditor({ schema, apiToken, groups, onChange }: FilterGroupsEditorProps) {
+export function FilterGroupsEditor({ schema, apiToken, groups, onChange }: FilterGroupsEditorProps) {
   const propertyOptions = schema?.properties ?? []
   const isMulti = groups.length > 1
 

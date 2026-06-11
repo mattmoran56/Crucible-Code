@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
 import { useFoundryStore } from '../../stores/foundryStore'
 import { useProjectStore } from '../../stores/projectStore'
+import { useSettingsStore } from '../../stores/settingsStore'
+import { THEMES } from '../../../shared/themes'
 import { Button } from '../ui/Button'
 import type { FoundryPipeline, FoundryPipelinePhase } from '../../../shared/types'
 
 const PHASE_LABEL: Record<FoundryPipelinePhase, string> = {
   'spawn-requested': 'Spawning',
   implementing: 'Implementing',
-  pushing: 'Pushing',
-  'creating-pr': 'Creating PR',
   reviewing: 'Reviewing',
   finalizing: 'Finalizing',
   done: 'Done',
@@ -19,8 +21,6 @@ const PHASE_LABEL: Record<FoundryPipelinePhase, string> = {
 const PHASE_COLOR: Record<FoundryPipelinePhase, string> = {
   'spawn-requested': 'bg-amber-500/20 text-amber-300',
   implementing: 'bg-blue-500/20 text-blue-300',
-  pushing: 'bg-blue-500/20 text-blue-300',
-  'creating-pr': 'bg-violet-500/20 text-violet-300',
   reviewing: 'bg-violet-500/20 text-violet-300',
   finalizing: 'bg-emerald-500/20 text-emerald-300',
   done: 'bg-emerald-500/20 text-emerald-300',
@@ -111,9 +111,132 @@ export function FoundryPanel() {
                 </div>
               </details>
             )}
+            <ForemanTerminalToggle
+              foundryId={cfg.id}
+              hasSession={!!state?.foremanClaudeSessionId}
+            />
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function ForemanTerminalToggle({
+  foundryId,
+  hasSession,
+}: {
+  foundryId: string
+  hasSession: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="px-3 pb-3">
+      <Button
+        size="sm"
+        variant="ghost"
+        className="border border-border w-full"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? 'Hide foreman' : hasSession ? 'Open foreman' : 'Open foreman (first run)'}
+      </Button>
+      {open && <ForemanTerminalView foundryId={foundryId} />}
+    </div>
+  )
+}
+
+function ForemanTerminalView({ foundryId }: { foundryId: string }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const termRef = useRef<Terminal | null>(null)
+  const fitRef = useRef<FitAddon | null>(null)
+  const terminalIdRef = useRef<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const theme = useSettingsStore((s) => s.theme)
+
+  useEffect(() => {
+    let unsubData: (() => void) | null = null
+    let unsubExit: (() => void) | null = null
+    let cancelled = false
+
+    void (async () => {
+      let result: { terminalId: string; contextId: string } | null = null
+      try {
+        result = await window.api.foundry.openForeman(foundryId)
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+        return
+      }
+      if (!result) {
+        if (!cancelled) setError('Foundry not configured or project missing repo path.')
+        return
+      }
+      if (cancelled || !containerRef.current) {
+        // Component unmounted during the IPC roundtrip — kill the freshly
+        // spawned PTY rather than leaking it.
+        void window.api.terminal.kill(result.terminalId)
+        return
+      }
+      terminalIdRef.current = result.terminalId
+      const terminalTheme =
+        THEMES.find((t) => t.name === theme)?.terminal ?? THEMES[0].terminal
+      const term = new Terminal({
+        theme: terminalTheme,
+        fontSize: 12,
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+        cursorBlink: true,
+        scrollback: 20000,
+        rows: 18,
+      })
+      const fit = new FitAddon()
+      term.loadAddon(fit)
+      term.open(containerRef.current)
+      requestAnimationFrame(() => fit.fit())
+
+      term.onData((data) => {
+        if (terminalIdRef.current) {
+          void window.api.terminal.write(terminalIdRef.current, data)
+        }
+      })
+
+      unsubData = window.api.terminal.onData((tid, data) => {
+        if (tid === result!.terminalId) term.write(data)
+      })
+      unsubExit = window.api.terminal.onExit((tid) => {
+        if (tid === result!.terminalId) {
+          terminalIdRef.current = null
+        }
+      })
+
+      termRef.current = term
+      fitRef.current = fit
+    })()
+
+    return () => {
+      cancelled = true
+      unsubData?.()
+      unsubExit?.()
+      if (terminalIdRef.current) {
+        // Leave the PTY alive in the main process so the foreman conversation
+        // keeps going between opens; just dispose the xterm view.
+        terminalIdRef.current = null
+      }
+      termRef.current?.dispose()
+      termRef.current = null
+      fitRef.current = null
+    }
+  }, [foundryId, theme])
+
+  return (
+    <div className="mt-2">
+      {error ? (
+        <p className="text-[11px] text-rose-300">{error}</p>
+      ) : (
+        <div
+          ref={containerRef}
+          className="border border-border rounded"
+          style={{ height: 280, overflow: 'hidden', padding: 4 }}
+        />
+      )}
     </div>
   )
 }

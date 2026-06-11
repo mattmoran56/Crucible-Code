@@ -8,8 +8,6 @@
  * The deterministic FSM lives here; the brain (which tasks to start, in what
  * order) is the Foreman pass, see foundry-foreman.service.ts.
  */
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import type { BrowserWindow } from 'electron'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
@@ -37,24 +35,19 @@ import {
   updatePageProperties,
 } from './notion.service'
 import { addPickedUp, loadConfig as loadNotionConfig } from './notion-poller.service'
-import {
-  createDraftPR,
-  findPRForBranch,
-  markPRReady,
-} from './github.service'
+import { findPRForBranch, markPRReady } from './github.service'
 import { startReviewLoopLite } from './review-loop-lite.service'
-
-const execFileAsync = promisify(execFile)
+import { runHeadlessClaude } from './claude-headless.service'
 
 const WATCH_INTERVAL_MS = 20_000
 const REQUEST_PASS_DEBOUNCE_MS = 5_000
-const WATCHDOG_INTERVAL_MS = 60_000
+const PR_POLL_INTERVAL_MS = 15_000
+const SAFETY_NET_PASS_INTERVAL_MS = 10 * 60_000
 const ACK_TIMEOUT_MS = 30_000
 const ACK_REFIRE_MAX = 3
 const STARTUP_RENDERER_BUFFER_MS = 2_500
 const DEFAULT_IMPLEMENT_TIMEOUT_MIN = 60
 const DEFAULT_MAX_CONCURRENCY = 2
-const FOUNDRY_PIPELINE_MARKER_PREFIX = 'foundry-pipeline:'
 
 const PERMISSION_MODE_ARGS: Record<FoundryWorkerPermissionMode, string[]> = {
   bypassPermissions: ['--dangerously-skip-permissions'],
@@ -85,7 +78,8 @@ interface FoundryRuntime {
   config: FoundryConfig
   state: FoundryRuntimeState
   watchTimer?: ReturnType<typeof setInterval>
-  watchdogTimer?: ReturnType<typeof setInterval>
+  prPollTimer?: ReturnType<typeof setInterval>
+  safetyNetTimer?: ReturnType<typeof setInterval>
   passDebounceTimer?: ReturnType<typeof setTimeout>
   passRerunRequested?: boolean
   pipelineAcks: Map<string, { fired: number; timer?: ReturnType<typeof setTimeout> }>
@@ -199,11 +193,19 @@ export function pipelineAction(
     case 'resume':
       if (p.phase === 'cancelled' || p.attention) {
         p.attention = undefined
-        // Pick up where we left off — verify implements before moving on.
-        void advanceFromImplementing(rt, p).catch((err) => {
-          log(p, `Resume failed: ${err instanceof Error ? err.message : String(err)}`)
-          saveAndEmit(rt)
-        })
+        // Pick up where we left off — re-poll the PR for implementing
+        // pipelines, restart the review loop for reviewing ones.
+        if (p.phase === 'implementing') {
+          void checkPRForPipeline(rt, p).catch((err: unknown) => {
+            log(p, `Resume failed: ${err instanceof Error ? err.message : String(err)}`)
+            saveAndEmit(rt)
+          })
+        } else if (p.phase === 'reviewing') {
+          void runReviewPhase(rt, p).catch((err: unknown) => {
+            log(p, `Resume failed: ${err instanceof Error ? err.message : String(err)}`)
+            saveAndEmit(rt)
+          })
+        }
         log(p, 'Resume requested.')
         saveAndEmit(rt)
       }
@@ -325,17 +327,29 @@ function ensureWatchTimer(rt: FoundryRuntime): void {
   if (!rt.watchTimer) {
     rt.watchTimer = setInterval(() => void tick(rt), WATCH_INTERVAL_MS)
   }
-  if (!rt.watchdogTimer) {
-    rt.watchdogTimer = setInterval(() => void watchdog(rt), WATCHDOG_INTERVAL_MS)
+  if (!rt.prPollTimer) {
+    rt.prPollTimer = setInterval(() => void pollForPRs(rt), PR_POLL_INTERVAL_MS)
+  }
+  if (!rt.safetyNetTimer) {
+    // Safety net — even with snapshot diffs + per-pipeline events, a missed
+    // Notion edge or a network blip can leave the foundry sitting on a
+    // stale plan. Force a foreman pass every ~10 minutes so the system
+    // can't sit idle indefinitely.
+    rt.safetyNetTimer = setInterval(
+      () => requestPass(rt, 'safety-net', /*immediate*/ false),
+      SAFETY_NET_PASS_INTERVAL_MS
+    )
   }
 }
 
 function stopTimers(rt: FoundryRuntime): void {
   if (rt.watchTimer) clearInterval(rt.watchTimer)
-  if (rt.watchdogTimer) clearInterval(rt.watchdogTimer)
+  if (rt.prPollTimer) clearInterval(rt.prPollTimer)
+  if (rt.safetyNetTimer) clearInterval(rt.safetyNetTimer)
   if (rt.passDebounceTimer) clearTimeout(rt.passDebounceTimer)
   rt.watchTimer = undefined
-  rt.watchdogTimer = undefined
+  rt.prPollTimer = undefined
+  rt.safetyNetTimer = undefined
   rt.passDebounceTimer = undefined
 }
 
@@ -547,7 +561,13 @@ function fireWorkerSpawn(rt: FoundryRuntime, pipeline: FoundryPipeline, payload:
 
 const IMPLEMENT_PROMPT_SUFFIX = `
 
-When the ticket is fully implemented: stage and commit all changes with a clear message. Do not push, open a PR, or update Notion — the Foundry handles those. If you are blocked or need a decision, say so clearly and stop.`
+When the ticket is fully implemented:
+1. Stage and commit all your changes with a clear message.
+2. Push the branch to origin.
+3. Open a DRAFT pull request against the base branch. The PR title should summarise the ticket; the PR body should include the Notion ticket URL and a short summary of what you changed.
+4. Do not mark the PR ready for review yet, and do not update the Notion ticket status — the Foundry handles both once a separate review loop has converged.
+
+If you are blocked or need a decision, say so clearly and stop without pushing.`
 
 async function applyDeferredPickupUpdates(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
   const notion = notionAccess(rt.config)
@@ -563,161 +583,61 @@ async function applyDeferredPickupUpdates(rt: FoundryRuntime, p: FoundryPipeline
   }
 }
 
-// ── Implement verification (stop hint + watchdog) ──────────────────────────
+// ── PR polling (the only thing we watch during 'implementing') ──────────────
 
 async function onSessionHookEvent(contextId: string, _hookType: string): Promise<void> {
-  // Find a pipeline whose worker session matches contextId.
+  // Stop hooks fire roughly when the worker says it's done with a turn — a
+  // good moment to opportunistically check for the PR (the worker should
+  // have pushed + opened it by now). PR polling will catch it anyway if the
+  // hook is dropped, but checking here gives near-instant advancement.
   for (const rt of runtimes.values()) {
     const p = rt.state.pipelines.find((pp) => pp.sessionId === contextId && pp.phase === 'implementing')
     if (p) {
-      void advanceFromImplementing(rt, p)
+      void checkPRForPipeline(rt, p)
       return
     }
   }
 }
 
-async function watchdog(rt: FoundryRuntime): Promise<void> {
+async function pollForPRs(rt: FoundryRuntime): Promise<void> {
   const timeoutMin = rt.config.implementTimeoutMinutes ?? DEFAULT_IMPLEMENT_TIMEOUT_MIN
   const now = Date.now()
   for (const p of rt.state.pipelines) {
     if (p.phase !== 'implementing') continue
     const startedMs = Date.parse(p.startedAt)
-    if (Number.isFinite(startedMs) && now - startedMs > timeoutMin * 60_000) {
-      if (!p.attention) {
-        p.attention = { reason: `implement timeout (${timeoutMin}m)`, since: new Date().toISOString() }
-        log(p, `Watchdog: implement timeout after ${timeoutMin}m.`)
-        saveAndEmit(rt)
+    if (Number.isFinite(startedMs) && now - startedMs > timeoutMin * 60_000 && !p.attention) {
+      // No PR after the configured timeout — flag for human attention. The
+      // poll keeps running, so if the worker DOES eventually open the PR
+      // we'll still advance.
+      p.attention = {
+        reason: `no PR after ${timeoutMin}m — worker may be stuck`,
+        since: new Date().toISOString(),
       }
-      continue
+      log(p, `PR-poll timeout after ${timeoutMin}m without a PR.`)
+      saveAndEmit(rt)
     }
-    void advanceFromImplementing(rt, p)
+    void checkPRForPipeline(rt, p)
   }
 }
 
-async function advanceFromImplementing(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
+async function checkPRForPipeline(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
   if (rt.advancing.has(p.id)) return
-  if (p.phase !== 'implementing') return
+  if (p.phase !== 'implementing' || !p.worktreePath || !p.branch) return
   rt.advancing.add(p.id)
   try {
-    const verify = await verifyImplementDone(p)
-    // Re-check phase — could have changed during await.
+    const info = await findPRForBranch(p.worktreePath, p.branch)
+    if (!info) return
+    // Re-check phase after the await.
     const fresh = rt.state.pipelines.find((pp) => pp.id === p.id)
     if (!fresh || fresh.phase !== 'implementing') return
-    switch (verify.kind) {
-      case 'missing-worktree':
-        fresh.phase = 'orphaned'
-        log(fresh, 'Worktree gone — pipeline orphaned.')
-        break
-      case 'no-commits':
-        if (!fresh.attention) {
-          fresh.attention = { reason: 'no-commits — likely awaiting input', since: new Date().toISOString() }
-          log(fresh, 'Verification: no commits yet. Keep listening.')
-        }
-        break
-      case 'dirty':
-        if (!fresh.attention) {
-          fresh.attention = { reason: 'uncommitted changes — worker left dirty tree', since: new Date().toISOString() }
-          log(fresh, 'Verification: uncommitted changes in worktree.')
-        }
-        break
-      case 'clean':
-        fresh.attention = undefined
-        log(fresh, `Verified ${verify.commitsAhead} commit(s) ahead of ${verify.baseRef} — pushing.`)
-        await runPushPhase(rt, fresh)
-        break
-    }
+    fresh.prNumber = info.number
+    fresh.prUrl = info.url
+    fresh.attention = undefined
+    log(fresh, `Draft PR #${info.number} detected — starting review loop.`)
     saveAndEmit(rt)
+    await runReviewPhase(rt, fresh)
   } finally {
     rt.advancing.delete(p.id)
-  }
-}
-
-interface VerifyResult {
-  kind: 'clean' | 'no-commits' | 'dirty' | 'missing-worktree'
-  commitsAhead?: number
-  baseRef?: string
-}
-
-async function verifyImplementDone(p: FoundryPipeline): Promise<VerifyResult> {
-  if (!p.worktreePath) return { kind: 'missing-worktree' }
-  const baseRef = p.baseBranch ? `origin/${p.baseBranch}` : p.baseBranch ?? 'origin/HEAD'
-  let commitsAhead = 0
-  try {
-    const { stdout } = await execFileAsync('git', ['rev-list', '--count', `${baseRef}..HEAD`], { cwd: p.worktreePath })
-    commitsAhead = Number(stdout.trim()) || 0
-  } catch {
-    // Try a fallback against the local base.
-    if (p.baseBranch) {
-      try {
-        const { stdout } = await execFileAsync('git', ['rev-list', '--count', `${p.baseBranch}..HEAD`], { cwd: p.worktreePath })
-        commitsAhead = Number(stdout.trim()) || 0
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        if (/no such file/i.test(msg) || /not a git repository/i.test(msg)) {
-          return { kind: 'missing-worktree' }
-        }
-      }
-    }
-  }
-  let dirty = false
-  try {
-    const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: p.worktreePath })
-    dirty = stdout.trim().length > 0
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    if (/no such file/i.test(msg) || /not a git repository/i.test(msg)) {
-      return { kind: 'missing-worktree' }
-    }
-  }
-  if (commitsAhead === 0) return { kind: 'no-commits', baseRef, commitsAhead }
-  if (dirty) return { kind: 'dirty', baseRef, commitsAhead }
-  return { kind: 'clean', baseRef, commitsAhead }
-}
-
-// ── Pushing / PR creation / review-loop / finalize ──────────────────────────
-
-async function runPushPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
-  if (!p.worktreePath || !p.branch) return
-  p.phase = 'pushing'
-  saveAndEmit(rt)
-  try {
-    await execFileAsync('git', ['push', '-u', 'origin', p.branch], { cwd: p.worktreePath })
-    log(p, `Pushed ${p.branch} to origin.`)
-    await runCreatePRPhase(rt, p)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    p.attention = { reason: `push failed: ${msg}`, since: new Date().toISOString() }
-    log(p, `Push failed: ${msg}`)
-    saveAndEmit(rt)
-  }
-}
-
-async function runCreatePRPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
-  if (!p.worktreePath || !p.branch) return
-  p.phase = 'creating-pr'
-  saveAndEmit(rt)
-  try {
-    const existing = await findPRForBranch(p.worktreePath, p.branch)
-    let info = existing
-    if (!info) {
-      const body = `${p.page.url ? `Notion: ${p.page.url}\n\n` : ''}Implements ticket: ${p.page.title || p.page.id}\n\n<!-- ${FOUNDRY_PIPELINE_MARKER_PREFIX}${p.id} -->`
-      const baseBranch = p.baseBranch ?? rt.config.baseBranch ?? 'main'
-      info = await createDraftPR(p.worktreePath, {
-        title: p.page.title || `Foundry: ${p.page.id}`,
-        body,
-        base: baseBranch,
-        head: p.branch,
-      })
-    }
-    p.prNumber = info.number
-    p.prUrl = info.url
-    log(p, `PR #${info.number} ready: ${info.url}`)
-    await runReviewPhase(rt, p)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    p.attention = { reason: `create-pr failed: ${msg}`, since: new Date().toISOString() }
-    log(p, `Create-PR failed: ${msg}`)
-    saveAndEmit(rt)
   }
 }
 
@@ -775,6 +695,43 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
   p.phase = 'finalizing'
   saveAndEmit(rt)
   try {
+    // Optional fresh-claude finalization on the same worktree, BEFORE we
+    // flip the PR to ready and before Notion gets the ready-for-review
+    // updates. The user's command might post a PR summary, add labels,
+    // run codegen, etc. — we don't care; just run it to completion.
+    const tpl = rt.config.readyForReviewCommandTemplate?.trim()
+    if (tpl) {
+      const ctx = {
+        ...buildPlaceholderContext(p.page),
+        branch: p.branch ?? '',
+        sessionId: p.sessionId ?? '',
+        prUrl: p.prUrl ?? '',
+        prNumber: String(p.prNumber),
+      }
+      const cmd = resolvePlaceholders(tpl, ctx)
+      log(p, `Running ready-for-review command: ${cmd}`)
+      saveAndEmit(rt)
+      const result = await runHeadlessClaude({
+        cwd: p.worktreePath,
+        prompt: cmd,
+        timeoutMs: 15 * 60 * 1000,
+        onTranscript: () => {
+          // transcript discarded — surfaced via the worker session log if
+          // the user opens it; the pipeline log gets the cmd line only.
+        },
+      })
+      if (!result.ok) {
+        p.attention = {
+          reason: `ready-for-review command failed: ${result.error ?? 'unknown'}`,
+          since: new Date().toISOString(),
+        }
+        log(p, `Ready-for-review command failed: ${result.error ?? 'unknown'}`)
+        saveAndEmit(rt)
+        return
+      }
+      log(p, 'Ready-for-review command finished.')
+    }
+
     await markPRReady(p.worktreePath, p.prNumber)
     log(p, `PR #${p.prNumber} marked ready-for-review.`)
     const notion = notionAccess(rt.config)
@@ -817,16 +774,16 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
 async function retryPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
   p.attention = undefined
   switch (p.phase) {
-    case 'pushing':
-      return runPushPhase(rt, p)
-    case 'creating-pr':
-      return runCreatePRPhase(rt, p)
     case 'reviewing':
       return runReviewPhase(rt, p)
     case 'finalizing':
       return runFinalizePhase(rt, p)
     case 'implementing':
-      return advanceFromImplementing(rt, p)
+      // Force an immediate PR check + reset the start time so the
+      // implement-timeout watchdog gives the worker another window.
+      p.startedAt = new Date().toISOString()
+      saveAndEmit(rt)
+      return checkPRForPipeline(rt, p)
     default:
       log(p, `No retry handler for phase ${p.phase}.`)
       saveAndEmit(rt)
@@ -870,13 +827,7 @@ function rehydrateAfterStartup(rt: FoundryRuntime): void {
         break
       }
       case 'implementing':
-        // Watchdog will re-verify.
-        break
-      case 'pushing':
-        void runPushPhase(rt, p)
-        break
-      case 'creating-pr':
-        void runCreatePRPhase(rt, p)
+        // PR poller will pick up where we left off.
         break
       case 'reviewing':
         // Review-loop state is in-memory; restart it.

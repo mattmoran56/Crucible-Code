@@ -112,8 +112,18 @@ export async function buildPassContext(foundryId: string): Promise<BuildContextR
   }
 }
 
-export function buildPassPrompt(contextPath: string, decisionPath: string, ctx: ForemanContext): string {
-  return `You are the Foundry Foreman for "${ctx.foundry.name}". Your job: pick which Notion tasks to start *next* on autopilot. You DO NOT write code, modify files, or run anything beyond reading "${contextPath}" and writing "${decisionPath}".
+export function buildPassPrompt(
+  contextPath: string,
+  decisionPath: string,
+  ctx: ForemanContext,
+  opts: { passIndex: number; isFirstPass: boolean } = { passIndex: 1, isFirstPass: true }
+): string {
+  const continuation = opts.isFirstPass
+    ? ''
+    : `
+
+This is pass #${opts.passIndex}. You have memory of previous passes — refer back to what you decided, what you said was blocked, and why. If you previously claimed a dependency, verify whether it's now resolved (the context will show updated statuses).`
+  return `You are the Foundry Foreman for "${ctx.foundry.name}". Your job: pick which Notion tasks to start *next* on autopilot. You DO NOT write code, modify files, or run anything beyond reading "${contextPath}" and writing "${decisionPath}".${continuation}
 
 ## Inputs
 
@@ -294,10 +304,19 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
   rt.state.passes.push(passRecord)
   saveStateEmit(rt)
 
-  const prompt = buildPassPrompt(contextPath, decisionPath, built.context)
+  // Long-lived foreman: every pass resumes the same claude session so the
+  // model retains memory of previous decisions ("you said earlier that p4
+  // depends on p1"). The session id is captured on the first pass and
+  // stored on the runtime state.
+  const resumeId = rt.state.foremanClaudeSessionId
+  const prompt = buildPassPrompt(contextPath, decisionPath, built.context, {
+    passIndex,
+    isFirstPass: !resumeId,
+  })
   const result = await runHeadlessClaude({
     cwd: pickCwd(cfg),
     prompt,
+    resumeId,
     timeoutMs: PASS_TIMEOUT_MS,
     onTranscript: (line) => {
       passRecord.transcript.push(line)
@@ -305,6 +324,11 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
   })
   passRecord.costUsd = result.costUsd
   passRecord.claudeSessionId = result.sessionId
+  // Persist the session id so subsequent passes can --resume into it. Once
+  // set, never overwrite — we want the conversation to keep growing.
+  if (!rt.state.foremanClaudeSessionId && result.sessionId) {
+    rt.state.foremanClaudeSessionId = result.sessionId
+  }
   if (!result.ok) {
     passRecord.status = 'error'
     passRecord.endedAt = new Date().toISOString()
