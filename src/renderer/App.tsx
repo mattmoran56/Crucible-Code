@@ -23,6 +23,7 @@ import { useSettingsStore } from './stores/settingsStore'
 import { LoadingScreen } from './components/LoadingScreen'
 import { useButtonStore } from './stores/buttonStore'
 import { useButtonShortcuts } from './hooks/useButtonShortcuts'
+import { useSettingsShortcut } from './hooks/useSettingsShortcut'
 import { useReviewLoopStore } from './stores/reviewLoopStore'
 import { useSchedulerBootstrap } from './hooks/useSchedulerBootstrap'
 import { useNotionBootstrap } from './hooks/useNotionBootstrap'
@@ -39,6 +40,7 @@ export default function App() {
   const applyReviewLoopState = useReviewLoopStore((s) => s.applyState)
 
   useButtonShortcuts()
+  useSettingsShortcut()
   useSchedulerBootstrap()
   useNotionBootstrap()
 
