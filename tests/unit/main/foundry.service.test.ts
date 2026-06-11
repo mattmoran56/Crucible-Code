@@ -28,6 +28,18 @@ const fakeWindow = {
   },
 } as unknown as Electron.BrowserWindow
 
+// node-pty has no linux-x64 prebuilds shipped with the package, so loading
+// terminal.service transitively crashes the suite on CI. We don't exercise
+// the PTY path here anyway — stub it out cleanly.
+vi.mock('node-pty', () => ({ spawn: () => ({ onData: () => {}, onExit: () => {}, write: () => {}, kill: () => {}, resize: () => {} }) }))
+vi.mock('../../../src/main/services/terminal.service', () => ({
+  spawnTerminal: () => 'mock-term-1',
+  killTerminal: () => {},
+  writeTerminal: () => {},
+  getTerminalBuffer: () => '',
+  listTerminalsForSession: () => [],
+}))
+
 vi.mock('electron-store', () => ({ default: FakeStore }))
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/foundry-test', isPackaged: false },

@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 
+// node-pty has no linux-x64 prebuilds, and the foreman service imports
+// terminal.service for the foreman PTY spawn — stub the chain on CI.
+vi.mock('node-pty', () => ({ spawn: () => ({ onData: () => {}, onExit: () => {}, write: () => {}, kill: () => {}, resize: () => {} }) }))
+vi.mock('../../../src/main/services/terminal.service', () => ({
+  spawnTerminal: () => 'mock-term-1',
+  killTerminal: () => {},
+  writeTerminal: () => {},
+  getTerminalBuffer: () => '',
+  listTerminalsForSession: () => [],
+}))
+
 vi.mock('electron-store', () => ({ default: class { constructor(){} get(){return {}} set(){} delete(){} } }))
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp', isPackaged: false } }))
 vi.mock('../../../src/main/store-path', () => ({ getStorePath: () => '/tmp/foundry-foreman-test' }))
