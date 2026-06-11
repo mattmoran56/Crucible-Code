@@ -1,5 +1,4 @@
 import { readFileSync, existsSync, unlinkSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir, tmpdir, platform } from 'node:os'
 import { execSync } from 'node:child_process'
@@ -95,11 +94,6 @@ function rawToSessionUsage(sessionId: string, raw: string): SessionUsage | null 
   }
 }
 
-/**
- * Synchronous parse used by the on-demand IPC path. Kept sync so the IPC
- * handler can return a value immediately when the cache misses; the periodic
- * poller uses the async variant instead.
- */
 function parseStatusLineFile(sessionId: string, filePath: string): SessionUsage | null {
   try {
     if (!existsSync(filePath)) return null
@@ -109,22 +103,10 @@ function parseStatusLineFile(sessionId: string, filePath: string): SessionUsage 
   }
 }
 
-async function parseStatusLineFileAsync(
-  sessionId: string,
-  filePath: string
-): Promise<SessionUsage | null> {
-  try {
-    return rawToSessionUsage(sessionId, await readFile(filePath, 'utf-8'))
-  } catch {
-    // ENOENT (file not yet written) or parse error — silently skip this tick.
-    return null
-  }
-}
-
 /**
- * Skip the poll entirely when the app is hidden or there's nothing to poll.
- * Reading every session's status-line file from the main thread used to be a
- * 50-200ms blocking burst every 30s once a few sessions were active.
+ * Skip the poll entirely when the app is hidden or there's nothing to poll —
+ * the IPC update has no recipient and the disk reads add up over hours of
+ * idle background time.
  */
 function shouldPoll(): boolean {
   if (sessionFiles.size === 0) return false
@@ -134,21 +116,10 @@ function shouldPoll(): boolean {
   return true
 }
 
-/**
- * Poll all registered session files and push updates to the renderer.
- * Runs reads in parallel and uses async fs so the main thread isn't blocked
- * during the burst.
- */
-async function pollAllSessions(): Promise<void> {
+function pollAllSessions(): void {
   if (!shouldPoll()) return
-  const entries = Array.from(sessionFiles.entries())
-  const results = await Promise.all(
-    entries.map(async ([sessionId, filePath]) => ({
-      sessionId,
-      usage: await parseStatusLineFileAsync(sessionId, filePath),
-    }))
-  )
-  for (const { sessionId, usage } of results) {
+  for (const [sessionId, filePath] of sessionFiles) {
+    const usage = parseStatusLineFile(sessionId, filePath)
     if (!usage) continue
     const previous = sessionUsages.get(sessionId)
     sessionUsages.set(sessionId, usage)
@@ -181,7 +152,7 @@ function maybeEmitLimitReached(previous: SessionUsage | undefined, current: Sess
 export function startUsagePolling(window: BrowserWindow): void {
   mainWindow = window
   if (pollTimer) return
-  pollTimer = setInterval(() => void pollAllSessions(), 30_000)
+  pollTimer = setInterval(pollAllSessions, 30_000)
 }
 
 /**
