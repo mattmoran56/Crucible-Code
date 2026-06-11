@@ -552,6 +552,8 @@ const api = {
     setPaused: (foundryId: string, paused: boolean): Promise<void> =>
       ipcRenderer.invoke(IPC.FOUNDRY_SET_PAUSED, foundryId, paused),
     runNow: (foundryId: string): Promise<void> => ipcRenderer.invoke(IPC.FOUNDRY_RUN_NOW, foundryId),
+    resetState: (foundryId: string): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke(IPC.FOUNDRY_RESET_STATE, foundryId),
     getState: (foundryId: string): Promise<FoundryRuntimeState | null> =>
       ipcRenderer.invoke(IPC.FOUNDRY_STATE_GET, foundryId),
     taskStarted: (foundryId: string, ack: FoundryTaskStartedAck): Promise<void> =>

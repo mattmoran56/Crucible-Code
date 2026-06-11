@@ -173,6 +173,49 @@ export function getState(foundryId: string): FoundryRuntimeState | null {
   return runtimes.get(foundryId)?.state ?? loadStateFresh(foundryId)
 }
 
+/**
+ * Wipe runtime state — pipelines, passes, snapshot, documented hashes,
+ * planMarkdownHash, foremanClaudeSessionId, lastError. Keeps the config
+ * intact. Refused while the foundry is enabled, so the user can't yank
+ * state out from under live workers.
+ */
+export function resetState(foundryId: string): { ok: boolean; reason?: string } {
+  const cfg = loadAllConfigsFresh().find((f) => f.id === foundryId)
+  if (!cfg) return { ok: false, reason: 'foundry not found' }
+  if (cfg.enabled && !cfg.paused) {
+    return { ok: false, reason: 'turn the foundry off before resetting' }
+  }
+  console.log(`[foundry:${foundryId}] reset state`)
+  const rt = runtimes.get(foundryId)
+  const cleared: FoundryRuntimeState = {
+    foundryId,
+    pageStatusSnapshot: {},
+    documentedHashes: {},
+    pipelines: [],
+    passes: [],
+    passInFlight: false,
+  }
+  if (rt) {
+    // Cancel any in-flight ack timers and rerun requests.
+    for (const a of rt.pipelineAcks.values()) {
+      if (a.timer) clearTimeout(a.timer)
+    }
+    rt.pipelineAcks.clear()
+    rt.advancing.clear()
+    rt.passRerunRequested = false
+    rt.state = cleared
+    saveAndEmit(rt)
+  } else {
+    const all = stateStore.get('states', {})
+    all[foundryId] = cleared
+    stateStore.set('states', all)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      emitToRenderer(mainWindow, IPC.FOUNDRY_STATE_UPDATE, foundryId, structuredClone(cleared))
+    }
+  }
+  return { ok: true }
+}
+
 export function runPassNow(foundryId: string): void {
   const rt = runtimes.get(foundryId)
   if (!rt) return
@@ -297,11 +340,19 @@ function subscribeOnBus(channel: string, listener: (...args: any[]) => void): ()
 function syncRuntimeForConfig(config: FoundryConfig): void {
   const existing = runtimes.get(config.id)
   if (existing) {
+    const wasActive = existing.config.enabled && !existing.config.paused
+    const nowActive = config.enabled && !config.paused
     existing.config = config
-    if (config.enabled && !config.paused) {
+    if (nowActive) {
       ensureWatchTimer(existing)
     } else {
       stopTimers(existing)
+    }
+    // Off→on transition should kick the foreman immediately rather than
+    // making the user wait for the 10-min safety net or a snapshot diff.
+    if (!wasActive && nowActive) {
+      console.log(`[foundry] ${config.id} enabled — requesting initial pass`)
+      setTimeout(() => requestPass(existing, 'enabled', /*immediate*/ false), STARTUP_RENDERER_BUFFER_MS)
     }
     saveAndEmit(existing)
     return
@@ -373,19 +424,27 @@ export async function tick(rt: FoundryRuntime): Promise<void> {
   const fresh = loadAllConfigsFresh().find((f) => f.id === rt.config.id)
   if (!fresh) return
   rt.config = fresh
-  if (!fresh.enabled || fresh.paused) return
+  if (!fresh.enabled || fresh.paused) {
+    console.log(`[foundry:${fresh.id}] tick skipped (enabled=${fresh.enabled} paused=${!!fresh.paused})`)
+    return
+  }
 
   const notion = notionAccess(fresh)
-  if (!notion) return
+  if (!notion) {
+    console.warn(`[foundry:${fresh.id}] tick: no notion access (token/db missing on project ${fresh.projectId})`)
+    return
+  }
 
   let pages: NotionTaskPayload[]
   try {
     pages = await queryDatabase(notion.apiToken, notion.databaseId, fresh.taskSetFilters, notion.titlePropertyName)
   } catch (err) {
     rt.state.lastError = `task-set query failed: ${err instanceof Error ? err.message : String(err)}`
+    console.error(`[foundry:${fresh.id}] task-set query failed`, err)
     saveAndEmit(rt)
     return
   }
+  console.log(`[foundry:${fresh.id}] tick: ${pages.length} task(s) in set`)
 
   const prevSnapshot = rt.state.pageStatusSnapshot
   const isFirstTick = Object.keys(prevSnapshot).length === 0
@@ -442,6 +501,7 @@ export function requestPass(
 ): void {
   const fire = (): void => {
     if (rt.state.passInFlight) {
+      console.log(`[foundry:${rt.config.id}] pass already in flight — rerun queued (trigger=${trigger})`)
       rt.passRerunRequested = true
       return
     }
@@ -449,11 +509,13 @@ export function requestPass(
     saveAndEmit(rt)
     const runner = runForemanPass
     if (!runner) {
+      console.error(`[foundry:${rt.config.id}] foreman runner not registered`)
       rt.state.passInFlight = false
       rt.state.lastError = 'foreman runner not registered'
       saveAndEmit(rt)
       return
     }
+    console.log(`[foundry:${rt.config.id}] firing foreman pass (trigger=${trigger})`)
     void runner({ foundryId: rt.config.id, trigger }).finally(() => {
       rt.state.passInFlight = false
       saveAndEmit(rt)
@@ -466,10 +528,12 @@ export function requestPass(
   if (immediate) {
     if (rt.passDebounceTimer) clearTimeout(rt.passDebounceTimer)
     rt.passDebounceTimer = undefined
+    console.log(`[foundry:${rt.config.id}] requestPass(${trigger}) immediate`)
     fire()
     return
   }
   if (rt.passDebounceTimer) clearTimeout(rt.passDebounceTimer)
+  console.log(`[foundry:${rt.config.id}] requestPass(${trigger}) debounced ${REQUEST_PASS_DEBOUNCE_MS}ms`)
   rt.passDebounceTimer = setTimeout(fire, REQUEST_PASS_DEBOUNCE_MS)
 }
 
@@ -822,6 +886,19 @@ async function skipPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> 
 // ── Rehydration ─────────────────────────────────────────────────────────────
 
 function rehydrateAfterStartup(rt: FoundryRuntime): void {
+  // Make sure the configured base branch is reachable before we re-fire any
+  // worker spawns — otherwise the renderer's worktree.create would ENOENT
+  // and the pipeline would re-fire on every restart into the same error.
+  if (rt.config.baseBranch?.trim()) {
+    const repoPath = projectRepoPath(rt.config.projectId)
+    if (repoPath) {
+      void ensureBaseBranchExists(repoPath, rt.config.baseBranch.trim()).catch((err) => {
+        rt.state.lastError = `rehydrate: base branch "${rt.config.baseBranch}" could not be ensured: ${err instanceof Error ? err.message : String(err)}`
+        console.error(`[foundry:${rt.config.id}] ${rt.state.lastError}`)
+        saveAndEmit(rt)
+      })
+    }
+  }
   for (const p of rt.state.pipelines) {
     switch (p.phase) {
       case 'spawn-requested': {
@@ -883,9 +960,10 @@ interface ProjectsStoreShape {
 
 function projectRepoPath(projectId: string): string | null {
   try {
+    // Match project.ipc.ts — no `name`, so it reads from electron-store's
+    // default `config.json` (where the project IPC handler persists them).
     const fresh = new Store<ProjectsStoreShape>({
       cwd: getStorePath(),
-      name: 'projects',
       defaults: { projects: [] },
     })
     const proj = fresh.get('projects', []).find((p) => p.id === projectId)

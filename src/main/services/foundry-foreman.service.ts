@@ -263,8 +263,12 @@ export function validateDecision(
 
 export async function runPass(foundryId: string, trigger: FoundryPassTrigger): Promise<void> {
   const rt = getRuntime(foundryId)
-  if (!rt) return
+  if (!rt) {
+    console.warn(`[foundry-foreman:${foundryId}] runPass: no runtime`)
+    return
+  }
   const cfg = rt.config
+  console.log(`[foundry-foreman:${foundryId}] runPass start (trigger=${trigger})`)
 
   const passIndex = rt.state.passes.length + 1
   const passDir = join(getStorePath(), 'foundry', cfg.id, `pass-${passIndex}`)
@@ -333,6 +337,7 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
     passRecord.status = 'error'
     passRecord.endedAt = new Date().toISOString()
     passRecord.errorMessage = result.error
+    console.error(`[foundry-foreman:${cfg.id}] pass #${passIndex} headless claude failed: ${result.error ?? 'unknown'}`)
     saveStateEmit(rt)
     return
   }
@@ -340,6 +345,7 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
     passRecord.status = 'error'
     passRecord.endedAt = new Date().toISOString()
     passRecord.errorMessage = 'decision.json missing after claude run'
+    console.error(`[foundry-foreman:${cfg.id}] pass #${passIndex} decision.json missing at ${decisionPath}`)
     saveStateEmit(rt)
     return
   }
@@ -388,6 +394,9 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
   passRecord.status = 'completed'
   passRecord.endedAt = new Date().toISOString()
   passRecord.summary = `${decision.summary}${validation.warnings.length > 0 ? ` (warnings: ${validation.warnings.length})` : ''}`
+  console.log(
+    `[foundry-foreman:${cfg.id}] pass #${passIndex} completed: started=${passRecord.startedPageIds.length}, warnings=${validation.warnings.length}, cost=$${result.costUsd.toFixed(4)}`
+  )
   saveStateEmit(rt)
 }
 
@@ -434,9 +443,10 @@ interface ProjectsStoreShape {
 
 function pickCwd(cfg: FoundryConfig): string {
   try {
+    // Match project.ipc.ts — no `name`, so it reads from the default
+    // config.json (where the project IPC handler persists them).
     const fresh = new Store<ProjectsStoreShape>({
       cwd: getStorePath(),
-      name: 'projects',
       defaults: { projects: [] },
     })
     const projects = fresh.get('projects', [])

@@ -54,6 +54,13 @@ export function registerFoundryHandlers(window: BrowserWindow): void {
     foundry.runPassNow(foundryId)
   })
 
+  handle(
+    IPC.FOUNDRY_RESET_STATE,
+    async (_e, foundryId: string): Promise<{ ok: boolean; reason?: string }> => {
+      return foundry.resetState(foundryId)
+    }
+  )
+
   handle(IPC.FOUNDRY_STATE_GET, async (_e, foundryId: string): Promise<FoundryRuntimeState | null> => {
     return foundry.getState(foundryId)
   })

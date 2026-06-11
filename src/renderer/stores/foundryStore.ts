@@ -12,6 +12,7 @@ interface FoundryStore {
   remove: (foundryId: string) => Promise<void>
   setPaused: (foundryId: string, paused: boolean) => Promise<void>
   runNow: (foundryId: string) => Promise<void>
+  resetState: (foundryId: string) => Promise<{ ok: boolean; reason?: string }>
 }
 
 export const useFoundryStore = create<FoundryStore>((set, get) => ({
@@ -43,5 +44,10 @@ export const useFoundryStore = create<FoundryStore>((set, get) => ({
   },
   runNow: async (foundryId) => {
     await window.api.foundry.runNow(foundryId)
+  },
+  resetState: async (foundryId) => {
+    const result = await window.api.foundry.resetState(foundryId)
+    if (result.ok) await get().reload()
+    return result
   },
 }))

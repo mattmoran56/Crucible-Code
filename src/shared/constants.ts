@@ -240,4 +240,5 @@ export const IPC = {
   FOUNDRY_PIPELINE_ACTION: 'foundry:pipeline-action',
   FOUNDRY_OPEN_FOREMAN: 'foundry:open-foreman',
   FOUNDRY_REQUEST_PASS: 'foundry:request-pass',
+  FOUNDRY_RESET_STATE: 'foundry:reset-state',
 } as const

@@ -45,6 +45,7 @@ export function FoundrySettings({ projects }: Props) {
   const reload = useFoundryStore((s) => s.reload)
   const save = useFoundryStore((s) => s.save)
   const remove = useFoundryStore((s) => s.remove)
+  const resetState = useFoundryStore((s) => s.resetState)
   const project = projects[0]
 
   const [notionConfig, setNotionConfig] = useState<NotionIntegrationConfig | null>(null)
@@ -169,6 +170,25 @@ export function FoundrySettings({ projects }: Props) {
               <Button size="sm" variant="ghost" onClick={() => setEditingId(cfg.id)}>
                 Edit
               </Button>
+              {!cfg.enabled && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `Reset all runtime state for "${cfg.name}"? Pipelines, pass history, snapshot, and the foreman conversation will all be wiped. The config itself is kept. Existing worktrees + sessions are NOT touched.`
+                      )
+                    ) {
+                      void resetState(cfg.id).then((r) => {
+                        if (!r.ok && r.reason) window.alert(`Reset refused: ${r.reason}`)
+                      })
+                    }
+                  }}
+                >
+                  Reset
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
