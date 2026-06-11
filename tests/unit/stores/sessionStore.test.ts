@@ -16,6 +16,9 @@ const worktreeApi = {
   create: vi.fn(),
   remove: vi.fn(),
   createFromBranch: vi.fn(),
+  createForPR: vi.fn(),
+  listPR: vi.fn(),
+  removePR: vi.fn(),
 }
 const terminalApi = {
   killSession: vi.fn(),
@@ -315,6 +318,7 @@ describe('sessionStore.createSession', () => {
     expect(sessionApi.saveContext).toHaveBeenCalledWith('p1', {
       sessionId: id,
       prNumber: null,
+      prWorktreePath: null,
       openedAsMainBranch: null,
       previousMainBranch: null,
       detachedWorktree: null,
@@ -541,67 +545,83 @@ describe('sessionStore.openPR / closePR', () => {
   beforeEach(() => {
     useSessionStore.setState({ currentProjectId: 'p1', activeSessionId: 's1' } as any)
     useToastStore.setState({ toasts: [] })
+    worktreeApi.createForPR.mockResolvedValue({ path: '/wt/pr-5', branch: 'feat/x' })
   })
 
-  it('checks out the PR head branch and switches to the pr tab', async () => {
-    gitApi.checkout.mockResolvedValue({ stashed: true, detachedWorktree: null })
+  it('creates a PR worktree and switches to the pr tab', async () => {
     await useSessionStore.getState().openPR('/repo', PR)
     const s = useSessionStore.getState()
-    expect(gitApi.checkout).toHaveBeenCalledWith('/repo', 'feat/x')
+    expect(worktreeApi.createForPR).toHaveBeenCalledWith('/repo', 5, 'feat/x')
     expect(s.activeSessionId).toBeNull()
     expect(s.activePRNumber).toBe(5)
     expect(s.activeWorkspaceTab).toBe('pr')
-    expect(s.didStash).toBe(true)
   })
 
-  it('tracks a detached worktree reported by the checkout', async () => {
-    gitApi.checkout.mockResolvedValue({ stashed: false, detachedWorktree: '/wt/conflict' })
+  it('records the created worktree path on the active PR state', async () => {
     await useSessionStore.getState().openPR('/repo', PR)
-    expect(useSessionStore.getState().detachedWorktree).toEqual({
-      worktreePath: '/wt/conflict',
-      branch: 'feat/x',
+    expect(useSessionStore.getState().activePRWorktreePath).toBe('/wt/pr-5')
+  })
+
+  it('surfaces a worktree-creation failure as a toast but still opens the PR', async () => {
+    worktreeApi.createForPR.mockRejectedValue(new Error('dirty tree'))
+    await useSessionStore.getState().openPR('/repo', PR)
+    expect(useToastStore.getState().toasts[0]).toMatchObject({
+      type: 'error',
+      message: 'Failed to open PR worktree: dirty tree',
     })
-  })
-
-  it('surfaces a checkout error message as a toast but still opens the PR', async () => {
-    gitApi.checkout.mockResolvedValue({ stashed: false, detachedWorktree: null, error: 'dirty tree' })
-    await useSessionStore.getState().openPR('/repo', PR)
-    expect(useToastStore.getState().toasts[0]).toMatchObject({ type: 'error', message: 'dirty tree' })
     expect(useSessionStore.getState().activePRNumber).toBe(5)
   })
 
-  it('opens the PR with safe defaults when the checkout throws', async () => {
-    gitApi.checkout.mockRejectedValue(new Error('boom'))
+  it('leaves the worktree path null when creation throws', async () => {
+    worktreeApi.createForPR.mockRejectedValue(new Error('boom'))
     await useSessionStore.getState().openPR('/repo', PR)
     const s = useSessionStore.getState()
-    expect(useToastStore.getState().toasts[0]).toMatchObject({ type: 'error', message: 'boom' })
     expect(s.activePRNumber).toBe(5)
+    expect(s.activePRWorktreePath).toBeNull()
     expect(s.didStash).toBe(false)
     expect(s.detachedWorktree).toBeNull()
   })
 
-  it('persists the PR number in the project context', async () => {
-    gitApi.checkout.mockResolvedValue({ stashed: false, detachedWorktree: null })
+  it('does not commit the path back if the user navigated away mid-creation', async () => {
+    let resolveCreate: (v: { path: string; branch: string }) => void = () => {}
+    worktreeApi.createForPR.mockReturnValue(
+      new Promise((res) => {
+        resolveCreate = res
+      })
+    )
+    const p = useSessionStore.getState().openPR('/repo', PR)
+    // Simulate the user closing the PR before createForPR resolves.
+    useSessionStore.setState({ activePRNumber: null } as any)
+    resolveCreate({ path: '/wt/pr-5', branch: 'feat/x' })
+    await p
+    expect(useSessionStore.getState().activePRWorktreePath).toBeNull()
+  })
+
+  it('persists the PR number and worktree path in the project context', async () => {
     await useSessionStore.getState().openPR('/repo', PR)
     expect(sessionApi.saveContext).toHaveBeenCalledWith('p1', expect.objectContaining({
       sessionId: null,
       prNumber: 5,
+      prWorktreePath: '/wt/pr-5',
     }))
   })
 
-  it('closePR clears the PR, restores the detached worktree and persists', async () => {
+  it('closePR clears the PR and worktree path and persists without restoring', async () => {
     useSessionStore.setState({
       activePRNumber: 5,
       activeSessionId: 's1',
-      detachedWorktree: { worktreePath: '/wt/x', branch: 'feat/x' },
+      activePRWorktreePath: '/wt/pr-5',
     } as any)
     await useSessionStore.getState().closePR()
-    expect(gitApi.restoreWorktree).toHaveBeenCalledWith('/wt/x', 'feat/x')
+    // The worktree is left in place for the reconcile path; closePR no longer
+    // restores anything.
+    expect(gitApi.restoreWorktree).not.toHaveBeenCalled()
     expect(useSessionStore.getState().activePRNumber).toBeNull()
-    expect(useSessionStore.getState().detachedWorktree).toBeNull()
+    expect(useSessionStore.getState().activePRWorktreePath).toBeNull()
     expect(sessionApi.saveContext).toHaveBeenCalledWith('p1', expect.objectContaining({
       sessionId: 's1',
       prNumber: null,
+      prWorktreePath: null,
     }))
   })
 })
@@ -711,6 +731,7 @@ describe('sessionStore.clearActiveContext', () => {
     expect(sessionApi.saveContext).toHaveBeenCalledWith('p1', {
       sessionId: null,
       prNumber: null,
+      prWorktreePath: null,
       openedAsMainBranch: null,
       previousMainBranch: null,
       detachedWorktree: null,
