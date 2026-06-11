@@ -22,16 +22,12 @@ test.describe('Usage panel — rate limits', () => {
     await expect(page.getByText('Rate Limits', { exact: true })).toBeVisible()
   })
 
-  test('renders the five-hour window percentage from mock usage', async ({ page }) => {
+  test('shows "no data" for both windows until a session pushes usage', async ({ page }) => {
+    // The mock backend never fires usage.onSessionUpdate, so the rate-limit
+    // rows render their empty states.
     await openUsagePanel(page)
-    // mockSessionUsage.fiveHour.usedPercentage = 34
-    await expect(page.getByText('34%')).toBeVisible()
-  })
-
-  test('renders the seven-day window percentage from mock usage', async ({ page }) => {
-    await openUsagePanel(page)
-    // mockSessionUsage.sevenDay.usedPercentage = 12
-    await expect(page.getByText('12%')).toBeVisible()
+    await expect(page.getByText(/5-hour: no data/)).toBeVisible()
+    await expect(page.getByText(/7-day: no data/)).toBeVisible()
   })
 
   test('closes when clicking the Usage button again', async ({ page }) => {
@@ -42,20 +38,30 @@ test.describe('Usage panel — rate limits', () => {
   })
 })
 
-test.describe('Usage panel — session cost', () => {
+test.describe('Usage panel — weekly activity', () => {
   test.beforeEach(async ({ page }) => bootApp(page))
 
-  test('shows the total session cost from mock data', async ({ page }) => {
+  test('active session section waits for data', async ({ page }) => {
     await openUsagePanel(page)
-    // mockSessionUsage.cost.totalCostUsd = 2.47
-    await expect(page.getByText(/\$2\.47/)).toBeVisible()
+    await expect(page.getByText('Active Session')).toBeVisible()
+    await expect(page.getByText('Waiting for data...')).toBeVisible()
   })
 
-  test('shows lines added and removed', async ({ page }) => {
+  test('This Week totals aggregate the seven mock days', async ({ page }) => {
     await openUsagePanel(page)
-    // totalLinesAdded: 342, totalLinesRemoved: 87
-    await expect(page.getByText(/342/)).toBeVisible()
-    await expect(page.getByText(/87/)).toBeVisible()
+    // Sums over mockUsageStats.dailyActivity: 383 messages, 25 sessions,
+    // 1,073 tool calls.
+    await expect(page.getByText('This Week')).toBeVisible()
+    await expect(page.getByText('383', { exact: true })).toBeVisible()
+    await expect(page.getByText('25', { exact: true })).toBeVisible()
+    await expect(page.getByText('1,073', { exact: true })).toBeVisible()
+  })
+
+  test('labels the weekly metric columns', async ({ page }) => {
+    await openUsagePanel(page)
+    await expect(page.getByText('Messages')).toBeVisible()
+    await expect(page.getByText('Sessions', { exact: true }).last()).toBeVisible()
+    await expect(page.getByText('Tool calls')).toBeVisible()
   })
 })
 
