@@ -3,13 +3,14 @@ import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { useFoundryStore } from '../../stores/foundryStore'
-import { FilterGroupsEditor } from './NotionIntegrationSettings'
+import { FilterGroupsEditor, UpdatesEditor } from './NotionIntegrationSettings'
 import type {
   FoundryConfig,
   NotionDatabaseProperty,
   NotionDatabaseSchema,
   NotionIntegrationConfig,
   NotionPropertyFilter,
+  NotionPropertyUpdate,
   Project,
 } from '../../../shared/types'
 
@@ -386,6 +387,47 @@ function FoundryEditor({ cfg, schema, apiToken, onSave, onClose }: EditorProps) 
             }
             emptyHint="Pick a property first."
           />
+        </fieldset>
+
+        <fieldset className="border border-border rounded-md" style={{ padding: '10px' }}>
+          <legend className="text-[11px] text-text-muted">On pickup</legend>
+          <p className="text-[11px] text-text-muted" style={{ marginBottom: 8 }}>
+            Property updates applied to the Notion page the moment a worker
+            session is created (e.g. <em>Status: Not Started → In Progress</em>).
+            Supports placeholders: <code>{'{{branch}}'}</code>, <code>{'{{sessionId}}'}</code>,
+            etc.; updates that reference those run after the session is created,
+            the rest run immediately.
+          </p>
+          {schema ? (
+            <UpdatesEditor
+              schema={schema}
+              updates={draft.pickupUpdates}
+              onChange={(pickupUpdates: NotionPropertyUpdate[]) => update({ pickupUpdates })}
+            />
+          ) : (
+            <p className="text-[11px] text-text-muted italic">Loading Notion schema…</p>
+          )}
+        </fieldset>
+
+        <fieldset className="border border-border rounded-md" style={{ padding: '10px' }}>
+          <legend className="text-[11px] text-text-muted">On ready for review</legend>
+          <p className="text-[11px] text-text-muted" style={{ marginBottom: 8 }}>
+            Updates applied right after the review loop converges and the PR
+            is marked ready (e.g. <em>Status → In review</em>). Has access to
+            <code>{' {{prUrl}}'}</code> and <code>{'{{prNumber}}'}</code> in
+            addition to the usual placeholders.
+          </p>
+          {schema ? (
+            <UpdatesEditor
+              schema={schema}
+              updates={draft.readyForReviewUpdates}
+              onChange={(readyForReviewUpdates: NotionPropertyUpdate[]) =>
+                update({ readyForReviewUpdates })
+              }
+            />
+          ) : (
+            <p className="text-[11px] text-text-muted italic">Loading Notion schema…</p>
+          )}
         </fieldset>
 
         <MultiSelectField
