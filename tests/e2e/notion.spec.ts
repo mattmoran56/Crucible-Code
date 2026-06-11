@@ -88,17 +88,23 @@ test.describe('Notion integration — settings UI', () => {
       await onRadio.click()
     }
 
-    // After saving, querying the mock API for the config should return our values.
-    await page.waitForTimeout(150)
-    const stored = await page.evaluate(async () => {
-      const list = await (window as any).api.project.list()
-      const projectId = list.find((p: any) => p.name === 'CodeCrucible').id
-      return (window as any).api.notion.loadConfig(projectId)
-    })
-    expect(stored).toMatchObject({
-      apiToken: 'secret_test_token',
-      databaseId: '1234567890abcdef1234567890abcdef',
-    })
+    // The form persists on a debounce, so poll the mock API until the stored
+    // config reflects our values rather than racing a fixed timeout (the
+    // debounce can outlast a short wait on a loaded CI runner).
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(async () => {
+            const list = await (window as any).api.project.list()
+            const projectId = list.find((p: any) => p.name === 'CodeCrucible').id
+            return (window as any).api.notion.loadConfig(projectId)
+          }),
+        { timeout: 10_000 }
+      )
+      .toMatchObject({
+        apiToken: 'secret_test_token',
+        databaseId: '1234567890abcdef1234567890abcdef',
+      })
   })
 })
 

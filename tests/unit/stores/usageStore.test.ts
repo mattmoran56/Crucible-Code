@@ -99,3 +99,125 @@ describe('usageStore.fetchSubscription', () => {
     expect(useToastStore.getState().toasts[0]).toMatchObject({ type: 'error' })
   })
 })
+
+describe('usageStore loading and account resolution', () => {
+  it('fetchStats flips statsLoading on while the request is in flight', async () => {
+    let resolve: (v: any) => void = () => {}
+    getStats.mockImplementationOnce(() => new Promise((r) => { resolve = r }))
+    const promise = useUsageStore.getState().fetchStats()
+    expect(useUsageStore.getState().statsLoading).toBe(true)
+    resolve({ dailyActivity: [], totalSessions: 0, totalMessages: 0 })
+    await promise
+    expect(useUsageStore.getState().statsLoading).toBe(false)
+  })
+
+  it('fetchStats failure keeps the previously fetched stats', async () => {
+    const prior: any = { dailyActivity: [], totalSessions: 5, totalMessages: 50 }
+    useUsageStore.setState({ stats: prior })
+    getStats.mockRejectedValue(new Error('parse error'))
+    await useUsageStore.getState().fetchStats()
+    expect(useUsageStore.getState().stats).toEqual(prior)
+  })
+
+  it('a later fetchStats result replaces the earlier snapshot', async () => {
+    getStats
+      .mockResolvedValueOnce({ dailyActivity: [], totalSessions: 1, totalMessages: 1 })
+      .mockResolvedValueOnce({ dailyActivity: [], totalSessions: 2, totalMessages: 9 })
+    await useUsageStore.getState().fetchStats()
+    await useUsageStore.getState().fetchStats()
+    expect(useUsageStore.getState().stats).toEqual({
+      dailyActivity: [],
+      totalSessions: 2,
+      totalMessages: 9,
+    })
+  })
+
+  it('fetchSubscription passes the active account configDir', async () => {
+    useProjectStore.setState({
+      projects: [{ id: 'p1', name: 'A', repoPath: '/a', claudeAccountId: 'acc-1' } as any],
+      activeProjectId: 'p1',
+      claudeAccounts: [{ id: 'acc-1', label: 'Work', configDir: '/work-cfg' } as any],
+    } as any)
+    getSubscription.mockResolvedValue({ subscriptionType: 'max', rateLimitTier: 'high' })
+    await useUsageStore.getState().fetchSubscription()
+    expect(getSubscription).toHaveBeenCalledWith('/work-cfg')
+  })
+
+  it('fetchSubscription passes undefined when the project has no linked account', async () => {
+    useProjectStore.setState({
+      projects: [{ id: 'p1', name: 'A', repoPath: '/a' } as any],
+      activeProjectId: 'p1',
+      claudeAccounts: [{ id: 'acc-1', label: 'Work', configDir: '/work-cfg' } as any],
+    } as any)
+    getSubscription.mockResolvedValue(null)
+    await useUsageStore.getState().fetchSubscription()
+    expect(getSubscription).toHaveBeenCalledWith(undefined)
+  })
+
+  it('fetchSubscription stores a null result verbatim', async () => {
+    useUsageStore.setState({ subscription: { subscriptionType: 'pro', rateLimitTier: null } as any })
+    getSubscription.mockResolvedValue(null)
+    await useUsageStore.getState().fetchSubscription()
+    expect(useUsageStore.getState().subscription).toBeNull()
+  })
+
+  it('fetchSubscription failure keeps the previous subscription', async () => {
+    const prior: any = { subscriptionType: 'pro', rateLimitTier: null }
+    useUsageStore.setState({ subscription: prior })
+    getSubscription.mockRejectedValue(new Error('offline'))
+    await useUsageStore.getState().fetchSubscription()
+    expect(useUsageStore.getState().subscription).toEqual(prior)
+    expect(useToastStore.getState().toasts[0]).toMatchObject({ type: 'error', message: 'offline' })
+  })
+
+  it('resolves no configDir when the referenced account record is missing', async () => {
+    useProjectStore.setState({
+      projects: [{ id: 'p1', name: 'A', repoPath: '/a', claudeAccountId: 'acc-deleted' } as any],
+      activeProjectId: 'p1',
+      claudeAccounts: [],
+    } as any)
+    getStats.mockResolvedValue({ dailyActivity: [], totalSessions: 0, totalMessages: 0 })
+    await useUsageStore.getState().fetchStats()
+    expect(getStats).toHaveBeenCalledWith(undefined)
+  })
+
+  it('resolves no configDir when activeProjectId matches no project', async () => {
+    useProjectStore.setState({
+      projects: [{ id: 'p1', name: 'A', repoPath: '/a', claudeAccountId: 'acc-1' } as any],
+      activeProjectId: 'p-gone',
+      claudeAccounts: [{ id: 'acc-1', label: 'Work', configDir: '/work-cfg' } as any],
+    } as any)
+    getStats.mockResolvedValue({ dailyActivity: [], totalSessions: 0, totalMessages: 0 })
+    await useUsageStore.getState().fetchStats()
+    expect(getStats).toHaveBeenCalledWith(undefined)
+  })
+})
+
+describe('usageStore session usage isolation', () => {
+  it('fetchSessionUsage preserves usage entries for other sessions', async () => {
+    const existing: any = { sessionId: 'other', cost: { totalCostUsd: 1 } }
+    useUsageStore.setState({ sessionUsages: { other: existing } })
+    const fetched: any = { sessionId: 's1', cost: { totalCostUsd: 2 } }
+    getSession.mockResolvedValue(fetched)
+    await useUsageStore.getState().fetchSessionUsage('s1')
+    expect(useUsageStore.getState().sessionUsages).toEqual({ other: existing, s1: fetched })
+  })
+
+  it('fetchSessionUsage stringifies non-Error rejections for the toast', async () => {
+    getSession.mockRejectedValue('socket closed')
+    await useUsageStore.getState().fetchSessionUsage('s1')
+    expect(useToastStore.getState().toasts[0]).toMatchObject({
+      type: 'error',
+      message: 'socket closed',
+    })
+  })
+
+  it('updateSessionUsage leaves stats and subscription untouched', () => {
+    const stats: any = { dailyActivity: [], totalSessions: 1, totalMessages: 2 }
+    const subscription: any = { subscriptionType: 'pro', rateLimitTier: null }
+    useUsageStore.setState({ stats, subscription })
+    useUsageStore.getState().updateSessionUsage({ sessionId: 's1' } as any)
+    expect(useUsageStore.getState().stats).toEqual(stats)
+    expect(useUsageStore.getState().subscription).toEqual(subscription)
+  })
+})

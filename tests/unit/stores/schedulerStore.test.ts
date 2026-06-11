@@ -85,3 +85,121 @@ describe('schedulerStore', () => {
     expect(useSchedulerStore.getState().getQueuedMessageForSession('other')).toBeUndefined()
   })
 })
+
+describe('schedulerStore load edge cases', () => {
+  it('load propagates IPC failures and never flips loaded', async () => {
+    schedulerApi.listQueuedSessions.mockRejectedValue(new Error('ipc dead'))
+    schedulerApi.listQueuedMessages.mockResolvedValue([])
+    await expect(useSchedulerStore.getState().load()).rejects.toThrow('ipc dead')
+    expect(useSchedulerStore.getState().loaded).toBe(false)
+  })
+
+  it('load with empty queues still marks the store loaded', async () => {
+    schedulerApi.listQueuedSessions.mockResolvedValue([])
+    schedulerApi.listQueuedMessages.mockResolvedValue([])
+    await useSchedulerStore.getState().load()
+    expect(useSchedulerStore.getState().queuedSessions).toEqual([])
+    expect(useSchedulerStore.getState().queuedMessages).toEqual([])
+    expect(useSchedulerStore.getState().loaded).toBe(true)
+  })
+
+  it('load hydrates sessions and messages independently of each other', async () => {
+    const s = session({ id: 'only-session' })
+    schedulerApi.listQueuedSessions.mockResolvedValue([s])
+    schedulerApi.listQueuedMessages.mockResolvedValue([])
+    await useSchedulerStore.getState().load()
+    expect(useSchedulerStore.getState().queuedSessions).toEqual([s])
+    expect(useSchedulerStore.getState().queuedMessages).toEqual([])
+  })
+})
+
+describe('schedulerStore direct setters', () => {
+  it('setQueuedSessions replaces the list without touching the IPC', () => {
+    const s = session({ id: 'pushed' })
+    useSchedulerStore.getState().setQueuedSessions([s])
+    expect(useSchedulerStore.getState().queuedSessions).toEqual([s])
+    expect(schedulerApi.listQueuedSessions).not.toHaveBeenCalled()
+    expect(schedulerApi.addQueuedSession).not.toHaveBeenCalled()
+  })
+
+  it('setQueuedMessages replaces the list without touching the IPC', () => {
+    const m = message({ id: 'pushed-m' })
+    useSchedulerStore.getState().setQueuedMessages([m])
+    expect(useSchedulerStore.getState().queuedMessages).toEqual([m])
+    expect(schedulerApi.listQueuedMessages).not.toHaveBeenCalled()
+  })
+
+  it('setQueuedSessions can clear the queue with an empty list', () => {
+    useSchedulerStore.setState({ queuedSessions: [session()] })
+    useSchedulerStore.getState().setQueuedSessions([])
+    expect(useSchedulerStore.getState().queuedSessions).toEqual([])
+  })
+})
+
+describe('schedulerStore session mutations', () => {
+  it('rescheduleQueuedSession forwards id and timestamp, storing the returned list', async () => {
+    const later = Date.now() + 120_000
+    const rescheduled = session({ id: 'qs1', scheduledFor: later })
+    schedulerApi.rescheduleQueuedSession.mockResolvedValue([rescheduled])
+    await useSchedulerStore.getState().rescheduleQueuedSession('qs1', later)
+    expect(schedulerApi.rescheduleQueuedSession).toHaveBeenCalledWith('qs1', later)
+    expect(useSchedulerStore.getState().queuedSessions).toEqual([rescheduled])
+  })
+
+  it('fireQueuedSessionNow invokes the IPC but does not mutate the local list', async () => {
+    const pending = [session({ id: 'qs1' })]
+    useSchedulerStore.setState({ queuedSessions: pending })
+    schedulerApi.fireQueuedSessionNow.mockResolvedValue(undefined)
+    await useSchedulerStore.getState().fireQueuedSessionNow('qs1')
+    expect(schedulerApi.fireQueuedSessionNow).toHaveBeenCalledWith('qs1')
+    // Main broadcasts the updated list separately; local state stays as-is.
+    expect(useSchedulerStore.getState().queuedSessions).toEqual(pending)
+  })
+
+  it('fireQueuedSessionNow propagates IPC failures', async () => {
+    schedulerApi.fireQueuedSessionNow.mockRejectedValue(new Error('already fired'))
+    await expect(useSchedulerStore.getState().fireQueuedSessionNow('qs1')).rejects.toThrow(
+      'already fired'
+    )
+  })
+
+  it('addQueuedSession failure leaves the prior queue intact', async () => {
+    const existing = [session({ id: 'keep' })]
+    useSchedulerStore.setState({ queuedSessions: existing })
+    schedulerApi.addQueuedSession.mockRejectedValue(new Error('quota'))
+    await expect(
+      useSchedulerStore.getState().addQueuedSession(session({ id: 'new' }))
+    ).rejects.toThrow('quota')
+    expect(useSchedulerStore.getState().queuedSessions).toEqual(existing)
+  })
+})
+
+describe('schedulerStore message mutations', () => {
+  it('addQueuedMessage forwards the item and replaces the local list', async () => {
+    const m = message({ id: 'qm-new' })
+    schedulerApi.addQueuedMessage.mockResolvedValue([m])
+    await useSchedulerStore.getState().addQueuedMessage(m)
+    expect(schedulerApi.addQueuedMessage).toHaveBeenCalledWith(m)
+    expect(useSchedulerStore.getState().queuedMessages).toEqual([m])
+  })
+
+  it('cancelQueuedMessage replaces the list with the IPC result', async () => {
+    useSchedulerStore.setState({ queuedMessages: [message({ id: 'qm1' }), message({ id: 'qm2' })] })
+    const remaining = [message({ id: 'qm2' })]
+    schedulerApi.cancelQueuedMessage.mockResolvedValue(remaining)
+    await useSchedulerStore.getState().cancelQueuedMessage('qm1')
+    expect(schedulerApi.cancelQueuedMessage).toHaveBeenCalledWith('qm1')
+    expect(useSchedulerStore.getState().queuedMessages).toEqual(remaining)
+  })
+
+  it('getQueuedMessageForSession returns the first match when several are queued', () => {
+    const first = message({ id: 'qm1', sessionId: 'dup' })
+    const second = message({ id: 'qm2', sessionId: 'dup' })
+    useSchedulerStore.setState({ queuedMessages: [first, second] })
+    expect(useSchedulerStore.getState().getQueuedMessageForSession('dup')).toBe(first)
+  })
+
+  it('getQueuedMessageForSession returns undefined on an empty queue', () => {
+    expect(useSchedulerStore.getState().getQueuedMessageForSession('s1')).toBeUndefined()
+  })
+})

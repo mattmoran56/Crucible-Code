@@ -90,6 +90,176 @@ describe('gitStore.selectFile', () => {
   })
 })
 
+describe('gitStore.loadCommitStatuses', () => {
+  it('stores the statuses returned by the api', async () => {
+    commitStatuses.mockResolvedValue({ unpushedHashes: ['a1', 'b2'], newBranchHashes: ['c3'] })
+    await useGitStore.getState().loadCommitStatuses('/repo')
+    expect(commitStatuses).toHaveBeenCalledWith('/repo')
+    expect(useGitStore.getState().commitStatuses).toEqual({
+      unpushedHashes: ['a1', 'b2'],
+      newBranchHashes: ['c3'],
+    })
+  })
+
+  it('replaces a previously loaded status snapshot wholesale', async () => {
+    useGitStore.setState({
+      commitStatuses: { unpushedHashes: ['old'], newBranchHashes: ['old-b'] },
+    } as any)
+    commitStatuses.mockResolvedValue({ unpushedHashes: [], newBranchHashes: ['n1'] })
+    await useGitStore.getState().loadCommitStatuses('/repo')
+    expect(useGitStore.getState().commitStatuses).toEqual({
+      unpushedHashes: [],
+      newBranchHashes: ['n1'],
+    })
+  })
+
+  it('propagates api failures and keeps the previous statuses', async () => {
+    useGitStore.setState({
+      commitStatuses: { unpushedHashes: ['keep'], newBranchHashes: [] },
+    } as any)
+    commitStatuses.mockRejectedValue(new Error('not a repo'))
+    await expect(useGitStore.getState().loadCommitStatuses('/repo')).rejects.toThrow('not a repo')
+    expect(useGitStore.getState().commitStatuses).toEqual({
+      unpushedHashes: ['keep'],
+      newBranchHashes: [],
+    })
+  })
+})
+
+describe('gitStore.selectFile error propagation', () => {
+  it('rejects from workingFileDiff, leaving the selection set and the patch null', async () => {
+    workingFileDiff.mockRejectedValue(new Error('binary file'))
+    await expect(
+      useGitStore.getState().selectFile('/repo', WORKING_CHANGES_HASH, 'img.png')
+    ).rejects.toThrow('binary file')
+    expect(useGitStore.getState().selectedFilePath).toBe('img.png')
+    expect(useGitStore.getState().filePatch).toBeNull()
+  })
+
+  it('rejects from fileDiff for a commit hash, leaving the selection set', async () => {
+    fileDiff.mockRejectedValue(new Error('unknown object'))
+    await expect(
+      useGitStore.getState().selectFile('/repo', 'deadbeef', 'a.ts')
+    ).rejects.toThrow('unknown object')
+    expect(useGitStore.getState().selectedFilePath).toBe('a.ts')
+    expect(useGitStore.getState().filePatch).toBeNull()
+  })
+
+  it('clears the previous patch synchronously while the next file diff is in flight', async () => {
+    useGitStore.setState({ selectedFilePath: 'old.ts', filePatch: '@@old@@' } as any)
+    let resolve: (v: string) => void = () => {}
+    fileDiff.mockImplementationOnce(() => new Promise<string>((r) => { resolve = r }))
+    const promise = useGitStore.getState().selectFile('/repo', 'h1', 'new.ts')
+    expect(useGitStore.getState().selectedFilePath).toBe('new.ts')
+    expect(useGitStore.getState().filePatch).toBeNull()
+    resolve('@@new@@')
+    await promise
+    expect(useGitStore.getState().filePatch).toBe('@@new@@')
+  })
+})
+
+describe('gitStore concurrent loads', () => {
+  it('drops the loading flag as soon as the first of two concurrent loadCommits settles', async () => {
+    let resolveA: (v: any) => void = () => {}
+    let resolveB: (v: any) => void = () => {}
+    log
+      .mockImplementationOnce(() => new Promise((r) => { resolveA = r }))
+      .mockImplementationOnce(() => new Promise((r) => { resolveB = r }))
+    const pa = useGitStore.getState().loadCommits('/repo')
+    const pb = useGitStore.getState().loadCommits('/repo')
+    expect(useGitStore.getState().loading).toBe(true)
+    resolveA([{ hash: 'a', message: 'm', author: 'me', date: 'd' }])
+    await pa
+    // Current behavior: the finally of the first call clears the shared flag
+    // even though the second load is still in flight.
+    expect(useGitStore.getState().loading).toBe(false)
+    resolveB([{ hash: 'b', message: 'm', author: 'me', date: 'd' }])
+    await pb
+    expect(useGitStore.getState().loading).toBe(false)
+  })
+
+  it('lets the last-resolved concurrent loadCommits win the commits slot', async () => {
+    let resolveFirst: (v: any) => void = () => {}
+    log
+      .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r }))
+      .mockResolvedValueOnce([{ hash: 'second', message: 'm', author: 'me', date: 'd' }])
+    const first = useGitStore.getState().loadCommits('/repo')
+    await useGitStore.getState().loadCommits('/repo')
+    expect(useGitStore.getState().commits[0].hash).toBe('second')
+    resolveFirst([{ hash: 'first', message: 'm', author: 'me', date: 'd' }])
+    await first
+    // Current behavior: no staleness guard — the slower call overwrites.
+    expect(useGitStore.getState().commits[0].hash).toBe('first')
+  })
+
+  it('a stale selectCommit diff overwrites the newer selection results', async () => {
+    let resolveSlow: (v: any) => void = () => {}
+    diff
+      .mockImplementationOnce(() => new Promise((r) => { resolveSlow = r }))
+      .mockResolvedValueOnce([{ filePath: 'h2.ts', status: 'added', insertions: 1, deletions: 0 }])
+    const slow = useGitStore.getState().selectCommit('/repo', 'h1')
+    await useGitStore.getState().selectCommit('/repo', 'h2')
+    expect(useGitStore.getState().selectedCommitHash).toBe('h2')
+    expect(useGitStore.getState().changedFiles[0].filePath).toBe('h2.ts')
+    resolveSlow([{ filePath: 'h1.ts', status: 'added', insertions: 1, deletions: 0 }])
+    await slow
+    // Current behavior: the hash stays h2 but the late diff payload lands anyway.
+    expect(useGitStore.getState().selectedCommitHash).toBe('h2')
+    expect(useGitStore.getState().changedFiles[0].filePath).toBe('h1.ts')
+  })
+})
+
+describe('gitStore empty results', () => {
+  it('loadCommits with an empty log clears previously loaded commits', async () => {
+    useGitStore.setState({
+      commits: [{ hash: 'a', message: 'm', author: 'me', date: 'd' }],
+    } as any)
+    log.mockResolvedValue([])
+    await useGitStore.getState().loadCommits('/repo')
+    expect(useGitStore.getState().commits).toEqual([])
+  })
+
+  it('loadWorkingFiles with no changes empties both lists when WORKING_CHANGES is selected', async () => {
+    useGitStore.setState({
+      selectedCommitHash: WORKING_CHANGES_HASH,
+      workingFiles: [{ filePath: 'a.ts', status: 'modified', insertions: 1, deletions: 0 }],
+      changedFiles: [{ filePath: 'a.ts', status: 'modified', insertions: 1, deletions: 0 }],
+    } as any)
+    workingFiles.mockResolvedValue([])
+    await useGitStore.getState().loadWorkingFiles('/repo')
+    expect(useGitStore.getState().workingFiles).toEqual([])
+    expect(useGitStore.getState().changedFiles).toEqual([])
+  })
+
+  it('selectCommit handles an empty diff for a real hash', async () => {
+    diff.mockResolvedValue([])
+    await useGitStore.getState().selectCommit('/repo', 'empty-commit')
+    expect(useGitStore.getState().selectedCommitHash).toBe('empty-commit')
+    expect(useGitStore.getState().changedFiles).toEqual([])
+  })
+
+  it('selecting WORKING_CHANGES with no working files yields an empty changedFiles list', async () => {
+    await useGitStore.getState().selectCommit('/repo', WORKING_CHANGES_HASH)
+    expect(useGitStore.getState().changedFiles).toEqual([])
+    expect(diff).not.toHaveBeenCalled()
+  })
+
+  it('loadCommitStatuses tolerates empty status arrays', async () => {
+    commitStatuses.mockResolvedValue({ unpushedHashes: [], newBranchHashes: [] })
+    await useGitStore.getState().loadCommitStatuses('/repo')
+    expect(useGitStore.getState().commitStatuses).toEqual({
+      unpushedHashes: [],
+      newBranchHashes: [],
+    })
+  })
+
+  it('selectFile stores an empty-string patch as-is', async () => {
+    fileDiff.mockResolvedValue('')
+    await useGitStore.getState().selectFile('/repo', 'h1', 'renamed-only.ts')
+    expect(useGitStore.getState().filePatch).toBe('')
+  })
+})
+
 describe('gitStore.clear', () => {
   it('resets all derived state', () => {
     useGitStore.setState({
