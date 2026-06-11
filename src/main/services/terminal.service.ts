@@ -164,6 +164,13 @@ function spawnPty(
       ? join(homedir(), instance.claudeConfigDir.slice(2))
       : instance.claudeConfigDir
     env.CLAUDE_CONFIG_DIR = resolved
+  } else {
+    // The project resolves to the "Default" Claude account, which the UI
+    // labels as ~/.claude. Explicitly drop any inherited CLAUDE_CONFIG_DIR
+    // so we actually land there — otherwise a dev launcher (or any parent
+    // shell that exports CLAUDE_CONFIG_DIR=~/.claude-personal) would
+    // silently hijack every "Default" worker.
+    delete env.CLAUDE_CONFIG_DIR
   }
   // Identify the context + agent tab for hook routing. The hook curl uses
   // ${CRUCIBLE_CONTEXT_ID}/${CRUCIBLE_TAB_ID} via shell expansion to attach

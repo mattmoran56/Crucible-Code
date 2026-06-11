@@ -169,7 +169,14 @@ export function runHeadlessClaude(opts: HeadlessClaudeOptions): Promise<Headless
     if (opts.resumeId) args.push('--resume', opts.resumeId)
     if (opts.extraArgs && opts.extraArgs.length > 0) args.push(...opts.extraArgs)
 
+    // Default to the user's primary claude config (~/.claude) unless the
+    // caller explicitly overrides via opts.env.CLAUDE_CONFIG_DIR. Otherwise
+    // a parent shell that exports CLAUDE_CONFIG_DIR (common in dev launchers)
+    // would silently route every headless run to a non-default account.
     const env: NodeJS.ProcessEnv = { ...process.env, ...(opts.env ?? {}) }
+    if (!opts.env || !('CLAUDE_CONFIG_DIR' in opts.env)) {
+      delete env.CLAUDE_CONFIG_DIR
+    }
 
     const child = spawn('claude', args, {
       cwd: opts.cwd,
