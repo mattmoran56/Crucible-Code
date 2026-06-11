@@ -8,6 +8,7 @@ export type SettingsSection =
   | 'startup-prompts'
   | 'notion'
   | 'review-loop'
+  | 'foundry'
   | 'project-defaults'
   | 'buttons'
   | 'about'
@@ -29,6 +30,7 @@ const ITEMS: NavItem[] = [
   { id: 'startup-prompts', label: 'Startup Prompts', group: 'project', requiresProjects: true },
   { id: 'notion', label: 'Notion', group: 'project', requiresProjects: true },
   { id: 'review-loop', label: 'Review Loop', group: 'project' },
+  { id: 'foundry', label: 'Foundry', group: 'project', requiresProjects: true },
   { id: 'about', label: 'About', group: 'meta' },
 ]
 

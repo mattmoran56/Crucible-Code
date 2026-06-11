@@ -590,3 +590,177 @@ export interface NotionTestConnectionResult {
   taskCount?: number
   error?: string
 }
+
+// Foundry — autopilot orchestrator over a Notion task set ───────────────────
+
+export type FoundryWorkerPermissionMode = 'bypassPermissions' | 'acceptEdits' | 'default'
+
+export interface FoundryCompletionTransition {
+  /** Property name (typically a status property) the foundry watches for moves. */
+  property: string
+  fromValue?: string
+  toValue: string
+}
+
+export interface FoundryConfig {
+  id: string
+  name: string
+  projectId: string
+  enabled: boolean
+  paused?: boolean
+  notionOverride?: {
+    apiToken?: string
+    databaseId?: string
+    titlePropertyName?: string
+  }
+  taskSetFilters: NotionPropertyFilter[][]
+  eligibilityFilters?: NotionPropertyFilter[]
+  completionTransition: FoundryCompletionTransition
+  /** Statuses the foreman should treat as "dependency satisfied" (e.g. ["Done", "Testing"]). */
+  completedStatuses?: string[]
+  pickupUpdates: NotionPropertyUpdate[]
+  readyForReviewUpdates: NotionPropertyUpdate[]
+  /** Default `/notion-ticket {{taskUrl}}`. */
+  implementCommandTemplate: string
+  /**
+   * Optional slash command (e.g. `/finalize-ticket {{taskUrl}}`) run as a
+   * fresh headless claude on the worktree AFTER the review loop converges
+   * and BEFORE the PR is marked ready / Notion gets the ready-for-review
+   * updates. Blank = skip.
+   */
+  readyForReviewCommandTemplate?: string
+  /** Default `foundry/{{taskTitleSlug}}`. */
+  branchNameTemplate?: string
+  baseBranch?: string
+  maxConcurrentTasks: number
+  workerPermissionMode: FoundryWorkerPermissionMode
+  reviewLoopOverride?: ReviewLoopProjectOverride
+  /** Default `attention`. */
+  onReviewNonConvergence?: 'attention' | 'proceed'
+  implementTimeoutMinutes?: number
+  foremanCostCapUsd?: number
+  /** Also trigger a foreman pass when a task transitions directly to a completedStatus. Default true. */
+  triggerOnCompletedStatusEnter?: boolean
+}
+
+export type FoundryPipelinePhase =
+  | 'spawn-requested'
+  | 'implementing'
+  | 'reviewing'
+  | 'finalizing'
+  | 'done'
+  | 'cancelled'
+  | 'orphaned'
+
+export interface FoundryPipelineAttention {
+  reason: string
+  since: string
+}
+
+export interface FoundryPipeline {
+  id: string
+  foundryId: string
+  page: NotionTaskPayload
+  phase: FoundryPipelinePhase
+  attention?: FoundryPipelineAttention
+  sessionId?: string
+  branch?: string
+  worktreePath?: string
+  baseBranch?: string
+  prNumber?: number
+  prUrl?: string
+  startedAt: string
+  updatedAt: string
+  log: string[]
+}
+
+export type FoundryPassTrigger =
+  | 'enabled'
+  | 'manual'
+  | 'transition'
+  | 'slot-freed'
+  | 'startup'
+  | 'safety-net'
+
+export type FoundryPassStatus = 'running' | 'completed' | 'error' | 'aborted'
+
+export interface FoundryPassRecord {
+  index: number
+  startedAt: string
+  endedAt?: string
+  status: FoundryPassStatus
+  trigger: FoundryPassTrigger
+  claudeSessionId?: string
+  costUsd?: number
+  summary?: string
+  startedPageIds: string[]
+  transcript: string[]
+  errorMessage?: string
+}
+
+export interface FoundryRuntimeState {
+  foundryId: string
+  pageStatusSnapshot: Record<string, string>
+  documentedHashes: Record<string, string>
+  planMarkdownHash?: string
+  pipelines: FoundryPipeline[]
+  passes: FoundryPassRecord[]
+  passInFlight?: boolean
+  lastError?: string
+  /**
+   * The claude session id the foreman uses across passes. Persisted so each
+   * pass can `--resume` and inherit the conversation history (memory of
+   * previous decisions). Set on the first successful pass; reset only on
+   * explicit user action.
+   */
+  foremanClaudeSessionId?: string
+  /**
+   * Live PTY id when a pass is currently running (an interactive `claude`
+   * terminal the foreman is driving — the user can also type into it). Set
+   * when the pass starts; cleared when the foreman writes decision.json or
+   * the pass times out.
+   */
+  foremanTerminalId?: string
+}
+
+export interface ForemanDecision {
+  planMarkdown?: string
+  ticketNotes?: Array<{ pageId: string; comment: string; dependsOn?: string[] }>
+  start: Array<{
+    pageId: string
+    reason: string
+    /** `feat/`, `fix/`, `refactor/`, etc. prefix + short kebab-case slug. */
+    branchName?: string
+    /** Short kebab-case session label shown in the sidebar. */
+    sessionName?: string
+  }>
+  blocked?: Array<{ pageId: string; reason: string }>
+  summary: string
+}
+
+export interface FoundryFireTaskPayload {
+  foundryId: string
+  pipelineId: string
+  projectId: string
+  page: NotionTaskPayload
+  resolvedImplementPrompt: string
+  suggestedBranchName: string
+  suggestedSessionName: string
+  baseBranch?: string
+  workerPermissionMode: FoundryWorkerPermissionMode
+  claudeAccountConfigDir?: string
+}
+
+export interface FoundryTaskStartedAck {
+  pipelineId: string
+  sessionId: string
+  branch: string
+  worktreePath: string
+  baseBranch?: string
+}
+
+export type FoundryPipelineAction =
+  | 'cancel'
+  | 'resume'
+  | 'retry-phase'
+  | 'skip-phase'

@@ -31,6 +31,15 @@ describe('notion.service / placeholder helpers', () => {
       )
     })
 
+    it('substitutes {{prUrl}} and {{prNumber}} (Foundry placeholders)', () => {
+      expect(
+        resolvePlaceholders('pr={{prUrl}}#{{prNumber}}', {
+          prUrl: 'https://github.com/o/r/pull/42',
+          prNumber: '42',
+        })
+      ).toBe('pr=https://github.com/o/r/pull/42#42')
+    })
+
     it('replaces unknown placeholder context values with empty string', () => {
       expect(resolvePlaceholders('b={{branch}} s={{sessionId}}', { taskId: 'x' })).toBe('b= s=')
     })

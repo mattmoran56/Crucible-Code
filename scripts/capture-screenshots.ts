@@ -351,6 +351,37 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 420, height: 900 },
     delay: 800,
   },
+  // ── Foundry ────────────────────────────────────────────────────────────
+  {
+    name: 'foundry-panel-pass-running',
+    storyId: 'foundry-panel--pass-running',
+    viewport: { width: 460, height: 860 },
+    delay: 800,
+  },
+  {
+    name: 'foundry-panel-active-pipelines',
+    storyId: 'foundry-panel--active-pipelines',
+    viewport: { width: 460, height: 860 },
+    delay: 800,
+  },
+  {
+    name: 'foundry-panel-off',
+    storyId: 'foundry-panel--off',
+    viewport: { width: 460, height: 860 },
+    delay: 600,
+  },
+  {
+    name: 'foundry-settings-configured',
+    storyId: 'settings-foundrysettings--configured',
+    viewport: { width: 880, height: 900 },
+    delay: 700,
+  },
+  {
+    name: 'foundry-settings-editor',
+    storyId: 'settings-foundrysettings--editor',
+    viewport: { width: 880, height: 1400 },
+    delay: 1200,
+  },
 ]
 
 async function captureScreenshots() {

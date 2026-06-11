@@ -347,7 +347,7 @@ interface FilterGroupsEditorProps {
   onChange: (groups: NotionPropertyFilter[][]) => void
 }
 
-function FilterGroupsEditor({ schema, apiToken, groups, onChange }: FilterGroupsEditorProps) {
+export function FilterGroupsEditor({ schema, apiToken, groups, onChange }: FilterGroupsEditorProps) {
   const propertyOptions = schema?.properties ?? []
   const isMulti = groups.length > 1
 
@@ -982,13 +982,13 @@ function RelationValueInput({
   )
 }
 
-interface UpdatesEditorProps {
+export interface UpdatesEditorProps {
   schema: NotionDatabaseSchema | undefined
   updates: NotionPropertyUpdate[]
   onChange: (updates: NotionPropertyUpdate[]) => void
 }
 
-function UpdatesEditor({ schema, updates, onChange }: UpdatesEditorProps) {
+export function UpdatesEditor({ schema, updates, onChange }: UpdatesEditorProps) {
   const propertyOptions = schema?.properties ?? []
   const updateAt = (i: number, patch: Partial<NotionPropertyUpdate>) => {
     const next = updates.map((u, idx) => (idx === i ? { ...u, ...patch } : u))

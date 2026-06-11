@@ -85,6 +85,8 @@ type PlaceholderContext = {
   taskTitleSlug?: string
   branch?: string
   sessionId?: string
+  prUrl?: string
+  prNumber?: string
 }
 
 export function slugify(input: string): string {
@@ -105,15 +107,17 @@ export function resolvePlaceholders(template: string, ctx: PlaceholderContext): 
     '{{taskTitleSlug}}': ctx.taskTitleSlug ?? (ctx.taskTitle ? slugify(ctx.taskTitle) : ''),
     '{{branch}}': ctx.branch ?? '',
     '{{sessionId}}': ctx.sessionId ?? '',
+    '{{prUrl}}': ctx.prUrl ?? '',
+    '{{prNumber}}': ctx.prNumber ?? '',
   }
   return template.replace(
-    /\{\{(taskId|taskUrl|taskTitle|taskTitleSlug|branch|sessionId)\}\}/g,
+    /\{\{(taskId|taskUrl|taskTitle|taskTitleSlug|branch|sessionId|prUrl|prNumber)\}\}/g,
     (m) => map[m] ?? ''
   )
 }
 
 export function valueReferencesSessionPlaceholder(value: string): boolean {
-  return /\{\{(branch|sessionId)\}\}/.test(value)
+  return /\{\{(branch|sessionId|prUrl|prNumber)\}\}/.test(value)
 }
 
 // ── Filter translation ──────────────────────────────────────────────────────
@@ -552,6 +556,88 @@ export async function updatePageProperties(
     method: 'PATCH',
     body: JSON.stringify({ properties }),
   })
+}
+
+/**
+ * Fetch the page body as a flattened markdown string. Used by the Foundry
+ * foreman to give claude ticket context. Capped at ~6KB so a giant ticket
+ * doesn't blow the prompt budget.
+ */
+export async function getPageBodyMarkdown(
+  token: string,
+  pageId: string,
+  maxBytes = 6 * 1024
+): Promise<string> {
+  const lines: string[] = []
+  let cursor: string | undefined
+  let totalBytes = 0
+  for (let i = 0; i < 10; i++) {
+    const path = cursor
+      ? `/blocks/${pageId}/children?start_cursor=${encodeURIComponent(cursor)}&page_size=100`
+      : `/blocks/${pageId}/children?page_size=100`
+    const res = (await notionFetch(token, path)) as {
+      results?: Array<Record<string, unknown>>
+      has_more?: boolean
+      next_cursor?: string | null
+    }
+    for (const blk of res.results ?? []) {
+      const text = renderBlock(blk)
+      if (!text) continue
+      lines.push(text)
+      totalBytes += text.length + 1
+      if (totalBytes >= maxBytes) {
+        lines.push('… (truncated)')
+        return lines.join('\n')
+      }
+    }
+    if (!res.has_more || !res.next_cursor) break
+    cursor = res.next_cursor
+  }
+  return lines.join('\n')
+}
+
+function extractRichText(rt: unknown): string {
+  if (!Array.isArray(rt)) return ''
+  return rt
+    .map((seg) =>
+      typeof seg === 'object' && seg && 'plain_text' in seg
+        ? String((seg as { plain_text: unknown }).plain_text ?? '')
+        : ''
+    )
+    .join('')
+}
+
+function renderBlock(blk: Record<string, unknown>): string {
+  const type = String(blk.type ?? '')
+  const data = blk[type] as Record<string, unknown> | undefined
+  if (!data) return ''
+  const rt = extractRichText(data.rich_text)
+  switch (type) {
+    case 'paragraph':
+      return rt
+    case 'heading_1':
+      return rt ? `# ${rt}` : ''
+    case 'heading_2':
+      return rt ? `## ${rt}` : ''
+    case 'heading_3':
+      return rt ? `### ${rt}` : ''
+    case 'bulleted_list_item':
+      return rt ? `- ${rt}` : ''
+    case 'numbered_list_item':
+      return rt ? `1. ${rt}` : ''
+    case 'to_do':
+      return rt ? `- [${data.checked ? 'x' : ' '}] ${rt}` : ''
+    case 'quote':
+      return rt ? `> ${rt}` : ''
+    case 'code':
+      return rt ? `\`\`\`\n${rt}\n\`\`\`` : ''
+    case 'callout':
+      return rt ? `> ${rt}` : ''
+    case 'divider':
+      return '---'
+    default:
+      return rt
+  }
 }
 
 export async function appendMarkdownBlocks(
