@@ -122,9 +122,10 @@ export function registerFoundryHandlers(window: BrowserWindow): void {
       if (!cfg) return null
       // Find the project's repo path — foreman uses it as its cwd so it can
       // read the codebase when reasoning about dependencies.
+      // Match project.ipc.ts — no `name`, so this reads from electron-store's
+      // default `config.json` (where the project IPC handler persists them).
       const projectsStore = new Store<{ projects: Project[] }>({
         cwd: getStorePath(),
-        name: 'projects',
         defaults: { projects: [] },
       })
       const project = projectsStore.get('projects', []).find((p) => p.id === cfg.projectId)
