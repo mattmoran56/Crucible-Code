@@ -183,3 +183,164 @@ describe('writeWhenReady — dedupe', () => {
     ])
   })
 })
+
+describe('writeWhenReady — prompt variants', () => {
+  it('treats a shell-style `$` as a main input prompt', async () => {
+    writeWhenReady('term-1', 'npm test', { debug: false })
+    emitTerminalData('term-1', 'user@host:~/repo$ ')
+    await vi.advanceTimersByTimeAsync(800)
+    await vi.advanceTimersByTimeAsync(250)
+    expect(writeCalls).toEqual([
+      { terminalId: 'term-1', data: 'npm test' },
+      { terminalId: 'term-1', data: '\r' },
+    ])
+  })
+
+  it('output without any prompt marker never arms the quiet timer', async () => {
+    writeWhenReady('term-1', 'go', { debug: false })
+    emitTerminalData('term-1', 'Compiling...')
+    emitTerminalData('term-1', 'still compiling')
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(writeCalls).toHaveLength(0)
+    // The unconditional fallback still rescues the inject at 6s.
+    await vi.advanceTimersByTimeAsync(4_100)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(writeCalls).toEqual([
+      { terminalId: 'term-1', data: 'go' },
+      { terminalId: 'term-1', data: '\r' },
+    ])
+  })
+
+  it('passes the command text through verbatim (unicode, embedded newline)', async () => {
+    const command = 'echo "héllo wörld"\n--flag'
+    writeWhenReady('term-1', command, { debug: false })
+    emitTerminalData('term-1', '> ')
+    await vi.advanceTimersByTimeAsync(800)
+    expect(writeCalls[0]).toEqual({ terminalId: 'term-1', data: command })
+  })
+})
+
+describe('writeWhenReady — Enter keystroke gap', () => {
+  it('sends Enter exactly 250ms after the command text, not earlier', async () => {
+    writeWhenReady('term-1', 'go', { debug: false })
+    emitTerminalData('term-1', '> ')
+    await vi.advanceTimersByTimeAsync(800)
+    expect(writeCalls).toEqual([{ terminalId: 'term-1', data: 'go' }])
+
+    await vi.advanceTimersByTimeAsync(249)
+    expect(writeCalls).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(writeCalls).toEqual([
+      { terminalId: 'term-1', data: 'go' },
+      { terminalId: 'term-1', data: '\r' },
+    ])
+  })
+})
+
+describe('writeWhenReady — post-send behavior', () => {
+  it('ignores later prompts once the command has been sent (unsubscribed + sent guard)', async () => {
+    writeWhenReady('term-1', 'go', { debug: false })
+    emitTerminalData('term-1', '> ')
+    await vi.advanceTimersByTimeAsync(1_100)
+    expect(writeCalls).toHaveLength(2)
+
+    emitTerminalData('term-1', '> ')
+    emitTerminalData('term-1', 'Allow MCP tool?')
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(writeCalls).toHaveLength(2)
+  })
+
+  it('the 6s fallback does not double-write after a prompt-triggered send', async () => {
+    writeWhenReady('term-1', 'go', { debug: false })
+    emitTerminalData('term-1', '> ')
+    await vi.advanceTimersByTimeAsync(1_100)
+    expect(writeCalls).toHaveLength(2)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(writeCalls).toHaveLength(2)
+  })
+})
+
+describe('writeWhenReady — MCP confirm details', () => {
+  it('an MCP prompt cancels a pending quiet write (more setup to come)', async () => {
+    writeWhenReady('term-1', 'go', { debug: false })
+
+    emitTerminalData('term-1', '> ')
+    await vi.advanceTimersByTimeAsync(400)
+    emitTerminalData('term-1', 'Allow this MCP server to run?')
+    // 800ms after the original `>` — the quiet write would have fired by now
+    // had the MCP prompt not cancelled it.
+    await vi.advanceTimersByTimeAsync(400)
+    expect(writeCalls.filter((w) => w.data === 'go')).toHaveLength(0)
+    expect(writeCalls.filter((w) => w.data === '\r')).toHaveLength(1)
+
+    // A fresh main prompt then completes the flow.
+    emitTerminalData('term-1', '\r\n> ')
+    await vi.advanceTimersByTimeAsync(800)
+    await vi.advanceTimersByTimeAsync(250)
+    expect(writeCalls.map((w) => w.data)).toEqual(['\r', 'go', '\r'])
+  })
+
+  it('throttles back-to-back MCP prompts within 600ms to a single Enter', async () => {
+    writeWhenReady('term-1', 'go', { debug: false })
+
+    emitTerminalData('term-1', 'Allow tool A?')
+    await vi.advanceTimersByTimeAsync(200)
+    emitTerminalData('term-1', 'Allow tool B?')
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(writeCalls.filter((w) => w.data === '\r')).toHaveLength(1)
+  })
+
+  it('maxAutoConfirms: 0 disables auto-Enter entirely', async () => {
+    writeWhenReady('term-1', 'go', { debug: false, maxAutoConfirms: 0 })
+    emitTerminalData('term-1', 'Allow MCP tool?')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(writeCalls).toHaveLength(0)
+  })
+
+  it('endless MCP prompts cannot starve the inject — fallback still fires', async () => {
+    writeWhenReady('term-1', 'go', { debug: false })
+
+    for (let i = 0; i < 4; i++) {
+      emitTerminalData('term-1', 'Allow MCP tool?')
+      await vi.advanceTimersByTimeAsync(800)
+    }
+    // 3 default auto-confirms, then the cap kicks in.
+    expect(writeCalls.filter((w) => w.data === '\r')).toHaveLength(3)
+    expect(writeCalls.some((w) => w.data === 'go')).toBe(false)
+
+    // t=3200 so far; the 6s fallback delivers the command.
+    await vi.advanceTimersByTimeAsync(3_000)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(writeCalls.map((w) => w.data)).toEqual(['\r', '\r', '\r', 'go', '\r'])
+  })
+})
+
+describe('writeWhenReady — debug logging', () => {
+  it('logs arming and duplicate-skip messages when debug is on (default)', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      writeWhenReady('dbg-term', 'x')
+      writeWhenReady('dbg-term', 'x')
+      const logged = logSpy.mock.calls.map((c) => String(c[0]))
+      expect(logged.some((l) => l.includes('[writeWhenReady] arming for dbg-term'))).toBe(true)
+      expect(logged.some((l) => l.includes('skip duplicate call for dbg-term'))).toBe(true)
+    } finally {
+      logSpy.mockRestore()
+    }
+  })
+
+  it('debug: false stays silent', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      writeWhenReady('quiet-term', 'x', { debug: false })
+      emitTerminalData('quiet-term', '> ')
+      await vi.advanceTimersByTimeAsync(1_100)
+      expect(logSpy).not.toHaveBeenCalled()
+    } finally {
+      logSpy.mockRestore()
+    }
+  })
+})

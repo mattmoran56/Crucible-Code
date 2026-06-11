@@ -102,6 +102,18 @@ const api = {
       ipcRenderer.invoke(IPC.WORKTREE_CREATE_FROM_BRANCH, repoPath, sessionName, remoteBranch),
     renameBranch: (repoPath: string, worktreePath: string, fallbackBranch: string, newBranch: string): Promise<{ oldBranch: string; newBranch: string }> =>
       ipcRenderer.invoke(IPC.WORKTREE_RENAME_BRANCH, repoPath, worktreePath, fallbackBranch, newBranch),
+    createForPR: (
+      repoPath: string,
+      prNumber: number,
+      headRefName: string
+    ): Promise<{ prNumber: number; path: string; branch: string | null }> =>
+      ipcRenderer.invoke(IPC.WORKTREE_CREATE_FOR_PR, repoPath, prNumber, headRefName),
+    listPR: (
+      repoPath: string
+    ): Promise<Array<{ prNumber: number; path: string; branch: string | null }>> =>
+      ipcRenderer.invoke(IPC.WORKTREE_LIST_PR, repoPath),
+    removePR: (repoPath: string, prNumber: number): Promise<void> =>
+      ipcRenderer.invoke(IPC.WORKTREE_REMOVE_PR, repoPath, prNumber),
   },
 
   terminal: {

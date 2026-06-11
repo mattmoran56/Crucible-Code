@@ -121,11 +121,13 @@ test.describe('Settings page', () => {
 
   test('shows the Merged PR Cleanup section', async ({ page }) => {
     await page.locator('button[title="Settings"]').click()
+    await page.getByRole('button', { name: 'Cleanup & Limits', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Merged PR Cleanup' })).toBeVisible()
   })
 
   test('shows the Claude Accounts section seeded with the mock accounts', async ({ page }) => {
     await page.locator('button[title="Settings"]').click()
+    await page.getByRole('button', { name: 'Claude Accounts', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Claude Accounts' })).toBeVisible()
     await expect(page.getByText('Personal').first()).toBeVisible()
     await expect(page.getByText('Work').first()).toBeVisible()

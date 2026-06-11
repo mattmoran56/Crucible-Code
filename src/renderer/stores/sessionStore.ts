@@ -13,6 +13,7 @@ interface DetachedWorktreeInfo {
 interface PerProjectContext {
   sessionId: string | null
   prNumber: number | null
+  prWorktreePath: string | null
   openedAsMainBranch: string | null
   previousMainBranch: string | null
   detachedWorktree: DetachedWorktreeInfo | null
@@ -34,6 +35,8 @@ interface SessionState {
   currentProjectId: string | null
   activeSessionId: string | null
   activePRNumber: number | null
+  /** Worktree path for the currently-open PR, if any. PR reviews now happen in a dedicated worktree at `<wtBase>/pr-<num>` rather than by checking the branch out in the main repo. */
+  activePRWorktreePath: string | null
   activeWorkspaceTab: WorkspaceTab
   didStash: boolean
   detachedWorktree: DetachedWorktreeInfo | null
@@ -51,6 +54,8 @@ interface SessionState {
   setActiveWorkspaceTab: (tab: WorkspaceTab) => void
   openPR: (repoPath: string, pr: PullRequest) => Promise<void>
   closePR: () => Promise<void>
+  /** Called by the PR poll loop to tear down worktrees for PRs no longer open. */
+  reconcilePRWorktrees: (repoPath: string, openPRNumbers: number[]) => Promise<void>
   openAsMainBranch: (repoPath: string, sessionId: string) => Promise<void>
   returnToWorktree: (repoPath: string) => Promise<void>
   clearActiveContext: () => Promise<void>
@@ -83,6 +88,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   currentProjectId: null,
   activeSessionId: null,
   activePRNumber: null,
+  activePRWorktreePath: null,
   activeWorkspaceTab: 'agent' as WorkspaceTab,
   didStash: false,
   detachedWorktree: null,
@@ -98,6 +104,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       saveLastActiveContext(prevProjectId, {
         sessionId: get().activeSessionId,
         prNumber: get().activePRNumber,
+        prWorktreePath: get().activePRWorktreePath,
         openedAsMainBranch: get().openedAsMainBranch,
         previousMainBranch: get().previousMainBranch,
         detachedWorktree: get().detachedWorktree,
@@ -118,17 +125,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     let activeSessionId: string | null
     let activePRNumber: number | null = null
+    let activePRWorktreePath: string | null = null
     let activeWorkspaceTab: WorkspaceTab = 'agent'
 
     if (stillExists) {
       // Same project reload — keep current selection
       activeSessionId = currentId
       activePRNumber = get().activePRNumber
+      activePRWorktreePath = get().activePRWorktreePath
       activeWorkspaceTab = get().activeWorkspaceTab
     } else if (savedSessionExists || savedPRExists) {
       // Returning to a project — restore last active context
       activeSessionId = savedSessionExists ? saved!.sessionId : null
       activePRNumber = saved!.prNumber
+      activePRWorktreePath = saved!.prWorktreePath ?? null
       activeWorkspaceTab = saved!.prNumber ? 'pr' : 'agent'
     } else {
       // Fallback to first session
@@ -160,6 +170,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       currentProjectId: projectId,
       activeSessionId,
       activePRNumber,
+      activePRWorktreePath,
       activeWorkspaceTab,
       openedAsMainBranch,
       previousMainBranch,
@@ -190,12 +201,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       sessions,
       activeSessionId: session.id,
       activePRNumber: null,
+      activePRWorktreePath: null,
       activeWorkspaceTab: 'agent',
       detachedWorktree: null,
       pendingStartup: startupCommand ? { sessionId: session.id, command: startupCommand } : null,
       pendingFocusSessionId: session.id,
     })
-    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
   },
 
   consumePendingStartup: (sessionId: string) => {
@@ -287,8 +299,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
-    set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
-    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+    set({ sessions, activeSessionId: session.id, activePRNumber: null, activePRWorktreePath: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
+    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
   },
 
   importWorktree: async (projectId, worktree) => {
@@ -310,8 +322,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
-    set({ sessions, activeSessionId: session.id, activePRNumber: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
-    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+    set({ sessions, activeSessionId: session.id, activePRNumber: null, activePRWorktreePath: null, activeWorkspaceTab: 'agent', detachedWorktree: null })
+    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
   },
 
   setActiveSession: async (id: string, repoPath?: string) => {
@@ -320,16 +332,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // don't restore the worktree or undo the checkout until the user
     // explicitly clicks "Return to worktree".
     if (openedAsMainBranch) {
-      set({ activeSessionId: id, activePRNumber: null, activeWorkspaceTab: 'agent' })
+      set({ activeSessionId: id, activePRNumber: null, activePRWorktreePath: null, activeWorkspaceTab: 'agent' })
     } else {
       const { detachedWorktree } = get()
       await restoreDetachedWorktree(detachedWorktree)
-      set({ activeSessionId: id, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null })
+      set({ activeSessionId: id, activePRNumber: null, activePRWorktreePath: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null })
     }
     const projectId = get().currentProjectId
     if (projectId) saveLastActiveContext(projectId, {
       sessionId: id,
       prNumber: null,
+      prWorktreePath: null,
       openedAsMainBranch: get().openedAsMainBranch,
       previousMainBranch: get().previousMainBranch,
       detachedWorktree: get().detachedWorktree,
@@ -344,42 +357,78 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   openPR: async (repoPath, pr) => {
     const { addToast } = useToastStore.getState()
 
-    // Restore any previously detached worktree first
-    await restoreDetachedWorktree(get().detachedWorktree)
+    // Switch UI immediately so the user sees the PR view without waiting for
+    // the worktree creation. Worktree path is filled in once the IPC resolves.
+    set({
+      activeSessionId: null,
+      activePRNumber: pr.number,
+      activePRWorktreePath: null,
+      activeWorkspaceTab: 'pr',
+      didStash: false,
+      detachedWorktree: null,
+    })
 
+    let worktreePath: string | null = null
     try {
-      const { stashed, detachedWorktree, error } = await window.api.git.checkout(repoPath, pr.headRefName)
-      if (error) {
-        addToast('error', error)
-      }
-      set({
-        activeSessionId: null,
-        activePRNumber: pr.number,
-        activeWorkspaceTab: 'pr',
-        didStash: stashed,
-        detachedWorktree: detachedWorktree
-          ? { worktreePath: detachedWorktree, branch: pr.headRefName }
-          : null,
-      })
+      const info = await window.api.worktree.createForPR(repoPath, pr.number, pr.headRefName)
+      worktreePath = info.path
     } catch (err) {
-      addToast('error', err instanceof Error ? err.message : String(err))
-      set({
-        activeSessionId: null,
-        activePRNumber: pr.number,
-        activeWorkspaceTab: 'pr',
-        didStash: false,
-        detachedWorktree: null,
-      })
+      addToast('error', `Failed to open PR worktree: ${err instanceof Error ? err.message : String(err)}`)
     }
+
+    // The user may have navigated away while the worktree was being created;
+    // only commit the path back to state if they're still on this PR.
+    if (get().activePRNumber === pr.number) {
+      set({ activePRWorktreePath: worktreePath })
+    }
+
     const projectId = get().currentProjectId
-    if (projectId) saveLastActiveContext(projectId, { sessionId: null, prNumber: pr.number, openedAsMainBranch: get().openedAsMainBranch, previousMainBranch: get().previousMainBranch, detachedWorktree: get().detachedWorktree, didStash: get().didStash })
+    if (projectId) saveLastActiveContext(projectId, {
+      sessionId: null,
+      prNumber: pr.number,
+      prWorktreePath: worktreePath,
+      openedAsMainBranch: get().openedAsMainBranch,
+      previousMainBranch: get().previousMainBranch,
+      detachedWorktree: get().detachedWorktree,
+      didStash: get().didStash,
+    })
   },
 
   closePR: async () => {
-    await restoreDetachedWorktree(get().detachedWorktree)
-    set({ activePRNumber: null, detachedWorktree: null })
+    // Leave the worktree alone — it stays until the PR is merged/closed and
+    // the poll-driven reconcile path tears it down.
+    set({ activePRNumber: null, activePRWorktreePath: null })
     const projectId = get().currentProjectId
-    if (projectId) saveLastActiveContext(projectId, { sessionId: get().activeSessionId, prNumber: null, openedAsMainBranch: get().openedAsMainBranch, previousMainBranch: get().previousMainBranch, detachedWorktree: get().detachedWorktree, didStash: get().didStash })
+    if (projectId) saveLastActiveContext(projectId, { sessionId: get().activeSessionId, prNumber: null, prWorktreePath: null, openedAsMainBranch: get().openedAsMainBranch, previousMainBranch: get().previousMainBranch, detachedWorktree: get().detachedWorktree, didStash: get().didStash })
+  },
+
+  reconcilePRWorktrees: async (repoPath, openPRNumbers) => {
+    let existing: Array<{ prNumber: number; path: string; branch: string | null }>
+    try {
+      existing = await window.api.worktree.listPR(repoPath)
+    } catch {
+      return
+    }
+    const openSet = new Set(openPRNumbers)
+    const stale = existing.filter((w) => !openSet.has(w.prNumber))
+    if (stale.length === 0) return
+
+    await Promise.all(stale.map(async (w) => {
+      try {
+        await window.api.worktree.removePR(repoPath, w.prNumber)
+      } catch {
+        // Best-effort; will retry on next poll.
+      }
+    }))
+
+    // If the active PR was torn down, clear it so the user isn't stuck on a
+    // stale view.
+    const activePR = get().activePRNumber
+    if (activePR != null && stale.some((w) => w.prNumber === activePR)) {
+      set({ activePRNumber: null, activePRWorktreePath: null, activeWorkspaceTab: 'agent' })
+      const projectId = get().currentProjectId
+      if (projectId) saveLastActiveContext(projectId, { sessionId: get().activeSessionId, prNumber: null, prWorktreePath: null, openedAsMainBranch: get().openedAsMainBranch, previousMainBranch: get().previousMainBranch, detachedWorktree: get().detachedWorktree, didStash: get().didStash })
+    }
   },
 
   openAsMainBranch: async (repoPath, sessionId) => {
@@ -441,8 +490,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   clearActiveContext: async () => {
     await restoreDetachedWorktree(get().detachedWorktree)
-    set({ activeSessionId: null, activePRNumber: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null, openedAsMainBranch: null, previousMainBranch: null })
+    set({ activeSessionId: null, activePRNumber: null, activePRWorktreePath: null, activeWorkspaceTab: 'agent', didStash: false, detachedWorktree: null, openedAsMainBranch: null, previousMainBranch: null })
     const projectId = get().currentProjectId
-    if (projectId) saveLastActiveContext(projectId, { sessionId: null, prNumber: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+    if (projectId) saveLastActiveContext(projectId, { sessionId: null, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
   },
 }))

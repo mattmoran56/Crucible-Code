@@ -1,12 +1,25 @@
 import simpleGit from 'simple-git'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { join, dirname, basename, resolve as resolvePath } from 'path'
 import { mkdir, access, realpath } from 'fs/promises'
 import type { WorktreeInfo } from '../../shared/types'
 import { getDefaultBranch } from './git.service'
 
+const execFileAsync = promisify(execFile)
+
 function worktreeDir(repoPath: string): string {
   const repoName = basename(repoPath)
   return join(dirname(repoPath), '.codecrucible-worktrees', repoName)
+}
+
+function prWorktreePath(repoPath: string, prNumber: number): string {
+  return join(worktreeDir(repoPath), `pr-${prNumber}`)
+}
+
+function isPRWorktreeBasename(name: string): number | null {
+  const match = /^pr-(\d+)$/.exec(name)
+  return match ? Number(match[1]) : null
 }
 
 // `git worktree prune` clears stale administrative entries left behind when a
@@ -325,6 +338,151 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
       await g.raw(['branch', '-D', attachedBranch])
     } catch {
       // Branch may not exist or may be checked out elsewhere
+    }
+  }
+}
+
+export interface PRWorktreeInfo {
+  prNumber: number
+  path: string
+  branch: string | null
+}
+
+/**
+ * Create (or return existing) worktree for a PR. The worktree is placed at
+ * `<wtBase>/pr-<num>` and uses `gh pr checkout` so forks and same-repo PRs are
+ * handled uniformly. If a worktree already exists at the expected path it's
+ * reused — clicking a PR repeatedly should be cheap.
+ */
+export async function createPRWorktree(
+  repoPath: string,
+  prNumber: number,
+  headRefName: string
+): Promise<PRWorktreeInfo> {
+  const g = simpleGit(repoPath)
+  const wtBase = worktreeDir(repoPath)
+  const wtPath = prWorktreePath(repoPath, prNumber)
+
+  await mkdir(wtBase, { recursive: true })
+  await pruneWorktrees(repoPath)
+
+  // If the worktree already exists, return it.
+  const existing = await findPRWorktree(repoPath, prNumber)
+  if (existing) return existing
+
+  // If headRefName is checked out somewhere (e.g. the main repo from the old
+  // openPR flow), detach it so gh pr checkout can claim it in our new worktree.
+  await detachConflictingWorktree(repoPath, headRefName)
+
+  // Create a detached worktree at the current HEAD, then run `gh pr checkout`
+  // inside it. gh handles both fork and same-repo PRs and creates/updates the
+  // local branch.
+  try {
+    await g.raw(['worktree', 'add', '--detach', wtPath, 'HEAD'])
+  } catch (err) {
+    try {
+      await access(wtPath)
+    } catch {
+      throw new Error(`git worktree add failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  try {
+    await execFileAsync('gh', ['pr', 'checkout', String(prNumber), '--force'], {
+      cwd: wtPath,
+      env: { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' },
+    })
+  } catch (err) {
+    // Roll back the detached worktree so we don't leave a half-broken one behind.
+    try { await g.raw(['worktree', 'remove', wtPath, '--force']) } catch {}
+    await pruneWorktrees(repoPath)
+    throw new Error(`gh pr checkout failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  // Look up the branch gh checked out so we can report it.
+  let branch: string | null = null
+  try {
+    branch = (await simpleGit(wtPath).raw(['symbolic-ref', '--short', 'HEAD'])).trim() || null
+  } catch {
+    // Detached — unusual after gh pr checkout but not fatal.
+  }
+
+  return { prNumber, path: wtPath, branch }
+}
+
+/** Find an existing PR worktree by PR number, if registered with git. */
+async function findPRWorktree(
+  repoPath: string,
+  prNumber: number
+): Promise<PRWorktreeInfo | null> {
+  const all = await listPRWorktrees(repoPath)
+  return all.find((w) => w.prNumber === prNumber) ?? null
+}
+
+/** List all PR worktrees registered for this repo (path basename matches `pr-<n>`). */
+export async function listPRWorktrees(repoPath: string): Promise<PRWorktreeInfo[]> {
+  const g = simpleGit(repoPath)
+  await pruneWorktrees(repoPath)
+  let output: string
+  try {
+    output = await g.raw(['worktree', 'list', '--porcelain'])
+  } catch {
+    return []
+  }
+
+  const result: PRWorktreeInfo[] = []
+  let curPath = ''
+  let curBranch: string | null = null
+  const flush = () => {
+    if (!curPath) return
+    const prNumber = isPRWorktreeBasename(basename(curPath))
+    if (prNumber != null) {
+      result.push({ prNumber, path: curPath, branch: curBranch })
+    }
+    curPath = ''
+    curBranch = null
+  }
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      flush()
+      curPath = line.slice('worktree '.length)
+    } else if (line.startsWith('branch refs/heads/')) {
+      curBranch = line.slice('branch refs/heads/'.length)
+    } else if (line === '') {
+      flush()
+    }
+  }
+  flush()
+  return result
+}
+
+/**
+ * Force-remove the PR worktree for `prNumber` and delete the local branch gh
+ * created. Used by the auto-teardown path when a PR is merged/closed/gone.
+ */
+export async function removePRWorktree(
+  repoPath: string,
+  prNumber: number
+): Promise<void> {
+  const existing = await findPRWorktree(repoPath, prNumber)
+  if (!existing) return
+
+  const g = simpleGit(repoPath)
+  try {
+    await g.raw(['worktree', 'remove', existing.path, '--force'])
+  } catch {
+    // Best-effort — prune below will clean up admin entries.
+  }
+  await pruneWorktrees(repoPath)
+
+  // Delete the branch gh created for this PR. Safe because PR worktrees are
+  // disposable — the upstream branch is gone (or merged) by the time we tear
+  // down, so the local branch has no further use.
+  if (existing.branch) {
+    try {
+      await g.raw(['branch', '-D', existing.branch])
+    } catch {
+      // Branch may not exist or still be referenced; that's fine.
     }
   }
 }
