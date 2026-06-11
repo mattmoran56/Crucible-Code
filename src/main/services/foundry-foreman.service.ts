@@ -317,6 +317,26 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
     passIndex,
     isFirstPass: !resumeId,
   })
+  // Throttled live-emit so the renderer can stream the transcript as the
+  // foreman thinks, not just at pass completion. 200ms matches what the
+  // review-loop service does.
+  let lastEmit = 0
+  let pendingEmit: NodeJS.Timeout | null = null
+  const scheduleEmit = (): void => {
+    const now = Date.now()
+    const elapsed = now - lastEmit
+    if (elapsed >= 200) {
+      lastEmit = now
+      saveStateEmit(rt)
+      return
+    }
+    if (pendingEmit) return
+    pendingEmit = setTimeout(() => {
+      pendingEmit = null
+      lastEmit = Date.now()
+      saveStateEmit(rt)
+    }, 200 - elapsed)
+  }
   const result = await runHeadlessClaude({
     cwd: pickCwd(cfg),
     prompt,
@@ -324,8 +344,10 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
     timeoutMs: PASS_TIMEOUT_MS,
     onTranscript: (line) => {
       passRecord.transcript.push(line)
+      scheduleEmit()
     },
   })
+  if (pendingEmit) clearTimeout(pendingEmit)
   passRecord.costUsd = result.costUsd
   passRecord.claudeSessionId = result.sessionId
   // Persist the session id so subsequent passes can --resume into it. Once

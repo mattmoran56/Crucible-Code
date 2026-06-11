@@ -1,15 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useFoundryStore } from '../../stores/foundryStore'
 import { useProjectStore } from '../../stores/projectStore'
-import { useSettingsStore } from '../../stores/settingsStore'
-import { THEMES } from '../../../shared/themes'
 import { Button } from '../ui/Button'
 import type {
   FoundryConfig,
   FoundryPipeline,
   FoundryPipelinePhase,
+  FoundryRuntimeState,
 } from '../../../shared/types'
 
 const PHASE_LABEL: Record<FoundryPipelinePhase, string> = {
@@ -224,8 +221,76 @@ function FoundryView({
             )}
           </div>
 
-          {/* Bottom half: pinned foreman terminal */}
-          <ForemanTerminalPane foundryId={cfg.id} />
+          {/* Bottom half: pinned foreman transcript */}
+          <ForemanTranscriptPane state={state} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ForemanTranscriptPane({ state }: { state: FoundryRuntimeState | undefined }) {
+  const passes = state?.passes ?? []
+  const latestPass = passes[passes.length - 1]
+  const transcript = latestPass?.transcript ?? []
+  const transcriptText = transcript.join('\n')
+  const inFlight = state?.passInFlight === true && latestPass?.status === 'running'
+  const scrollRef = useRef<HTMLPreElement>(null)
+  const stickToBottomRef = useRef(true)
+
+  // Stick to bottom while new lines stream in — but only if the user hasn't
+  // scrolled away. Detect "near bottom" with a small slack so a one-line
+  // overshoot still counts as stuck.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || !stickToBottomRef.current) return
+    el.scrollTop = el.scrollHeight
+  }, [transcriptText, inFlight])
+
+  const onScroll = (): void => {
+    const el = scrollRef.current
+    if (!el) return
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32
+  }
+
+  return (
+    <div
+      className="border-t border-border flex flex-col shrink-0"
+      style={{ height: 320 }}
+    >
+      <div className="px-3 py-1.5 flex items-center justify-between border-b border-border">
+        <div className="text-[11px] uppercase tracking-wide text-text-muted">
+          Foreman transcript
+          {latestPass && (
+            <span className="ml-2 text-text-muted normal-case">
+              · pass #{latestPass.index} {latestPass.trigger}
+            </span>
+          )}
+        </div>
+        {inFlight && (
+          <span className="text-[11px] text-amber-300 flex items-center gap-1.5">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+            streaming
+          </span>
+        )}
+      </div>
+      {transcriptText ? (
+        <pre
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="flex-1 min-h-0 overflow-y-auto text-[10.5px] leading-tight text-text whitespace-pre-wrap break-words"
+          style={{
+            padding: '8px 10px',
+            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+          }}
+        >
+          {transcriptText}
+        </pre>
+      ) : (
+        <div className="flex-1 p-3 text-[11px] text-text-muted italic">
+          {inFlight
+            ? 'Foreman starting…'
+            : 'No pass yet. Hit "Run pass" to kick the foreman.'}
         </div>
       )}
     </div>
@@ -318,102 +383,3 @@ function PipelineRow({
   )
 }
 
-function ForemanTerminalPane({ foundryId }: { foundryId: string }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<Terminal | null>(null)
-  const fitRef = useRef<FitAddon | null>(null)
-  const terminalIdRef = useRef<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const theme = useSettingsStore((s) => s.theme)
-
-  useEffect(() => {
-    let unsubData: (() => void) | null = null
-    let unsubExit: (() => void) | null = null
-    let cancelled = false
-
-    void (async () => {
-      let result: { terminalId: string; contextId: string } | null = null
-      try {
-        result = await window.api.foundry.openForeman(foundryId)
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
-        return
-      }
-      if (!result) {
-        if (!cancelled) setError('Project missing repo path — check the project is registered.')
-        return
-      }
-      if (cancelled || !containerRef.current) {
-        void window.api.terminal.kill(result.terminalId)
-        return
-      }
-      terminalIdRef.current = result.terminalId
-      const terminalTheme =
-        THEMES.find((t) => t.name === theme)?.terminal ?? THEMES[0].terminal
-      const term = new Terminal({
-        theme: terminalTheme,
-        fontSize: 11,
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-        cursorBlink: true,
-        scrollback: 20000,
-      })
-      const fit = new FitAddon()
-      term.loadAddon(fit)
-      term.open(containerRef.current)
-      requestAnimationFrame(() => fit.fit())
-
-      term.onData((data) => {
-        if (terminalIdRef.current) {
-          void window.api.terminal.write(terminalIdRef.current, data)
-        }
-      })
-
-      unsubData = window.api.terminal.onData((tid, data) => {
-        if (tid === result!.terminalId) term.write(data)
-      })
-      unsubExit = window.api.terminal.onExit((tid) => {
-        if (tid === result!.terminalId) {
-          terminalIdRef.current = null
-        }
-      })
-
-      termRef.current = term
-      fitRef.current = fit
-    })()
-
-    return () => {
-      cancelled = true
-      unsubData?.()
-      unsubExit?.()
-      // Leave the PTY alive in main so re-opening the panel resumes the
-      // conversation; just tear down the xterm view.
-      terminalIdRef.current = null
-      termRef.current?.dispose()
-      termRef.current = null
-      fitRef.current = null
-    }
-  }, [foundryId, theme])
-
-  // Re-fit on window resize so the embedded terminal fills its slot cleanly.
-  useEffect(() => {
-    const onResize = () => fitRef.current?.fit()
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-
-  return (
-    <div
-      className="border-t border-border flex flex-col shrink-0"
-      style={{ height: 320 }}
-    >
-      <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-text-muted border-b border-border">
-        Foreman terminal
-      </div>
-      {error ? (
-        <div className="flex-1 p-3 text-[11px] text-rose-300">{error}</div>
-      ) : (
-        <div ref={containerRef} className="flex-1 min-h-0" style={{ padding: 4 }} />
-      )}
-    </div>
-  )
-}
