@@ -17,8 +17,16 @@ import { writeClaudeHookSettings } from '../services/hook.service'
 import { seedPermissions, startWatching } from '../services/permission-sync.service'
 import { getStorePath } from '../store-path'
 
+// Worker permission args. We DELIBERATELY never pass
+// `--dangerously-skip-permissions` — the user's global claude config
+// (auto-accept, allow/deny lists) is the source of truth. Forcing
+// bypass would silently override their preferred posture.
+//
+// The `bypassPermissions` entry is kept for backward-compatibility with
+// existing stored configs (they used to default to it), but it now resolves
+// to no args — same as `default`. The picker has been removed from the UI.
 const PERMISSION_MODE_ARGS: Record<FoundryWorkerPermissionMode, string[]> = {
-  bypassPermissions: ['--dangerously-skip-permissions'],
+  bypassPermissions: [],
   acceptEdits: ['--permission-mode', 'acceptEdits'],
   default: [],
 }

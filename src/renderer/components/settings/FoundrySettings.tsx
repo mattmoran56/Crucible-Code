@@ -31,8 +31,9 @@ function newConfig(projectId: string): FoundryConfig {
     readyForReviewCommandTemplate: '',
     branchNameTemplate: 'foundry/{{taskTitleSlug}}',
     maxConcurrentTasks: 2,
-    // Auto mode is the only sane choice; UI hides the picker.
-    workerPermissionMode: 'bypassPermissions',
+    // Workers inherit the user's global claude permission posture (auto
+    // mode etc.). We deliberately never force --dangerously-skip-permissions.
+    workerPermissionMode: 'default',
     triggerOnCompletedStatusEnter: true,
   }
 }
@@ -338,8 +339,10 @@ function FoundryEditor({ cfg, schema, apiToken, onSave, onClose }: EditorProps) 
         <fieldset className="border border-border rounded-md" style={{ padding: '10px' }}>
           <legend className="text-[11px] text-text-muted">Completion transition</legend>
           <p className="text-[11px] text-text-muted" style={{ marginBottom: 8 }}>
-            When a human moves a ticket from <em>from</em> to <em>to</em>, the foundry treats it
-            as verified complete and picks the next unblocked task.
+            When a ticket moves from <em>from</em> to <em>to</em> (by anyone — human, Notion
+            automation, an external sync, etc.), the foundry treats it as verified complete and
+            picks the next unblocked task. Detection is snapshot-diff against the 20s poll, so
+            actor doesn't matter.
           </p>
 
           <SelectField
