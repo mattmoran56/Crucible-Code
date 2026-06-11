@@ -43,7 +43,7 @@ import { findPRForBranch, markPRReady } from './github.service'
 import { getDefaultBranch } from './git.service'
 import { startReviewLoopLite } from './review-loop-lite.service'
 import { runHeadlessClaude } from './claude-headless.service'
-import { listTerminalsForSession, writeTerminal } from './terminal.service'
+import { getTerminalBuffer, listTerminalsForSession, writeTerminal } from './terminal.service'
 
 const execFileAsync = promisify(execFile)
 
@@ -691,6 +691,74 @@ async function applyDeferredPickupUpdates(rt: FoundryRuntime, p: FoundryPipeline
 
 // ── PR polling (the only thing we watch during 'implementing') ──────────────
 
+const BRACKETED_PASTE_START = '\x1b[200~'
+const BRACKETED_PASTE_END = '\x1b[201~'
+const READY_TIMEOUT_MS = 15 * 60_000
+const BRACKETED_PASTE_DELAY_MS = 250
+/** How much the PTY buffer must grow for us to count this stop as "real". */
+const MIN_RESPONSE_GROWTH_BYTES = 200
+
+/**
+ * Type the prompt into the PTY (bracketed-paste mode so claude's TUI treats
+ * the whole multi-line block as one paste rather than a sequence of
+ * keystrokes), wait a beat for it to render, then send the submit CR.
+ * Then wait for a stop hook event AND require the PTY's rolling buffer to
+ * have grown by at least MIN_RESPONSE_GROWTH_BYTES — that's how we
+ * distinguish a real worker response from a stale stop event (the previous
+ * turn's stop hook landing late, the auto-restart synthetic stop, etc.).
+ *
+ * Returns true on a verified response, false on timeout/stale.
+ */
+async function injectAndAwaitResponse(
+  terminalId: string,
+  contextId: string,
+  prompt: string
+): Promise<boolean> {
+  const bufferBefore = getTerminalBuffer(terminalId).length
+  const normalised = prompt.replace(/\r\n/g, '\n')
+  writeTerminal(terminalId, `${BRACKETED_PASTE_START}${normalised}${BRACKETED_PASTE_END}`)
+  await new Promise((r) => setTimeout(r, BRACKETED_PASTE_DELAY_MS))
+  writeTerminal(terminalId, '\r')
+
+  // Keep listening for stop events until either we see a "real" one (buffer
+  // grew meaningfully → claude actually produced output) or we run out of
+  // time. Stale events are ignored, not consumed.
+  const deadline = Date.now() + READY_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now()
+    const ok = await waitForSessionStop(contextId, remaining)
+    if (!ok) return false
+    const growth = getTerminalBuffer(terminalId).length - bufferBefore
+    if (growth >= MIN_RESPONSE_GROWTH_BYTES) return true
+    // Stale-looking stop — log and keep waiting.
+    console.log(
+      `[foundry] ignoring stale stop on ${contextId.slice(0, 8)}… (PTY buffer grew only ${growth} bytes)`
+    )
+  }
+  return false
+}
+
+/**
+ * Re-fetches the PR from GitHub and returns true if it's no longer a draft.
+ * Caller uses this AFTER injecting the user's ready-for-review prompt — if
+ * the worker did its job the PR should be ready; if it's still draft, we
+ * surface attention rather than overriding the user.
+ */
+async function verifyPRReady(worktreePath: string, prNumber: number): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync(
+      'gh',
+      ['pr', 'view', String(prNumber), '--json', 'isDraft'],
+      { cwd: worktreePath }
+    )
+    const parsed = JSON.parse(stdout) as { isDraft?: boolean }
+    return parsed.isDraft === false
+  } catch (err) {
+    console.error(`[foundry] verifyPRReady failed for PR #${prNumber}`, err)
+    return false
+  }
+}
+
 /**
  * Resolves true the next time the given contextId emits a 'stop' hook event,
  * or false on timeout. Used by runFinalizePhase to know when the worker
@@ -829,10 +897,10 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
   try {
     // Inject the ready-for-review command into the WORKER's existing PTY
     // (the same claude session that did the implement). The user can watch
-    // it run in the workspace and type ad-hoc feedback if they want. We
-    // wait for the next stop hook event on that session to know the worker
-    // is done with the command — same signal the implement phase uses.
+    // it run and type ad-hoc feedback. We then trust their prompt to do
+    // the actual PR + Notion bits — our code only verifies after.
     const tpl = rt.config.readyForReviewCommandTemplate?.trim()
+    let workerRan = false
     if (tpl && p.sessionId) {
       const ctx = {
         ...buildPlaceholderContext(p.page),
@@ -855,16 +923,13 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
       }
       log(p, `Injecting ready-for-review command into session ${p.sessionId.slice(0, 8)}…`)
       saveAndEmit(rt)
-      // Claude's TTY interprets a bare CR as "submit" — internal newlines in
-      // the prompt are fine, we just need exactly one trailing CR.
-      writeTerminal(agentTerminal.terminalId, cmd.replace(/\r?\n/g, '\n') + '\r')
-      const ok = await waitForSessionStop(p.sessionId, 15 * 60_000)
-      if (!ok) {
+      workerRan = await injectAndAwaitResponse(agentTerminal.terminalId, p.sessionId, cmd)
+      if (!workerRan) {
         p.attention = {
-          reason: 'ready-for-review command did not complete within 15 minutes',
+          reason: 'ready-for-review command never produced a worker response (timeout or stale stop event)',
           since: new Date().toISOString(),
         }
-        log(p, 'Ready-for-review timed out.')
+        log(p, 'Ready-for-review: no verified worker response.')
         saveAndEmit(rt)
         return
       }
@@ -873,8 +938,28 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
       log(p, 'Ready-for-review skipped — no worker session id on pipeline.')
     }
 
-    await markPRReady(p.worktreePath, p.prNumber)
-    log(p, `PR #${p.prNumber} marked ready-for-review.`)
+    // Trust the user's prompt as the source of truth when one is set: only
+    // VERIFY the PR is ready, don't force it ourselves. If the prompt didn't
+    // mark it ready, that's the user's call to make and the foundry surfaces
+    // it as attention rather than silently overriding. With no prompt
+    // configured we keep the auto-mark behaviour so default autopilot still
+    // works.
+    if (tpl) {
+      const verifiedReady = await verifyPRReady(p.worktreePath, p.prNumber)
+      if (!verifiedReady) {
+        p.attention = {
+          reason: `ready-for-review prompt finished but PR #${p.prNumber} is still a draft — your prompt didn't mark it ready`,
+          since: new Date().toISOString(),
+        }
+        log(p, `PR #${p.prNumber} is still draft after ready-for-review prompt — attention.`)
+        saveAndEmit(rt)
+        return
+      }
+      log(p, `PR #${p.prNumber} confirmed ready-for-review (worker handled it).`)
+    } else {
+      await markPRReady(p.worktreePath, p.prNumber)
+      log(p, `PR #${p.prNumber} marked ready-for-review.`)
+    }
     const notion = notionAccess(rt.config)
     if (notion) {
       const ctx = {
