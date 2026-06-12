@@ -72,6 +72,8 @@ const configuredConfig: FoundryConfig = {
     toValue: 'Testing',
   },
   completedStatuses: ['Done', 'Testing'],
+  optimisticContinue: true,
+  optimisticStatuses: ['In review'],
   pickupUpdates: [
     { property: 'Status', type: 'status', value: 'In Progress' },
   ],

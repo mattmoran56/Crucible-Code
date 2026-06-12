@@ -60,6 +60,10 @@ interface ForemanContext {
   freeSlots: number
   completionTransition: FoundryConfig['completionTransition']
   completedStatuses: string[]
+  /** On when optimistic-continue is enabled — changes eligibility + merge rules. */
+  optimisticContinue: boolean
+  /** Statuses meaning "PR open, not yet on trunk" (only when optimisticContinue). */
+  optimisticStatuses: string[]
   runningPipelines: Array<{ pageId: string; phase: string; branch?: string }>
   tasks: Array<{
     pageId: string
@@ -108,6 +112,8 @@ export async function buildPassContext(foundryId: string): Promise<BuildContextR
       freeSlots,
       completionTransition: cfg.completionTransition,
       completedStatuses: cfg.completedStatuses ?? [],
+      optimisticContinue: cfg.optimisticContinue === true,
+      optimisticStatuses: cfg.optimisticContinue ? cfg.optimisticStatuses ?? ['In review'] : [],
       runningPipelines,
       tasks,
     },
@@ -125,6 +131,33 @@ export function buildPassPrompt(
     : `
 
 This is pass #${opts.passIndex}. You have memory of previous passes — refer back to what you decided, what you said was blocked, and why. If you previously claimed a dependency, verify whether it's now resolved (the context will show updated statuses).`
+  const optimisticInput = ctx.optimisticContinue
+    ? `
+- optimisticContinue: TRUE — see "Optimistic continue" below
+- optimisticStatuses: ${JSON.stringify(ctx.optimisticStatuses)} — statuses meaning "PR open, not yet merged to trunk"`
+    : ''
+  const optimisticSection = ctx.optimisticContinue
+    ? `
+
+## Optimistic continue (ENABLED)
+
+This foundry is running in optimistic mode. A dependency counts as satisfied not
+only when it is in completedStatuses (merged to trunk) but ALSO when it is in one
+of optimisticStatuses (${JSON.stringify(ctx.optimisticStatuses)}) — i.e. it has an
+open PR we optimistically assume will be approved.
+
+When you start a task, look at each of its dependencies:
+- Dependency in completedStatuses → its code is already on trunk; nothing to do.
+- Dependency whose current status is in optimisticStatuses → its code is NOT on
+  trunk yet; it lives only in that PR's branch. List that dependency's pageId in
+  the started task's \`optimisticDependsOn\` array so the foundry merges the PR
+  branch into this task before work begins.
+- A task is only eligible if EVERY dependency is in completedStatuses OR
+  optimisticStatuses. If any dependency is in neither, leave it blocked.
+
+Only include a pageId in \`optimisticDependsOn\` if that dependency's status is
+currently in optimisticStatuses. Never list a completedStatuses dependency there.`
+    : ''
   return `You are the Foundry Foreman for "${ctx.foundry.name}". Your job: pick which Notion tasks to start *next* on autopilot. You DO NOT write code, modify files, or run anything beyond reading "${contextPath}" and writing "${decisionPath}".${continuation}
 
 ## Inputs
@@ -135,7 +168,7 @@ A JSON context at "${contextPath}" describes the task set:
 - completionTransition: the status move that signals a task is verified complete
 - completedStatuses: statuses that mean a task is "dependency-satisfied"
 - runningPipelines: tasks already in-flight (do NOT re-start these)
-- tasks: { pageId, title, url, status, body } for every task in the set
+- tasks: { pageId, title, url, status, body } for every task in the set${optimisticInput}${optimisticSection}
 
 ## Job
 
@@ -170,7 +203,7 @@ Write a single JSON object to "${decisionPath}":
       "pageId": "<page-id>",
       "reason": "why this one, now",
       "branchName": "feat/<slug>",
-      "sessionName": "<slug>"
+      "sessionName": "<slug>"${ctx.optimisticContinue ? ',\n      "optimisticDependsOn": ["<dep-page-id-in-optimisticStatuses>"]' : ''}
     }
   ],
   "blocked": [
@@ -238,11 +271,21 @@ export function validateDecision(
     if (rawBranch && !branchName) {
       warnings.push(`drop branchName: invalid format — ${rawBranch}`)
     }
+    // Optimistic deps are only honored when the foundry is in optimistic mode;
+    // filter to known pageIds and drop self-references.
+    let optimisticDependsOn: string[] | undefined
+    if (ctx.optimisticContinue && Array.isArray(obj.optimisticDependsOn)) {
+      const deps = obj.optimisticDependsOn
+        .map(String)
+        .filter((id) => id !== pageId && validPageIds.has(id))
+      if (deps.length > 0) optimisticDependsOn = Array.from(new Set(deps))
+    }
     filteredStart.push({
       pageId,
       reason,
       branchName: branchName || undefined,
       sessionName: sessionName || undefined,
+      optimisticDependsOn,
     })
   }
 
@@ -448,6 +491,7 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
       reason: s.reason,
       branchName: s.branchName,
       sessionName: s.sessionName,
+      optimisticDependsOn: s.optimisticDependsOn,
     })
     if (pipe) passRecord.startedPageIds.push(s.pageId)
   }

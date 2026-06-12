@@ -305,7 +305,9 @@ All in **Settings → Foundry** for the active project. Backed by `foundry-confi
 | **Task set filters** | OR-of-ANDs Notion filter (the same primitive the single-ticket integration uses). Defines which tickets this foundry watches at all. |
 | **Eligibility filters** (optional) | Narrower filter for "of those, which are ready to start" (e.g. `Status = Not Started`). Foreman only picks from this subset. |
 | **Completion transition** | Property + (optional) `from` + `to`. This is what tells the watcher "ticket X is done — pick the next unblocked task." Usually `Status: In review → Testing` or similar. |
-| **Completed statuses** | Multi-select. Statuses the foreman treats as "dependency satisfied" when reasoning about order. |
+| **Completed statuses** | Multi-select. Statuses the foreman treats as "dependency satisfied" **and already merged to trunk** when reasoning about order. |
+| **Optimistic continue** | On/off (default off). When on, dependencies in an **optimistic status** also count as satisfied even though their PR hasn't merged yet — see below. Safe to toggle while the foundry runs; it takes effect on the next pass. |
+| **Optimistic statuses** | Multi-select (shown when optimistic continue is on; default `In review`). Statuses meaning "PR open, not yet on trunk". A dependency in one of these is treated as satisfied **and its PR branch is merged into the dependent ticket** before work starts. |
 | **On pickup** | Notion property updates applied the moment a pipeline starts (e.g. `Status: Not Started → In Progress`). Same editor as the single-ticket integration's pickup updates. |
 | **On ready for review** | Notion property updates applied after `verifyPRReady` succeeds (e.g. `Status: → In review`). |
 
@@ -332,3 +334,15 @@ All in **Settings → Foundry** for the active project. Backed by `foundry-confi
 **Why does `Reset` only work when off?** So you can't yank state out from under live workers mid-implement. Cancel any active pipelines first if you really need to wipe.
 
 **Why isn't toggle-off cancelling in-flight pipelines?** The contract is "off = no new work scheduled." Existing sessions keep doing real work that you might want to keep. If you want to actually stop them, cancel each from the panel.
+
+## Optimistic continue
+
+By default a dependency only unblocks the next ticket once it reaches a **completed status** (`Done`/`Testing`) — i.e. it's merged to trunk, so the next worktree (branched off trunk) already contains its code. That means the whole pipeline waits on human PR review, which can back up.
+
+**Optimistic continue** (per-foundry toggle, default off) relaxes this. Statuses listed in **optimistic statuses** (default `In review` — PR open, *not* yet on trunk) also count as dependency-satisfied:
+
+1. The foreman picks up the next ticket those dependencies unblock, and lists each unmerged dependency's pageId under `optimisticDependsOn` in its decision.
+2. The FSM resolves each of those pageIds to its PR branch — from this foundry's own pipeline records first, then by searching open PRs for the dependency's Notion page id (the implement template puts the ticket URL in the PR body).
+3. It prepends a deterministic **merge preamble** to the worker's implement prompt: `git fetch origin` + `git merge --no-edit origin/<dep-branch> …`, with a clear instruction to stop and report rather than guess if there are conflicts. The worker merges the prerequisite work into its branch, then implements on top.
+
+The worktree is still branched off the configured base branch, and the PR still targets it — so the PR diff includes the dependency code until those dependencies merge to trunk. That's the optimistic trade-off: we assume the in-review PRs will be approved. If a dependency's branch can't be resolved, the pipeline is **parked with attention** instead of starting a worker that would be missing code. The watcher also wakes the foreman when a ticket *enters* an optimistic status, so the next ticket gets picked up promptly.

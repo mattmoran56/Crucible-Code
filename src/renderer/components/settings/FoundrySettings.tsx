@@ -49,6 +49,7 @@ function newConfig(projectId: string): FoundryConfig {
     // mode etc.). We deliberately never force --dangerously-skip-permissions.
     workerPermissionMode: 'default',
     triggerOnCompletedStatusEnter: true,
+    optimisticContinue: false,
   }
 }
 
@@ -466,12 +467,47 @@ function FoundryEditor({ cfg, schema, apiToken, onSave, onClose }: EditorProps) 
 
         <MultiSelectField
           label="Completed statuses"
-          hint="Statuses the foreman treats as 'dependency satisfied' when reasoning about order."
+          hint="Statuses the foreman treats as 'dependency satisfied' (merged to trunk) when reasoning about order."
           value={draft.completedStatuses ?? []}
           options={optionNames}
           onChange={(values) => update({ completedStatuses: values })}
           emptyHint="Pick a transition property first."
         />
+
+        <fieldset className="border border-border rounded-md" style={{ padding: '10px' }}>
+          <legend className="text-[11px] text-text-muted">Optimistic continue</legend>
+          <p className="text-[11px] text-text-muted" style={{ marginBottom: 8 }}>
+            When on, dependencies sitting in an <em>optimistic</em> status (open PR, not yet merged
+            to trunk — e.g. <em>In review</em>) count as satisfied: the foreman picks up the next
+            ticket they unblock, and the worker merges those open PR branches into its own branch
+            before implementing. Off = wait for dependencies to reach a completed (on-trunk) status.
+            Safe to toggle while running — it takes effect on the next pass.
+          </p>
+          <div
+            className="flex items-center gap-2"
+            style={{ marginBottom: draft.optimisticContinue ? 10 : 0 }}
+          >
+            <span className="text-[11px] text-text-muted">Optimistic continue</span>
+            <ToggleGroup
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'on', label: 'On' },
+              ]}
+              value={draft.optimisticContinue ? 'on' : 'off'}
+              onChange={(v) => update({ optimisticContinue: v === 'on' })}
+            />
+          </div>
+          {draft.optimisticContinue && (
+            <MultiSelectField
+              label="Optimistic statuses"
+              hint="Statuses meaning 'PR open but not yet on trunk'. A dependency in one of these is treated as satisfied and its PR branch is merged into the dependent ticket. Defaults to In review."
+              value={draft.optimisticStatuses ?? ['In review']}
+              options={optionNames}
+              onChange={(values) => update({ optimisticStatuses: values })}
+              emptyHint="Pick a transition property first."
+            />
+          )}
+        </fieldset>
 
         <div className="flex gap-2 mt-2">
           <Button

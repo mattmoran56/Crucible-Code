@@ -132,4 +132,44 @@ describe('validateDecision', () => {
     )
     expect(res.applied.ticketNotes?.[0].dependsOn).toEqual(['p2'])
   })
+
+  it('honors optimisticDependsOn when optimisticContinue is on (filtering unknown + self)', () => {
+    const res = validateDecision(
+      { start: [{ pageId: 'p1', reason: 'ok', optimisticDependsOn: ['p2', 'p1', 'unknown', 'p2'] }], summary: 's' },
+      ctx({ optimisticContinue: true, optimisticStatuses: ['In review'] }),
+      {}
+    )
+    // Drops self-reference (p1), unknown ids, and dedupes — leaving just p2.
+    expect(res.applied.start[0].optimisticDependsOn).toEqual(['p2'])
+  })
+
+  it('ignores optimisticDependsOn when optimisticContinue is off', () => {
+    const res = validateDecision(
+      { start: [{ pageId: 'p1', reason: 'ok', optimisticDependsOn: ['p2'] }], summary: 's' },
+      ctx({ optimisticContinue: false }),
+      {}
+    )
+    expect(res.applied.start[0].optimisticDependsOn).toBeUndefined()
+  })
+})
+
+describe('buildPassPrompt — optimistic continue', () => {
+  it('includes the optimistic section + field when the toggle is on', () => {
+    const prompt = buildPassPrompt('/ctx.json', '/dec.json', ctx({
+      optimisticContinue: true,
+      optimisticStatuses: ['In review'],
+    }), { passIndex: 1, isFirstPass: true })
+    expect(prompt).toContain('Optimistic continue (ENABLED)')
+    expect(prompt).toContain('optimisticDependsOn')
+    expect(prompt).toContain('In review')
+  })
+
+  it('omits the optimistic section when the toggle is off', () => {
+    const prompt = buildPassPrompt('/ctx.json', '/dec.json', ctx({
+      optimisticContinue: false,
+      optimisticStatuses: [],
+    }), { passIndex: 1, isFirstPass: true })
+    expect(prompt).not.toContain('Optimistic continue (ENABLED)')
+    expect(prompt).not.toContain('optimisticDependsOn')
+  })
 })

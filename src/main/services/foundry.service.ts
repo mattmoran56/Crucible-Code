@@ -454,6 +454,11 @@ export async function tick(rt: FoundryRuntime): Promise<void> {
   const newSnapshot: Record<string, string> = {}
   const completionProp = fresh.completionTransition.property
   const completedStatuses = new Set(fresh.completedStatuses ?? [])
+  // Under optimistic continue, entering an optimistic status (e.g. "In review")
+  // also frees a dependency, so wake the foreman for it too.
+  const optimisticStatuses = new Set(
+    fresh.optimisticContinue ? fresh.optimisticStatuses ?? ['In review'] : []
+  )
   const transitionFires: string[] = []
 
   for (const p of pages) {
@@ -468,6 +473,10 @@ export async function tick(rt: FoundryRuntime): Promise<void> {
       continue
     }
     if (fresh.triggerOnCompletedStatusEnter !== false && completedStatuses.has(status) && !completedStatuses.has(prior ?? '')) {
+      transitionFires.push(p.id)
+      continue
+    }
+    if (optimisticStatuses.has(status) && !optimisticStatuses.has(prior ?? '')) {
       transitionFires.push(p.id)
     }
   }
@@ -550,6 +559,13 @@ export interface StartPipelineOptions {
   branchName?: string
   /** Foreman's chosen session label (short kebab-case). Overrides the slugified title. */
   sessionName?: string
+  /**
+   * Optimistic-continue only: pageIds of dependencies sitting in an
+   * `optimisticStatuses` state (PR open, not on trunk). The FSM resolves each to
+   * its PR branch and prepends a merge preamble to the worker's prompt so the
+   * prerequisite code is present before implementation starts.
+   */
+  optimisticDependsOn?: string[]
 }
 
 export async function startPipeline(opts: StartPipelineOptions): Promise<FoundryPipeline | null> {
@@ -581,6 +597,26 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
     }
   }
 
+  // Optimistic continue: resolve the PR branches of dependencies that are still
+  // "In review" (open PR, not yet on trunk) so the worker can merge them in as
+  // its first step. If we can't resolve a branch, park a placeholder pipeline
+  // with attention rather than firing a worker that would be missing code.
+  let mergePreamble = ''
+  if (rt.config.optimisticContinue && opts.optimisticDependsOn && opts.optimisticDependsOn.length > 0) {
+    const repoPath = projectRepoPath(rt.config.projectId)
+    const resolved: string[] = []
+    const unresolved: string[] = []
+    for (const depId of opts.optimisticDependsOn) {
+      const branch = await resolveDependencyBranch(rt, depId, repoPath)
+      if (branch) resolved.push(branch)
+      else unresolved.push(depId)
+    }
+    if (unresolved.length > 0) {
+      return parkUnresolvedPipeline(rt, opts.page, opts.reason, unresolved)
+    }
+    mergePreamble = buildOptimisticMergePreamble(resolved, rt.config.baseBranch)
+  }
+
   const ctx = buildPlaceholderContext(opts.page)
   // Foreman-supplied names win; foundry template + slugified title are fallbacks.
   const branchTemplate = rt.config.branchNameTemplate ?? 'foundry/{{taskTitleSlug}}'
@@ -591,7 +627,8 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
   const suggestedSessionName =
     opts.sessionName?.trim() ||
     (opts.page.title ? slugify(opts.page.title) || `foundry-${opts.page.id.slice(0, 8)}` : `foundry-${opts.page.id.slice(0, 8)}`)
-  const resolvedImplementPrompt = resolvePlaceholders(rt.config.implementCommandTemplate, ctx)
+  const resolvedImplementPrompt =
+    mergePreamble + resolvePlaceholders(rt.config.implementCommandTemplate, ctx)
 
   // Apply immediate pickup updates BEFORE firing (matches notion-poller).
   const immediate = (rt.config.pickupUpdates ?? []).filter((u) => !valueReferencesSession(u.value))
@@ -656,6 +693,97 @@ function fireWorkerSpawn(rt: FoundryRuntime, pipeline: FoundryPipeline, payload:
   }, ACK_TIMEOUT_MS)
   rt.pipelineAcks.set(pipeline.id, { fired, timer })
   emitToRenderer(win, IPC.FOUNDRY_FIRE_TASK, payload)
+}
+
+// ── Optimistic continue helpers ─────────────────────────────────────────────
+
+/**
+ * Resolve the PR branch for a dependency ticket that's optimistically satisfied
+ * (open PR, not yet on trunk). Tries this foundry's own pipeline records first,
+ * then falls back to searching open PRs for the dependency's Notion page id
+ * (the implement template puts the Notion ticket URL in the PR body). Returns
+ * null if nothing matches — the caller parks the pipeline for human attention.
+ */
+async function resolveDependencyBranch(
+  rt: FoundryRuntime,
+  depPageId: string,
+  repoPath: string | null
+): Promise<string | null> {
+  const own = rt.state.pipelines.find((p) => p.page.id === depPageId && p.branch)
+  if (own?.branch) return own.branch
+  if (repoPath) {
+    try {
+      const dashless = depPageId.replace(/-/g, '')
+      const { stdout } = await execFileAsync(
+        'gh',
+        ['pr', 'list', '--state', 'open', '--search', dashless, '--json', 'number,headRefName', '--limit', '5'],
+        { cwd: repoPath }
+      )
+      const prs = JSON.parse(stdout) as Array<{ number?: number; headRefName?: string }>
+      const head = prs.find((pr) => pr.headRefName)?.headRefName
+      if (head) return head
+    } catch (err) {
+      console.error(`[foundry:${rt.config.id}] gh PR search failed for dep ${depPageId}`, err)
+    }
+  }
+  return null
+}
+
+/**
+ * Build the merge preamble prepended to the worker's implement prompt under
+ * optimistic continue. Deterministic, FSM-authored git commands — the worker
+ * just runs them — followed by a clear stop-on-conflict instruction.
+ */
+function buildOptimisticMergePreamble(branches: string[], baseBranch?: string): string {
+  const base = baseBranch?.trim() || 'the base branch'
+  const mergeArgs = branches.map((b) => `origin/${b}`).join(' ')
+  return `⚠️ OPTIMISTIC CONTINUE — integrate prerequisite work FIRST.
+
+This ticket depends on work that has an open PR but is NOT yet merged to ${base}. That code lives only in the branch(es) below. Before doing anything else, merge them into your current branch:
+
+    git fetch origin
+    git merge --no-edit ${mergeArgs}
+
+If the merge reports conflicts you cannot resolve cleanly and confidently, STOP: do not push, do not open a PR, and report exactly which files conflicted and why. Do not guess at resolutions.
+
+Once the merge is clean, proceed with the ticket below.
+
+────────────────────────────────────────
+
+`
+}
+
+/**
+ * Park a pipeline that can't start because an optimistic dependency's branch
+ * couldn't be resolved. Surfaces as attention (like the ack/base-branch
+ * failures) so a human can intervene; no worker is fired.
+ */
+function parkUnresolvedPipeline(
+  rt: FoundryRuntime,
+  page: NotionTaskPayload,
+  reason: string,
+  unresolvedDepIds: string[]
+): FoundryPipeline {
+  const pipeline: FoundryPipeline = {
+    id: `pipe-${rt.config.id}-${page.id.slice(0, 8)}-${Date.now().toString(36)}`,
+    foundryId: rt.config.id,
+    page,
+    phase: 'spawn-requested',
+    attention: {
+      reason: `optimistic continue: cannot resolve PR branch for dependency ${unresolvedDepIds.join(', ')}`,
+      since: new Date().toISOString(),
+    },
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    log: [
+      `Pipeline parked — ${reason}`,
+      `Optimistic continue: no branch found for dependency ${unresolvedDepIds.join(', ')} (no foundry pipeline record and no open PR matched). Resolve manually or cancel.`,
+    ],
+    baseBranch: rt.config.baseBranch,
+  }
+  rt.state.pipelines.push(pipeline)
+  saveAndEmit(rt)
+  return pipeline
 }
 
 /**

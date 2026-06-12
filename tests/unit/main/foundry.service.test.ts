@@ -363,6 +363,80 @@ describe('foundry.service — PR-based advancement', () => {
   })
 })
 
+describe('foundry.service — optimistic continue', () => {
+  it('prepends a deterministic merge preamble for resolvable dependency branches', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: true, optimisticStatuses: ['In review'] }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const rt = svc.getRuntime('f-1')!
+    // Seed a prior pipeline for the dependency carrying a known branch.
+    rt.state.pipelines.push({
+      id: 'dep-pipe',
+      foundryId: 'f-1',
+      page: { id: 'dep1', url: '', title: 'Dep', rawProperties: {} },
+      phase: 'done',
+      branch: 'feat/dep-one',
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      log: [],
+    } as any)
+    const page: NotionTaskPayload = { id: 'p2', url: 'https://notion.so/p2', title: 'Next', rawProperties: {} }
+    const pipe = await svc.startPipeline({
+      foundryId: 'f-1',
+      page,
+      reason: 'optimistic',
+      optimisticDependsOn: ['dep1'],
+    })
+    expect(pipe!.phase).toBe('spawn-requested')
+    expect(pipe!.attention).toBeUndefined()
+    const fires = sent.filter((m) => m.channel === 'foundry:fire-task')
+    const payload = fires[fires.length - 1].args[0] as any
+    expect(payload.resolvedImplementPrompt).toContain('OPTIMISTIC CONTINUE')
+    expect(payload.resolvedImplementPrompt).toContain('git merge --no-edit origin/feat/dep-one')
+    // The original implement prompt still follows the preamble.
+    expect(payload.resolvedImplementPrompt).toContain('/notion-ticket https://notion.so/p2')
+  })
+
+  it('parks the pipeline (no worker fired) when a dependency branch cannot be resolved', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: true }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const page: NotionTaskPayload = { id: 'p3', url: '', title: 'Next', rawProperties: {} }
+    const pipe = await svc.startPipeline({
+      foundryId: 'f-1',
+      page,
+      reason: 'optimistic',
+      optimisticDependsOn: ['ghost'],
+    })
+    expect(pipe).toBeTruthy()
+    expect(pipe!.phase).toBe('spawn-requested')
+    expect(pipe!.attention?.reason).toContain('cannot resolve PR branch')
+    expect(sent.filter((m) => m.channel === 'foundry:fire-task')).toHaveLength(0)
+  })
+
+  it('ignores optimisticDependsOn entirely when the toggle is off', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: false }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const page: NotionTaskPayload = { id: 'p4', url: 'https://notion.so/p4', title: 'Next', rawProperties: {} }
+    const pipe = await svc.startPipeline({
+      foundryId: 'f-1',
+      page,
+      reason: 'normal',
+      optimisticDependsOn: ['ghost'],
+    })
+    // Off → no resolution, no parking, no preamble — fires normally.
+    expect(pipe!.phase).toBe('spawn-requested')
+    expect(pipe!.attention).toBeUndefined()
+    const fires = sent.filter((m) => m.channel === 'foundry:fire-task')
+    const payload = fires[fires.length - 1].args[0] as any
+    expect(payload.resolvedImplementPrompt).not.toContain('OPTIMISTIC CONTINUE')
+  })
+})
+
 describe('foundry.service — pause + run-now', () => {
   it('setPaused stops the watcher but preserves pipelines', async () => {
     const svc = await loadFresh()
