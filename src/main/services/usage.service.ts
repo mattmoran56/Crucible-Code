@@ -50,14 +50,15 @@ export function unregisterSession(sessionId: string): void {
 }
 
 /**
- * Parse a statusLine JSON file written by Claude Code's statusLine hook.
+ * Build a SessionUsage from the raw statusLine JSON body. Shared by the
+ * sync (IPC fast-path) and async (poller) readers so the parsing logic
+ * stays in one place.
  */
-function parseStatusLineFile(sessionId: string, filePath: string): SessionUsage | null {
+function rawToSessionUsage(sessionId: string, raw: string): SessionUsage | null {
   try {
-    if (!existsSync(filePath)) return null
-    const raw = readFileSync(filePath, 'utf-8').trim()
-    if (!raw) return null
-    const data = JSON.parse(raw)
+    const trimmed = raw.trim()
+    if (!trimmed) return null
+    const data = JSON.parse(trimmed)
 
     const usage: SessionUsage = {
       sessionId,
@@ -93,18 +94,37 @@ function parseStatusLineFile(sessionId: string, filePath: string): SessionUsage 
   }
 }
 
+function parseStatusLineFile(sessionId: string, filePath: string): SessionUsage | null {
+  try {
+    if (!existsSync(filePath)) return null
+    return rawToSessionUsage(sessionId, readFileSync(filePath, 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
 /**
- * Poll all registered session files and push updates to the renderer.
+ * Skip the poll entirely when the app is hidden or there's nothing to poll —
+ * the IPC update has no recipient and the disk reads add up over hours of
+ * idle background time.
  */
+function shouldPoll(): boolean {
+  if (sessionFiles.size === 0) return false
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  if (mainWindow.isMinimized()) return false
+  if (!mainWindow.isVisible()) return false
+  return true
+}
+
 function pollAllSessions(): void {
+  if (!shouldPoll()) return
   for (const [sessionId, filePath] of sessionFiles) {
     const usage = parseStatusLineFile(sessionId, filePath)
-    if (usage) {
-      const previous = sessionUsages.get(sessionId)
-      sessionUsages.set(sessionId, usage)
-      mainWindow?.webContents.send(IPC.USAGE_SESSION_UPDATE, usage)
-      maybeEmitLimitReached(previous, usage)
-    }
+    if (!usage) continue
+    const previous = sessionUsages.get(sessionId)
+    sessionUsages.set(sessionId, usage)
+    mainWindow?.webContents.send(IPC.USAGE_SESSION_UPDATE, usage)
+    maybeEmitLimitReached(previous, usage)
   }
 }
 

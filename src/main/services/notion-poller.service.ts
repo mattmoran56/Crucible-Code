@@ -18,7 +18,12 @@ import {
   valueReferencesSessionPlaceholder,
 } from './notion.service'
 
-const POLL_INTERVAL_MS = 5_000
+// 30s strikes the right balance: tasks still get picked up quickly enough to
+// feel automatic, but the poller stops dominating idle CPU. The previous 5s
+// cadence re-read the config JSON from disk + hit the Notion API per project
+// twelve times a minute, which was a steady-state CPU draw even when nothing
+// matched.
+const POLL_INTERVAL_MS = 30_000
 const MAX_FIRES_PER_TICK = 5
 const PICKED_UP_CAP = 1000
 
@@ -222,7 +227,20 @@ async function tickProject(projectId: string, config: NotionIntegrationConfig): 
   }
 }
 
+/**
+ * Skip ticks when the app is minimized or hidden — there's nobody to surface
+ * a pickup to, and the cost of querying Notion + re-reading the config from
+ * disk adds up over hours of background time.
+ */
+function shouldRunTick(): boolean {
+  if (!mainWindow || mainWindow.isDestroyed()) return false
+  if (mainWindow.isMinimized()) return false
+  if (!mainWindow.isVisible()) return false
+  return true
+}
+
 async function tick(): Promise<void> {
+  if (!shouldRunTick()) return
   const all = loadAllConfigs()
   await Promise.all(
     Object.entries(all).map(([projectId, config]) => tickProject(projectId, config))

@@ -27,6 +27,12 @@ const fakeWindow = {
       sentMessages.push({ channel, payload })
     },
   },
+  // The poller gates ticks on app-visibility so background ticks don't burn
+  // CPU when there's nobody to surface a pickup to. Tests want the gate to
+  // pass so the rest of the tick logic runs.
+  isDestroyed: () => false,
+  isMinimized: () => false,
+  isVisible: () => true,
 } as unknown as Electron.BrowserWindow
 
 vi.mock('electron-store', () => ({ default: FakeStore }))

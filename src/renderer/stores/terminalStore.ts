@@ -32,6 +32,15 @@ interface TerminalState {
   killTerminal: (sessionId: string, mode?: TerminalMode) => Promise<void>
   getTerminal: (sessionId: string, mode?: TerminalMode) => TerminalInstance | undefined
 
+  /**
+   * Keep at most `max` 'review' terminals alive, destroying the oldest ones
+   * (by spawn order). Never kills `keepSessionId`. Review terminals are spawned
+   * one-per-PR and otherwise never disposed, so without a cap they accumulate
+   * an unbounded number of xterm instances. Returns the evicted session ids so
+   * callers can clear any "already launched" bookkeeping.
+   */
+  enforceReviewCap: (max: number, keepSessionId: string) => Promise<string[]>
+
   /** Spawn a terminal keyed by a dynamic tab ID + session ID */
   spawnDynamicTerminal: (
     tabId: string,
@@ -156,6 +165,32 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   getTerminal: (sessionId: string, mode: TerminalMode = 'shell') => {
     const key = terminalKey(sessionId, mode)
     return get().terminals[key]
+  },
+
+  enforceReviewCap: async (max: number, keepSessionId: string) => {
+    const all = get().terminals
+    // Object key insertion order ≈ spawn order, so the oldest review terminals
+    // come first.
+    const reviewKeys = Object.keys(all).filter((k) => all[k].mode === 'review')
+    const excess = reviewKeys.length - max
+    if (excess <= 0) return []
+    const toKill = reviewKeys
+      .filter((k) => all[k].sessionId !== keepSessionId)
+      .slice(0, excess)
+    if (toKill.length === 0) return []
+    const evicted: string[] = []
+    for (const key of toKill) {
+      const instance = all[key]
+      destroyTerminal(instance.terminalId)
+      await window.api.terminal.kill(instance.terminalId)
+      evicted.push(instance.sessionId)
+    }
+    set((state) => {
+      const rest = { ...state.terminals }
+      for (const key of toKill) delete rest[key]
+      return { terminals: rest }
+    })
+    return evicted
   },
 
   spawnDynamicTerminal: async (tabId, sessionId, sessionName, cwd, mode, contextId) => {

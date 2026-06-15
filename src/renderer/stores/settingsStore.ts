@@ -181,9 +181,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 }))
 
-// Listen for OS color scheme changes
+// Listen for OS color scheme changes. The listener is installed once per
+// module load; under Vite HMR a re-evaluation would otherwise stack a new
+// listener on top of the surviving MediaQueryList — fire 2×, 3×, … on every
+// system theme flip. The dispose hook is a no-op in production builds.
 const mq = window.matchMedia('(prefers-color-scheme: dark)')
-mq.addEventListener('change', () => {
+const onSystemThemeChange = (): void => {
   const s = useSettingsStore.getState()
   if (s.matchSystem) {
     const resolved = getSystemTheme(s.preferredLight, s.preferredDark)
@@ -192,4 +195,10 @@ mq.addEventListener('change', () => {
     useSettingsStore.setState({ theme: resolved, claudeTheme })
     saveSettings({ theme: resolved, matchSystem: true, preferredLight: s.preferredLight, preferredDark: s.preferredDark, claudeTheme, mergedCleanupAction: s.mergedCleanupAction, mergedCleanupDelay: s.mergedCleanupDelay, autoQueueContinue: s.autoQueueContinue, usageResetDelayMinutes: s.usageResetDelayMinutes })
   }
-})
+}
+mq.addEventListener('change', onSystemThemeChange)
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    mq.removeEventListener('change', onSystemThemeChange)
+  })
+}

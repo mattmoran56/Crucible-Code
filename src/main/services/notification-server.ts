@@ -117,12 +117,16 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
     server = http.createServer((req, res) => {
       // Typed endpoint: POST /hook?type=prompt|notification|stop&context=...&tab=...
       if (req.method === 'POST' && req.url?.startsWith('/hook')) {
-        let body = ''
+        // Collect raw Buffer chunks and decode once at the end. The previous
+        // `body += chunk.toString()` was O(n²) for large payloads and also
+        // risked splitting multi-byte UTF-8 sequences across chunks.
+        const chunks: Buffer[] = []
         req.on('data', (chunk: Buffer) => {
-          body += chunk.toString()
+          chunks.push(chunk)
         })
         req.on('end', () => {
           try {
+            const body = Buffer.concat(chunks).toString('utf8')
             const data = JSON.parse(body)
             const cwd = data.cwd || ''
             const url = new URL(req.url!, `http://127.0.0.1`)
@@ -150,12 +154,13 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
         })
       } else if (req.method === 'POST' && req.url === '/notification') {
         // Legacy endpoint — treat as notification type, route by cwd
-        let body = ''
+        const chunks: Buffer[] = []
         req.on('data', (chunk: Buffer) => {
-          body += chunk.toString()
+          chunks.push(chunk)
         })
         req.on('end', () => {
           try {
+            const body = Buffer.concat(chunks).toString('utf8')
             const data = JSON.parse(body)
             const cwd = data.cwd || ''
             const mapping = findContextByWorktreePath(cwd)

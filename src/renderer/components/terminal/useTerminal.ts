@@ -88,7 +88,11 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       fontSize: 13,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       cursorBlink: true,
-      scrollback: 50000,
+      // Each line of scrollback is retained in memory for the lifetime of the
+      // terminal. 50k lines × many long-lived terminals was a major contributor
+      // to runaway renderer memory; 10k keeps plenty of history at ~1/5th the
+      // footprint.
+      scrollback: 10000,
     })
 
     const fitAddon = new FitAddon()
@@ -124,10 +128,17 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       if (id !== terminalId) return
       smartScroll.write(data)
 
-      // Intervention detection
-      lineBuffer.current += data
-      if (lineBuffer.current.length > 2000) {
-        lineBuffer.current = lineBuffer.current.slice(-2000)
+      // Intervention detection. PTY data is batched on the main side into
+      // ~16ms windows, so this runs ~60Hz at worst; only the trailing 2KB
+      // can possibly match an intervention pattern, so we cap the running
+      // line buffer at 2KB without ever building a larger temporary string.
+      const INTERVENTION_WINDOW = 2000
+      if (data.length >= INTERVENTION_WINDOW) {
+        lineBuffer.current = data.slice(-INTERVENTION_WINDOW)
+      } else if (lineBuffer.current.length + data.length > INTERVENTION_WINDOW) {
+        lineBuffer.current = (lineBuffer.current + data).slice(-INTERVENTION_WINDOW)
+      } else {
+        lineBuffer.current += data
       }
       for (const pattern of INTERVENTION_PATTERNS) {
         if (pattern.test(lineBuffer.current)) {
