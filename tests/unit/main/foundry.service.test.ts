@@ -212,6 +212,29 @@ describe('foundry.service — snapshot watcher', () => {
     await svc.tick(rt)
     expect(rt.state.pageStatusSnapshot['p1']).toBe('Done')
   })
+
+  it('frees the slot of a wedged pipeline when its task reaches a completed status', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig())
+    let status = 'In progress'
+    fetchMock.mockImplementation(async () =>
+      fakeNotionResponse(200, { results: [pageWithStatus('p1', status)] })
+    )
+    svc.startFoundryService(fakeWindow)
+    const rt = svc.getRuntime('f-1')!
+    // Pipeline is in-flight and occupies a slot.
+    const page: NotionTaskPayload = { id: 'p1', url: 'https://notion.so/p1', title: 'T', rawProperties: {} }
+    const pipe = await svc.startPipeline({ foundryId: 'f-1', page, reason: 'test' })
+    rt.state.pipelines[0].phase = 'finalizing'
+    expect(svc.countActivePipelines(rt)).toBe(1)
+    await svc.tick(rt) // seed snapshot
+    // Worker finished; Notion task moved to a completed status.
+    status = 'Done'
+    await svc.tick(rt)
+    expect(rt.state.pipelines[0].phase).toBe('done')
+    expect(svc.countActivePipelines(rt)).toBe(0)
+    void pipe
+  })
 })
 
 describe('foundry.service — pipeline FSM start + ack', () => {
