@@ -12,10 +12,15 @@ interface Props {
 // Module-level set — survives across all renders and never resets
 const reviewsLaunched = new Set<string>()
 
+// Cap on simultaneously-live review terminals. Each is a full xterm instance
+// held for the app's lifetime; without a cap they accumulate one-per-PR and
+// leak memory. The oldest are disposed once this many are open.
+const MAX_REVIEW_TERMINALS = 5
+
 export function ReviewTerminalPanel({ visible = true }: Props) {
   const { activeSessionId, activePRNumber, activePRWorktreePath, sessions } = useSessionStore()
   const { projects, activeProjectId } = useProjectStore()
-  const { spawnTerminal, getTerminal, terminals } = useTerminalStore()
+  const { spawnTerminal, getTerminal, terminals, enforceReviewCap } = useTerminalStore()
   const { pullRequests } = usePRStore()
 
   // Derive cwd and a stable key for the terminal. When the user is reviewing a
@@ -61,6 +66,17 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
     const contextId = activeSessionId ?? `__pr__:${effectivePRNumber}`
     spawnTerminal(terminalSessionId, terminalName, cwd, 'review', false, contextId, 'review').then(
       (terminalId) => {
+        // Evict the oldest review terminals beyond the cap so they don't pile
+        // up for the app's lifetime. Clear their launch flags so revisiting the
+        // PR re-spawns a fresh review terminal.
+        void enforceReviewCap(MAX_REVIEW_TERMINALS, terminalSessionId).then((evicted) => {
+          for (const sid of evicted) {
+            for (const k of [...reviewsLaunched]) {
+              if (k.startsWith(`${sid}:`)) reviewsLaunched.delete(k)
+            }
+          }
+        })
+
         unsub = window.api.terminal.onData((tid, data) => {
           if (tid !== terminalId || sent) return
           if (data.includes('>') || data.includes('$')) {
@@ -87,7 +103,7 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
       unsub?.()
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [terminalSessionId, effectivePRNumber, cwd, terminalName, commandKey, getTerminal, spawnTerminal])
+  }, [terminalSessionId, effectivePRNumber, cwd, terminalName, commandKey, getTerminal, spawnTerminal, enforceReviewCap])
 
   if (effectivePRNumber == null) {
     return (

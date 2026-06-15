@@ -88,7 +88,11 @@ export function useTerminal({ terminalId, sessionId, sessionName, visible = true
       fontSize: 13,
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       cursorBlink: true,
-      scrollback: 50000,
+      // Each line of scrollback is retained in memory for the lifetime of the
+      // terminal. 50k lines × many long-lived terminals was a major contributor
+      // to runaway renderer memory; 10k keeps plenty of history at ~1/5th the
+      // footprint.
+      scrollback: 10000,
     })
 
     const fitAddon = new FitAddon()
