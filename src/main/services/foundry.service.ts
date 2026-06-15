@@ -477,10 +477,33 @@ export async function tick(rt: FoundryRuntime): Promise<void> {
     }
   }
   rt.state.pageStatusSnapshot = newSnapshot
+
+  // Reconcile in-flight pipelines against Notion ground-truth. If a task has
+  // reached a completed status, the work is genuinely done — free its slot even
+  // if the pipeline got wedged mid-finalize (stale worker terminal, draft PR,
+  // injection timeout) and is sitting in `finalizing`/attention. Without this,
+  // those pipelines occupy a slot forever and the foreman runs out of slots.
+  let slotFreed = false
+  if (completedStatuses.size > 0) {
+    for (const p of rt.state.pipelines) {
+      if (isTerminal(p.phase)) continue
+      const status = newSnapshot[p.page.id]
+      if (status && completedStatuses.has(status)) {
+        p.phase = 'done'
+        p.attention = undefined
+        log(p, `Notion status "${status}" is a completed status — pipeline marked done, slot freed.`)
+        slotFreed = true
+      }
+    }
+  }
+
   saveAndEmit(rt)
 
   if (transitionFires.length > 0) {
     requestPass(rt, 'transition', /*immediate*/ false)
+  }
+  if (slotFreed) {
+    requestPass(rt, 'slot-freed', /*immediate*/ false)
   }
 }
 
