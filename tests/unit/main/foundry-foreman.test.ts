@@ -132,4 +132,103 @@ describe('validateDecision', () => {
     )
     expect(res.applied.ticketNotes?.[0].dependsOn).toEqual(['p2'])
   })
+
+  it('honors optimisticDependsOn when optimisticContinue is on (filtering unknown + self)', () => {
+    const res = validateDecision(
+      { start: [{ pageId: 'p1', reason: 'ok', optimisticDependsOn: ['p2', 'p1', 'unknown', 'p2'] }], summary: 's' },
+      ctx({ optimisticContinue: true, optimisticStatuses: ['In review'] }),
+      {}
+    )
+    // Drops self-reference (p1), unknown ids, and dedupes — leaving just p2.
+    expect(res.applied.start[0].optimisticDependsOn).toEqual(['p2'])
+  })
+
+  it('ignores optimisticDependsOn when optimisticContinue is off', () => {
+    const res = validateDecision(
+      { start: [{ pageId: 'p1', reason: 'ok', optimisticDependsOn: ['p2'] }], summary: 's' },
+      ctx({ optimisticContinue: false }),
+      {}
+    )
+    expect(res.applied.start[0].optimisticDependsOn).toBeUndefined()
+  })
+
+  it('leaves optimisticDependsOn undefined when every listed dep is unknown', () => {
+    const res = validateDecision(
+      { start: [{ pageId: 'p1', reason: 'ok', optimisticDependsOn: ['nope', 'gone'] }], summary: 's' },
+      ctx({ optimisticContinue: true }),
+      {}
+    )
+    // Not an empty array — undefined, so the FSM treats it as "no deps to merge".
+    expect(res.applied.start[0].optimisticDependsOn).toBeUndefined()
+  })
+
+  it('leaves optimisticDependsOn undefined when the field is not an array', () => {
+    const res = validateDecision(
+      { start: [{ pageId: 'p1', reason: 'ok', optimisticDependsOn: 'p2' }], summary: 's' },
+      ctx({ optimisticContinue: true }),
+      {}
+    )
+    expect(res.applied.start[0].optimisticDependsOn).toBeUndefined()
+  })
+
+  it('preserves multiple valid optimistic deps in order', () => {
+    const res = validateDecision(
+      { start: [{ pageId: 'p1', reason: 'ok', optimisticDependsOn: ['p3', 'p2'] }], summary: 's' },
+      ctx({ optimisticContinue: true }),
+      {}
+    )
+    expect(res.applied.start[0].optimisticDependsOn).toEqual(['p3', 'p2'])
+  })
+
+  it('does not leak optimistic deps from a start entry dropped by the freeSlots cap', () => {
+    const res = validateDecision(
+      {
+        start: [
+          { pageId: 'p1', reason: 'ok' },
+          { pageId: 'p2', reason: 'ok' },
+          { pageId: 'p3', reason: 'overflow', optimisticDependsOn: ['p1'] },
+        ],
+        summary: 's',
+      },
+      ctx({ optimisticContinue: true, freeSlots: 2 }),
+      {}
+    )
+    expect(res.applied.start).toHaveLength(2)
+    expect(res.applied.start.some((s) => s.pageId === 'p3')).toBe(false)
+  })
+})
+
+describe('buildPassPrompt — optimistic continue', () => {
+  it('includes the optimistic section + field when the toggle is on', () => {
+    const prompt = buildPassPrompt('/ctx.json', '/dec.json', ctx({
+      optimisticContinue: true,
+      optimisticStatuses: ['In review'],
+    }), { passIndex: 1, isFirstPass: true })
+    expect(prompt).toContain('Optimistic continue (ENABLED)')
+    expect(prompt).toContain('optimisticDependsOn')
+    expect(prompt).toContain('In review')
+  })
+
+  it('omits the optimistic section when the toggle is off', () => {
+    const prompt = buildPassPrompt('/ctx.json', '/dec.json', ctx({
+      optimisticContinue: false,
+      optimisticStatuses: [],
+    }), { passIndex: 1, isFirstPass: true })
+    expect(prompt).not.toContain('Optimistic continue (ENABLED)')
+    expect(prompt).not.toContain('optimisticDependsOn')
+    expect(prompt).not.toContain('optimisticStatuses')
+  })
+
+  it('surfaces custom optimistic statuses in the prompt body', () => {
+    const prompt = buildPassPrompt('/ctx.json', '/dec.json', ctx({
+      optimisticContinue: true,
+      optimisticStatuses: ['In review', 'QA'],
+    }), { passIndex: 2, isFirstPass: false })
+    expect(prompt).toContain('"QA"')
+    // Both the input description and the dedicated section reference the list.
+    expect(prompt).toContain('optimisticStatuses')
+    expect(prompt).toContain('Optimistic continue (ENABLED)')
+    // And it still carries the cross-pass memory continuation.
+    expect(prompt).toContain('This is pass #2')
+  })
 })

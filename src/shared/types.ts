@@ -641,6 +641,22 @@ export interface FoundryConfig {
   foremanCostCapUsd?: number
   /** Also trigger a foreman pass when a task transitions directly to a completedStatus. Default true. */
   triggerOnCompletedStatusEnter?: boolean
+  /**
+   * Optimistic continue. When on, dependency tickets sitting in an
+   * `optimisticStatuses` state (PR open but NOT yet merged to trunk, e.g.
+   * "In review") are treated as dependency-satisfied: the foreman picks up the
+   * next ticket they unblock, and the worker merges those still-open PR branches
+   * into its own branch before implementing. Default off — normal behaviour
+   * waits for dependencies to reach a `completedStatuses` (on-trunk) state.
+   */
+  optimisticContinue?: boolean
+  /**
+   * Statuses that count as "optimistically satisfied but not yet on trunk" — a
+   * dependency in one of these has an open PR whose branch must be merged into
+   * the dependent ticket. Only consulted when `optimisticContinue` is on.
+   * Defaults to `['In review']`.
+   */
+  optimisticStatuses?: string[]
 }
 
 export type FoundryPipelinePhase =
@@ -733,6 +749,13 @@ export interface ForemanDecision {
     branchName?: string
     /** Short kebab-case session label shown in the sidebar. */
     sessionName?: string
+    /**
+     * Optimistic-continue only: pageIds of this task's dependencies that are
+     * currently in an `optimisticStatuses` state (PR open, not yet on trunk).
+     * The FSM resolves each to its PR branch and has the worker merge them in
+     * before implementing. Ignored when `optimisticContinue` is off.
+     */
+    optimisticDependsOn?: string[]
   }>
   blocked?: Array<{ pageId: string; reason: string }>
   summary: string

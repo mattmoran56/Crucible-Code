@@ -379,7 +379,7 @@ const targets: ScreenshotTarget[] = [
   {
     name: 'foundry-settings-editor',
     storyId: 'settings-foundrysettings--editor',
-    viewport: { width: 880, height: 1400 },
+    viewport: { width: 880, height: 2640 },
     delay: 1200,
   },
 ]

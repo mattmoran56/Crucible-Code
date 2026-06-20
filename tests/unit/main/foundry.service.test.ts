@@ -80,10 +80,38 @@ vi.mock('../../../src/main/services/review-loop-lite.service', () => ({
   startReviewLoopLite: vi.fn(async () => undefined),
 }))
 
+// Controllable shell mock so optimistic dep-branch resolution can exercise the
+// `gh pr list` fallback without shelling out. promisify(execFile) resolves with
+// whatever execFileImpl returns as stdout. Default: empty (no PR found).
+const cp = vi.hoisted(() => {
+  const execFileImpl = vi.fn(async (_cmd: string, _args: string[]) => '')
+  const execFileMock = (
+    cmd: string,
+    args: string[],
+    opts: unknown,
+    cb?: (e: unknown, r?: { stdout: string; stderr: string }) => void
+  ) => {
+    const callback = (typeof opts === 'function' ? opts : cb) as (
+      e: unknown,
+      r?: { stdout: string; stderr: string }
+    ) => void
+    Promise.resolve(execFileImpl(cmd, args)).then(
+      (stdout) => callback(null, { stdout, stderr: '' }),
+      (err) => callback(err)
+    )
+    return {} as never
+  }
+  return { execFileImpl, execFileMock }
+})
+vi.mock('node:child_process', () => ({ execFile: cp.execFileMock, default: { execFile: cp.execFileMock } }))
+vi.mock('child_process', () => ({ execFile: cp.execFileMock, default: { execFile: cp.execFileMock } }))
+
 beforeEach(() => {
   for (const k of Object.keys(stores)) delete stores[k]
   sent.length = 0
   fetchMock.mockReset()
+  cp.execFileImpl.mockReset()
+  cp.execFileImpl.mockResolvedValue('')
   vi.resetModules()
 })
 
@@ -235,6 +263,49 @@ describe('foundry.service — snapshot watcher', () => {
     expect(svc.countActivePipelines(rt)).toBe(0)
     void pipe
   })
+
+  it('wakes the foreman when a ticket enters an optimistic status (toggle on)', async () => {
+    vi.useFakeTimers()
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: true, optimisticStatuses: ['In review'] }))
+    svc.startFoundryService(fakeWindow)
+    let status = 'In progress'
+    fetchMock.mockImplementation(async () =>
+      fakeNotionResponse(200, { results: [pageWithStatus('p1', status)] })
+    )
+    // Drain the startup + enabled passes (scheduled at 2.5s) before a runner
+    // exists, so they no-op and don't pollute the assertion.
+    await vi.advanceTimersByTimeAsync(8000)
+    const runner = vi.fn(async () => {})
+    svc.registerForemanRunner(runner)
+    const rt = svc.getRuntime('f-1')!
+    await svc.tick(rt) // seed snapshot at "In progress"
+    status = 'In review'
+    await svc.tick(rt) // enters optimistic status → debounced transition pass
+    await vi.advanceTimersByTimeAsync(5500)
+    expect(runner).toHaveBeenCalledTimes(1)
+    expect(runner.mock.calls[0][0]).toMatchObject({ foundryId: 'f-1', trigger: 'transition' })
+  })
+
+  it('does NOT wake the foreman on optimistic-status entry when the toggle is off', async () => {
+    vi.useFakeTimers()
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: false }))
+    svc.startFoundryService(fakeWindow)
+    let status = 'In progress'
+    fetchMock.mockImplementation(async () =>
+      fakeNotionResponse(200, { results: [pageWithStatus('p1', status)] })
+    )
+    await vi.advanceTimersByTimeAsync(8000)
+    const runner = vi.fn(async () => {})
+    svc.registerForemanRunner(runner)
+    const rt = svc.getRuntime('f-1')!
+    await svc.tick(rt) // seed at "In progress"
+    status = 'In review'
+    await svc.tick(rt) // entering "In review" is neither completion nor completed nor optimistic
+    await vi.advanceTimersByTimeAsync(5500)
+    expect(runner).not.toHaveBeenCalled()
+  })
 })
 
 describe('foundry.service — pipeline FSM start + ack', () => {
@@ -383,6 +454,158 @@ describe('foundry.service — PR-based advancement', () => {
     // synchronously here. So instead validate the no-PR path leaves the
     // pipeline in 'implementing' with no advance.
     expect(rt.state.pipelines[0].phase).toBe('implementing')
+  })
+})
+
+describe('foundry.service — optimistic continue', () => {
+  it('prepends a deterministic merge preamble for resolvable dependency branches', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: true, optimisticStatuses: ['In review'] }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const rt = svc.getRuntime('f-1')!
+    // Seed a prior pipeline for the dependency carrying a known branch.
+    rt.state.pipelines.push({
+      id: 'dep-pipe',
+      foundryId: 'f-1',
+      page: { id: 'dep1', url: '', title: 'Dep', rawProperties: {} },
+      phase: 'done',
+      branch: 'feat/dep-one',
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      log: [],
+    } as any)
+    const page: NotionTaskPayload = { id: 'p2', url: 'https://notion.so/p2', title: 'Next', rawProperties: {} }
+    const pipe = await svc.startPipeline({
+      foundryId: 'f-1',
+      page,
+      reason: 'optimistic',
+      optimisticDependsOn: ['dep1'],
+    })
+    expect(pipe!.phase).toBe('spawn-requested')
+    expect(pipe!.attention).toBeUndefined()
+    const fires = sent.filter((m) => m.channel === 'foundry:fire-task')
+    const payload = fires[fires.length - 1].args[0] as any
+    expect(payload.resolvedImplementPrompt).toContain('OPTIMISTIC CONTINUE')
+    expect(payload.resolvedImplementPrompt).toContain('git merge --no-edit origin/feat/dep-one')
+    // The original implement prompt still follows the preamble.
+    expect(payload.resolvedImplementPrompt).toContain('/notion-ticket https://notion.so/p2')
+  })
+
+  it('merges multiple resolvable dependency branches in one preamble', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: true, baseBranch: undefined }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const rt = svc.getRuntime('f-1')!
+    for (const [id, branch] of [['dep1', 'feat/dep-one'], ['dep2', 'fix/dep-two']]) {
+      rt.state.pipelines.push({
+        id: `pipe-${id}`,
+        foundryId: 'f-1',
+        page: { id, url: '', title: id, rawProperties: {} },
+        phase: 'done',
+        branch,
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        log: [],
+      } as any)
+    }
+    const page: NotionTaskPayload = { id: 'p9', url: 'https://notion.so/p9', title: 'Next', rawProperties: {} }
+    await svc.startPipeline({ foundryId: 'f-1', page, reason: 'optimistic', optimisticDependsOn: ['dep1', 'dep2'] })
+    const fires = sent.filter((m) => m.channel === 'foundry:fire-task')
+    const payload = fires[fires.length - 1].args[0] as any
+    expect(payload.resolvedImplementPrompt).toContain('git merge --no-edit origin/feat/dep-one origin/fix/dep-two')
+  })
+
+  it('resolves a dependency branch via the gh PR-search fallback when there is no pipeline record', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: true }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    // Seed the (unnamed) projects store so projectRepoPath returns a path,
+    // enabling the gh fallback branch.
+    stores['default'] = { projects: [{ id: 'proj-1', repoPath: '/repo' }] }
+    cp.execFileImpl.mockImplementation(async (cmd: string, args: string[]) => {
+      if (cmd === 'gh' && args.includes('pr')) {
+        return JSON.stringify([{ number: 11, headRefName: 'feat/from-gh' }])
+      }
+      return ''
+    })
+    const page: NotionTaskPayload = { id: 'p10', url: 'https://notion.so/p10', title: 'Next', rawProperties: {} }
+    const pipe = await svc.startPipeline({ foundryId: 'f-1', page, reason: 'optimistic', optimisticDependsOn: ['dep-via-gh'] })
+    expect(pipe!.attention).toBeUndefined()
+    const fires = sent.filter((m) => m.channel === 'foundry:fire-task')
+    const payload = fires[fires.length - 1].args[0] as any
+    expect(payload.resolvedImplementPrompt).toContain('git merge --no-edit origin/feat/from-gh')
+    // The gh search uses the dashless Notion page id as the search term.
+    const ghCall = cp.execFileImpl.mock.calls.find((c) => c[0] === 'gh')
+    expect(ghCall?.[1]).toContain('dep-via-gh'.replace(/-/g, ''))
+  })
+
+  it('parks when only some dependency branches resolve (no partial start)', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: true }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const rt = svc.getRuntime('f-1')!
+    rt.state.pipelines.push({
+      id: 'pipe-known',
+      foundryId: 'f-1',
+      page: { id: 'known', url: '', title: 'known', rawProperties: {} },
+      phase: 'done',
+      branch: 'feat/known',
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      log: [],
+    } as any)
+    const page: NotionTaskPayload = { id: 'p11', url: '', title: 'Next', rawProperties: {} }
+    const pipe = await svc.startPipeline({
+      foundryId: 'f-1',
+      page,
+      reason: 'optimistic',
+      optimisticDependsOn: ['known', 'missing'],
+    })
+    expect(pipe!.attention?.reason).toContain('missing')
+    expect(pipe!.attention?.reason).not.toContain('known')
+    expect(sent.filter((m) => m.channel === 'foundry:fire-task')).toHaveLength(0)
+  })
+
+  it('parks the pipeline (no worker fired) when a dependency branch cannot be resolved', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: true }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const page: NotionTaskPayload = { id: 'p3', url: '', title: 'Next', rawProperties: {} }
+    const pipe = await svc.startPipeline({
+      foundryId: 'f-1',
+      page,
+      reason: 'optimistic',
+      optimisticDependsOn: ['ghost'],
+    })
+    expect(pipe).toBeTruthy()
+    expect(pipe!.phase).toBe('spawn-requested')
+    expect(pipe!.attention?.reason).toContain('cannot resolve PR branch')
+    expect(sent.filter((m) => m.channel === 'foundry:fire-task')).toHaveLength(0)
+  })
+
+  it('ignores optimisticDependsOn entirely when the toggle is off', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ optimisticContinue: false }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const page: NotionTaskPayload = { id: 'p4', url: 'https://notion.so/p4', title: 'Next', rawProperties: {} }
+    const pipe = await svc.startPipeline({
+      foundryId: 'f-1',
+      page,
+      reason: 'normal',
+      optimisticDependsOn: ['ghost'],
+    })
+    // Off → no resolution, no parking, no preamble — fires normally.
+    expect(pipe!.phase).toBe('spawn-requested')
+    expect(pipe!.attention).toBeUndefined()
+    const fires = sent.filter((m) => m.channel === 'foundry:fire-task')
+    const payload = fires[fires.length - 1].args[0] as any
+    expect(payload.resolvedImplementPrompt).not.toContain('OPTIMISTIC CONTINUE')
   })
 })
 
