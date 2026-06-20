@@ -7,6 +7,27 @@ import {
   type ReviewLoopState,
 } from '../../shared/types'
 import { useToastStore } from './toastStore'
+import { useSettingsStore } from './settingsStore'
+import { useProjectStore } from './projectStore'
+
+/** Resolve the foreground-spawn context (theme, claude account dir, repo) for a project. */
+function spawnContextForProject(projectId: string): {
+  claudeTheme?: string
+  claudeConfigDir?: string
+  repoPath?: string
+} {
+  const { claudeTheme } = useSettingsStore.getState()
+  const { projects, claudeAccounts } = useProjectStore.getState()
+  const project = projects.find((p) => p.id === projectId)
+  const account = project?.claudeAccountId
+    ? claudeAccounts.find((a) => a.id === project.claudeAccountId)
+    : undefined
+  return {
+    claudeTheme,
+    claudeConfigDir: account?.configDir,
+    repoPath: project?.repoPath,
+  }
+}
 
 interface ReviewLoopStoreState {
   settings: ReviewLoopSettings
@@ -94,7 +115,6 @@ export const useReviewLoopStore = create<ReviewLoopStoreState>()((set, get) => (
       variant: override.variant ?? workspace.variant,
       maxIterations: override.maxIterations ?? workspace.maxIterations,
       consecutiveCleanRounds: override.consecutiveCleanRounds ?? workspace.consecutiveCleanRounds,
-      costCapUsd: override.costCapUsd ?? workspace.costCapUsd,
     }
   },
 
@@ -125,6 +145,7 @@ export const useReviewLoopStore = create<ReviewLoopStoreState>()((set, get) => (
         baseBranch,
         config,
         prNumber,
+        ...spawnContextForProject(projectId),
       })
     } catch (err: any) {
       useToastStore.getState().addToast('error', err.message ?? 'Failed to start review loop')

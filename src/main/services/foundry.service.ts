@@ -43,7 +43,6 @@ import { addPickedUp, loadConfig as loadNotionConfig } from './notion-poller.ser
 import { findPRForBranch, markPRReady } from './github.service'
 import { getDefaultBranch } from './git.service'
 import { startReviewLoopLite } from './review-loop-lite.service'
-import { runHeadlessClaude } from './claude-headless.service'
 import { getTerminalBuffer, listTerminalsForSession, writeTerminal } from './terminal.service'
 
 const execFileAsync = promisify(execFile)
@@ -1006,7 +1005,6 @@ async function runReviewPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<v
     variant: 'lite' as const,
     maxIterations: rt.config.reviewLoopOverride?.maxIterations ?? 5,
     consecutiveCleanRounds: rt.config.reviewLoopOverride?.consecutiveCleanRounds ?? 2,
-    costCapUsd: rt.config.reviewLoopOverride?.costCapUsd ?? 5,
   }
   try {
     await startReviewLoopLite({
@@ -1016,6 +1014,9 @@ async function runReviewPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<v
       baseBranch,
       config: cfg,
       prNumber: p.prNumber,
+      // Foreground phase terminals spawn from main; inherit the default claude
+      // account (like the foreman) and seed permissions from the source repo.
+      repoPath: projectRepoPath(rt.config.projectId) ?? undefined,
     })
     log(p, `Review loop started for PR #${p.prNumber}.`)
   } catch (err) {

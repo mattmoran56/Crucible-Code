@@ -1,13 +1,18 @@
 /**
- * Review Loop orchestrator.
+ * Review Loop orchestrator — Pro variant.
  *
- * Drives a 3-phase cycle (review → triage → fix) by spawning headless `claude`
- * subprocesses with curated prompts. Stops on convergence (N consecutive clean
- * rounds), iteration cap, cost cap, or manual cancel. After the loop ends, any
- * skipped/deferred issues are summarized in a sticky PR comment so reviewers
- * can see what was knowingly left undone.
+ * Drives a 3-phase cycle (review → triage → fix) where EACH phase is a live,
+ * interactive `claude` terminal the user can watch and type into. There is no
+ * headless `claude -p`: phases are spawned via the shared terminal service and
+ * advance when their `Stop` hook fires (see review-phase.service). Structured
+ * data still flows between phases through JSON intermediates on disk
+ * (issues.json / triage.json), so the three terminals are independent sessions.
+ *
+ * Stops on convergence (N consecutive clean rounds), the iteration cap, or
+ * manual cancel. After the loop ends, any skipped/deferred issues are
+ * summarized in a sticky PR comment so reviewers can see what was knowingly
+ * left undone.
  */
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, readFile, unlink } from 'node:fs/promises'
@@ -20,12 +25,17 @@ import {
   type ReviewLoopConfig,
   type ReviewLoopIssue,
   type ReviewLoopPhase,
+  type ReviewLoopPhaseSlot,
   type ReviewLoopRound,
   type ReviewLoopState,
   type ReviewLoopStopReason,
   type ReviewLoopTriagedIssue,
 } from '../../shared/types'
-import { killChildTree, runHeadlessClaude, DEFAULT_PHASE_TIMEOUT_MS } from './claude-headless.service'
+import {
+  runForegroundPhase,
+  DEFAULT_PHASE_TIMEOUT_MS,
+  type ForegroundPhaseResult,
+} from './review-phase.service'
 
 const execFileAsync = promisify(execFile)
 
@@ -37,10 +47,14 @@ interface ActiveLoop {
   sessionId: string
   state: ReviewLoopState
   cancelled: boolean
-  child?: ChildProcessWithoutNullStreams
+  abort: AbortController
   config: ReviewLoopConfig
   prNumber?: number
   loopDir: string
+  /** Foreground spawn context (passed through from the renderer). */
+  claudeTheme?: string
+  claudeConfigDir?: string
+  repoPath?: string
 }
 
 const activeLoops = new Map<string, ActiveLoop>()
@@ -62,7 +76,7 @@ export function cancelReviewLoop(sessionId: string): void {
   const loop = activeLoops.get(sessionId)
   if (!loop || loop.state.status !== 'running') return
   loop.cancelled = true
-  if (loop.child) killChildTree(loop.child)
+  loop.abort.abort()
 }
 
 export interface StartReviewLoopOptions {
@@ -72,11 +86,18 @@ export interface StartReviewLoopOptions {
   baseBranch: string
   config: ReviewLoopConfig
   prNumber?: number
+  /** Foreground spawn context — theme, claude account config dir, source repo. */
+  claudeTheme?: string
+  claudeConfigDir?: string
+  repoPath?: string
 }
 
 export async function startReviewLoop(opts: StartReviewLoopOptions): Promise<void> {
   if (activeLoops.get(opts.sessionId)?.state.status === 'running') {
     throw new Error('Review loop is already running for this session')
+  }
+  if (!mainWindow) {
+    throw new Error('Review loop cannot start: main window unavailable')
   }
 
   const config = { ...DEFAULT_REVIEW_LOOP_CONFIG, ...opts.config }
@@ -93,7 +114,6 @@ export async function startReviewLoop(opts: StartReviewLoopOptions): Promise<voi
     currentPhase: 'idle',
     iteration: 0,
     rounds: [],
-    cumulativeCostUsd: 0,
     startedAt: new Date().toISOString(),
     skippedIssues: [],
   }
@@ -102,9 +122,13 @@ export async function startReviewLoop(opts: StartReviewLoopOptions): Promise<voi
     sessionId: opts.sessionId,
     state,
     cancelled: false,
+    abort: new AbortController(),
     config,
     prNumber: opts.prNumber,
     loopDir,
+    claudeTheme: opts.claudeTheme,
+    claudeConfigDir: opts.claudeConfigDir,
+    repoPath: opts.repoPath,
   }
   activeLoops.set(opts.sessionId, loop)
   emitState(loop)
@@ -119,20 +143,11 @@ export async function startReviewLoop(opts: StartReviewLoopOptions): Promise<voi
 async function runLoop(loop: ActiveLoop): Promise<void> {
   let consecutiveClean = 0
 
-  // Re-check the cost cap between phases so a round that starts under the
-  // cap can't blow several dollars past it across review→triage→fix before
-  // the next loop iteration runs.
-  const costCapTripped = (): boolean =>
-    loop.state.cumulativeCostUsd >= loop.config.costCapUsd
-
   while (true) {
     if (loop.cancelled) return finalize(loop, 'cancelled')
 
     if (loop.state.iteration >= loop.config.maxIterations) {
       return finalize(loop, 'maxIterations')
-    }
-    if (costCapTripped()) {
-      return finalize(loop, 'costCap')
     }
 
     const round = startRound(loop)
@@ -140,12 +155,10 @@ async function runLoop(loop: ActiveLoop): Promise<void> {
     const reviewOk = await runReviewPhase(loop, round)
     if (!reviewOk) return // finalize already called by phase
     if (loop.cancelled) return finalize(loop, 'cancelled')
-    if (costCapTripped()) return finalize(loop, 'costCap')
 
     const triageOk = await runTriagePhase(loop, round)
     if (!triageOk) return
     if (loop.cancelled) return finalize(loop, 'cancelled')
-    if (costCapTripped()) return finalize(loop, 'costCap')
 
     const actionable = round.triaged.filter((i) => i.decision === 'fix').length
 
@@ -154,9 +167,9 @@ async function runLoop(loop: ActiveLoop): Promise<void> {
       const fixOk = await runFixPhase(loop, round)
       if (!fixOk) return
       if (loop.cancelled) return finalize(loop, 'cancelled')
-      if (costCapTripped()) return finalize(loop, 'costCap')
     } else {
       consecutiveClean += 1
+      markSlot(round, 'fix', 'skipped')
       pushLog(round, `No fixable issues in this round (${consecutiveClean} clean ${consecutiveClean === 1 ? 'round' : 'rounds'} so far).`)
     }
 
@@ -177,17 +190,20 @@ async function runLoop(loop: ActiveLoop): Promise<void> {
   }
 }
 
+function newSlot(phase: ReviewLoopPhaseSlot['phase']): ReviewLoopPhaseSlot {
+  return { phase, status: 'pending' }
+}
+
 function startRound(loop: ActiveLoop): ReviewLoopRound {
   loop.state.iteration += 1
   const round: ReviewLoopRound = {
     index: loop.state.iteration,
     startedAt: new Date().toISOString(),
     phase: 'idle',
+    phaseSlots: [newSlot('review'), newSlot('triage'), newSlot('fix')],
     rawIssues: [],
     triaged: [],
-    costUsd: 0,
     log: [],
-    transcript: [],
   }
   loop.state.rounds.push(round)
   emitState(loop)
@@ -218,23 +234,15 @@ async function runReviewPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
     issuesPath,
   })
 
-  const result = await runClaude(loop, round, prompt)
-  round.costUsd += result.costUsd
-  loop.state.cumulativeCostUsd += result.costUsd
-
-  if (loop.cancelled) return false
-  if (!result.ok) {
-    round.errorMessage = result.error ?? 'review phase failed'
-    pushLog(round, `Review phase failed: ${round.errorMessage}`)
-    finalize(loop, 'error', round.errorMessage)
-    return false
-  }
+  const result = await runPhase(loop, round, 'review', prompt)
+  if (!handlePhaseResult(loop, round, 'review', result, 'review phase failed')) return false
 
   // The claude run must have produced the issues file; an empty array is a
   // legitimate outcome only when the file exists.
   if (!existsSync(issuesPath)) {
     round.errorMessage = 'review phase did not write issues file'
     pushLog(round, `Review phase failed: ${round.errorMessage}`)
+    markSlot(round, 'review', 'error', round.errorMessage)
     finalize(loop, 'error', round.errorMessage)
     return false
   }
@@ -251,6 +259,8 @@ async function runTriagePhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
 
   if (round.rawIssues.length === 0) {
     pushLog(round, 'No issues to triage; skipping.')
+    markSlot(round, 'triage', 'skipped')
+    markSlot(round, 'fix', 'skipped')
     return true
   }
 
@@ -264,17 +274,8 @@ async function runTriagePhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
   })
 
   pushLog(round, `Triaging ${round.rawIssues.length} ${round.rawIssues.length === 1 ? 'issue' : 'issues'} (one sub-agent each)…`)
-  const result = await runClaude(loop, round, prompt)
-  round.costUsd += result.costUsd
-  loop.state.cumulativeCostUsd += result.costUsd
-
-  if (loop.cancelled) return false
-  if (!result.ok) {
-    round.errorMessage = result.error ?? 'triage phase failed'
-    pushLog(round, `Triage phase failed: ${round.errorMessage}`)
-    finalize(loop, 'error', round.errorMessage)
-    return false
-  }
+  const result = await runPhase(loop, round, 'triage', prompt)
+  if (!handlePhaseResult(loop, round, 'triage', result, 'triage phase failed')) return false
 
   const triaged = await readJsonSafe<ReviewLoopTriagedIssue[]>(triagePath, [])
   round.triaged = Array.isArray(triaged) ? triaged : []
@@ -290,9 +291,8 @@ async function runFixPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise<bo
   const triagePath = join(loop.loopDir, `round-${round.index}-triage.json`)
 
   // Restrict the fix prompt to only the files flagged for fixing in this
-  // round's triage. The fix phase runs with --dangerously-skip-permissions
-  // and auto-pushes, so without this scope an over-eager run could ship
-  // collateral edits upstream.
+  // round's triage. The fix phase runs hands-off and auto-pushes, so without
+  // this scope an over-eager run could ship collateral edits upstream.
   const allowedFiles = Array.from(
     new Set(
       round.triaged
@@ -308,18 +308,100 @@ async function runFixPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise<bo
   })
 
   pushLog(round, 'Applying fixes, committing, and pushing…')
-  const result = await runClaude(loop, round, prompt)
-  round.costUsd += result.costUsd
-  loop.state.cumulativeCostUsd += result.costUsd
+  const result = await runPhase(loop, round, 'fix', prompt)
+  if (!handlePhaseResult(loop, round, 'fix', result, 'fix phase failed')) return false
+  pushLog(round, 'Fix phase complete.')
+  return true
+}
 
-  if (loop.cancelled) return false
-  if (!result.ok) {
-    round.errorMessage = result.error ?? 'fix phase failed'
-    pushLog(round, `Fix phase failed: ${round.errorMessage}`)
-    finalize(loop, 'error', round.errorMessage)
+/* ── Phase-slot helpers ─────────────────────────────────────────────────── */
+
+function slotOf(round: ReviewLoopRound, phase: ReviewLoopPhaseSlot['phase']): ReviewLoopPhaseSlot {
+  let slot = round.phaseSlots.find((s) => s.phase === phase)
+  if (!slot) {
+    slot = newSlot(phase)
+    round.phaseSlots.push(slot)
+  }
+  return slot
+}
+
+function markSlot(
+  round: ReviewLoopRound,
+  phase: ReviewLoopPhaseSlot['phase'],
+  status: ReviewLoopPhaseSlot['status'],
+  errorMessage?: string
+): void {
+  const slot = slotOf(round, phase)
+  slot.status = status
+  if (status === 'completed' || status === 'error' || status === 'skipped') {
+    slot.endedAt = new Date().toISOString()
+  }
+  if (errorMessage) slot.errorMessage = errorMessage
+}
+
+/**
+ * Spawn one foreground phase terminal and wait for it to settle, wiring its
+ * lifecycle into the round's phase slot so the UI can render + freeze it.
+ */
+async function runPhase(
+  loop: ActiveLoop,
+  round: ReviewLoopRound,
+  phase: ReviewLoopPhaseSlot['phase'],
+  prompt: string
+): Promise<ForegroundPhaseResult> {
+  const slot = slotOf(round, phase)
+  const tabId = `review-loop:r${round.index}:${phase}`
+  slot.tabId = tabId
+  slot.status = 'running'
+  slot.startedAt = new Date().toISOString()
+  emitState(loop)
+
+  const result = await runForegroundPhase({
+    window: mainWindow!,
+    sessionId: loop.sessionId,
+    worktreePath: loop.state.worktreePath,
+    repoPath: loop.repoPath,
+    claudeTheme: loop.claudeTheme,
+    claudeConfigDir: loop.claudeConfigDir,
+    tabId,
+    prompt,
+    skipPermissions: true,
+    timeoutMs: PHASE_TIMEOUT_MS,
+    signal: loop.abort.signal,
+    onSpawn: (terminalId) => {
+      slot.terminalId = terminalId
+      emitState(loop)
+    },
+  })
+
+  return result
+}
+
+/**
+ * Translate a phase result into slot status + loop finalization. Returns true
+ * if the loop should continue, false if it has been finalized (error/cancel).
+ */
+function handlePhaseResult(
+  loop: ActiveLoop,
+  round: ReviewLoopRound,
+  phase: ReviewLoopPhaseSlot['phase'],
+  result: ForegroundPhaseResult,
+  failLabel: string
+): boolean {
+  if (loop.cancelled) {
+    markSlot(round, phase, 'skipped')
+    finalize(loop, 'cancelled')
     return false
   }
-  pushLog(round, 'Fix phase complete.')
+  if (!result.ok) {
+    const msg = result.error ?? failLabel
+    round.errorMessage = msg
+    markSlot(round, phase, 'error', msg)
+    pushLog(round, `${failLabel}: ${msg}`)
+    finalize(loop, 'error', msg)
+    return false
+  }
+  markSlot(round, phase, 'completed')
   return true
 }
 
@@ -416,62 +498,6 @@ For each fix:
 If you cannot safely apply a fix, leave it untouched and continue with the rest. Do not delete or rewrite unrelated files. Do not amend previous commits.`
 }
 
-/* ── Claude subprocess runner ───────────────────────────────────────────── */
-
-interface ClaudeResult {
-  ok: boolean
-  costUsd: number
-  error?: string
-}
-
-/**
- * Run claude in headless mode with the given prompt piped on stdin.
- * Uses --output-format stream-json so each assistant message and tool call
- * arrives as an NDJSON event; we parse them into human-readable transcript
- * lines on the round so the UI can show live progress.
- */
-async function runClaude(loop: ActiveLoop, round: ReviewLoopRound, prompt: string): Promise<ClaudeResult> {
-  let lastEmit = 0
-  let pendingEmit: NodeJS.Timeout | null = null
-  const scheduleEmit = (): void => {
-    const now = Date.now()
-    const elapsed = now - lastEmit
-    if (elapsed >= 200) {
-      lastEmit = now
-      emitState(loop)
-      return
-    }
-    if (pendingEmit) return
-    pendingEmit = setTimeout(() => {
-      pendingEmit = null
-      lastEmit = Date.now()
-      emitState(loop)
-    }, 200 - elapsed)
-  }
-
-  const result = await runHeadlessClaude({
-    cwd: loop.state.worktreePath,
-    prompt,
-    timeoutMs: PHASE_TIMEOUT_MS,
-    onTranscript: (line) => {
-      round.transcript.push(line)
-      scheduleEmit()
-    },
-    onChild: (child) => {
-      loop.child = child
-    },
-  })
-
-  loop.child = undefined
-  if (pendingEmit) clearTimeout(pendingEmit)
-  emitState(loop)
-
-  if (!result.ok) {
-    return { ok: false, costUsd: result.costUsd, error: result.error }
-  }
-  return { ok: true, costUsd: result.costUsd }
-}
-
 /* ── State helpers ──────────────────────────────────────────────────────── */
 
 function setPhase(loop: ActiveLoop, round: ReviewLoopRound, phase: ReviewLoopPhase): void {
@@ -515,9 +541,9 @@ function finalize(loop: ActiveLoop, reason: ReviewLoopStopReason, errorMessage?:
   emitState(loop)
 
   // Drop the loop from the active-set so completed runs don't accumulate
-  // (rounds, transcripts, raw issues) in memory for the lifetime of the app.
-  // The renderer already received the final state via emitState above and
-  // caches it locally; refreshState handles a missing entry gracefully.
+  // (rounds, raw issues) in memory for the lifetime of the app. The renderer
+  // already received the final state via emitState above and caches it locally;
+  // refreshState handles a missing entry gracefully.
   activeLoops.delete(loop.sessionId)
 
   // Best-effort PR comment for skipped/deferred issues.

@@ -2,24 +2,27 @@
  * Review Loop — Lite variant.
  *
  * A lighter, unstructured cousin of review-loop.service.ts. No JSON
- * intermediates, no sticky PR comment, no structured issue list. The UI only
- * ever shows the raw session transcript.
+ * intermediates and no sticky PR comment — just three live, interactive
+ * `claude` terminals per round that the user can watch and type into.
  *
  * Per round:
- *   1. review : `claude --print` with `/review <PR#>` (or `/review` + diff)
- *   2. triage : `claude --print` with the review output dumped in, asking for
- *               a sub-agent investigation per issue. Captures session_id.
- *   3. fix    : `claude --print --resume <session_id>` with "do what you think
- *               needs doing, commit, and push" — same context as triage.
+ *   1. review : `/review <PR#>` (or `/review` + diff) in a foreground terminal.
+ *   2. triage : the review terminal's output is handed to a fresh terminal that
+ *               investigates each issue with sub-agents and presents a table.
+ *   3. fix    : the triage terminal's output is handed to a fresh terminal that
+ *               does what it decided, commits, and pushes.
+ *
+ * Each phase advances when its `Stop` hook fires (see review-phase.service);
+ * the three terminals are independent sessions, with context passed between
+ * them as captured (ANSI-stripped) terminal output rather than `--resume`.
  *
  * Round-level convergence: if the fix turn produces no new commit on HEAD,
  * count that as a "clean" round. After N consecutive clean rounds, stop.
  *
- * Safety net: snapshot HEAD + dirty paths at loop start; after each fix turn,
- * if the worktree contains uncommitted changes that weren't there at start,
- * make a trailing commit so nothing is left behind.
+ * Safety net: snapshot HEAD at loop start; after each fix turn, if the worktree
+ * contains uncommitted changes, make a trailing commit so nothing is left
+ * behind.
  */
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { BrowserWindow } from 'electron'
@@ -28,11 +31,16 @@ import {
   DEFAULT_REVIEW_LOOP_CONFIG,
   type ReviewLoopConfig,
   type ReviewLoopPhase,
+  type ReviewLoopPhaseSlot,
   type ReviewLoopRound,
   type ReviewLoopState,
   type ReviewLoopStopReason,
 } from '../../shared/types'
-import { killChildTree, runHeadlessClaude, DEFAULT_PHASE_TIMEOUT_MS } from './claude-headless.service'
+import {
+  runForegroundPhase,
+  DEFAULT_PHASE_TIMEOUT_MS,
+  type ForegroundPhaseResult,
+} from './review-phase.service'
 
 const execFileAsync = promisify(execFile)
 
@@ -42,11 +50,15 @@ interface ActiveLoop {
   sessionId: string
   state: ReviewLoopState
   cancelled: boolean
-  child?: ChildProcessWithoutNullStreams
+  abort: AbortController
   config: ReviewLoopConfig
   prNumber?: number
   /** HEAD sha at loop start — the baseline for "did this round produce a commit". */
   startSha: string
+  /** Foreground spawn context (passed through from the renderer). */
+  claudeTheme?: string
+  claudeConfigDir?: string
+  repoPath?: string
 }
 
 const activeLoops = new Map<string, ActiveLoop>()
@@ -68,7 +80,7 @@ export function cancelReviewLoopLite(sessionId: string): void {
   const loop = activeLoops.get(sessionId)
   if (!loop || loop.state.status !== 'running') return
   loop.cancelled = true
-  if (loop.child) killChildTree(loop.child)
+  loop.abort.abort()
 }
 
 export interface StartReviewLoopLiteOptions {
@@ -78,11 +90,18 @@ export interface StartReviewLoopLiteOptions {
   baseBranch: string
   config: ReviewLoopConfig
   prNumber?: number
+  /** Foreground spawn context — theme, claude account config dir, source repo. */
+  claudeTheme?: string
+  claudeConfigDir?: string
+  repoPath?: string
 }
 
 export async function startReviewLoopLite(opts: StartReviewLoopLiteOptions): Promise<void> {
   if (activeLoops.get(opts.sessionId)?.state.status === 'running') {
     throw new Error('Review loop is already running for this session')
+  }
+  if (!mainWindow) {
+    throw new Error('Review loop cannot start: main window unavailable')
   }
 
   const config = { ...DEFAULT_REVIEW_LOOP_CONFIG, ...opts.config }
@@ -98,7 +117,6 @@ export async function startReviewLoopLite(opts: StartReviewLoopLiteOptions): Pro
     currentPhase: 'idle',
     iteration: 0,
     rounds: [],
-    cumulativeCostUsd: 0,
     startedAt: new Date().toISOString(),
     skippedIssues: [],
   }
@@ -107,9 +125,13 @@ export async function startReviewLoopLite(opts: StartReviewLoopLiteOptions): Pro
     sessionId: opts.sessionId,
     state,
     cancelled: false,
+    abort: new AbortController(),
     config,
     prNumber: opts.prNumber,
     startSha,
+    claudeTheme: opts.claudeTheme,
+    claudeConfigDir: opts.claudeConfigDir,
+    repoPath: opts.repoPath,
   }
   activeLoops.set(opts.sessionId, loop)
   emitState(loop)
@@ -123,37 +145,26 @@ async function runLoop(loop: ActiveLoop): Promise<void> {
   let consecutiveClean = 0
   let priorHead = loop.startSha
 
-  const costCapTripped = (): boolean =>
-    loop.state.cumulativeCostUsd >= loop.config.costCapUsd
-
   while (true) {
     if (loop.cancelled) return finalize(loop, 'cancelled')
     if (loop.state.iteration >= loop.config.maxIterations) return finalize(loop, 'maxIterations')
-    if (costCapTripped()) return finalize(loop, 'costCap')
 
     const round = startRound(loop)
 
     // ── Review ──
-    const reviewOk = await runReviewPhase(loop, round)
-    if (!reviewOk) return
+    const review = await runReviewPhase(loop, round)
+    if (!review.ok) return
     if (loop.cancelled) return finalize(loop, 'cancelled')
-    if (costCapTripped()) return finalize(loop, 'costCap')
 
-    // ── Triage (captures session id for fix to resume) ──
-    const triageResult = await runTriagePhase(loop, round)
-    if (!triageResult.ok) return
+    // ── Triage (consumes review output) ──
+    const triage = await runTriagePhase(loop, round, review.output)
+    if (!triage.ok) return
     if (loop.cancelled) return finalize(loop, 'cancelled')
-    if (costCapTripped()) return finalize(loop, 'costCap')
 
-    // ── Fix (resumes triage session) ──
-    if (triageResult.sessionId) {
-      const fixOk = await runFixPhase(loop, round, triageResult.sessionId)
-      if (!fixOk) return
-      if (loop.cancelled) return finalize(loop, 'cancelled')
-      if (costCapTripped()) return finalize(loop, 'costCap')
-    } else {
-      pushLog(round, 'Skipping fix phase: no session id captured from triage.')
-    }
+    // ── Fix (consumes triage output) ──
+    const fix = await runFixPhase(loop, round, triage.output)
+    if (!fix.ok) return
+    if (loop.cancelled) return finalize(loop, 'cancelled')
 
     // ── Safety net: commit any uncommitted changes left over ──
     await trailingCommitIfDirty(loop, round)
@@ -178,17 +189,20 @@ async function runLoop(loop: ActiveLoop): Promise<void> {
   }
 }
 
+function newSlot(phase: ReviewLoopPhaseSlot['phase']): ReviewLoopPhaseSlot {
+  return { phase, status: 'pending' }
+}
+
 function startRound(loop: ActiveLoop): ReviewLoopRound {
   loop.state.iteration += 1
   const round: ReviewLoopRound = {
     index: loop.state.iteration,
     startedAt: new Date().toISOString(),
     phase: 'idle',
+    phaseSlots: [newSlot('review'), newSlot('triage'), newSlot('fix')],
     rawIssues: [],
     triaged: [],
-    costUsd: 0,
     log: [],
-    transcript: [],
   }
   loop.state.rounds.push(round)
   emitState(loop)
@@ -197,7 +211,9 @@ function startRound(loop: ActiveLoop): ReviewLoopRound {
 
 /* ── Phases ─────────────────────────────────────────────────────────────── */
 
-async function runReviewPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise<boolean> {
+interface PhaseOutcome { ok: boolean; output: string }
+
+async function runReviewPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise<PhaseOutcome> {
   setPhase(loop, round, 'review')
 
   let prompt: string
@@ -210,32 +226,22 @@ async function runReviewPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
     prompt = `/review\n\nHere is the diff between this branch and its base (${loop.state.baseBranch}...${loop.state.branch}):\n\n\`\`\`diff\n${diff}\n\`\`\``
   }
 
-  const result = await runClaude(loop, round, prompt, undefined)
-  round.costUsd += result.costUsd
-  loop.state.cumulativeCostUsd += result.costUsd
-
-  if (loop.cancelled) return false
-  if (!result.ok) {
-    round.errorMessage = result.error ?? 'review phase failed'
-    pushLog(round, `Review phase failed: ${round.errorMessage}`)
-    finalize(loop, 'error', round.errorMessage)
-    return false
-  }
-  return true
+  const result = await runPhase(loop, round, 'review', prompt)
+  return finishPhase(loop, round, 'review', result, 'review phase failed')
 }
 
-interface TriageResult { ok: boolean; sessionId?: string }
-
-async function runTriagePhase(loop: ActiveLoop, round: ReviewLoopRound): Promise<TriageResult> {
+async function runTriagePhase(
+  loop: ActiveLoop,
+  round: ReviewLoopRound,
+  reviewOutput: string
+): Promise<PhaseOutcome> {
   setPhase(loop, round, 'triage')
   pushLog(round, 'Triaging review output…')
-
-  const reviewTranscript = round.transcript.join('\n')
 
   const prompt = `Below is the output from a code review I just ran on branch "${loop.state.branch}" (base: "${loop.state.baseBranch}"):
 
 <review>
-${reviewTranscript}
+${reviewOutput}
 </review>
 
 For each of the issues listed above, use a sub-agent (Task tool) to investigate it. For each one:
@@ -249,38 +255,110 @@ Present your findings to me as a markdown table with columns: Issue · Real? · 
 
 Do not make any changes yet. Just show me your triaged issues.`
 
-  const result = await runClaude(loop, round, prompt, undefined)
-  round.costUsd += result.costUsd
-  loop.state.cumulativeCostUsd += result.costUsd
-
-  if (loop.cancelled) return { ok: false }
-  if (!result.ok) {
-    round.errorMessage = result.error ?? 'triage phase failed'
-    pushLog(round, `Triage phase failed: ${round.errorMessage}`)
-    finalize(loop, 'error', round.errorMessage)
-    return { ok: false }
-  }
-  return { ok: true, sessionId: result.sessionId }
+  const result = await runPhase(loop, round, 'triage', prompt)
+  return finishPhase(loop, round, 'triage', result, 'triage phase failed')
 }
 
-async function runFixPhase(loop: ActiveLoop, round: ReviewLoopRound, resumeId: string): Promise<boolean> {
+async function runFixPhase(
+  loop: ActiveLoop,
+  round: ReviewLoopRound,
+  triageOutput: string
+): Promise<PhaseOutcome> {
   setPhase(loop, round, 'fix')
-  pushLog(round, `Applying fixes (resuming session ${resumeId.slice(0, 8)}…)…`)
+  pushLog(round, 'Applying fixes…')
 
-  const prompt = `Now do what you think needs doing based on the triage above. Apply the fixes you decided on, commit the result with a clear message, and push to origin/${loop.state.branch}.`
+  const prompt = `Below is the triage of a code review on branch "${loop.state.branch}":
 
-  const result = await runClaude(loop, round, prompt, resumeId)
-  round.costUsd += result.costUsd
-  loop.state.cumulativeCostUsd += result.costUsd
+<triage>
+${triageOutput}
+</triage>
 
-  if (loop.cancelled) return false
-  if (!result.ok) {
-    round.errorMessage = result.error ?? 'fix phase failed'
-    pushLog(round, `Fix phase failed: ${round.errorMessage}`)
-    finalize(loop, 'error', round.errorMessage)
-    return false
+Now do what you think needs doing based on the triage above. Apply the fixes that were decided on, commit the result with a clear message, and push to origin/${loop.state.branch}. If nothing needs fixing, say so and make no changes.`
+
+  const result = await runPhase(loop, round, 'fix', prompt)
+  return finishPhase(loop, round, 'fix', result, 'fix phase failed')
+}
+
+/* ── Phase-slot helpers ─────────────────────────────────────────────────── */
+
+function slotOf(round: ReviewLoopRound, phase: ReviewLoopPhaseSlot['phase']): ReviewLoopPhaseSlot {
+  let slot = round.phaseSlots.find((s) => s.phase === phase)
+  if (!slot) {
+    slot = newSlot(phase)
+    round.phaseSlots.push(slot)
   }
-  return true
+  return slot
+}
+
+function markSlot(
+  round: ReviewLoopRound,
+  phase: ReviewLoopPhaseSlot['phase'],
+  status: ReviewLoopPhaseSlot['status'],
+  errorMessage?: string
+): void {
+  const slot = slotOf(round, phase)
+  slot.status = status
+  if (status === 'completed' || status === 'error' || status === 'skipped') {
+    slot.endedAt = new Date().toISOString()
+  }
+  if (errorMessage) slot.errorMessage = errorMessage
+}
+
+async function runPhase(
+  loop: ActiveLoop,
+  round: ReviewLoopRound,
+  phase: ReviewLoopPhaseSlot['phase'],
+  prompt: string
+): Promise<ForegroundPhaseResult> {
+  const slot = slotOf(round, phase)
+  const tabId = `review-loop:r${round.index}:${phase}`
+  slot.tabId = tabId
+  slot.status = 'running'
+  slot.startedAt = new Date().toISOString()
+  emitState(loop)
+
+  return runForegroundPhase({
+    window: mainWindow!,
+    sessionId: loop.sessionId,
+    worktreePath: loop.state.worktreePath,
+    repoPath: loop.repoPath,
+    claudeTheme: loop.claudeTheme,
+    claudeConfigDir: loop.claudeConfigDir,
+    tabId,
+    prompt,
+    skipPermissions: true,
+    timeoutMs: PHASE_TIMEOUT_MS,
+    signal: loop.abort.signal,
+    onSpawn: (terminalId) => {
+      slot.terminalId = terminalId
+      emitState(loop)
+    },
+  })
+}
+
+/** Map a phase result to slot status, finalizing the loop on error/cancel. */
+function finishPhase(
+  loop: ActiveLoop,
+  round: ReviewLoopRound,
+  phase: ReviewLoopPhaseSlot['phase'],
+  result: ForegroundPhaseResult,
+  failLabel: string
+): PhaseOutcome {
+  if (loop.cancelled) {
+    markSlot(round, phase, 'skipped')
+    finalize(loop, 'cancelled')
+    return { ok: false, output: result.output }
+  }
+  if (!result.ok) {
+    const msg = result.error ?? failLabel
+    round.errorMessage = msg
+    markSlot(round, phase, 'error', msg)
+    pushLog(round, `${failLabel}: ${msg}`)
+    finalize(loop, 'error', msg)
+    return { ok: false, output: result.output }
+  }
+  markSlot(round, phase, 'completed')
+  return { ok: true, output: result.output }
 }
 
 /* ── Safety net + git helpers ───────────────────────────────────────────── */
@@ -326,63 +404,6 @@ async function readDiff(cwd: string, base: string, branch: string): Promise<stri
   } catch (err) {
     return `(failed to read diff: ${err instanceof Error ? err.message : String(err)})`
   }
-}
-
-/* ── Claude subprocess runner ───────────────────────────────────────────── */
-
-interface ClaudeResult {
-  ok: boolean
-  costUsd: number
-  sessionId?: string
-  error?: string
-}
-
-async function runClaude(
-  loop: ActiveLoop,
-  round: ReviewLoopRound,
-  prompt: string,
-  resumeId: string | undefined
-): Promise<ClaudeResult> {
-  let lastEmit = 0
-  let pendingEmit: NodeJS.Timeout | null = null
-  const scheduleEmit = (): void => {
-    const now = Date.now()
-    const elapsed = now - lastEmit
-    if (elapsed >= 200) {
-      lastEmit = now
-      emitState(loop)
-      return
-    }
-    if (pendingEmit) return
-    pendingEmit = setTimeout(() => {
-      pendingEmit = null
-      lastEmit = Date.now()
-      emitState(loop)
-    }, 200 - elapsed)
-  }
-
-  const result = await runHeadlessClaude({
-    cwd: loop.state.worktreePath,
-    prompt,
-    resumeId,
-    timeoutMs: PHASE_TIMEOUT_MS,
-    onTranscript: (line) => {
-      round.transcript.push(line)
-      scheduleEmit()
-    },
-    onChild: (child) => {
-      loop.child = child
-    },
-  })
-
-  loop.child = undefined
-  if (pendingEmit) clearTimeout(pendingEmit)
-  emitState(loop)
-
-  if (!result.ok) {
-    return { ok: false, costUsd: result.costUsd, sessionId: result.sessionId, error: result.error }
-  }
-  return { ok: true, costUsd: result.costUsd, sessionId: result.sessionId }
 }
 
 /* ── State helpers ──────────────────────────────────────────────────────── */

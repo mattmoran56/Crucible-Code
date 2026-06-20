@@ -56,7 +56,6 @@ export function ReviewLoopSettings({ projects }: Props) {
                   if (next.variant !== ws.variant) delta.variant = next.variant
                   if (next.maxIterations !== ws.maxIterations) delta.maxIterations = next.maxIterations
                   if (next.consecutiveCleanRounds !== ws.consecutiveCleanRounds) delta.consecutiveCleanRounds = next.consecutiveCleanRounds
-                  if (next.costCapUsd !== ws.costCapUsd) delta.costCapUsd = next.costCapUsd
                   setProjectOverride(project.id, Object.keys(delta).length === 0 ? undefined : delta)
                 }}
               />
@@ -163,15 +162,6 @@ function ConfigCard({ title, description, config, onChange, customized, onReset 
           min={1}
           max={5}
           onChange={(v) => update({ consecutiveCleanRounds: v })}
-        />
-        <NumberField
-          label="Cost cap (USD)"
-          hint="Stops once spend exceeds this."
-          value={config.costCapUsd}
-          min={0.5}
-          max={50}
-          step={0.5}
-          onChange={(v) => update({ costCapUsd: v })}
         />
       </div>
     </div>

@@ -1,10 +1,34 @@
 import http from 'node:http'
+import { EventEmitter } from 'node:events'
 import { URL } from 'node:url'
 import { app, BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
 import type { HookType, ContextKind } from '../../shared/types'
 import { showNotification } from './notification.service'
 import { emitToRenderer } from './event-bus'
+
+/**
+ * Fired for every routed hook event (prompt | notification | stop) as soon as
+ * it is handled, BEFORE any OS-notification filtering. Lets in-process
+ * orchestrators (e.g. the foreground review loop) await a specific terminal's
+ * Stop event by (contextId, tabId) instead of parsing headless output.
+ */
+export interface HookEvent {
+  contextId: string
+  tabId: string
+  hookType: HookType
+}
+
+const hookEvents = new EventEmitter()
+// Many phase terminals can be in flight at once; lift the default 10-listener
+// cap so we don't print spurious leak warnings during a multi-round loop.
+hookEvents.setMaxListeners(0)
+
+/** Subscribe to routed hook events. Returns an unsubscribe function. */
+export function onHookEvent(listener: (evt: HookEvent) => void): () => void {
+  hookEvents.on('hook', listener)
+  return () => hookEvents.off('hook', listener)
+}
 
 interface ContextMapping {
   contextId: string
@@ -85,6 +109,10 @@ export function handleHookEvent(
   tabId: string,
   hookType: HookType
 ) {
+  // Fan out to in-process subscribers first — this must fire even if the
+  // main window is gone, so the review loop can still advance phases.
+  hookEvents.emit('hook', { contextId, tabId, hookType })
+
   if (!mainWindow) return
 
   // Send typed status event to the renderer AND the event bus so the embedded

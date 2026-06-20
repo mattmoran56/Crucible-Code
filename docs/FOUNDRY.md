@@ -315,7 +315,7 @@ All in **Settings → Foundry** for the active project. Backed by `foundry-confi
 
 - `src/main/services/foundry.service.ts` — the FSM, watchers, runtime state, pipeline lifecycle.
 - `src/main/services/foundry-foreman.service.ts` — pass orchestration, context.json builder, prompt, decision validation.
-- `src/main/services/claude-headless.service.ts` — shared headless claude runner (review loop uses it too; foreman now uses an interactive PTY instead).
+- `src/main/services/review-phase.service.ts` — shared foreground phase runner (spawns an interactive claude PTY and waits for its Stop hook). The foreman and the review loop both run as visible terminals — there is no headless `claude -p`.
 - `src/main/ipc/foundry.ipc.ts` — IPC handlers + the `FOUNDRY_SPAWN_WORKER` mirror of `SCHEDULER_SPAWN_AGENT_WITH_PROMPT`.
 - `src/renderer/components/foundry/FoundryPanel.tsx` — the right-sidebar panel + live foreman PTY view.
 - `src/renderer/components/settings/FoundrySettings.tsx` — the settings UI.
