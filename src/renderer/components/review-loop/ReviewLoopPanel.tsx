@@ -346,8 +346,8 @@ function PhaseColumn({
 
   return (
     <div
-      className="flex-1 flex flex-col min-w-0 border border-border rounded overflow-hidden"
-      style={{ minWidth: 240, background: 'var(--bg-tertiary, #11151c)' }}
+      className="flex-1 flex flex-col min-w-0 border border-border rounded overflow-hidden bg-bg-tertiary"
+      style={{ minWidth: 240 }}
     >
       <div className="flex items-center justify-between gap-2 border-b border-border bg-bg-secondary" style={{ padding: '4px 8px' }}>
         <span className="text-[11px] font-medium text-text">{PHASE_LABEL[slot.phase]}</span>
