@@ -365,7 +365,7 @@ async function runPhase(
     claudeConfigDir: loop.claudeConfigDir,
     tabId,
     prompt,
-    skipPermissions: true,
+    autoAcceptEdits: true,
     timeoutMs: PHASE_TIMEOUT_MS,
     signal: loop.abort.signal,
     onSpawn: (terminalId) => {

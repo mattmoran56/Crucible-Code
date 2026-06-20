@@ -15,6 +15,7 @@ import {
   spawnTerminal,
   killTerminal,
   getTerminalBuffer,
+  AUTO_PERMISSION_MODE_ARGS,
 } from './terminal.service'
 import { onHookEvent } from './notification-server'
 import { writeClaudeHookSettings } from './hook.service'
@@ -36,10 +37,12 @@ export interface ForegroundPhaseOptions {
   /** Prompt piped into the interactive session via heredoc. */
   prompt: string
   /**
-   * Append `--dangerously-skip-permissions` so the loop runs hands-off while
-   * still fully visible/interactive. The user can still type into the terminal.
+   * Run the phase in auto (acceptEdits) mode — `--permission-mode acceptEdits`
+   * — so the loop progresses hands-off while still prompting for anything
+   * riskier than an edit. We never use bypass / `--dangerously-skip-permissions`.
+   * The user can still type into the terminal at any time.
    */
-  skipPermissions?: boolean
+  autoAcceptEdits?: boolean
   timeoutMs?: number
   /** Aborts the phase: freezes the terminal and resolves with ok=false. */
   signal?: AbortSignal
@@ -88,7 +91,7 @@ export function runForegroundPhase(
       }
     }
 
-    const claudeArgs = opts.skipPermissions ? ['--dangerously-skip-permissions'] : undefined
+    const claudeArgs = opts.autoAcceptEdits ? AUTO_PERMISSION_MODE_ARGS : undefined
 
     const terminalId = spawnTerminal(
       opts.window,

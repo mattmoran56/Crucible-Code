@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../src/main/services/terminal.service', () => ({
+  AUTO_PERMISSION_MODE_ARGS: ['--permission-mode', 'acceptEdits'],
   spawnTerminal: (...args: unknown[]) => {
     h.spawnCalls.push(args)
     return h.spawnId
@@ -111,14 +112,15 @@ describe('runForegroundPhase', () => {
     expect(onSpawn).toHaveBeenCalledWith('term-1')
   })
 
-  it('passes --dangerously-skip-permissions only when skipPermissions is set', async () => {
-    const p1 = runForegroundPhase({ ...baseOpts(), skipPermissions: true })
+  it('runs in auto (acceptEdits) mode when autoAcceptEdits is set — never bypass', async () => {
+    const p1 = runForegroundPhase({ ...baseOpts(), autoAcceptEdits: true })
     fireHook({ contextId: 'sess-1', tabId: 'review-loop:r1:review', hookType: 'stop' })
     await p1
-    expect(h.spawnCalls[0][11]).toEqual(['--dangerously-skip-permissions'])
+    expect(h.spawnCalls[0][11]).toEqual(['--permission-mode', 'acceptEdits'])
+    expect(h.spawnCalls[0][11]).not.toContain('--dangerously-skip-permissions')
 
     h.spawnCalls = []
-    const p2 = runForegroundPhase({ ...baseOpts(), skipPermissions: false })
+    const p2 = runForegroundPhase({ ...baseOpts(), autoAcceptEdits: false })
     fireHook({ contextId: 'sess-1', tabId: 'review-loop:r1:review', hookType: 'stop' })
     await p2
     expect(h.spawnCalls[0][11]).toBeUndefined()

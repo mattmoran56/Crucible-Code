@@ -33,6 +33,10 @@ export function registerTerminalHandlers(window: BrowserWindow) {
         startWatching(repoPath, cwd)
       }
 
+      // Agent sessions run in auto (acceptEdits) mode — never bypass.
+      const claudeArgs =
+        (mode ?? 'shell') === 'claude' ? terminalService.AUTO_PERMISSION_MODE_ARGS : undefined
+
       return terminalService.spawnTerminal(
         window,
         sessionId,
@@ -44,7 +48,8 @@ export function registerTerminalHandlers(window: BrowserWindow) {
         repoPath,
         resume ?? false,
         contextId,
-        tabId
+        tabId,
+        claudeArgs
       )
     }
   )

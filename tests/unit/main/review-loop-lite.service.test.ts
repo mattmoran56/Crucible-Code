@@ -136,7 +136,7 @@ describe('startReviewLoopLite', () => {
 
     const [review, triage, fix] = h.phaseCalls
     expect(review.prompt).toContain('/review 42')
-    expect(review.skipPermissions).toBe(true)
+    expect(review.autoAcceptEdits).toBe(true) // auto mode, not bypass
     // triage consumes the review terminal's output
     expect(triage.prompt).toContain('OUT:review-loop:r1:review')
     // fix consumes the triage terminal's output
