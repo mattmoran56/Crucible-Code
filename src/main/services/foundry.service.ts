@@ -134,7 +134,12 @@ function loadStateFresh(foundryId: string): FoundryRuntimeState | null {
     defaults: { states: {} },
   })
   const all = fresh.get('states', {})
-  return all[foundryId] ?? null
+  const state = all[foundryId] ?? null
+  // A state file bloated by a prior unbounded run would otherwise load in full
+  // and stay large until the first save. Trim it on the way in so memory is
+  // bounded from the moment the runtime hydrates.
+  if (state) pruneState(state)
+  return state
 }
 
 export function saveConfig(config: FoundryConfig): FoundryConfig[] {
@@ -480,10 +485,33 @@ export async function tick(rt: FoundryRuntime): Promise<void> {
     }
   }
   rt.state.pageStatusSnapshot = newSnapshot
+
+  // Reconcile in-flight pipelines against Notion ground-truth. If a task has
+  // reached a completed status, the work is genuinely done — free its slot even
+  // if the pipeline got wedged mid-finalize (stale worker terminal, draft PR,
+  // injection timeout) and is sitting in `finalizing`/attention. Without this,
+  // those pipelines occupy a slot forever and the foreman runs out of slots.
+  let slotFreed = false
+  if (completedStatuses.size > 0) {
+    for (const p of rt.state.pipelines) {
+      if (isTerminal(p.phase)) continue
+      const status = newSnapshot[p.page.id]
+      if (status && completedStatuses.has(status)) {
+        p.phase = 'done'
+        p.attention = undefined
+        log(p, `Notion status "${status}" is a completed status — pipeline marked done, slot freed.`)
+        slotFreed = true
+      }
+    }
+  }
+
   saveAndEmit(rt)
 
   if (transitionFires.length > 0) {
     requestPass(rt, 'transition', /*immediate*/ false)
+  }
+  if (slotFreed) {
+    requestPass(rt, 'slot-freed', /*immediate*/ false)
   }
 }
 
@@ -1335,7 +1363,48 @@ function log(p: FoundryPipeline, message: string): void {
   p.updatedAt = new Date().toISOString()
 }
 
+// ── State bounding ───────────────────────────────────────────────────────────
+// The runtime state is append-only by nature (every pass, pipeline, transcript
+// line and log line is pushed and never removed). Left unbounded it grows
+// without limit, and because the whole state is persisted to disk AND sent to
+// the renderer on every mutation, an unbounded state is also re-serialized in
+// full on every tick. Cap each growing collection so memory and IPC payloads
+// stay flat over a long autopilot run.
+const MAX_PASSES = 50
+const MAX_PASS_TRANSCRIPT_LINES = 2000
+const MAX_TERMINAL_PIPELINES = 50
+const MAX_PIPELINE_LOG_LINES = 500
+
+export function pruneState(state: FoundryRuntimeState): void {
+  if (state.passes.length > MAX_PASSES) {
+    state.passes.splice(0, state.passes.length - MAX_PASSES)
+  }
+  for (const pass of state.passes) {
+    if (pass.transcript.length > MAX_PASS_TRANSCRIPT_LINES) {
+      pass.transcript.splice(0, pass.transcript.length - MAX_PASS_TRANSCRIPT_LINES)
+    }
+  }
+  for (const pipeline of state.pipelines) {
+    if (pipeline.log.length > MAX_PIPELINE_LOG_LINES) {
+      pipeline.log.splice(0, pipeline.log.length - MAX_PIPELINE_LOG_LINES)
+    }
+  }
+  // Keep every still-active pipeline plus the most-recently-updated terminal
+  // ones; drop the oldest terminal pipelines beyond the cap.
+  const terminal = state.pipelines.filter((p) => isTerminal(p.phase))
+  if (terminal.length > MAX_TERMINAL_PIPELINES) {
+    const drop = new Set(
+      [...terminal]
+        .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+        .slice(0, terminal.length - MAX_TERMINAL_PIPELINES)
+        .map((p) => p.id)
+    )
+    state.pipelines = state.pipelines.filter((p) => !drop.has(p.id))
+  }
+}
+
 function saveState(rt: FoundryRuntime): void {
+  pruneState(rt.state)
   const all = stateStore.get('states', {})
   all[rt.config.id] = rt.state
   stateStore.set('states', all)
@@ -1344,7 +1413,11 @@ function saveState(rt: FoundryRuntime): void {
 function saveAndEmit(rt: FoundryRuntime): void {
   saveState(rt)
   if (mainWindow && !mainWindow.isDestroyed()) {
-    emitToRenderer(mainWindow, IPC.FOUNDRY_STATE_UPDATE, rt.config.id, structuredClone(rt.state))
+    // No structuredClone here: `emitToRenderer` → `webContents.send` already
+    // structured-clones the payload during IPC serialization, and no consumer
+    // mutates the state. The previous explicit clone duplicated the entire
+    // (growing) state on every emit — a major source of allocation churn.
+    emitToRenderer(mainWindow, IPC.FOUNDRY_STATE_UPDATE, rt.config.id, rt.state)
   }
 }
 

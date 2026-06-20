@@ -508,3 +508,51 @@ describe('terminalStore.recoverTerminals', () => {
     expect(keys).toEqual(['s1:claude', 's1:shell'])
   })
 })
+
+describe('terminalStore.enforceReviewCap', () => {
+  it('is a no-op when review terminals are at or below the cap', async () => {
+    seedTerminal('r1:review', 'rt-1', 'r1', 'review')
+    seedTerminal('r2:review', 'rt-2', 'r2', 'review')
+    const evicted = await useTerminalStore.getState().enforceReviewCap(5, 'r2')
+    expect(evicted).toEqual([])
+    expect(kill).not.toHaveBeenCalled()
+    expect(destroyMock).not.toHaveBeenCalled()
+    expect(Object.keys(useTerminalStore.getState().terminals)).toHaveLength(2)
+  })
+
+  it('kills the oldest review terminals beyond the cap and reports them', async () => {
+    // Seeded in spawn order — r1 oldest, r4 newest.
+    seedTerminal('r1:review', 'rt-1', 'r1', 'review')
+    seedTerminal('r2:review', 'rt-2', 'r2', 'review')
+    seedTerminal('r3:review', 'rt-3', 'r3', 'review')
+    seedTerminal('r4:review', 'rt-4', 'r4', 'review')
+    const evicted = await useTerminalStore.getState().enforceReviewCap(2, 'r4')
+    // 4 review terminals, cap 2 → evict the 2 oldest (r1, r2).
+    expect(evicted).toEqual(['r1', 'r2'])
+    expect(kill).toHaveBeenCalledWith('rt-1')
+    expect(kill).toHaveBeenCalledWith('rt-2')
+    expect(destroyMock).toHaveBeenCalledWith('rt-1')
+    expect(destroyMock).toHaveBeenCalledWith('rt-2')
+    const keys = Object.keys(useTerminalStore.getState().terminals).sort()
+    expect(keys).toEqual(['r3:review', 'r4:review'])
+  })
+
+  it('never evicts the keepSessionId terminal even when it is the oldest', async () => {
+    seedTerminal('r1:review', 'rt-1', 'r1', 'review')
+    seedTerminal('r2:review', 'rt-2', 'r2', 'review')
+    seedTerminal('r3:review', 'rt-3', 'r3', 'review')
+    const evicted = await useTerminalStore.getState().enforceReviewCap(2, 'r1')
+    // Excess is 1; r1 is protected, so the next-oldest (r2) is evicted.
+    expect(evicted).toEqual(['r2'])
+    expect(useTerminalStore.getState().terminals['r1:review']).toBeDefined()
+  })
+
+  it('ignores non-review terminals', async () => {
+    seedTerminal('s1:shell', 'sh-1', 's1', 'shell')
+    seedTerminal('s1:claude', 'cl-1', 's1', 'claude')
+    seedTerminal('r1:review', 'rt-1', 'r1', 'review')
+    const evicted = await useTerminalStore.getState().enforceReviewCap(1, 'zzz')
+    expect(evicted).toEqual([])
+    expect(kill).not.toHaveBeenCalled()
+  })
+})

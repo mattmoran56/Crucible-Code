@@ -24,10 +24,13 @@ export function PRPreviewPanel({ repoPath }: Props) {
   } = usePRPreviewStore()
 
   // Auto-refresh while the preview is mounted so committed/working changes
-  // pick up quickly as the user works.
+  // pick up quickly as the user works. Skip while the window is hidden — a 4s
+  // poll that re-walks the git tree and re-renders the diff is a non-trivial
+  // background drain.
   useEffect(() => {
     if (loading) return
     const id = setInterval(() => {
+      if (document.hidden) return
       if (!usePRPreviewStore.getState().refreshing) {
         refresh(repoPath)
       }

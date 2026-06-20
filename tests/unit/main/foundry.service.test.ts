@@ -241,6 +241,29 @@ describe('foundry.service — snapshot watcher', () => {
     expect(rt.state.pageStatusSnapshot['p1']).toBe('Done')
   })
 
+  it('frees the slot of a wedged pipeline when its task reaches a completed status', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig())
+    let status = 'In progress'
+    fetchMock.mockImplementation(async () =>
+      fakeNotionResponse(200, { results: [pageWithStatus('p1', status)] })
+    )
+    svc.startFoundryService(fakeWindow)
+    const rt = svc.getRuntime('f-1')!
+    // Pipeline is in-flight and occupies a slot.
+    const page: NotionTaskPayload = { id: 'p1', url: 'https://notion.so/p1', title: 'T', rawProperties: {} }
+    const pipe = await svc.startPipeline({ foundryId: 'f-1', page, reason: 'test' })
+    rt.state.pipelines[0].phase = 'finalizing'
+    expect(svc.countActivePipelines(rt)).toBe(1)
+    await svc.tick(rt) // seed snapshot
+    // Worker finished; Notion task moved to a completed status.
+    status = 'Done'
+    await svc.tick(rt)
+    expect(rt.state.pipelines[0].phase).toBe('done')
+    expect(svc.countActivePipelines(rt)).toBe(0)
+    void pipe
+  })
+
   it('wakes the foreman when a ticket enters an optimistic status (toggle on)', async () => {
     vi.useFakeTimers()
     const svc = await loadFresh()
@@ -594,5 +617,77 @@ describe('foundry.service — pause + run-now', () => {
     svc.setPaused('f-1', true)
     const cfg = svc.listConfigs()[0]
     expect(cfg.paused).toBe(true)
+  })
+})
+
+describe('foundry.service — pruneState (memory bounding)', () => {
+  function emptyState() {
+    return {
+      foundryId: 'f-1',
+      pageStatusSnapshot: {},
+      documentedHashes: {},
+      pipelines: [],
+      passes: [],
+    } as any
+  }
+
+  it('caps passes and per-pass transcript length', async () => {
+    const svc = await loadFresh()
+    const state = emptyState()
+    for (let i = 0; i < 500; i++) {
+      state.passes.push({
+        index: i,
+        startedAt: new Date(Date.now() + i).toISOString(),
+        status: 'completed',
+        trigger: 'manual',
+        startedPageIds: [],
+        transcript: Array.from({ length: 5000 }, (_, n) => `line ${n}`),
+      })
+    }
+    svc.pruneState(state)
+    // Only the most recent passes are retained, oldest dropped.
+    expect(state.passes.length).toBeLessThanOrEqual(50)
+    expect(state.passes[state.passes.length - 1].index).toBe(499)
+    // Each retained pass's transcript is capped too.
+    for (const p of state.passes) {
+      expect(p.transcript.length).toBeLessThanOrEqual(2000)
+    }
+  })
+
+  it('prunes oldest terminal pipelines but keeps every active one', async () => {
+    const svc = await loadFresh()
+    const state = emptyState()
+    // 100 terminal (done) pipelines + 3 active (implementing) ones.
+    for (let i = 0; i < 100; i++) {
+      state.pipelines.push({
+        id: `done-${i}`,
+        foundryId: 'f-1',
+        page: { id: `p${i}` },
+        phase: 'done',
+        startedAt: new Date(Date.now() + i).toISOString(),
+        updatedAt: new Date(Date.now() + i).toISOString(),
+        log: Array.from({ length: 2000 }, (_, n) => `log ${n}`),
+      })
+    }
+    for (let i = 0; i < 3; i++) {
+      state.pipelines.push({
+        id: `active-${i}`,
+        foundryId: 'f-1',
+        page: { id: `a${i}` },
+        phase: 'implementing',
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        log: [],
+      })
+    }
+    svc.pruneState(state)
+    const active = state.pipelines.filter((p: any) => p.phase === 'implementing')
+    const terminal = state.pipelines.filter((p: any) => p.phase === 'done')
+    expect(active.length).toBe(3) // never dropped
+    expect(terminal.length).toBeLessThanOrEqual(50)
+    // Per-pipeline log is capped.
+    for (const p of state.pipelines) {
+      expect(p.log.length).toBeLessThanOrEqual(500)
+    }
   })
 })

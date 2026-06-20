@@ -37,10 +37,32 @@ export function isAuthorMine(
   return false
 }
 
+// LRU cap. Map iteration order is insertion order, so re-inserting an entry
+// on hit moves it to the back; eviction takes the front. 500 entries comfortably
+// covers any one polling pass while bounding long-session heap growth.
+const AUTHOR_CACHE_MAX = 500
 const authorCache = new Map<string, AuthorInfo>()
 
+function rememberAuthor(sha: string, info: AuthorInfo): void {
+  if (authorCache.has(sha)) authorCache.delete(sha)
+  authorCache.set(sha, info)
+  while (authorCache.size > AUTHOR_CACHE_MAX) {
+    const oldest = authorCache.keys().next().value
+    if (oldest === undefined) break
+    authorCache.delete(oldest)
+  }
+}
+
+function touchAuthor(sha: string): AuthorInfo | undefined {
+  const hit = authorCache.get(sha)
+  if (hit === undefined) return undefined
+  authorCache.delete(sha)
+  authorCache.set(sha, hit)
+  return hit
+}
+
 async function getAuthorForSha(g: SimpleGit, sha: string): Promise<AuthorInfo | null> {
-  const cached = authorCache.get(sha)
+  const cached = touchAuthor(sha)
   if (cached) return cached
   try {
     const raw = await g.raw(['log', '-1', '--format=%ae|%an', sha])
@@ -51,7 +73,7 @@ async function getAuthorForSha(g: SimpleGit, sha: string): Promise<AuthorInfo | 
       email: line.slice(0, sep),
       name: line.slice(sep + 1),
     }
-    authorCache.set(sha, info)
+    rememberAuthor(sha, info)
     return info
   } catch {
     return null

@@ -173,6 +173,12 @@ describe('usage.service polling + limit events', () => {
       webContents: {
         send: (channel: string, payload: unknown) => sent.push({ channel, payload }),
       },
+      // The poller gates on app-visibility so background ticks don't waste
+      // CPU when nobody can see the update. Tests want the gate to pass so
+      // the rest of the polling logic runs.
+      isDestroyed: () => false,
+      isMinimized: () => false,
+      isVisible: () => true,
     } as never
   }
 
