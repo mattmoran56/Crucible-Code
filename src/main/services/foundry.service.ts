@@ -15,6 +15,7 @@ import { promisify } from 'node:util'
 import type { BrowserWindow } from 'electron'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
+import { resolveOptimisticStatuses } from '../../shared/foundry'
 import type {
   FoundryConfig,
   FoundryFireTaskPayload,
@@ -456,9 +457,7 @@ export async function tick(rt: FoundryRuntime): Promise<void> {
   const completedStatuses = new Set(fresh.completedStatuses ?? [])
   // Under optimistic continue, entering an optimistic status (e.g. "In review")
   // also frees a dependency, so wake the foreman for it too.
-  const optimisticStatuses = new Set(
-    fresh.optimisticContinue ? fresh.optimisticStatuses ?? ['In review'] : []
-  )
+  const optimisticStatuses = new Set(resolveOptimisticStatuses(fresh))
   const transitionFires: string[] = []
 
   for (const p of pages) {

@@ -37,6 +37,7 @@ import {
   type FoundryRuntimeRef,
 } from './foundry.service'
 import { loadConfig as loadNotionConfig } from './notion-poller.service'
+import { resolveOptimisticStatuses } from '../../shared/foundry'
 
 const PASS_TIMEOUT_MS = 15 * 60 * 1000
 
@@ -113,7 +114,7 @@ export async function buildPassContext(foundryId: string): Promise<BuildContextR
       completionTransition: cfg.completionTransition,
       completedStatuses: cfg.completedStatuses ?? [],
       optimisticContinue: cfg.optimisticContinue === true,
-      optimisticStatuses: cfg.optimisticContinue ? cfg.optimisticStatuses ?? ['In review'] : [],
+      optimisticStatuses: resolveOptimisticStatuses(cfg),
       runningPipelines,
       tasks,
     },
