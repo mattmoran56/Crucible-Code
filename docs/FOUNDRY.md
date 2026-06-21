@@ -282,10 +282,12 @@ The panel offers per-pipeline actions: Resume (clears attention, retries the cur
 
 - `pageStatusSnapshot` — per-page status at the last tick. Preserved across restarts so an offline transition fires exactly once on next startup.
 - `documentedHashes` — sha1 per ticket note. Prevents re-documenting the same plan.
+- `planMarkdownHash` — sha1 of the last `planMarkdown` the foreman posted, so an unchanged global plan isn't re-posted every pass.
 - `pipelines[]` — full pipeline FSM state. Rehydrated on app start (spawn-requested → re-fire; implementing → PR poller picks up; reviewing → restart review loop; finalizing → re-run; spawn-requested with no remaining ack retries → orphan).
 - `passes[]` — history of every foreman pass with trigger, status, started page ids, cost, transcript tail.
 - `passInFlight` — whether the foreman is mid-pass right now.
 - `foremanTerminalId` — set while a foreman PTY is alive. The Foundry panel uses this to render the live PTY view; cleared on decision or timeout.
+- `lastError` — the most recent runtime error (task-set query failure, base-branch ensure failure, pickup-update failure, …), surfaced in the panel for diagnostics.
 
 The **Reset** button on the foundry settings card (shown only when the foundry is off) wipes all of that and keeps the config. Useful when state has drifted from reality and you want to start clean.
 
