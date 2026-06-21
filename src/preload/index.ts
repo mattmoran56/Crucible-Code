@@ -502,6 +502,9 @@ const api = {
       baseBranch: string
       config: ReviewLoopConfig
       prNumber?: number
+      claudeTheme?: string
+      claudeConfigDir?: string
+      repoPath?: string
     }): Promise<void> => ipcRenderer.invoke(IPC.REVIEW_LOOP_START, opts),
     cancel: (sessionId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.REVIEW_LOOP_CANCEL, sessionId),

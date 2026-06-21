@@ -9,6 +9,14 @@ import { getStorePath } from '../store-path'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
+/**
+ * Permission args for every Claude session/agent we spawn: auto (acceptEdits)
+ * mode. This auto-accepts edits so work flows hands-off while still prompting
+ * for anything riskier than an edit. We NEVER use bypass /
+ * `--dangerously-skip-permissions`.
+ */
+export const AUTO_PERMISSION_MODE_ARGS: string[] = ['--permission-mode', 'acceptEdits']
+
 interface TerminalInstance {
   pty: pty.IPty
   sessionId: string

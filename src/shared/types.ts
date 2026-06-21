@@ -335,7 +335,6 @@ export type ReviewLoopStatus =
 export type ReviewLoopStopReason =
   | 'converged'
   | 'maxIterations'
-  | 'costCap'
   | 'cancelled'
   | 'error'
 
@@ -358,19 +357,46 @@ export interface ReviewLoopTriagedIssue extends ReviewLoopIssue {
 
 export type ReviewLoopVariant = 'pro' | 'lite'
 
+/** Lifecycle of a single foreground phase terminal within a round. */
+export type ReviewLoopPhaseStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'error'
+  | 'skipped'
+
+/**
+ * One foreground phase of a round. Each phase is an independent, interactive
+ * `claude` PTY the user can watch and type into; when its turn finishes the
+ * terminal is frozen (read-only) and the next phase begins.
+ */
+export interface ReviewLoopPhaseSlot {
+  phase: 'review' | 'triage' | 'fix'
+  status: ReviewLoopPhaseStatus
+  /** Terminal id of the live (or frozen) claude PTY backing this phase. */
+  terminalId?: string
+  /** Workspace tab id used for hook routing + renderer attach (e.g. `review-loop:r1:review`). */
+  tabId?: string
+  startedAt?: string
+  endedAt?: string
+  errorMessage?: string
+}
+
 export interface ReviewLoopRound {
   index: number
   startedAt: string
   endedAt?: string
   phase: ReviewLoopPhase
+  /**
+   * The foreground phase terminals for this round (review, triage, fix),
+   * rendered as live columns. Replaces the old headless transcript capture.
+   */
+  phaseSlots: ReviewLoopPhaseSlot[]
   /** Pro-only: structured issues from review phase. Empty for Lite. */
   rawIssues: ReviewLoopIssue[]
   /** Pro-only: triaged issues. Empty for Lite. */
   triaged: ReviewLoopTriagedIssue[]
-  costUsd: number
   log: string[]
-  /** Live human-readable lines from each claude subprocess (assistant text, tool calls, errors). */
-  transcript: string[]
   errorMessage?: string
 }
 
@@ -384,7 +410,6 @@ export interface ReviewLoopState {
   currentPhase: ReviewLoopPhase
   iteration: number
   rounds: ReviewLoopRound[]
-  cumulativeCostUsd: number
   startedAt?: string
   endedAt?: string
   stopReason?: ReviewLoopStopReason
@@ -395,11 +420,10 @@ export interface ReviewLoopState {
 
 export interface ReviewLoopConfig {
   enabled: boolean
-  /** Lite (default): unstructured, /review-driven, single shared session for triage→fix. Pro: structured 3-phase pipeline with JSON intermediates and PR comments. */
+  /** Lite (default): unstructured, /review-driven handoff. Pro: structured 3-phase pipeline with JSON intermediates and PR comments. Both run as three live foreground terminal columns per round. */
   variant: ReviewLoopVariant
   maxIterations: number
   consecutiveCleanRounds: number
-  costCapUsd: number
 }
 
 export interface ReviewLoopProjectOverride {
@@ -407,7 +431,6 @@ export interface ReviewLoopProjectOverride {
   variant?: ReviewLoopVariant
   maxIterations?: number
   consecutiveCleanRounds?: number
-  costCapUsd?: number
 }
 
 export interface ReviewLoopSettings {
@@ -420,7 +443,6 @@ export const DEFAULT_REVIEW_LOOP_CONFIG: ReviewLoopConfig = {
   variant: 'lite',
   maxIterations: 5,
   consecutiveCleanRounds: 2,
-  costCapUsd: 5,
 }
 
 // Scheduler ──────────────────────────────────────────────────────────────────

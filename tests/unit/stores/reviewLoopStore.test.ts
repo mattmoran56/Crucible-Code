@@ -29,7 +29,6 @@ const loopState = (sessionId: string, over: Partial<ReviewLoopState> = {}): Revi
     currentPhase: 'review',
     iteration: 1,
     rounds: [],
-    cumulativeCostUsd: 0,
     skippedIssues: [],
     ...over,
   }) as ReviewLoopState
@@ -90,7 +89,7 @@ describe('reviewLoopStore.loadSettings', () => {
   })
 
   it('keeps the existing settings untouched when the load fails', async () => {
-    const prior = { workspace: ws({ costCapUsd: 99 }), projectOverrides: {} }
+    const prior = { workspace: ws({ maxIterations: 99 }), projectOverrides: {} }
     useReviewLoopStore.setState({ settings: prior })
     getSettings.mockRejectedValue(new Error('nope'))
     await useReviewLoopStore.getState().loadSettings()
@@ -117,7 +116,7 @@ describe('reviewLoopStore.setWorkspaceConfig', () => {
         projectOverrides: { p1: { enabled: false } },
       },
     })
-    const cfg = ws({ costCapUsd: 12 })
+    const cfg = ws({ maxIterations: 12 })
     await useReviewLoopStore.getState().setWorkspaceConfig(cfg)
     expect(setSettings).toHaveBeenCalledWith({
       workspace: cfg,
@@ -176,16 +175,16 @@ describe('reviewLoopStore.setProjectOverride', () => {
   it('leaves other projects untouched when adding or removing', async () => {
     setSettings.mockResolvedValue(undefined)
     useReviewLoopStore.setState({
-      settings: { workspace: ws(), projectOverrides: { p2: { costCapUsd: 1 } } },
+      settings: { workspace: ws(), projectOverrides: { p2: { maxIterations: 1 } } },
     })
     await useReviewLoopStore.getState().setProjectOverride('p1', { enabled: false })
     expect(useReviewLoopStore.getState().settings.projectOverrides).toEqual({
       p1: { enabled: false },
-      p2: { costCapUsd: 1 },
+      p2: { maxIterations: 1 },
     })
     await useReviewLoopStore.getState().setProjectOverride('p1', undefined)
     expect(useReviewLoopStore.getState().settings.projectOverrides).toEqual({
-      p2: { costCapUsd: 1 },
+      p2: { maxIterations: 1 },
     })
   })
 
@@ -203,7 +202,6 @@ describe('reviewLoopStore.effectiveConfig', () => {
     variant: 'lite',
     maxIterations: 5,
     consecutiveCleanRounds: 2,
-    costCapUsd: 5,
   })
 
   it('returns the workspace config for a null projectId', () => {
@@ -256,11 +254,11 @@ describe('reviewLoopStore.effectiveConfig', () => {
     })
   })
 
-  it('honours a zero costCapUsd override (nullish merge, not falsy merge)', () => {
+  it('honours a zero maxIterations override (nullish merge, not falsy merge)', () => {
     useReviewLoopStore.setState({
-      settings: { workspace, projectOverrides: { p1: { costCapUsd: 0 } } },
+      settings: { workspace, projectOverrides: { p1: { maxIterations: 0 } } },
     })
-    expect(useReviewLoopStore.getState().effectiveConfig('p1').costCapUsd).toBe(0)
+    expect(useReviewLoopStore.getState().effectiveConfig('p1').maxIterations).toBe(0)
   })
 
   it('applies a full override across every field', () => {
@@ -269,7 +267,6 @@ describe('reviewLoopStore.effectiveConfig', () => {
       variant: 'pro' as const,
       maxIterations: 1,
       consecutiveCleanRounds: 9,
-      costCapUsd: 42,
     }
     useReviewLoopStore.setState({ settings: { workspace, projectOverrides: { p1: full } } })
     expect(useReviewLoopStore.getState().effectiveConfig('p1')).toEqual(full)
@@ -288,12 +285,12 @@ describe('reviewLoopStore.setProjectEnabled', () => {
   it('merges into an existing override without dropping other fields', async () => {
     setSettings.mockResolvedValue(undefined)
     useReviewLoopStore.setState({
-      settings: { workspace: ws(), projectOverrides: { p1: { variant: 'pro', costCapUsd: 3 } } },
+      settings: { workspace: ws(), projectOverrides: { p1: { variant: 'pro', maxIterations: 3 } } },
     })
     await useReviewLoopStore.getState().setProjectEnabled('p1', true)
     expect(useReviewLoopStore.getState().settings.projectOverrides.p1).toEqual({
       variant: 'pro',
-      costCapUsd: 3,
+      maxIterations: 3,
       enabled: true,
     })
   })
@@ -356,19 +353,23 @@ describe('reviewLoopStore.start', () => {
     useReviewLoopStore.setState({
       settings: {
         workspace: ws({ maxIterations: 3 }),
-        projectOverrides: { p1: { costCapUsd: 7 } },
+        projectOverrides: { p1: { consecutiveCleanRounds: 4 } },
       },
     })
     start.mockResolvedValue(undefined)
     await useReviewLoopStore.getState().start({ ...startArgs, prNumber: 42 })
-    expect(start).toHaveBeenCalledWith({
-      sessionId: 's1',
-      worktreePath: '/wt/s1',
-      branch: 'feat/x',
-      baseBranch: 'main',
-      config: ws({ maxIterations: 3, costCapUsd: 7 }),
-      prNumber: 42,
-    })
+    // The payload also carries foreground spawn context (theme/configDir/repo)
+    // resolved from the project + settings stores, so match the core fields.
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 's1',
+        worktreePath: '/wt/s1',
+        branch: 'feat/x',
+        baseBranch: 'main',
+        config: ws({ maxIterations: 3, consecutiveCleanRounds: 4 }),
+        prNumber: 42,
+      })
+    )
   })
 
   it('passes prNumber through as undefined when not supplied', async () => {

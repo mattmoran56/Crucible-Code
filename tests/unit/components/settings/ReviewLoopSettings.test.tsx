@@ -75,22 +75,22 @@ describe('ReviewLoopSettings', () => {
     expect(useReviewLoopStore.getState().settings.workspace.variant).toBe('pro')
   })
 
-  it('shows the three numeric stop-condition fields with defaults', () => {
+  it('shows the two numeric stop-condition fields with defaults', () => {
     render(<ReviewLoopSettings projects={[]} />)
     const ws = card('Workspace defaults')
     expect(within(ws).getByLabelText(/Max iterations/)).toHaveValue(5)
     expect(within(ws).getByLabelText(/Clean rounds to stop/)).toHaveValue(2)
-    expect(within(ws).getByLabelText(/Cost cap \(USD\)/)).toHaveValue(5)
   })
 
-  it('number inputs carry their min/max/step constraints', () => {
+  it('number inputs carry their min/max constraints', () => {
     render(<ReviewLoopSettings projects={[]} />)
     const ws = card('Workspace defaults')
     const maxIter = within(ws).getByLabelText(/Max iterations/)
     expect(maxIter).toHaveAttribute('min', '1')
     expect(maxIter).toHaveAttribute('max', '20')
-    const costCap = within(ws).getByLabelText(/Cost cap \(USD\)/)
-    expect(costCap).toHaveAttribute('step', '0.5')
+    const cleanRounds = within(ws).getByLabelText(/Clean rounds to stop/)
+    expect(cleanRounds).toHaveAttribute('min', '1')
+    expect(cleanRounds).toHaveAttribute('max', '5')
   })
 
   it('changing workspace max iterations updates the store', () => {
@@ -136,13 +136,13 @@ describe('ReviewLoopSettings', () => {
     useReviewLoopStore.setState({
       settings: {
         workspace: { ...DEFAULT_REVIEW_LOOP_CONFIG, variant: 'lite' },
-        projectOverrides: { 'proj-a': { variant: 'pro', costCapUsd: 9.5 } },
+        projectOverrides: { 'proj-a': { variant: 'pro', consecutiveCleanRounds: 4 } },
       },
     })
     render(<ReviewLoopSettings projects={[projectA]} />)
     const alpha = card('Alpha')
     expect(within(alpha).getByRole('radio', { name: 'Pro' })).toHaveAttribute('aria-checked', 'true')
-    expect(within(alpha).getByLabelText(/Cost cap \(USD\)/)).toHaveValue(9.5)
+    expect(within(alpha).getByLabelText(/Clean rounds to stop/)).toHaveValue(4)
     // Workspace card is unaffected by the project override.
     const ws = card('Workspace defaults')
     expect(within(ws).getByRole('radio', { name: 'Lite' })).toHaveAttribute('aria-checked', 'true')

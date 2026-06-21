@@ -684,9 +684,9 @@ export const mockStartupPrompts: Record<string, StartupPrompt[]> = {
 export const mockReviewLoopSettings: ReviewLoopSettings = {
   workspace: {
     enabled: true,
+    variant: 'pro',
     maxIterations: 5,
     consecutiveCleanRounds: 2,
-    costCapUsd: 5,
   },
   projectOverrides: {
     'proj-2': { enabled: false },
@@ -710,7 +710,6 @@ export const mockReviewLoopRunning: ReviewLoopState = {
   status: 'running',
   currentPhase: 'triage',
   iteration: 2,
-  cumulativeCostUsd: 1.42,
   startedAt: new Date(baseTime).toISOString(),
   skippedIssues: [
     {
@@ -731,7 +730,11 @@ export const mockReviewLoopRunning: ReviewLoopState = {
       startedAt: new Date(baseTime + 1_000).toISOString(),
       endedAt: new Date(baseTime + 92_000).toISOString(),
       phase: 'idle',
-      costUsd: 0.84,
+      phaseSlots: [
+        { phase: 'review', status: 'completed' },
+        { phase: 'triage', status: 'completed' },
+        { phase: 'fix', status: 'completed' },
+      ],
       log: [
         '[2026-04-30T13:00:01Z] Reviewing diff between session/add-pr-review and main…',
         '[2026-04-30T13:00:34Z] Review found 3 candidate issues.',
@@ -806,7 +809,11 @@ export const mockReviewLoopRunning: ReviewLoopState = {
       index: 2,
       startedAt: new Date(baseTime + 95_000).toISOString(),
       phase: 'triage',
-      costUsd: 0.58,
+      phaseSlots: [
+        { phase: 'review', status: 'completed' },
+        { phase: 'triage', status: 'running' },
+        { phase: 'fix', status: 'pending' },
+      ],
       log: [
         '[2026-04-30T13:01:35Z] Reviewing diff between session/add-pr-review and main…',
         '[2026-04-30T13:02:03Z] Review found 2 candidate issues.',
@@ -841,7 +848,6 @@ export const mockReviewLoopCompleted: ReviewLoopState = {
   status: 'completed',
   currentPhase: 'idle',
   iteration: 3,
-  cumulativeCostUsd: 1.64,
   endedAt: new Date(baseTime + 240_000).toISOString(),
   stopReason: 'converged',
   rounds: [
@@ -853,7 +859,11 @@ export const mockReviewLoopCompleted: ReviewLoopState = {
       startedAt: new Date(baseTime + 95_000).toISOString(),
       endedAt: new Date(baseTime + 165_000).toISOString(),
       phase: 'idle',
-      costUsd: 0.41,
+      phaseSlots: [
+        { phase: 'review', status: 'completed' },
+        { phase: 'triage', status: 'skipped' },
+        { phase: 'fix', status: 'skipped' },
+      ],
       log: [
         '[2026-04-30T13:01:35Z] Reviewing diff between session/add-pr-review and main…',
         '[2026-04-30T13:02:08Z] Review found 0 candidate issues.',
@@ -868,7 +878,11 @@ export const mockReviewLoopCompleted: ReviewLoopState = {
       startedAt: new Date(baseTime + 170_000).toISOString(),
       endedAt: new Date(baseTime + 240_000).toISOString(),
       phase: 'idle',
-      costUsd: 0.39,
+      phaseSlots: [
+        { phase: 'review', status: 'completed' },
+        { phase: 'triage', status: 'skipped' },
+        { phase: 'fix', status: 'skipped' },
+      ],
       log: [
         '[2026-04-30T13:02:50Z] Reviewing diff between session/add-pr-review and main…',
         '[2026-04-30T13:03:24Z] Review found 0 candidate issues.',

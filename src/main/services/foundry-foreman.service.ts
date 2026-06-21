@@ -20,7 +20,6 @@ import type {
   NotionTaskPayload,
 } from '../../shared/types'
 import { getStorePath } from '../store-path'
-import { runHeadlessClaude } from './claude-headless.service'
 import {
   getPageBodyMarkdown,
   queryDatabase,

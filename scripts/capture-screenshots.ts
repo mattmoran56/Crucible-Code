@@ -393,8 +393,18 @@ async function captureScreenshots() {
   }
   const browser = await chromium.launch(launchOptions)
 
+  // Optional allowlist: SCREENSHOT_ONLY=name1,name2 captures just those targets
+  // (and leaves every other docs/screenshots/*.png untouched).
+  const onlyFilter = (process.env.SCREENSHOT_ONLY ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const selected = onlyFilter.length > 0
+    ? targets.filter((t) => onlyFilter.includes(t.name))
+    : targets
+
   // Capture main targets
-  for (const target of targets) {
+  for (const target of selected) {
     const context = await browser.newContext({
       viewport: target.viewport ?? VIEWPORT,
       deviceScaleFactor: 2,

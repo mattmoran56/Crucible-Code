@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useRef } from 'react'
+import React, { useEffect } from 'react'
 import { useReviewLoopStore } from '../../stores/reviewLoopStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
+import { useTerminalStore } from '../../stores/terminalStore'
+import { TerminalView } from '../terminal/TerminalView'
 import { Button } from '../ui/Button'
 import type {
+  ReviewLoopPhaseSlot,
   ReviewLoopRound,
   ReviewLoopState,
   ReviewLoopStopReason,
@@ -14,6 +17,14 @@ import type {
 interface Props {
   visible?: boolean
 }
+
+const PHASE_LABEL: Record<ReviewLoopPhaseSlot['phase'], string> = {
+  review: 'Review',
+  triage: 'Triage',
+  fix: 'Implementation',
+}
+
+const PHASE_ORDER: ReviewLoopPhaseSlot['phase'][] = ['review', 'triage', 'fix']
 
 export function ReviewLoopPanel({ visible = true }: Props) {
   const { activeSessionId, sessions } = useSessionStore()
@@ -75,7 +86,7 @@ export function ReviewLoopPanel({ visible = true }: Props) {
           <p className="text-sm font-medium text-text">Review Loop</p>
           <p className="text-[11px] text-text-muted truncate">
             <code>{session.branchName}</code> → <code>{baseBranch}</code>
-            {' · '}max {config.maxIterations} rounds · stop after {config.consecutiveCleanRounds} clean · ${config.costCapUsd.toFixed(2)} cap
+            {' · '}max {config.maxIterations} rounds · stop after {config.consecutiveCleanRounds} clean
           </p>
         </div>
         {!config.enabled ? (
@@ -93,48 +104,45 @@ export function ReviewLoopPanel({ visible = true }: Props) {
 
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: 14 }}>
-        {state ? <LoopStateView state={state} /> : <EmptyState variant={config.variant} />}
+        {state ? (
+          <LoopStateView state={state} sessionName={session.name} panelVisible={visible} />
+        ) : (
+          <EmptyState variant={config.variant} />
+        )}
       </div>
     </div>
   )
 }
 
 function EmptyState({ variant }: { variant: 'lite' | 'pro' }) {
-  if (variant === 'lite') {
-    return (
-      <div className="text-xs text-text-muted">
-        <p>Press <strong>Start review loop</strong> to begin. Each round runs:</p>
-        <ol style={{ marginTop: 8, paddingLeft: 18 }}>
-          <li><strong>Review</strong> — <code>/review</code> on the PR (or the diff vs. base).</li>
-          <li><strong>Triage</strong> — sub-agents investigate each issue and propose a decision as a table.</li>
-          <li><strong>Fix</strong> — same session as triage: "do what you think needs doing, commit, and push".</li>
-        </ol>
-        <p style={{ marginTop: 12 }}>
-          The UI shows the raw session output. Stops after consecutive rounds with no new commit, the iteration cap, the cost cap, or manual cancel.
-        </p>
-      </div>
-    )
-  }
   return (
     <div className="text-xs text-text-muted">
-      <p>Press <strong>Start review loop</strong> to begin. Each round runs three phases:</p>
+      <p>Press <strong>Start review loop</strong> to begin. Each round opens three live Claude Code terminals you can watch and type into:</p>
       <ol style={{ marginTop: 8, paddingLeft: 18 }}>
-        <li><strong>Review</strong> — Claude reviews the diff vs. base and writes findings.</li>
-        <li><strong>Triage</strong> — A sub-agent investigates each finding and decides fix / skip / defer.</li>
-        <li><strong>Fix</strong> — Claude applies fixes, commits, and pushes.</li>
+        <li><strong>Review</strong> — Claude reviews the diff vs. base{variant === 'lite' ? ' (via /review on the PR)' : ' and records findings'}.</li>
+        <li><strong>Triage</strong> — sub-agents investigate each finding and decide fix / skip / defer.</li>
+        <li><strong>Implementation</strong> — Claude applies the fixes, commits, and pushes.</li>
       </ol>
       <p style={{ marginTop: 12 }}>
-        The loop stops after consecutive clean rounds, the iteration cap, the cost cap, or manual cancel.
-        Skipped or deferred items get summarised in a sticky comment on the PR.
+        Each terminal freezes (read-only) when its phase finishes; the next phase starts in a fresh column. A new row of three columns opens for every round.
+        The loop stops after consecutive clean rounds, the iteration cap, or manual cancel.
+        {variant === 'pro' ? ' Skipped or deferred items get summarised in a sticky comment on the PR.' : ''}
       </p>
     </div>
   )
 }
 
-function LoopStateView({ state }: { state: ReviewLoopState }) {
+function LoopStateView({
+  state,
+  sessionName,
+  panelVisible,
+}: {
+  state: ReviewLoopState
+  sessionName: string
+  panelVisible: boolean
+}) {
+  // Newest round first so the active round is at the top of the scroll area.
   const reversed = [...state.rounds].reverse()
-  const latestIndex = reversed[0]?.index
-  const variant = state.variant ?? 'pro'
   return (
     <div className="flex flex-col gap-3">
       <SummaryBar state={state} />
@@ -142,12 +150,13 @@ function LoopStateView({ state }: { state: ReviewLoopState }) {
         <p className="text-xs text-text-muted">Starting first round…</p>
       )}
       {reversed.map((round) => (
-        <RoundCard
+        <RoundRow
           key={round.index}
           round={round}
-          variant={variant}
-          isLatest={round.index === latestIndex}
-          loopRunning={state.status === 'running'}
+          variant={state.variant ?? 'pro'}
+          sessionId={state.sessionId}
+          sessionName={sessionName}
+          panelVisible={panelVisible}
         />
       ))}
     </div>
@@ -159,15 +168,6 @@ function SummaryBar({ state }: { state: ReviewLoopState }) {
   const phase = state.currentPhase
   const variant = state.variant ?? 'pro'
 
-  const fixedTotal = useMemo(
-    () =>
-      state.rounds.reduce(
-        (acc, r) => acc + r.triaged.filter((t) => t.decision === 'fix').length,
-        0
-      ),
-    [state.rounds]
-  )
-
   return (
     <div className="border border-border rounded-md" style={{ padding: '10px 12px' }}>
       <div className="flex items-center gap-3 flex-wrap">
@@ -176,7 +176,7 @@ function SummaryBar({ state }: { state: ReviewLoopState }) {
           {variant}
         </span>
         <span className="text-[11px] text-text-muted">
-          Round {state.iteration} · ${state.cumulativeCostUsd.toFixed(3)} spent{variant === 'pro' ? ` · ${fixedTotal} ${fixedTotal === 1 ? 'fix' : 'fixes'} so far` : ''}
+          Round {state.iteration}
         </span>
         {state.stopReason && (
           <span className="text-[11px] text-text-muted">
@@ -229,64 +229,74 @@ function stopReasonLabel(r: ReviewLoopStopReason): string {
   switch (r) {
     case 'converged': return 'converged (consecutive clean rounds)'
     case 'maxIterations': return 'iteration cap reached'
-    case 'costCap': return 'cost cap reached'
     case 'cancelled': return 'cancelled'
     case 'error': return 'error'
   }
 }
 
-function RoundCard({
+function RoundRow({
   round,
   variant,
-  isLatest,
-  loopRunning,
+  sessionId,
+  sessionName,
+  panelVisible,
 }: {
   round: ReviewLoopRound
   variant: 'lite' | 'pro'
-  isLatest: boolean
-  loopRunning: boolean
+  sessionId: string
+  sessionName: string
+  panelVisible: boolean
 }) {
   const fixCount = round.triaged.filter((t) => t.decision === 'fix').length
   const skipCount = round.triaged.filter(
     (t) => t.decision === 'skip' || t.decision === 'defer'
   ).length
-  const transcript = round.transcript ?? []
-  const isActiveRound = isLatest && loopRunning
+
+  const slots = PHASE_ORDER.map((phase) => slotFor(round, phase))
 
   return (
     <div className="border border-border rounded-md" style={{ padding: '10px 12px' }}>
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div className="flex items-center justify-between gap-2 flex-wrap" style={{ marginBottom: 8 }}>
         <p className="text-xs font-medium text-text">
           Round {round.index} <span className="text-text-muted">· {round.phase}</span>
         </p>
-        <span className="text-[11px] text-text-muted">
-          {variant === 'pro'
-            ? `${round.rawIssues.length} found · ${fixCount} fixed · ${skipCount} skipped · $${round.costUsd.toFixed(3)}`
-            : `$${round.costUsd.toFixed(3)}`}
-        </span>
+        {variant === 'pro' && (round.rawIssues.length > 0 || round.triaged.length > 0) && (
+          <span className="text-[11px] text-text-muted">
+            {round.rawIssues.length} found · {fixCount} fixed · {skipCount} skipped
+          </span>
+        )}
       </div>
 
       {round.errorMessage && (
-        <p className="text-[11px] text-danger" style={{ marginTop: 4 }}>
+        <p className="text-[11px] text-danger" style={{ marginBottom: 8 }}>
           {round.errorMessage}
         </p>
       )}
 
-      {variant === 'pro' && round.triaged.length > 0 && (
-        <div className="flex flex-col gap-1" style={{ marginTop: 8 }}>
-          {round.triaged.map((t) => (
-            <IssueRow key={t.id} issue={t} />
-          ))}
-        </div>
-      )}
+      {/* Three live terminal columns. */}
+      <div className="flex gap-2" style={{ minHeight: 360 }}>
+        {slots.map((slot) => (
+          <PhaseColumn
+            key={slot.phase}
+            slot={slot}
+            sessionId={sessionId}
+            sessionName={sessionName}
+            panelVisible={panelVisible}
+          />
+        ))}
+      </div>
 
-      {transcript.length > 0 && (
-        <LiveTranscript
-          lines={transcript}
-          defaultOpen={isActiveRound}
-          autoScroll={isActiveRound}
-          label={isActiveRound ? `Live output (${transcript.length})` : `Output (${transcript.length})`}
-        />
+      {variant === 'pro' && round.triaged.length > 0 && (
+        <details style={{ marginTop: 8 }}>
+          <summary className="text-[11px] text-text-muted cursor-pointer">
+            Triaged issues ({round.triaged.length})
+          </summary>
+          <div className="flex flex-col gap-1" style={{ marginTop: 6 }}>
+            {round.triaged.map((t) => (
+              <IssueRow key={t.id} issue={t} />
+            ))}
+          </div>
+        </details>
       )}
 
       {round.log.length > 0 && (
@@ -304,37 +314,123 @@ function RoundCard({
   )
 }
 
-function LiveTranscript({
-  lines,
-  defaultOpen,
-  autoScroll,
-  label,
-}: {
-  lines: string[]
-  defaultOpen: boolean
-  autoScroll: boolean
-  label: string
-}) {
-  const preRef = useRef<HTMLPreElement | null>(null)
+function slotFor(round: ReviewLoopRound, phase: ReviewLoopPhaseSlot['phase']): ReviewLoopPhaseSlot {
+  return (
+    round.phaseSlots.find((s) => s.phase === phase) ?? { phase, status: 'pending' }
+  )
+}
 
+function PhaseColumn({
+  slot,
+  sessionId,
+  sessionName,
+  panelVisible,
+}: {
+  slot: ReviewLoopPhaseSlot
+  sessionId: string
+  sessionName: string
+  panelVisible: boolean
+}) {
+  const register = useTerminalStore((s) => s.registerDynamicTerminal)
+
+  // Attach the renderer store to the PTY the main process spawned for this
+  // phase, so it shows up in terminal listings + keeps its lifecycle metadata.
   useEffect(() => {
-    if (!autoScroll) return
-    const el = preRef.current
-    if (!el) return
-    el.scrollTop = el.scrollHeight
-  }, [lines, autoScroll])
+    if (slot.terminalId && slot.tabId) {
+      register(slot.tabId, slot.terminalId, sessionId, sessionName, 'claude', sessionId)
+    }
+  }, [slot.terminalId, slot.tabId, sessionId, sessionName, register])
+
+  const frozen =
+    slot.status === 'completed' || slot.status === 'error' || slot.status === 'skipped'
 
   return (
-    <details open={defaultOpen} style={{ marginTop: 8 }}>
-      <summary className="text-[11px] text-text-muted cursor-pointer">{label}</summary>
-      <pre
-        ref={preRef}
-        className="text-[11px] text-text whitespace-pre-wrap font-mono bg-bg-tertiary rounded"
-        style={{ marginTop: 4, maxHeight: 280, overflowY: 'auto', padding: '6px 8px' }}
+    <div
+      className="flex-1 flex flex-col min-w-0 border border-border rounded overflow-hidden bg-bg-tertiary"
+      style={{ minWidth: 240 }}
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-bg-secondary" style={{ padding: '4px 8px' }}>
+        <span className="text-[11px] font-medium text-text">{PHASE_LABEL[slot.phase]}</span>
+        <PhasePill status={slot.status} />
+      </div>
+      <div className="flex-1 relative" style={{ minHeight: 0 }}>
+        {slot.terminalId ? (
+          <>
+            <TerminalView
+              terminalId={slot.terminalId}
+              sessionId={sessionId}
+              sessionName={sessionName}
+              visible={panelVisible}
+            />
+            {frozen && <FrozenOverlay status={slot.status} error={slot.errorMessage} />}
+          </>
+        ) : (
+          <PhasePlaceholder slot={slot} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PhasePlaceholder({ slot }: { slot: ReviewLoopPhaseSlot }) {
+  let text = 'Waiting to start…'
+  if (slot.status === 'skipped') text = 'Skipped — nothing to do'
+  else if (slot.status === 'error') text = slot.errorMessage ?? 'Failed'
+  else if (slot.status === 'running') text = 'Starting terminal…'
+  else if (slot.status === 'completed') text = '✓ Completed'
+  return (
+    <div className="absolute inset-0 flex items-center justify-center text-[11px] text-text-muted">
+      {text}
+    </div>
+  )
+}
+
+/**
+ * Read-only overlay drawn over a finished phase terminal. pointer-events stay
+ * off so the user can still scroll the scrollback to read it back; the dead PTY
+ * means keystrokes are inert anyway.
+ */
+function FrozenOverlay({
+  status,
+  error,
+}: {
+  status: ReviewLoopPhaseSlot['status']
+  error?: string
+}) {
+  let label = '✓ Completed — read-only'
+  let cls = 'text-success border-success/40 bg-success/10'
+  if (status === 'error') {
+    label = `✕ ${error ?? 'Error'}`
+    cls = 'text-danger border-danger/40 bg-danger/10'
+  } else if (status === 'skipped') {
+    label = '— Skipped'
+    cls = 'text-warning border-warning/40 bg-warning/10'
+  }
+  return (
+    <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
+      <div
+        className={`absolute top-0 left-0 right-0 flex items-center justify-center text-[10px] font-medium uppercase tracking-wide border-b ${cls}`}
+        style={{ padding: '2px 6px', backdropFilter: 'blur(0.5px)' }}
       >
-        {lines.join('\n')}
-      </pre>
-    </details>
+        {label}
+      </div>
+    </div>
+  )
+}
+
+function PhasePill({ status }: { status: ReviewLoopPhaseSlot['status'] }) {
+  let color = 'text-text-muted bg-bg-tertiary'
+  if (status === 'running') color = 'text-accent border border-accent/40 bg-accent/10'
+  else if (status === 'completed') color = 'text-success border border-success/40 bg-success/10'
+  else if (status === 'error') color = 'text-danger border border-danger/40 bg-danger/10'
+  else if (status === 'skipped') color = 'text-warning border border-warning/40 bg-warning/10'
+  return (
+    <span
+      className={`inline-flex items-center text-[9px] font-medium rounded uppercase tracking-wide ${color}`}
+      style={{ padding: '1px 5px' }}
+    >
+      {status}
+    </span>
   )
 }
 
