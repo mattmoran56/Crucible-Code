@@ -51,7 +51,7 @@ export function registerSchedulerHandlers(window: BrowserWindow) {
         false, // not a resume — first launch with prompt
         contextId,
         tabId,
-        terminalService.AUTO_PERMISSION_MODE_ARGS // auto (acceptEdits) mode — never bypass
+        terminalService.AUTO_PERMISSION_MODE_ARGS // inherit user's default (auto) mode — never bypass
       )
     }
   )
