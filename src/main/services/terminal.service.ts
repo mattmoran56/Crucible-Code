@@ -10,12 +10,23 @@ import { getStorePath } from '../store-path'
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
 /**
- * Permission args for every Claude session/agent we spawn: auto (acceptEdits)
- * mode. This auto-accepts edits so work flows hands-off while still prompting
- * for anything riskier than an edit. We NEVER use bypass /
- * `--dangerously-skip-permissions`.
+ * Permission args for every Claude session/agent we spawn.
+ *
+ * We deliberately pass NO `--permission-mode`, so the CLI falls back to the
+ * user's configured default — which is `auto`. Auto-accepts edits and safe
+ * actions so work flows hands-off while still prompting for anything riskier.
+ *
+ * Why empty and not `['--permission-mode', 'auto']`? Older Claude Code treated
+ * "auto" as an alias for `acceptEdits`; the CLI now exposes them as DISTINCT
+ * modes. We used to pass `acceptEdits` explicitly, which forced sessions OUT of
+ * `auto` and into the narrower accept-edits mode — the bug this fixes. Omitting
+ * the flag lets each session inherit the user's `auto` default instead.
+ *
+ * We NEVER use bypass / `--dangerously-skip-permissions`. This array is the
+ * single source of truth for session permission args, so it must never contain
+ * `acceptEdits`, `bypassPermissions`, or `--dangerously-skip-permissions`.
  */
-export const AUTO_PERMISSION_MODE_ARGS: string[] = ['--permission-mode', 'acceptEdits']
+export const AUTO_PERMISSION_MODE_ARGS: string[] = []
 
 interface TerminalInstance {
   pty: pty.IPty

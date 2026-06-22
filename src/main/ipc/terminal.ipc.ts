@@ -33,7 +33,8 @@ export function registerTerminalHandlers(window: BrowserWindow) {
         startWatching(repoPath, cwd)
       }
 
-      // Agent sessions run in auto (acceptEdits) mode — never bypass.
+      // Agent sessions inherit the user's default permission mode (auto) — we
+      // pass no explicit --permission-mode, and never bypass.
       const claudeArgs =
         (mode ?? 'shell') === 'claude' ? terminalService.AUTO_PERMISSION_MODE_ARGS : undefined
 

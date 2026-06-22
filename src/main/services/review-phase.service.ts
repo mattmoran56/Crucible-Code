@@ -37,10 +37,12 @@ export interface ForegroundPhaseOptions {
   /** Prompt piped into the interactive session via heredoc. */
   prompt: string
   /**
-   * Run the phase in auto (acceptEdits) mode — `--permission-mode acceptEdits`
-   * — so the loop progresses hands-off while still prompting for anything
-   * riskier than an edit. We never use bypass / `--dangerously-skip-permissions`.
-   * The user can still type into the terminal at any time.
+   * Run the phase in the user's default (auto) permission mode so the loop
+   * progresses hands-off while still prompting for anything riskier than an
+   * edit. We pass no explicit `--permission-mode` (see AUTO_PERMISSION_MODE_ARGS)
+   * and never use bypass / `--dangerously-skip-permissions`. The user can still
+   * type into the terminal at any time. When false, the session is spawned with
+   * no permission args at all (same effective default).
    */
   autoAcceptEdits?: boolean
   timeoutMs?: number

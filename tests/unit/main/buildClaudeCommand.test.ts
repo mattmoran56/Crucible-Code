@@ -9,7 +9,38 @@ vi.mock('../../../src/main/services/notification-server', () => ({
 }))
 vi.mock('../../../src/main/store-path', () => ({ getStorePath: () => '/tmp' }))
 
-import { buildClaudeCommand } from '../../../src/main/services/terminal.service'
+import {
+  buildClaudeCommand,
+  AUTO_PERMISSION_MODE_ARGS,
+} from '../../../src/main/services/terminal.service'
+
+describe('AUTO_PERMISSION_MODE_ARGS', () => {
+  it('is empty so sessions inherit the user default (auto) mode', () => {
+    // The fix: we pass NO --permission-mode, letting the CLI use the user's
+    // configured default of `auto`. Passing acceptEdits forced sessions out of
+    // auto, which was the bug.
+    expect(AUTO_PERMISSION_MODE_ARGS).toEqual([])
+  })
+
+  it('never forces acceptEdits and never bypasses permissions', () => {
+    expect(AUTO_PERMISSION_MODE_ARGS).not.toContain('acceptEdits')
+    expect(AUTO_PERMISSION_MODE_ARGS).not.toContain('bypassPermissions')
+    expect(AUTO_PERMISSION_MODE_ARGS).not.toContain('--dangerously-skip-permissions')
+    // No explicit --permission-mode at all → inherit the auto default.
+    expect(AUTO_PERMISSION_MODE_ARGS).not.toContain('--permission-mode')
+  })
+
+  it('produces a plain `claude` launch (no permission flag) for a fresh session', () => {
+    const cmd = buildClaudeCommand({
+      isResume: false,
+      isReview: false,
+      claudeArgs: AUTO_PERMISSION_MODE_ARGS,
+    })
+    expect(cmd).toBe('claude')
+    expect(cmd).not.toContain('--permission-mode')
+    expect(cmd).not.toContain('acceptEdits')
+  })
+})
 
 describe('buildClaudeCommand', () => {
   it('plain claude on fresh launch', () => {

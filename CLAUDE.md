@@ -6,7 +6,7 @@
 ## Claude session permissions
 
 - Never run Claude in bypass-permissions mode. Do not pass `--dangerously-skip-permissions`, and do not map a permission mode to it. The app deliberately never forces it.
-- Sessions — and any automated/foreground phase we spawn (e.g. the review loop, foundry workers) — run in **auto mode**, i.e. `--permission-mode acceptEdits`. This auto-accepts edits so work flows hands-off, while still prompting for anything riskier than an edit. The user can always step into the terminal.
+- Sessions — and any automated/foreground phase we spawn (e.g. the review loop, foundry workers) — run in **auto mode**. We get this by passing **no** `--permission-mode` at all, so the CLI inherits the user's configured default (`auto`). Do **not** pass `--permission-mode acceptEdits`: recent Claude Code makes `auto` and `acceptEdits` distinct modes, and forcing `acceptEdits` drops sessions out of the broader auto mode. Auto runs hands-off while still prompting for anything riskier than an edit; the user can always step into the terminal. The single source of truth is `AUTO_PERMISSION_MODE_ARGS` in `terminal.service.ts`, which is the empty array — keep it that way (never add `acceptEdits`/`bypassPermissions`).
 
 ## Documentation
 
