@@ -126,6 +126,26 @@ export function getLocalPRForPipeline(pipelineId: string): LocalPR | null {
   return null
 }
 
+/**
+ * Find the most recent non-merged local PR produced by a given session. Used as
+ * a robust fallback to link a captured PR to its Foundry pipeline when the
+ * in-memory capture metadata (pipelineId) was lost — e.g. the app restarted
+ * between the worker spawning and its `gh pr create`. The session id is stable:
+ * the captured record's sessionId equals the worker's context id, which equals
+ * the pipeline's sessionId.
+ */
+export function getLocalPRForSession(sessionId: string): LocalPR | null {
+  let best: LocalPR | null = null
+  for (const list of Object.values(readAll())) {
+    for (const p of list) {
+      if (p.sessionId === sessionId && p.status !== 'merged') {
+        if (!best || p.localNumber > best.localNumber) best = p
+      }
+    }
+  }
+  return best
+}
+
 // ── Mutations ─────────────────────────────────────────────────────────────
 
 /**

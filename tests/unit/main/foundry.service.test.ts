@@ -750,4 +750,28 @@ describe('foundry.service — local-PR mode', () => {
       rmSync(wt2, { recursive: true, force: true })
     }
   })
+  it('links a captured PR by sessionId when pipelineId metadata was lost (e.g. restart)', async () => {
+    const svc = await loadFresh()
+    const localPr = await import('../../../src/main/services/local-pr.service')
+    svc.saveConfig(baseConfig({ localPrMode: true }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const page: NotionTaskPayload = { id: 'p1', url: 'https://notion.so/p1', title: 'T', rawProperties: {} }
+    const pipe = await svc.startPipeline({ foundryId: 'f-1', page, reason: 'test' })
+    svc.ackTaskStarted('f-1', { pipelineId: pipe!.id, sessionId: 'sess-x', branch: 'foundry/t', worktreePath: '/tmp/wt', baseBranch: 'main' })
+    const rt = svc.getRuntime('f-1')!
+    expect(rt.state.pipelines[0].phase).toBe('implementing')
+
+    // Capture a local PR with NO capture metadata (no setCaptureContext call) but
+    // a matching sessionId — simulating a restart between spawn and gh pr create.
+    // The LOCAL_PR_CHANGED bus event matches the pipeline by sessionId, links it,
+    // and advances — so the missing pipelineId is recovered from the session.
+    await localPr.captureLocalPR({ contextId: 'sess-x', projectId: 'proj-1', worktreePath: '/tmp/wt', action: 'create', fields: { title: 'A', body: 'a', head: 'foundry/t', base: 'main' } })
+    const seeded = localPr.listLocalPRs('proj-1')[0]
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(rt.state.pipelines[0].phase).toBe('reviewing')
+    expect(localPr.getLocalPR(seeded.id)?.pipelineId).toBe(pipe!.id)
+    expect(localPr.getLocalPR(seeded.id)?.foundryId).toBe('f-1')
+  })
 })

@@ -45,7 +45,7 @@ import { getDefaultBranch } from './git.service'
 import { startReviewLoopLite } from './review-loop-lite.service'
 import { getTerminalBuffer, listTerminalsForSession, writeTerminal } from './terminal.service'
 import { readFile } from 'node:fs/promises'
-import { getLocalPR, getLocalPRForPipeline, listLocalPRs, patchLocalPR, LOCAL_PR_CHANGED } from './local-pr.service'
+import { getLocalPR, getLocalPRForPipeline, getLocalPRForSession, listLocalPRs, patchLocalPR, setCaptureContext, LOCAL_PR_CHANGED } from './local-pr.service'
 import { promoteLocalPR } from './local-pr-promote.service'
 import { runLocalCI, ciLogTail } from './local-ci.service'
 import type { LocalPR } from '../../shared/types'
@@ -333,10 +333,15 @@ export function startFoundryService(window: BrowserWindow): void {
   // Local-PR mode: advance the implementing phase the instant a local PR is
   // captured, instead of waiting for the 15s poll.
   unsubLocalPR = subscribeOnBus(LOCAL_PR_CHANGED, (lpr: LocalPR) => {
-    if (!lpr?.pipelineId) return
+    if (!lpr) return
     for (const rt of runtimes.values()) {
       if (!rt.config.localPrMode) continue
-      const p = rt.state.pipelines.find((pp) => pp.id === lpr.pipelineId && pp.phase === 'implementing')
+      // Match by pipelineId, or by sessionId when the capture metadata was lost.
+      const p = rt.state.pipelines.find(
+        (pp) =>
+          pp.phase === 'implementing' &&
+          (pp.id === lpr.pipelineId || (!!lpr.sessionId && pp.sessionId === lpr.sessionId))
+      )
       if (p) void checkPRForPipeline(rt, p)
     }
   })
@@ -1043,10 +1048,19 @@ async function checkPRForPipeline(rt: FoundryRuntime, p: FoundryPipeline): Promi
   rt.advancing.add(p.id)
   try {
     // Local-PR mode: advance on a captured local PR record (the gh shim wrote
-    // it), not a real GitHub PR.
+    // it), not a real GitHub PR. Match by pipelineId, falling back to sessionId
+    // — the capture metadata (pipelineId) can be lost if the app restarts
+    // between spawn and `gh pr create`, but the session link is stable.
     if (rt.config.localPrMode) {
-      const lpr = getLocalPRForPipeline(p.id)
+      let lpr = getLocalPRForPipeline(p.id)
+      if (!lpr && p.sessionId) lpr = getLocalPRForSession(p.sessionId)
       if (!lpr) return
+      // Stamp the linkage so the publisher (which filters by foundryId) and
+      // later lookups find it even when capture metadata was lost.
+      if (lpr.pipelineId !== p.id || lpr.foundryId !== rt.config.id) {
+        const order = rt.state.pipelines.findIndex((x) => x.id === p.id)
+        patchLocalPR(lpr.id, { pipelineId: p.id, foundryId: rt.config.id, order: Math.max(0, order) })
+      }
       const fresh = rt.state.pipelines.find((pp) => pp.id === p.id)
       if (!fresh || fresh.phase !== 'implementing') return
       fresh.localPrId = lpr.id
@@ -1484,6 +1498,18 @@ function rehydrateAfterStartup(rt: FoundryRuntime): void {
   // (skips already-open PRs) so this safely continues from the cursor.
   if (rt.state.publish?.status === 'running') {
     void publishLocalPRStack(rt.config.id)
+  }
+
+  // Re-assert local-PR capture intent for in-flight workers so a `gh pr create`
+  // that lands AFTER this restart is still linked to its pipeline (the registry
+  // is in-memory and otherwise lost on restart). Already-captured PRs are linked
+  // by the sessionId fallback in checkPRForPipeline.
+  if (rt.config.localPrMode) {
+    rt.state.pipelines.forEach((p, i) => {
+      if ((p.phase === 'implementing' || p.phase === 'spawn-requested') && p.sessionId) {
+        setCaptureContext(p.sessionId, { foundryId: rt.config.id, pipelineId: p.id, order: i })
+      }
+    })
   }
 
   // Make sure the configured base branch is reachable before we re-fire any
