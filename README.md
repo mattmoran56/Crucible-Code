@@ -31,6 +31,7 @@
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
 - **Review loop** — One-click review → triage → fix cycle on a branch, run as three live Claude Code terminals per round (watch and steer each one) that freeze when done, with stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
 - **Foundry** — Run a whole Notion backlog on autopilot. An interactive foreman Claude plans dependencies; multiple worker sessions run in parallel; each pipeline goes implement → draft PR → review loop → ready. Human reviews code and tests; everything else is automated. See [docs/FOUNDRY.md](docs/FOUNDRY.md)
+- **Local PRs** — A staging stage between a draft branch and an open GitHub PR. Snapshot any session into a viewable, reviewable local PR (or let capture mode intercept the agent's `gh pr create`), then **Promote** it to a real PR. In local-PR mode Foundry builds a chained stack overnight that you publish in one click with **Create PRs** (open → optional local CI → fix-on-failure → ready, in order)
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
@@ -335,6 +336,21 @@ Full pull request review without leaving the IDE — comparable to GitHub's web 
 <td><img src="docs/screenshots/pr-display-settings-full.png" alt="Per-project PR list display settings" /></td>
 </tr>
 </table>
+
+</details>
+
+<details>
+<summary><strong>Local PRs</strong></summary>
+
+A **local PR** is a tracked record of a would-be pull request — title, body, branch, base, diff — that lives on your machine *between* a draft branch and an open GitHub PR. You can view and review it like a PR, then **promote** it to a real GitHub PR that pushes those exact details up.
+
+**Producing one (any session)**
+- **Create local PR** — from a session's action menu, snapshots its branch/base into a local PR (title/body default from the last commit). The branch is pushed to origin so it's always promotable.
+- **Capture mode** — toggle **Capture PRs locally** on a session and the gh shim on its PATH intercepts the agent's `gh pr create`, turning it into a local PR instead of opening a real one. Every other `gh` command passes straight through.
+
+Local PRs appear in the normal PR list with a **Local** badge and a **Promote to PR** button. Promote pushes the branch, opens a real draft PR from the approved title/body/base, and the entry becomes the real PR.
+
+**Foundry overnight stacks.** Turn on **Local PR mode** in a Foundry's settings and an overnight run builds a *chained stack*: the first PR targets the integration branch, each subsequent one targets its predecessor. In the morning, **Create PRs** walks the stack in order — open each real PR, run optional [local CI](#review-loop) in Docker (`act`), fix-on-failure by resuming the worker, mark ready, then the next. The walk is resumable across restarts. The review loop runs against local PRs too, storing its findings on the record instead of posting a gh comment.
 
 </details>
 
