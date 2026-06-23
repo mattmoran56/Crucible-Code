@@ -575,6 +575,7 @@ export const mockApi = {
         if (cfg) cfg.paused = paused
       },
       runNow: async () => {},
+      publishPRs: async () => {},
       getState: async (foundryId: string) => states[foundryId] ?? null,
       taskStarted: async () => {},
       pipelineAction: async () => {},
@@ -592,6 +593,77 @@ export const mockApi = {
         return () => {
           const idx = stateListeners.indexOf(cb)
           if (idx >= 0) stateListeners.splice(idx, 1)
+        }
+      },
+    }
+  })(),
+
+  localPr: (() => {
+    const byProject: Record<string, Array<Record<string, unknown>>> = {}
+    const listeners: Array<(projectId: string, list: unknown[]) => void> = []
+    let seq = 0
+    const emit = (projectId: string) => {
+      for (const cb of listeners) cb(projectId, [...(byProject[projectId] ?? [])])
+    }
+    const find = (id: string) => {
+      for (const list of Object.values(byProject)) {
+        const hit = list.find((p) => p.id === id)
+        if (hit) return hit
+      }
+      return undefined
+    }
+    return {
+      list: async (projectId: string) => [...(byProject[projectId] ?? [])],
+      create: async (input: Record<string, any>) => {
+        seq += 1
+        const now = new Date().toISOString()
+        const pr = {
+          id: `lpr-${seq}`,
+          localNumber: seq,
+          projectId: input.projectId,
+          sessionId: input.sessionId,
+          worktreePath: input.worktreePath,
+          title: input.title || `Local PR ${seq}`,
+          body: input.body || 'Mock local PR body.',
+          branch: input.branch,
+          baseBranch: input.baseBranch || 'main',
+          status: 'local',
+          createdAt: now,
+          updatedAt: now,
+          log: [`${now} created from session ${input.sessionId}`],
+        }
+        ;(byProject[input.projectId] ??= []).push(pr)
+        emit(input.projectId)
+        return pr
+      },
+      update: async (id: string, upd: Record<string, unknown>) => {
+        const pr = find(id)
+        if (!pr) return null
+        Object.assign(pr, upd, { updatedAt: new Date().toISOString() })
+        emit(pr.projectId as string)
+        return pr
+      },
+      discard: async (id: string) => {
+        const pr = find(id)
+        if (!pr) return
+        const list = byProject[pr.projectId as string] ?? []
+        byProject[pr.projectId as string] = list.filter((p) => p.id !== id)
+        emit(pr.projectId as string)
+      },
+      promote: async (id: string) => {
+        const pr = find(id)
+        if (!pr) return null
+        seq += 1
+        Object.assign(pr, { status: 'open', realPrNumber: 1000 + seq, realPrUrl: `https://github.com/acme/repo/pull/${1000 + seq}`, updatedAt: new Date().toISOString() })
+        emit(pr.projectId as string)
+        return pr
+      },
+      setCapture: async () => {},
+      onStateUpdate: (cb: (projectId: string, list: unknown[]) => void) => {
+        listeners.push(cb)
+        return () => {
+          const idx = listeners.indexOf(cb)
+          if (idx >= 0) listeners.splice(idx, 1)
         }
       },
     }
