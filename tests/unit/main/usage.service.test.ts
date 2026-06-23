@@ -197,77 +197,31 @@ describe('usage.service polling + limit events', () => {
     expect(update?.payload).toMatchObject({ sessionId: id, cost: { totalCostUsd: 2 } })
   })
 
-  it('emits USAGE_LIMIT_REACHED on the rising edge of the 95% five-hour threshold', () => {
-    vi.useFakeTimers()
-    const sent: Array<{ channel: string; payload: unknown }> = []
-    const id = freshSessionId()
-    register(id)
-    writeStatusLine(id, {
-      cost: {},
-      rate_limits: { five_hour: { used_percentage: 96, resets_at: 1234 } },
-    })
-
-    startUsagePolling(fakeWindow(sent))
-    vi.advanceTimersByTime(30_000)
-
-    const events = sent.filter((m) => m.channel === IPC.USAGE_LIMIT_REACHED)
-    expect(events).toHaveLength(1)
-    expect(events[0].payload).toEqual({ sessionId: id, resetsAt: 1234 })
-  })
-
-  it('does not re-emit the limit event while usage stays above the threshold', () => {
-    vi.useFakeTimers()
-    const sent: Array<{ channel: string; payload: unknown }> = []
-    const id = freshSessionId()
-    register(id)
-    writeStatusLine(id, {
-      cost: {},
-      rate_limits: { five_hour: { used_percentage: 96, resets_at: 99 } },
-    })
-
-    startUsagePolling(fakeWindow(sent))
-    vi.advanceTimersByTime(30_000)
-    writeStatusLine(id, {
-      cost: {},
-      rate_limits: { five_hour: { used_percentage: 98, resets_at: 99 } },
-    })
-    vi.advanceTimersByTime(30_000)
-
-    expect(sent.filter((m) => m.channel === IPC.USAGE_LIMIT_REACHED)).toHaveLength(1)
-  })
-
-  it('re-arms the limit event after usage drops below the threshold and rises again', () => {
+  // The continue popup is no longer driven by a usage percentage. Polling only
+  // refreshes the live display; USAGE_LIMIT_REACHED is emitted from
+  // terminal.service when it detects the real "usage limit reached" banner that
+  // actually blocks a conversation (see detectUsageLimit). An account with no
+  // hard limit can sit at 100%+ without ever being blocked, so any percentage
+  // would mis-fire — hence the poller must never emit a limit event.
+  it('never emits USAGE_LIMIT_REACHED from polling, even at/over the cap', () => {
     vi.useFakeTimers()
     const sent: Array<{ channel: string; payload: unknown }> = []
     const id = freshSessionId()
     register(id)
     const limits = (pct: number) => ({
       cost: {},
-      rate_limits: { five_hour: { used_percentage: pct, resets_at: 7 } },
+      rate_limits: { five_hour: { used_percentage: pct, resets_at: 1234 } },
     })
 
     startUsagePolling(fakeWindow(sent))
-    writeStatusLine(id, limits(97))
+    writeStatusLine(id, limits(96))
     vi.advanceTimersByTime(30_000)
-    writeStatusLine(id, limits(10)) // window reset
-    vi.advanceTimersByTime(30_000)
-    writeStatusLine(id, limits(96)) // second crossing
+    writeStatusLine(id, limits(150)) // overage / no hard limit
     vi.advanceTimersByTime(30_000)
 
-    expect(sent.filter((m) => m.channel === IPC.USAGE_LIMIT_REACHED)).toHaveLength(2)
-  })
-
-  it('stays below threshold → never emits a limit event', () => {
-    vi.useFakeTimers()
-    const sent: Array<{ channel: string; payload: unknown }> = []
-    const id = freshSessionId()
-    register(id)
-    writeStatusLine(id, {
-      cost: {},
-      rate_limits: { five_hour: { used_percentage: 94, resets_at: 1 } },
-    })
-    startUsagePolling(fakeWindow(sent))
-    vi.advanceTimersByTime(60_000)
+    // Display updates still flow…
+    expect(sent.some((m) => m.channel === IPC.USAGE_SESSION_UPDATE)).toBe(true)
+    // …but the limit event never fires from the poller.
     expect(sent.filter((m) => m.channel === IPC.USAGE_LIMIT_REACHED)).toHaveLength(0)
   })
 
