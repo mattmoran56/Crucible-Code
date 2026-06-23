@@ -98,7 +98,8 @@ export async function materializeFoundryTask(payload: FoundryFireTaskPayload): P
       project.repoPath,
       newSession.id,
       'agent',
-      payload.workerPermissionMode
+      payload.workerPermissionMode,
+      payload.localPrCapture
     )
     useTerminalStore.setState((state) => ({
       terminals: {

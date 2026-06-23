@@ -15,6 +15,7 @@ import { installForeman } from '../services/foundry-foreman.service'
 import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
 import { seedPermissions, startWatching } from '../services/permission-sync.service'
+import { setCaptureContext, type LocalPRCaptureMeta } from '../services/local-pr.service'
 import { getStorePath } from '../store-path'
 
 // Worker permission args. We DELIBERATELY never pass
@@ -54,6 +55,10 @@ export function registerFoundryHandlers(window: BrowserWindow): void {
     foundry.runPassNow(foundryId)
   })
 
+  handle(IPC.FOUNDRY_PUBLISH_PRS, async (_e, foundryId: string): Promise<void> => {
+    void foundry.publishLocalPRStack(foundryId)
+  })
+
   handle(
     IPC.FOUNDRY_RESET_STATE,
     async (_e, foundryId: string): Promise<{ ok: boolean; reason?: string }> => {
@@ -88,12 +93,18 @@ export function registerFoundryHandlers(window: BrowserWindow): void {
       repoPath: string | undefined,
       contextId: string,
       tabId: string,
-      permissionMode: FoundryWorkerPermissionMode
+      permissionMode: FoundryWorkerPermissionMode,
+      localPrCapture?: LocalPRCaptureMeta
     ): Promise<string> => {
       writeClaudeHookSettings(cwd, claudeTheme, sessionId)
       if (repoPath) {
         seedPermissions(repoPath, cwd)
         startWatching(repoPath, cwd)
+      }
+      // Local-PR mode: register capture intent BEFORE spawning so the worker's
+      // first `gh pr create` is intercepted into a local PR for this pipeline.
+      if (localPrCapture) {
+        setCaptureContext(contextId, localPrCapture)
       }
       const claudeArgs = PERMISSION_MODE_ARGS[permissionMode] ?? PERMISSION_MODE_ARGS.bypassPermissions
       return terminalService.spawnTerminal(
