@@ -382,6 +382,17 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 880, height: 2640 },
     delay: 1200,
   },
+  {
+    name: 'local-pr-card',
+    storyId: 'pr-prcard--local',
+    viewport: { width: 340, height: 220 },
+  },
+  {
+    name: 'local-pr-panel',
+    storyId: 'pr-localprreviewpanel--default',
+    viewport: { width: 760, height: 640 },
+    delay: 600,
+  },
 ]
 
 async function captureScreenshots() {

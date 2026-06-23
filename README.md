@@ -352,6 +352,15 @@ Local PRs appear in the normal PR list with a **Local** badge and a **Promote to
 
 **Foundry overnight stacks.** Turn on **Local PR mode** in a Foundry's settings and an overnight run builds a *chained stack*: the first PR targets the integration branch, each subsequent one targets its predecessor. In the morning, **Create PRs** walks the stack in order — open each real PR, run optional [local CI](#review-loop) in Docker (`act`), fix-on-failure by resuming the worker, mark ready, then the next. The walk is resumable across restarts. The review loop runs against local PRs too, storing its findings on the record instead of posting a gh comment.
 
+See [docs/LOCAL_PRS.md](docs/LOCAL_PRS.md) for the full lifecycle, the captured `gh` commands, and the publish flow.
+
+<table>
+<tr>
+<td><img src="docs/screenshots/local-pr-card.png" alt="A local PR in the PR list — Local badge, LOCAL-1 number, branch → base, Promote / Discard actions" /></td>
+<td><img src="docs/screenshots/local-pr-panel.png" alt="The local PR review tab — rendered body with review checklist, plus the local diff — and a Promote to PR button" /></td>
+</tr>
+</table>
+
 </details>
 
 <details>

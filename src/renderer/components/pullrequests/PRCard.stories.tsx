@@ -114,3 +114,35 @@ export const Draft: Story = {
     </Frame>
   ),
 }
+
+export const Local: Story = {
+  render: () => {
+    const display: PRListDisplay = {
+      ...DEFAULT_PR_LIST_DISPLAY,
+      fields: { ...DEFAULT_PR_LIST_DISPLAY.fields, number: true, state: true, branches: true },
+    }
+    return (
+      <Frame>
+        <PRCard
+          pr={{
+            ...basePR,
+            number: -1,
+            title: 'Feature: new job_drop_versions + Go models',
+            headRefName: 'session/versioning-tables-models',
+            baseRefName: 'project/simulation-versioning',
+            isDraft: true,
+            ciStatus: 'none',
+            isLocal: true,
+            localPrId: 'lpr-1',
+          }}
+          isNew={false}
+          isActive={false}
+          display={display}
+          onClick={() => {}}
+          onPromote={() => {}}
+          onDiscard={() => {}}
+        />
+      </Frame>
+    )
+  },
+}
