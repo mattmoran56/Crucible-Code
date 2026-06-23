@@ -53,6 +53,8 @@ interface ActiveLoop {
   abort: AbortController
   config: ReviewLoopConfig
   prNumber?: number
+  /** True when reviewing a local PR — forces the diff-based /review path. */
+  isLocalPr?: boolean
   /** HEAD sha at loop start — the baseline for "did this round produce a commit". */
   startSha: string
   /** Foreground spawn context (passed through from the renderer). */
@@ -90,6 +92,8 @@ export interface StartReviewLoopLiteOptions {
   baseBranch: string
   config: ReviewLoopConfig
   prNumber?: number
+  /** True when reviewing a local PR (no GitHub PR) — forces the diff /review path. */
+  isLocalPr?: boolean
   /** Foreground spawn context — theme, claude account config dir, source repo. */
   claudeTheme?: string
   claudeConfigDir?: string
@@ -128,6 +132,7 @@ export async function startReviewLoopLite(opts: StartReviewLoopLiteOptions): Pro
     abort: new AbortController(),
     config,
     prNumber: opts.prNumber,
+    isLocalPr: opts.isLocalPr,
     startSha,
     claudeTheme: opts.claudeTheme,
     claudeConfigDir: opts.claudeConfigDir,
@@ -217,7 +222,7 @@ async function runReviewPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
   setPhase(loop, round, 'review')
 
   let prompt: string
-  if (loop.prNumber) {
+  if (loop.prNumber && !loop.isLocalPr) {
     pushLog(round, `Running /review ${loop.prNumber}…`)
     prompt = `/review ${loop.prNumber}`
   } else {
