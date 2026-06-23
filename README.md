@@ -393,6 +393,7 @@ Monitor Claude Code usage and rate limits from the right panel.
 - **Session stats** — Cost, duration, lines added/removed per session
 - **Activity chart** — Daily activity over the past week (messages, sessions, tool calls)
 - **Subscription info** — Shows your current plan and rate limit tier
+- **Auto-continue on limit** — When a session or agent actually hits its usage limit, a popup offers to queue a follow-up prompt that fires automatically once the window resets. The trigger watches the terminal for Claude's real "usage limit reached" banner — the message that genuinely blocks a conversation — not a usage percentage, so accounts with no hard limit (overage/extra usage) never mis-fire. Opt into Settings → Usage Limits to skip the popup and auto-queue `continue` for you
 
 </details>
 

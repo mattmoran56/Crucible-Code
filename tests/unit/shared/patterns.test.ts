@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { INTERVENTION_PATTERNS } from '../../../src/shared/patterns'
+import { INTERVENTION_PATTERNS, detectUsageLimit } from '../../../src/shared/patterns'
 
 function matchesAny(text: string): boolean {
   return INTERVENTION_PATTERNS.some((p) => p.test(text))
@@ -202,5 +202,59 @@ describe('INTERVENTION_PATTERNS — per-pattern behavior', () => {
     const p = bySource('Do you want to allow')
     expect(p.test('Do you want to allow this tool to edit files?')).toBe(true)
     expect(p.test('Do you want to deny this?')).toBe(false)
+  })
+})
+
+describe('detectUsageLimit — genuine block banners', () => {
+  it('detects the interactive session-limit banner and maps the window', () => {
+    expect(detectUsageLimit("You've hit your session limit · resets 3:45pm")).toEqual({ kind: 'session' })
+  })
+
+  it('detects the weekly-limit banner', () => {
+    expect(detectUsageLimit("You've hit your weekly limit · resets Mon 12:00am")).toEqual({ kind: 'weekly' })
+  })
+
+  it('detects the Opus-limit banner', () => {
+    expect(detectUsageLimit("You've hit your Opus limit · resets 3:45pm")).toEqual({ kind: 'opus' })
+  })
+
+  it('maps a bare "usage limit" wording to generic', () => {
+    expect(detectUsageLimit("You've hit your usage limit")).toEqual({ kind: 'generic' })
+  })
+
+  it('detects the older "Claude usage limit reached" phrasing', () => {
+    expect(detectUsageLimit('Claude usage limit reached. Your limit will reset at 2pm (America/New_York)'))
+      .toEqual({ kind: 'generic' })
+  })
+
+  it('parses the inline reset timestamp from the headless print-mode banner', () => {
+    expect(detectUsageLimit('Claude AI usage limit reached|1760000400'))
+      .toEqual({ kind: 'generic', resetsAt: 1760000400 })
+  })
+
+  it('sees through ANSI styling and box-drawing around the banner', () => {
+    const styled = "\x1b[31m│\x1b[0m You've hit your \x1b[1msession\x1b[0m limit · resets 3:45pm \x1b[31m│\x1b[0m"
+    expect(detectUsageLimit(styled)).toEqual({ kind: 'session' })
+  })
+
+  it('matches a banner split so the wording spans the concatenated tail', () => {
+    // Simulates two PTY chunks already joined into the scan tail.
+    expect(detectUsageLimit("noise\nYou've hit your sess" + 'ion limit · resets 4pm'))
+      .toEqual({ kind: 'session' })
+  })
+})
+
+describe('detectUsageLimit — non-blocking output stays quiet', () => {
+  it.each([
+    'Just some normal output',
+    'Building project...',
+    'API Error: Server is temporarily limiting requests (not your usage limit)',
+    'API Error: Request rejected (429) · this may be a temporary capacity issue.',
+    'rate_limit_error: This request would exceed your account\'s rate limit. Please try again later.',
+    'five_hour 92% · seven_day 40%',
+    'Your usage is approaching the limit',
+    '',
+  ])('returns null for: %s', (line) => {
+    expect(detectUsageLimit(line)).toBeNull()
   })
 })
