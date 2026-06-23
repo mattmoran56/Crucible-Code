@@ -17,6 +17,10 @@ interface Props {
   onOpenAsMainBranch: () => void
   onDelete: () => void
   onRename: (newName: string) => Promise<void>
+  /** Snapshot this session's branch into a local PR. Omit to hide the action. */
+  onCreateLocalPR?: () => void
+  /** Toggle capture mode (intercept the agent's `gh pr create`). Omit to hide. */
+  onToggleCaptureLocalPr?: () => void
 }
 
 const EllipsisIcon = () => (
@@ -69,7 +73,7 @@ function StatusIndicator({ status }: { status: SessionStatus | null }) {
   }
 }
 
-export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onDelete, onRename }: Props) {
+export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onDelete, onRename, onCreateLocalPR, onToggleCaptureLocalPr }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [showRename, setShowRename] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
@@ -157,6 +161,10 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
           <DropdownMenu
             items={[
               ...(!isOpenedAsMain ? [{ label: 'Open as main branch', onClick: onOpenAsMainBranch }] : []),
+              ...(onCreateLocalPR ? [{ label: 'Create local PR', onClick: onCreateLocalPR }] : []),
+              ...(onToggleCaptureLocalPr
+                ? [{ label: session.captureLocalPr ? 'Capture PRs locally ✓' : 'Capture PRs locally', onClick: onToggleCaptureLocalPr }]
+                : []),
               { label: 'Rename', onClick: openRename },
               { label: 'Delete', variant: 'danger' as const, onClick: () => setShowConfirm(true) },
             ]}

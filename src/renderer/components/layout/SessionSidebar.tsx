@@ -34,13 +34,13 @@ const PR_POLL_INTERVAL = 30_000
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, openPR, openAsMainBranch, openBranch, reconcilePRWorktrees } =
+  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, setSessionCaptureLocalPr, openPR, openAsMainBranch, openBranch, reconcilePRWorktrees } =
     useSessionStore()
   const claudeWebSessions = useClaudeWebStore((s) => s.sessions)
   const claudeWebLoading = useClaudeWebStore((s) => s.loading)
   const loadClaudeWebSessions = useClaudeWebStore((s) => s.loadSessions)
   const clearClaudeWebSessions = useClaudeWebStore((s) => s.clear)
-  const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, loadCurrentUser, markSeen, clear: clearPRs, currentUser } =
+  const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadLocalPRs, applyLocalPRUpdate, loadSeenPRs, loadCurrentUser, markSeen, clear: clearPRs, currentUser } =
     usePRStore()
   const prViewByRepo = usePRViewStore((s) => s.byRepo)
   const resetPRView = usePRViewStore((s) => s.reset)
@@ -166,6 +166,7 @@ export function SessionSidebar() {
     }
 
     refresh()
+    loadLocalPRs(activeProject.id)
     loadSeenPRs(activeProject.id)
     loadCurrentUser(activeProject.repoPath)
 
@@ -185,6 +186,15 @@ export function SessionSidebar() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
     }
   }, [activeProject?.id])
+
+  // Live local-PR updates pushed from the main process (create / promote /
+  // capture). Keeps the merged PR list fresh without polling gh.
+  useEffect(() => {
+    const unsub = window.api.localPr.onStateUpdate((projectId, list) => {
+      applyLocalPRUpdate(projectId, list)
+    })
+    return () => { unsub() }
+  }, [applyLocalPRUpdate])
 
   // Claude Web sessions: load + poll on the same cadence when the project has
   // the feature enabled. Re-fires when currentUser arrives so the first list
@@ -214,6 +224,9 @@ export function SessionSidebar() {
         session.worktreePath,
         'session'
       )
+      // Re-assert local-PR capture intent so it applies to terminals spawned
+      // after a restart (capture state lives in memory in the main process).
+      window.api.localPr.setCapture(session.id, !!session.captureLocalPr)
     }
     // Also register with the notification store for cross-project badge counts
     registerSessions(sessions)
@@ -560,9 +573,28 @@ export function SessionSidebar() {
 
   const handlePRClick = async (pr: (typeof pullRequests)[0]) => {
     setEditorMode(false)
+    if (pr.isLocal) {
+      // Local PRs aren't on GitHub yet — there's no PR worktree to check out.
+      // Jump to the producing session (matched by branch) so the user can keep
+      // working or promote it. Full local-PR detail/promote view: Phase 2.
+      const session = sessions.find((s) => s.branchName === pr.headRefName)
+      if (session) setActiveSession(session.id)
+      return
+    }
     markSeen(activeProject.id, pr.number)
     clearContextStatuses(`__pr__:${pr.number}`)
     await openPR(activeProject.repoPath, pr)
+  }
+
+  const handleCreateLocalPR = async (session: (typeof sessions)[0]) => {
+    await window.api.localPr.create({
+      projectId: session.projectId,
+      sessionId: session.id,
+      worktreePath: session.worktreePath,
+      branch: session.branchName,
+      baseBranch: session.baseBranch,
+    })
+    // The main process pushes the new list via onStateUpdate; nothing else to do.
   }
 
   return (
@@ -712,6 +744,8 @@ export function SessionSidebar() {
                       onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
                       onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
                       onRename={(newName) => renameSession(activeProject.id, activeProject.repoPath, session.id, newName)}
+                      onCreateLocalPR={() => handleCreateLocalPR(session)}
+                      onToggleCaptureLocalPr={() => setSessionCaptureLocalPr(activeProject.id, session.id, !session.captureLocalPr)}
                     />
                   ))}
                 </React.Fragment>
@@ -857,11 +891,13 @@ export function SessionSidebar() {
                 <PRCard
                   key={pr.number}
                   pr={pr}
-                  isNew={!seenPRs.includes(pr.number)}
+                  isNew={!pr.isLocal && !seenPRs.includes(pr.number)}
                   isActive={!editorMode && activePRNumber === pr.number}
                   needsAttention={getContextStatus(`__pr__:${pr.number}`) === 'attention'}
                   display={prListDisplayByRepo[activeProject.repoPath] ?? prListDisplayDefault}
                   onClick={() => handlePRClick(pr)}
+                  onPromote={pr.isLocal && pr.localPrId ? () => window.api.localPr.promote(pr.localPrId!) : undefined}
+                  onDiscard={pr.isLocal && pr.localPrId ? () => window.api.localPr.discard(pr.localPrId!) : undefined}
                 />
               ))
             )}

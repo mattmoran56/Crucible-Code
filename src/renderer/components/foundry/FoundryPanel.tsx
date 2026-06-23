@@ -110,6 +110,17 @@ function FoundryView({
           </div>
         </div>
         <div className="flex gap-1 shrink-0">
+          {cfg.enabled && cfg.localPrMode && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={state?.publish?.status === 'running'}
+              onClick={() => void window.api.foundry.publishPRs(cfg.id)}
+              title="Promote this run's local PRs to real GitHub PRs, in order"
+            >
+              {state?.publish?.status === 'running' ? 'Creating PRs…' : 'Create PRs'}
+            </Button>
+          )}
           {cfg.enabled && (
             <Button size="sm" variant="ghost" onClick={() => void runNow(cfg.id)}>
               Run pass

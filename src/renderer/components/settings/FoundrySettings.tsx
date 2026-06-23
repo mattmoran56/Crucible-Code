@@ -509,6 +509,37 @@ function FoundryEditor({ cfg, schema, apiToken, onSave, onClose }: EditorProps) 
           )}
         </fieldset>
 
+        <fieldset className="border border-border rounded-md" style={{ padding: '10px' }}>
+          <legend className="text-[11px] text-text-muted">Local PRs</legend>
+          <p className="text-[11px] text-text-muted" style={{ marginBottom: 8 }}>
+            When on, workers produce <em>local PRs</em> instead of opening real GitHub PRs — the run
+            builds a chained stack on an integration branch that you publish later with the
+            <strong> Create PRs</strong> button. Off = workers open real draft PRs as usual.
+          </p>
+          <div
+            className="flex items-center gap-2"
+            style={{ marginBottom: draft.localPrMode ? 10 : 0 }}
+          >
+            <span className="text-[11px] text-text-muted">Local PR mode</span>
+            <ToggleGroup
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'on', label: 'On' },
+              ]}
+              value={draft.localPrMode ? 'on' : 'off'}
+              onChange={(v) => update({ localPrMode: v === 'on' })}
+            />
+          </div>
+          {draft.localPrMode && (
+            <Input
+              label="Foundry integration branch"
+              hint="The first PR in the stack targets this branch; each subsequent PR targets its predecessor. Defaults to foundry/integration-<id>."
+              value={draft.foundryBranch ?? ''}
+              onChange={(e) => update({ foundryBranch: e.target.value })}
+            />
+          )}
+        </fieldset>
+
         <div className="flex gap-2 mt-2">
           <Button
             size="sm"
