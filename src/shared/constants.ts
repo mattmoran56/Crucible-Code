@@ -244,4 +244,14 @@ export const IPC = {
   FOUNDRY_OPEN_FOREMAN: 'foundry:open-foreman',
   FOUNDRY_REQUEST_PASS: 'foundry:request-pass',
   FOUNDRY_RESET_STATE: 'foundry:reset-state',
+  FOUNDRY_PUBLISH_PRS: 'foundry:publish-prs',
+
+  // Local PRs — a session-level stage between a draft branch and an open PR
+  LOCAL_PR_LIST: 'local-pr:list',
+  LOCAL_PR_CREATE: 'local-pr:create',
+  LOCAL_PR_UPDATE: 'local-pr:update',
+  LOCAL_PR_DISCARD: 'local-pr:discard',
+  LOCAL_PR_PROMOTE: 'local-pr:promote',
+  LOCAL_PR_SET_CAPTURE: 'local-pr:set-capture',
+  LOCAL_PR_STATE_UPDATE: 'local-pr:state:update',
 } as const
