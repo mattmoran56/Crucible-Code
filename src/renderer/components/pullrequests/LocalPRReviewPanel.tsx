@@ -116,8 +116,8 @@ export function LocalPRReviewPanel({ localPR }: { localPR: LocalPR }) {
           </div>
           {!loading && files.length > 0 && (
             <ul className="text-[11px] mb-2">
-              {files.map((f) => (
-                <li key={f.path} className="flex items-center gap-2 text-text-muted">
+              {files.map((f, i) => (
+                <li key={`${f.path}-${i}`} className="flex items-center gap-2 text-text-muted">
                   <span className="truncate">{f.path}</span>
                   <span className="ml-auto shrink-0">
                     <span className="text-success">+{f.additions}</span>{' '}

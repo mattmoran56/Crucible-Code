@@ -132,6 +132,8 @@ export const mockApi = {
     defaultBranch: async () => 'main',
     mergeCheck: async () => ({ hasConflicts: false }),
     merge: async () => {},
+    compareFiles: async () => mockWorkingFiles,
+    compareDiff: async () => mockUnifiedDiff,
   },
 
   worktree: {
