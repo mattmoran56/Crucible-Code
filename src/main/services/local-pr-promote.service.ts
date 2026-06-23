@@ -96,8 +96,9 @@ export async function promoteLocalPR(
       attention: undefined,
     })
 
-    // 3. Optionally flip to ready-for-review (Foundry batch path).
-    if (opts.markReady) {
+    // 3. Flip to ready-for-review when the caller asks, or when the worker
+    //    already marked the local PR ready (captured `gh pr ready`).
+    if (opts.markReady || lpr.readyForReview) {
       appendLog(id, `marking PR #${pr.number} ready`)
       await github.markPRReady(cwd, pr.number)
     }

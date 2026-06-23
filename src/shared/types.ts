@@ -933,6 +933,8 @@ export interface LocalPR {
 
   // State + promote results:
   status: LocalPRStatus
+  /** Set when the worker ran `gh pr ready` (captured) — promote marks the real PR ready. */
+  readyForReview?: boolean
   realPrNumber?: number
   realPrUrl?: string
   ciResult?: LocalPRCIResult

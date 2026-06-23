@@ -209,27 +209,102 @@ function fakeUrl(localNumber: number): string {
 }
 
 /**
- * Turn a captured `gh pr create` (from the gh shim) into a local PR. Resolves
- * branch/base/sha, links Foundry metadata if the context registered any, and
- * returns the fake PR ref the shim echoes to the agent. Idempotent on re-run:
- * an existing `local` record for the same branch is updated in place.
+ * Find the local PR a captured non-create command (edit/ready/view) targets.
+ * One context (worker session) maps to one in-flight local PR — match by
+ * sessionId, falling back to the branch. Prefer the most recent un-promoted one.
+ */
+function findContextLocalPR(
+  contextId: string,
+  projectId: string,
+  branch: string
+): LocalPR | undefined {
+  const list = listLocalPRs(projectId)
+  const candidates = list.filter(
+    (p) => (p.sessionId === contextId || p.branch === branch) && p.status !== 'merged'
+  )
+  candidates.sort((a, b) => b.localNumber - a.localNumber)
+  return candidates[0]
+}
+
+/** Build `gh pr view` output for a local PR — JSON object if --json, else text. */
+function buildView(lpr: LocalPR, jsonFields?: string): string {
+  const all: Record<string, unknown> = {
+    number: lpr.localNumber,
+    title: lpr.title,
+    body: lpr.body,
+    url: fakeUrl(lpr.localNumber),
+    state: lpr.status === 'merged' ? 'MERGED' : 'OPEN',
+    isDraft: !lpr.readyForReview,
+    headRefName: lpr.branch,
+    baseRefName: lpr.baseBranch,
+    headRefOid: lpr.headSha ?? '',
+    baseRefOid: '',
+    mergeable: 'UNKNOWN',
+    closed: false,
+    additions: 0,
+    deletions: 0,
+  }
+  if (jsonFields && jsonFields.trim()) {
+    const keys = jsonFields.split(',').map((s) => s.trim()).filter(Boolean)
+    const obj: Record<string, unknown> = {}
+    for (const k of keys) obj[k] = k in all ? all[k] : null
+    return JSON.stringify(obj)
+  }
+  return `#${lpr.localNumber}  ${lpr.title}\n${lpr.branch} → ${lpr.baseBranch}  ·  ${all.state}${lpr.readyForReview ? '' : ' (draft)'}\n\n${lpr.body}`
+}
+
+/**
+ * Handle a captured gh command (from the shim) against the local PR record.
+ * `create` makes/updates the record; `edit` updates title/body; `ready` flags
+ * it ready-for-review; `view` returns the record's fields. The result is echoed
+ * back to the agent so the worker's normal flow runs transparently.
  */
 export async function captureLocalPR(args: {
   contextId: string
   projectId: string
   worktreePath: string
+  action?: 'create' | 'edit' | 'ready' | 'view'
   fields: {
     title: string
     body: string
+    haveTitle?: boolean
+    haveBody?: boolean
     base?: string
     head?: string
     sha?: string
     draft?: boolean
+    json?: string
   }
-}): Promise<{ number: number; url: string }> {
+}): Promise<{ number?: number; url?: string; view_b64?: string }> {
   const { contextId, projectId, worktreePath, fields } = args
+  const action = args.action ?? 'create'
   const meta = getCaptureContext(contextId)
   const branch = fields.head || (await currentBranch(worktreePath)) || 'HEAD'
+
+  // edit / ready / view operate on an existing record for this context.
+  if (action !== 'create') {
+    const target = findContextLocalPR(contextId, projectId, branch)
+    if (!target) {
+      // Nothing to act on yet — for view return an empty-ish payload; for
+      // edit/ready fall through to create so we don't silently drop the change.
+      if (action === 'view') return { view_b64: Buffer.from('').toString('base64') }
+    } else if (action === 'view') {
+      return { view_b64: Buffer.from(buildView(target, fields.json), 'utf8').toString('base64') }
+    } else if (action === 'ready') {
+      const updated = upsertLocalPR({ ...target, readyForReview: true, log: [...target.log, `${nowIso()} marked ready-for-review (captured gh pr ready)`].slice(-200) })
+      return { number: updated.localNumber, url: fakeUrl(updated.localNumber) }
+    } else if (action === 'edit') {
+      const updated = upsertLocalPR({
+        ...target,
+        title: fields.haveTitle ? fields.title : target.title,
+        body: fields.haveBody ? fields.body : target.body,
+        log: [...target.log, `${nowIso()} updated via captured gh pr edit`].slice(-200),
+      })
+      return { number: updated.localNumber, url: fakeUrl(updated.localNumber) }
+    }
+  }
+
+  // create (or edit/ready with no existing record → treat as create).
   const baseBranch = fields.base || (await safeDefaultBranch(worktreePath))
   const headSha = fields.sha || (await safeHeadSha(worktreePath))
   const title = fields.title || branchToTitle(branch)
@@ -275,7 +350,7 @@ export async function captureLocalPR(args: {
     status: 'local',
     createdAt: ts,
     updatedAt: ts,
-    log: [`${ts} captured from gh pr create (context ${contextId})`],
+    log: [`${ts} captured from gh pr ${action} (context ${contextId})`],
   }
   upsertLocalPR(pr)
   return { number: localNumber, url: fakeUrl(localNumber) }

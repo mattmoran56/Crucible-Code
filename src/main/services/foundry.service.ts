@@ -1132,32 +1132,6 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
   p.phase = 'finalizing'
   saveAndEmit(rt)
 
-  // Local-PR mode: there's no real PR to mark ready (and no ready-for-review
-  // injection in v1). The local PR is left in `draft` for the user to publish
-  // via "Create PRs". Apply the Notion ready-updates and complete the pipeline.
-  if (rt.config.localPrMode) {
-    const notion = notionAccess(rt.config)
-    if (notion && (rt.config.readyForReviewUpdates ?? []).length > 0) {
-      const ctx = {
-        ...buildPlaceholderContext(p.page),
-        branch: p.branch ?? '',
-        sessionId: p.sessionId ?? '',
-        prUrl: p.prUrl ?? '',
-        prNumber: String(p.prNumber),
-      }
-      try {
-        await updatePageProperties(notion.apiToken, p.page.id, rt.config.readyForReviewUpdates, ctx)
-      } catch (err) {
-        log(p, `Notion ready-updates failed: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-    p.phase = 'done'
-    log(p, 'Pipeline complete — local PR ready to publish.')
-    saveAndEmit(rt)
-    requestPass(rt, 'slot-freed', false)
-    return
-  }
-
   try {
     // Inject the ready-for-review command into the WORKER's existing PTY
     // (the same claude session that did the implement). The user can watch
@@ -1208,7 +1182,13 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
     // it as attention rather than silently overriding. With no prompt
     // configured we keep the auto-mark behaviour so default autopilot still
     // works.
-    if (tpl) {
+    // Local-PR mode: the worker's `gh pr edit`/`gh pr ready` were captured into
+    // the local PR record (checklist body + ready flag) and get replayed on
+    // promote — so there's no real PR to verify/mark here. Otherwise verify (or
+    // mark) the real GitHub PR as today.
+    if (rt.config.localPrMode) {
+      log(p, 'Local-PR mode: ready/checklist captured locally — will be applied on promote.')
+    } else if (tpl) {
       const verifiedReady = await verifyPRReady(p.worktreePath, p.prNumber)
       if (!verifiedReady) {
         p.attention = {

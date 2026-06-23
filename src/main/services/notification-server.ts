@@ -38,20 +38,31 @@ export interface LocalPRCaptureArgs {
   contextId: string
   projectId: string
   worktreePath: string
+  /** Which gh subcommand was intercepted. */
+  action: 'create' | 'edit' | 'ready' | 'view'
   fields: {
     title: string
     body: string
+    /** Whether --title / --body(-file) were actually passed (for edit). */
+    haveTitle?: boolean
+    haveBody?: boolean
     base?: string
     head?: string
     sha?: string
     draft?: boolean
+    /** Comma-separated field list from `gh pr view --json`. */
+    json?: string
   }
 }
 
-/** Allocates a local PR for a captured `gh pr create`; returns the fake PR ref. */
+/**
+ * Handles a captured gh command against the local PR record. Returns the fake
+ * PR ref (create/edit), nothing meaningful (ready), or base64 view output
+ * (view) the shim prints back to the agent.
+ */
 export type LocalPRCaptureFn = (
   args: LocalPRCaptureArgs
-) => Promise<{ number: number; url: string }>
+) => Promise<{ number?: number; url?: string; view_b64?: string }>
 
 let localPRCaptureFn: LocalPRCaptureFn | null = null
 
@@ -224,12 +235,16 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
             try {
               const body = Buffer.concat(chunks).toString('utf8')
               const data = JSON.parse(body) as {
+                action?: 'create' | 'edit' | 'ready' | 'view'
                 title_b64?: string
                 body_b64?: string
+                have_title?: boolean
+                have_body?: boolean
                 base?: string
                 head?: string
                 sha?: string
                 draft?: boolean
+                json?: string
                 cwd?: string
               }
               const url = new URL(req.url!, `http://127.0.0.1`)
@@ -251,13 +266,17 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
                 contextId: mapping.contextId,
                 projectId: mapping.projectId,
                 worktreePath: mapping.worktreePath,
+                action: data.action ?? 'create',
                 fields: {
                   title: decode(data.title_b64),
                   body: decode(data.body_b64),
+                  haveTitle: data.have_title,
+                  haveBody: data.have_body,
                   base: data.base,
                   head: data.head,
                   sha: data.sha,
                   draft: data.draft,
+                  json: data.json,
                 },
               })
 
