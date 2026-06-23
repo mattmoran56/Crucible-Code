@@ -2,7 +2,8 @@ import { execFile } from 'child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'util'
-import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread, CIStatus, PRReviewState, PRReviewSummary, GitHubCollaborator, PRLabel } from '../../shared/types'
+import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread, PRReviewState, PRReviewSummary, GitHubCollaborator, PRLabel } from '../../shared/types'
+import { deriveCIStatus } from '../../shared/ci'
 
 const execFileAsync = promisify(execFile)
 
@@ -124,21 +125,6 @@ function summarizeLatestReviews(
     return [...byAuthor.values()]
   }
   return []
-}
-
-function deriveCIStatus(rollup: Array<{ status?: string | null; conclusion?: string | null }> | null | undefined): CIStatus {
-  if (!rollup || rollup.length === 0) return 'none'
-  const isPending = rollup.some((c) => {
-    const s = c.status?.toLowerCase()
-    return s && s !== 'completed'
-  })
-  if (isPending) return 'pending'
-  const failureConclusions = new Set(['failure', 'cancelled', 'timed_out', 'action_required'])
-  const isFailure = rollup.some((c) => {
-    const concl = c.conclusion?.toLowerCase()
-    return concl ? failureConclusions.has(concl) : false
-  })
-  return isFailure ? 'failure' : 'success'
 }
 
 export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
