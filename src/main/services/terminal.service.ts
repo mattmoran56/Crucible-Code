@@ -4,8 +4,10 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
-import { handleHookEvent, findContextById } from './notification-server'
+import { handleHookEvent, findContextById, getNotificationServerPort } from './notification-server'
 import { getStorePath } from '../store-path'
+import { ensureGhShimInstalled } from './gh-shim.service'
+import { shouldCaptureContext } from './local-pr.service'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
@@ -171,6 +173,14 @@ function spawnPty(
 ): pty.IPty {
   const shell = process.env.SHELL || '/bin/zsh'
 
+  // Local-PR capture: when this context is in capture mode, prepend the gh shim
+  // dir to PATH so the agent's `gh pr create` is intercepted into a local PR.
+  const capture = shouldCaptureContext(instance.contextId)
+  const shimDir = capture ? ensureGhShimInstalled() : null
+  // Prepend in the shell body too — the login shell (`-l`) re-sources the
+  // user's profile, which may re-prepend PATH; doing it here wins afterwards.
+  const pathPrefix = shimDir ? `export PATH=${shellQuote(shimDir)}:"$PATH"; ` : ''
+
   let command: string
   let args: string[]
 
@@ -182,11 +192,11 @@ function spawnPty(
       commandString: instance.commandString,
       claudeArgs: instance.claudeArgs,
     })
-    args = ['-l', '-c', shellBody]
+    args = ['-l', '-c', pathPrefix + shellBody]
   } else if (instance.mode === 'command' && instance.commandString) {
     // Run a specific command via shell -l -c "cmd", exits when done
     command = shell
-    args = ['-l', '-c', instance.commandString]
+    args = ['-l', '-c', pathPrefix + instance.commandString]
   } else {
     command = shell
     args = []
@@ -211,6 +221,15 @@ function spawnPty(
   // these to the URL, so the notification server can resolve which tab fired.
   env.CRUCIBLE_CONTEXT_ID = instance.contextId
   env.CRUCIBLE_TAB_ID = instance.tabId
+
+  // Local-PR capture env — read by the gh shim. Also prepend the shim dir to
+  // PATH at the env level (belt-and-braces with the shell-body prepend above).
+  if (shimDir) {
+    env.CRUCIBLE_LOCAL_PR = '1'
+    env.CRUCIBLE_GH_SHIM_DIR = shimDir
+    env.CRUCIBLE_NOTIFY_PORT = String(getNotificationServerPort() ?? '')
+    env.PATH = `${shimDir}:${env.PATH ?? ''}`
+  }
 
   const ptyProcess = pty.spawn(command, args, {
     name: 'xterm-256color',
