@@ -4,7 +4,7 @@ import App from '../App'
 import { setupStoresForStory, resetStores } from './helpers/storeSetup'
 import { useNotificationStore } from '../stores/notificationStore'
 import type { SessionStatus } from '../../shared/types'
-import { mockReviewLoopRunning, mockReviewLoopCompleted } from '@mock/mockData'
+import { mockReviewLoopRunning, mockReviewLoopCompleted, mockReviewLoopHeadless } from '@mock/mockData'
 
 const meta: Meta<typeof App> = {
   title: 'App/Full Layout',
@@ -368,6 +368,18 @@ export const ReviewLoopCompleted: Story = {
       setupStoresForStory({
         activeWorkspaceTab: 'review-loop',
         reviewLoopState: mockReviewLoopCompleted,
+      })
+      return <Story />
+    },
+  ],
+}
+
+export const ReviewLoopHeadless: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({
+        activeWorkspaceTab: 'review-loop',
+        reviewLoopState: mockReviewLoopHeadless,
       })
       return <Story />
     },

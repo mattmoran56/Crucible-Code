@@ -513,6 +513,30 @@ export function getTerminalCwd(terminalId: string): string | undefined {
   return terminals.get(terminalId)?.cwd
 }
 
+/**
+ * Kill every review-loop PTY for a session (tabId prefixed `review-loop:`).
+ *
+ * The review loop can open three PTYs per round across many rounds; without an
+ * explicit sweep they accumulate toward the macOS 511 pseudo-terminal cap. We
+ * call this when a loop finalizes and when a new loop starts for the session,
+ * so stale phase terminals never pile up. The renderer keeps each xterm's
+ * scrollback after the PTY dies, so frozen/completed columns stay readable.
+ * Returns the number of terminals killed.
+ */
+export function killReviewLoopTerminals(sessionId: string): number {
+  let killed = 0
+  for (const [id, instance] of terminals) {
+    if (instance.sessionId === sessionId && instance.tabId.startsWith('review-loop:')) {
+      instance.stopped = true
+      try { instance.pty.kill() } catch { /* already dead */ }
+      terminals.delete(id)
+      unpersistTerminal(id)
+      killed += 1
+    }
+  }
+  return killed
+}
+
 /** Kill all terminals belonging to a session. Returns cwds for cleanup of watchers. */
 export function killSessionTerminals(sessionId: string): string[] {
   const cwds: string[] = []
