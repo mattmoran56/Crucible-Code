@@ -1548,14 +1548,14 @@ function rehydrateAfterStartup(rt: FoundryRuntime): void {
         break
     }
   }
-  if (rt.state.passInFlight) {
-    rt.state.passInFlight = false
-    if (rt.state.passes.length > 0) {
-      const last = rt.state.passes[rt.state.passes.length - 1]
-      if (last.status === 'running') {
-        last.status = 'aborted'
-        last.endedAt = new Date().toISOString()
-      }
+  rt.state.passInFlight = false
+  // Any pass still marked 'running' after a restart is a zombie (its foreman PTY
+  // is gone) — abort it so it doesn't linger forever. (A foreman PTY spawn that
+  // failed leaves such a record.)
+  for (const pass of rt.state.passes) {
+    if (pass.status === 'running') {
+      pass.status = 'aborted'
+      pass.endedAt = pass.endedAt ?? new Date().toISOString()
     }
   }
   saveAndEmit(rt)
