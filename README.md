@@ -29,7 +29,7 @@
 - **Remote access** — Pair a second device's browser to your desktop instance over the LAN, or over a hosted end-to-end encrypted Cloudflare Worker relay that works through VPNs and hotel Wi-Fi. View projects, sessions, settings, and live agent terminals from anywhere (full mobile layout, PWA-installable on iOS)
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
-- **Review loop** — One-click review → triage → fix cycle on a branch, run as three live Claude Code terminals per round (watch and steer each one) that freeze when done, with stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
+- **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
 - **Foundry** — Run a whole Notion backlog on autopilot. An interactive foreman Claude plans dependencies; multiple worker sessions run in parallel; each pipeline goes implement → draft PR → review loop → ready. Human reviews code and tests; everything else is automated. See [docs/FOUNDRY.md](docs/FOUNDRY.md)
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
@@ -449,15 +449,18 @@ Create configurable action buttons that run shell commands or Claude prompts fro
 <details>
 <summary><strong>Review loop</strong></summary>
 
-Automate the review → triage → fix cycle on a branch. Each round opens **three live Claude Code terminals side by side** — Review, Triage, Implementation — that you can watch and type into in real time. There is no headless `claude -p`: every phase is a real interactive terminal, so you can step in and steer it whenever you want.
+Automate the review → triage → fix cycle on a branch. Each round runs three phases — Review, Triage, Implementation — in one of two modes, chosen per project in **Settings → Review Loop**:
+
+- **Headless (`-p`, the default)** — each phase runs as a background `claude -p` process with **no pseudo-terminal**, and the panel streams its transcript read-only. Because it uses no PTY, you can run many loops at once without hitting the macOS pseudo-terminal limit. It runs in your normal auto permission mode — never `--dangerously-skip-permissions` and never `--permission-mode acceptEdits`.
+- **Interactive** — each phase opens a live Claude Code terminal side by side that you can watch and type into in real time, so you can step in and steer it whenever you want.
 
 1. **Review** — A Claude terminal reviews the diff vs. base. In the Pro variant it writes structured findings to `.crucible/review-loop/round-N-issues.json`; in Lite it runs `/review` on the PR.
 2. **Triage** — A second Claude terminal reads those findings and fans out a sub-agent per issue. Each sub-agent decides `fix` / `skip` / `defer` / `noop` and writes a short justification.
 3. **Implementation** — A third Claude terminal applies the fixes, commits, and pushes.
 
-Each terminal advances when its turn finishes (detected via Claude's `Stop` hook), then **freezes with a read-only "Completed" overlay** so its output stays readable but can't be edited. The next phase starts in a fresh terminal, and every round opens a new row of three columns — so the whole history of a loop stays on screen.
+In interactive mode each phase advances when its turn finishes (detected via Claude's `Stop` hook), then **freezes with a read-only "Completed" overlay** so its output stays readable but can't be edited; in headless mode the phase ends when the `claude -p` process exits. Either way the next phase starts in a fresh column, and every round opens a new row of three columns — so the whole history of a loop stays on screen.
 
-The loop stops on the first of: N consecutive clean rounds (default 2), iteration cap (default 5), or manual cancel. Workspace defaults and per-project overrides live in **Settings → Review Loop**, including a per-project toggle that hides the toolbar button and prevents the loop from running for that scope.
+The loop stops on the first of: N consecutive clean rounds (default 2), iteration cap (default 5), or manual cancel. Phase terminals are swept when a loop finishes, when a new loop starts for the session, and when the session is closed, so PTYs never accumulate toward the macOS limit. Workspace defaults and per-project overrides live in **Settings → Review Loop**, including the headless/interactive run-mode toggle and a per-project toggle that hides the toolbar button and prevents the loop from running for that scope.
 
 Skipped or deferred items get summarised in a single sticky comment on the open PR (using a hidden marker so subsequent rounds update the same comment instead of re-posting). That gives reviewers a record of what was knowingly left undone and why.
 

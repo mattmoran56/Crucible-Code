@@ -7,6 +7,7 @@
 
 - Never run Claude in bypass-permissions mode. Do not pass `--dangerously-skip-permissions`, and do not map a permission mode to it. The app deliberately never forces it.
 - Sessions — and any automated/foreground phase we spawn (e.g. the review loop, foundry workers) — run in **auto mode**. We get this by passing **no** `--permission-mode` at all, so the CLI inherits the user's configured default (`auto`). Do **not** pass `--permission-mode acceptEdits`: recent Claude Code makes `auto` and `acceptEdits` distinct modes, and forcing `acceptEdits` drops sessions out of the broader auto mode. Auto runs hands-off while still prompting for anything riskier than an edit; the user can always step into the terminal. The single source of truth is `AUTO_PERMISSION_MODE_ARGS` in `terminal.service.ts`, which is the empty array — keep it that way (never add `acceptEdits`/`bypassPermissions`).
+- This applies to the **headless review-loop path** too (`claude -p`, the default run mode for the review loop and foundry workers). The headless runner in `claude-headless.service.ts` runs `claude --print --output-format stream-json --verbose` plus `AUTO_PERMISSION_MODE_ARGS` (i.e. no permission flag) — never `--dangerously-skip-permissions`, never `acceptEdits`. It seeds the worktree permission allowlist + hooks so an auto-mode run still has its pre-approved tools. Headless is the **default** (separate `-p` usage pot, and it avoids the macOS PTY limit); interactive foreground terminals are the opt-out via the **Settings → Review Loop** run-mode toggle.
 
 ## Documentation
 
