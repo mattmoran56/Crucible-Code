@@ -464,7 +464,7 @@ The loop stops on the first of: N consecutive clean rounds (default 2), iteratio
 
 Skipped or deferred items get summarised in a single sticky comment on the open PR (using a hidden marker so subsequent rounds update the same comment instead of re-posting). That gives reviewers a record of what was knowingly left undone and why.
 
-The Review Loop tab in the session workspace shows live progress: an overall status pill and current phase, the three terminal columns per round with their own status pills, per-round triage decisions, and a per-round log.
+The Review Loop tab in the session workspace shows live progress: an overall status pill and current phase, three columns per round with their own status pills (each either a live terminal or a streamed headless transcript), per-round triage decisions, and a per-round log.
 
 <table>
 <tr>
@@ -472,7 +472,8 @@ The Review Loop tab in the session workspace shows live progress: an overall sta
 <td><img src="docs/screenshots/review-loop-completed.png" alt="Review Loop tab after the loop converged" /></td>
 </tr>
 <tr>
-<td colspan="2"><img src="docs/screenshots/review-loop-settings.png" alt="Workspace defaults and per-project overrides for the review loop" /></td>
+<td><img src="docs/screenshots/review-loop-headless.png" alt="Headless run: each phase streams its claude -p transcript read-only, no terminal" /></td>
+<td><img src="docs/screenshots/review-loop-settings.png" alt="Workspace defaults and per-project overrides, including the headless/interactive run-mode toggle" /></td>
 </tr>
 </table>
 

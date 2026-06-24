@@ -896,3 +896,72 @@ export const mockReviewLoopCompleted: ReviewLoopState = {
   ],
 }
 
+/**
+ * Headless run (the default `-p` mode): the phases have no PTY/terminalId, so
+ * the panel streams each phase's `claude -p` transcript read-only. Review +
+ * triage are frozen; the fix phase is mid-stream.
+ */
+export const mockReviewLoopHeadless: ReviewLoopState = {
+  sessionId: 'sess-1',
+  branch: 'session/add-pr-review',
+  baseBranch: 'main',
+  worktreePath: '/Users/dev/.codecrucible-worktrees/CodeCrucible/add-pr-review',
+  variant: 'lite',
+  status: 'running',
+  currentPhase: 'fix',
+  iteration: 1,
+  startedAt: new Date(baseTime).toISOString(),
+  skippedIssues: [],
+  rounds: [
+    {
+      index: 1,
+      startedAt: new Date(baseTime + 1_000).toISOString(),
+      phase: 'fix',
+      phaseSlots: [
+        {
+          phase: 'review',
+          status: 'completed',
+          tabId: 'review-loop:r1:review',
+          transcript: [
+            '[13:00:01] ▶ session 9c2f started (claude-opus-4-8)',
+            '[13:00:03] Running /review on the PR diff…',
+            '[13:00:21] 🔧 Bash git diff main...session/add-pr-review',
+            '[13:00:34] Found 2 candidate issues: a refresh/selection race and a missing await.',
+          ],
+        },
+        {
+          phase: 'triage',
+          status: 'completed',
+          tabId: 'review-loop:r1:triage',
+          transcript: [
+            '[13:00:36] ▶ session 41ab started (claude-opus-4-8)',
+            '[13:00:39] 🔧 Task investigate prStore refresh race',
+            '[13:00:58] 🔧 Task investigate markPRSeen await',
+            '[13:01:12] Decision: fix both — each was introduced on this branch.',
+          ],
+        },
+        {
+          phase: 'fix',
+          status: 'running',
+          tabId: 'review-loop:r1:fix',
+          transcript: [
+            '[13:01:15] ▶ session 7d80 started (claude-opus-4-8)',
+            '[13:01:19] 🔧 Edit src/renderer/stores/prStore.ts',
+            '[13:01:27] 🔧 Edit src/renderer/components/pullrequests/PRListItem.tsx',
+            '[13:01:33] 🔧 Bash git commit -m "review-loop: fix 2 issues from round 1"',
+          ],
+        },
+      ],
+      log: [
+        '[2026-04-30T13:00:01Z] Running /review on the PR diff…',
+        '[2026-04-30T13:00:34Z] Review complete.',
+        '[2026-04-30T13:00:36Z] Triaging review output…',
+        '[2026-04-30T13:01:12Z] Triage complete.',
+        '[2026-04-30T13:01:15Z] Applying fixes…',
+      ],
+      rawIssues: [],
+      triaged: [],
+    },
+  ],
+}
+
