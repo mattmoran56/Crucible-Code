@@ -6,6 +6,8 @@ import type { ReviewLoopState } from '../../../src/shared/types'
 const h = vi.hoisted(() => {
   const s: any = {
     phaseCalls: [],
+    headlessCalls: [],
+    killCalls: [],
     failTab: null,
     sameSha: true,
     shaCounter: 0,
@@ -51,6 +53,19 @@ vi.mock('../../../src/main/services/review-phase.service', () => ({
     }
     return Promise.resolve({ ok: true, terminalId: `term-${opts.tabId}`, output: `OUT:${opts.tabId}` })
   }),
+  // Headless phases have no PTY: record the call, stream a line, return ok.
+  runHeadlessPhase: vi.fn((opts: Record<string, any>) => {
+    h.headlessCalls.push(opts)
+    opts.onTranscript?.('▶ headless line')
+    return Promise.resolve({ ok: true, terminalId: '', output: 'OUT:headless' })
+  }),
+}))
+
+vi.mock('../../../src/main/services/terminal.service', () => ({
+  killReviewLoopTerminals: vi.fn((sessionId: string) => {
+    h.killCalls.push(sessionId)
+    return 0
+  }),
 }))
 
 vi.mock('child_process', () => ({
@@ -86,7 +101,9 @@ const opts = (over: Record<string, any> = {}) => ({
   worktreePath: '/wt/sess-1',
   branch: 'feat/x',
   baseBranch: 'main',
-  config: { enabled: true, variant: 'lite' as const, maxIterations: 5, consecutiveCleanRounds: 1 },
+  // Default to the interactive (foreground) path so the existing assertions
+  // about terminalId / onSpawn hold; headless has its own test below.
+  config: { enabled: true, variant: 'lite' as const, maxIterations: 5, consecutiveCleanRounds: 1, headless: false },
   prNumber: 42,
   repoPath: '/repo',
   ...over,
@@ -94,6 +111,8 @@ const opts = (over: Record<string, any> = {}) => ({
 
 beforeEach(() => {
   h.phaseCalls = []
+  h.headlessCalls = []
+  h.killCalls = []
   h.failTab = null
   h.holdTab = null
   h.sameSha = true
@@ -152,7 +171,7 @@ describe('startReviewLoopLite', () => {
 
   it('stops at the iteration cap when rounds keep producing commits', async () => {
     h.sameSha = false // every round advances HEAD → never converges
-    await startReviewLoopLite(opts({ config: { enabled: true, variant: 'lite', maxIterations: 2, consecutiveCleanRounds: 2 } }))
+    await startReviewLoopLite(opts({ config: { enabled: true, variant: 'lite', maxIterations: 2, consecutiveCleanRounds: 2, headless: false } }))
     await vi.waitFor(() => expect(latest()?.status).not.toBe('running'))
 
     const final = latest()!
@@ -197,5 +216,26 @@ describe('startReviewLoopLite', () => {
 
     cancelReviewLoopLite('sess-1') // clean up so the session doesn't leak
     await vi.waitFor(() => expect(latest()?.status).toBe('cancelled'))
+  })
+
+  it('sweeps stale review-loop terminals on start and on finalize', async () => {
+    await startReviewLoopLite(opts())
+    await vi.waitFor(() => expect(latest()?.status).not.toBe('running'))
+    // Once before the first round (new-loop sweep) and once on finalize.
+    expect(h.killCalls).toEqual(['sess-1', 'sess-1'])
+  })
+
+  it('runs phases headlessly (no PTY) and streams a transcript into each slot', async () => {
+    await startReviewLoopLite(
+      opts({ config: { enabled: true, variant: 'lite', maxIterations: 5, consecutiveCleanRounds: 1, headless: true } })
+    )
+    await vi.waitFor(() => expect(latest()?.status).not.toBe('running'))
+
+    expect(h.headlessCalls.length).toBe(3) // review + triage + fix
+    expect(h.phaseCalls).toHaveLength(0) // no foreground terminals
+
+    const slots = latest()!.rounds[0].phaseSlots
+    expect(slots.every((s) => s.terminalId === undefined)).toBe(true)
+    expect(slots.find((s) => s.phase === 'review')!.transcript).toContain('▶ headless line')
   })
 })

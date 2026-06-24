@@ -115,6 +115,7 @@ export const useReviewLoopStore = create<ReviewLoopStoreState>()((set, get) => (
       variant: override.variant ?? workspace.variant,
       maxIterations: override.maxIterations ?? workspace.maxIterations,
       consecutiveCleanRounds: override.consecutiveCleanRounds ?? workspace.consecutiveCleanRounds,
+      headless: override.headless ?? workspace.headless,
     }
   },
 

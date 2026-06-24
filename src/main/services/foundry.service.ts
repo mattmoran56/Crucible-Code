@@ -1099,6 +1099,9 @@ async function runReviewPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<v
     variant: 'lite' as const,
     maxIterations: rt.config.reviewLoopOverride?.maxIterations ?? 5,
     consecutiveCleanRounds: rt.config.reviewLoopOverride?.consecutiveCleanRounds ?? 2,
+    // Foundry runs unattended overnight, so headless (`claude -p`, no PTY) is
+    // always the right mode here — it also keeps the worker off the PTY limit.
+    headless: true,
   }
   try {
     await startReviewLoopLite({

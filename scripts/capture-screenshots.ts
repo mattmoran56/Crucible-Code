@@ -174,6 +174,11 @@ const targets: ScreenshotTarget[] = [
     delay: 2000,
   },
   {
+    name: 'review-loop-headless',
+    storyId: 'app-full-layout--review-loop-headless',
+    delay: 2000,
+  },
+  {
     name: 'review-loop-settings',
     storyId: 'app-full-layout--review-loop-settings',
     delay: 2000,

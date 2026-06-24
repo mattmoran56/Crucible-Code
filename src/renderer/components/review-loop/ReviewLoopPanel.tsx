@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useReviewLoopStore } from '../../stores/reviewLoopStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
@@ -107,26 +107,37 @@ export function ReviewLoopPanel({ visible = true }: Props) {
         {state ? (
           <LoopStateView state={state} sessionName={session.name} panelVisible={visible} />
         ) : (
-          <EmptyState variant={config.variant} />
+          <EmptyState variant={config.variant} headless={config.headless} />
         )}
       </div>
     </div>
   )
 }
 
-function EmptyState({ variant }: { variant: 'lite' | 'pro' }) {
+function EmptyState({ variant, headless }: { variant: 'lite' | 'pro'; headless: boolean }) {
   return (
     <div className="text-xs text-text-muted">
-      <p>Press <strong>Start review loop</strong> to begin. Each round opens three live Claude Code terminals you can watch and type into:</p>
+      <p>
+        Press <strong>Start review loop</strong> to begin. Each round runs three phases{' '}
+        {headless ? (
+          <>as background <code>claude -p</code> runs — the panel streams each transcript:</>
+        ) : (
+          <>as live Claude Code terminals you can watch and type into:</>
+        )}
+      </p>
       <ol style={{ marginTop: 8, paddingLeft: 18 }}>
         <li><strong>Review</strong> — Claude reviews the diff vs. base{variant === 'lite' ? ' (via /review on the PR)' : ' and records findings'}.</li>
         <li><strong>Triage</strong> — sub-agents investigate each finding and decide fix / skip / defer.</li>
         <li><strong>Implementation</strong> — Claude applies the fixes, commits, and pushes.</li>
       </ol>
       <p style={{ marginTop: 12 }}>
-        Each terminal freezes (read-only) when its phase finishes; the next phase starts in a fresh column. A new row of three columns opens for every round.
+        {headless
+          ? 'Headless runs use no pseudo-terminal, so many loops can run at once without hitting the macOS PTY limit. '
+          : 'Each terminal freezes (read-only) when its phase finishes; the next phase starts in a fresh column. '}
+        A new row of three columns opens for every round.
         The loop stops after consecutive clean rounds, the iteration cap, or manual cancel.
         {variant === 'pro' ? ' Skipped or deferred items get summarised in a sticky comment on the PR.' : ''}
+        {' '}You can switch between headless and interactive in Settings → Review Loop.
       </p>
     </div>
   )
@@ -364,6 +375,12 @@ function PhaseColumn({
             />
             {frozen && <FrozenOverlay status={slot.status} error={slot.errorMessage} />}
           </>
+        ) : slot.transcript ? (
+          <HeadlessTranscript
+            lines={slot.transcript}
+            status={slot.status}
+            error={slot.errorMessage}
+          />
         ) : (
           <PhasePlaceholder slot={slot} />
         )}
@@ -381,6 +398,43 @@ function PhasePlaceholder({ slot }: { slot: ReviewLoopPhaseSlot }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center text-[11px] text-text-muted">
       {text}
+    </div>
+  )
+}
+
+/**
+ * Headless phases have no PTY — render the streamed `claude -p` transcript
+ * read-only instead of an xterm, auto-scrolling to the tail as lines arrive.
+ */
+function HeadlessTranscript({
+  lines,
+  status,
+  error,
+}: {
+  lines: string[]
+  status: ReviewLoopPhaseSlot['status']
+  error?: string
+}) {
+  const ref = useRef<HTMLPreElement>(null)
+  // Stick to the bottom as new lines stream in.
+  useEffect(() => {
+    const el = ref.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [lines.length])
+
+  const frozen =
+    status === 'completed' || status === 'error' || status === 'skipped'
+
+  return (
+    <div className="absolute inset-0 flex flex-col">
+      <pre
+        ref={ref}
+        className="flex-1 text-[11px] leading-[1.4] text-text-muted whitespace-pre-wrap break-words font-mono"
+        style={{ margin: 0, padding: '6px 8px', overflowY: 'auto' }}
+      >
+        {lines.length > 0 ? lines.join('\n') : 'Starting headless phase…'}
+      </pre>
+      {frozen && <FrozenOverlay status={status} error={error} />}
     </div>
   )
 }
