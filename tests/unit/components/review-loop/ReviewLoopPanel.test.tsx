@@ -110,10 +110,47 @@ describe('ReviewLoopPanel', () => {
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument()
   })
 
-  it('shows the Start action and intro when no loop has run', () => {
-    useReviewLoopStore.setState({ states: {} })
+  it('shows the Start action and a headless intro when no loop has run (default)', () => {
+    useReviewLoopStore.setState({ states: {} }) // workspace default is headless
     render(<ReviewLoopPanel />)
     expect(screen.getByRole('button', { name: /Start review loop/i })).toBeInTheDocument()
-    expect(screen.getByText(/three live Claude Code terminals/i)).toBeInTheDocument()
+    expect(screen.getByText(/no pseudo-terminal/i)).toBeInTheDocument()
+  })
+
+  it('shows the interactive intro when headless is turned off', () => {
+    useReviewLoopStore.setState({
+      states: {},
+      settings: {
+        workspace: { ...DEFAULT_REVIEW_LOOP_CONFIG, headless: false },
+        projectOverrides: {},
+      },
+    })
+    render(<ReviewLoopPanel />)
+    expect(screen.getByText(/Each terminal freezes \(read-only\)/i)).toBeInTheDocument()
+  })
+
+  it('renders a streamed transcript (no xterm) for a headless phase', () => {
+    useReviewLoopStore.setState({
+      states: {
+        s1: state({
+          rounds: [
+            round(1, [
+              {
+                phase: 'review',
+                status: 'running',
+                tabId: 'review-loop:r1:review',
+                transcript: ['▶ session started', '🔧 Read src/a.ts'],
+              },
+              { phase: 'triage', status: 'pending' },
+              { phase: 'fix', status: 'pending' },
+            ]),
+          ],
+        }),
+      },
+    })
+    render(<ReviewLoopPanel />)
+    // The transcript renders as plain text, not a bound terminal view.
+    expect(screen.getByText(/🔧 Read src\/a\.ts/)).toBeInTheDocument()
+    expect(screen.queryByTestId('terminal-view')).not.toBeInTheDocument()
   })
 })

@@ -267,6 +267,7 @@ describe('reviewLoopStore.effectiveConfig', () => {
       variant: 'pro' as const,
       maxIterations: 1,
       consecutiveCleanRounds: 9,
+      headless: false,
     }
     useReviewLoopStore.setState({ settings: { workspace, projectOverrides: { p1: full } } })
     expect(useReviewLoopStore.getState().effectiveConfig('p1')).toEqual(full)

@@ -56,6 +56,7 @@ export function ReviewLoopSettings({ projects }: Props) {
                   if (next.variant !== ws.variant) delta.variant = next.variant
                   if (next.maxIterations !== ws.maxIterations) delta.maxIterations = next.maxIterations
                   if (next.consecutiveCleanRounds !== ws.consecutiveCleanRounds) delta.consecutiveCleanRounds = next.consecutiveCleanRounds
+                  if (next.headless !== ws.headless) delta.headless = next.headless
                   setProjectOverride(project.id, Object.keys(delta).length === 0 ? undefined : delta)
                 }}
               />
@@ -140,6 +141,25 @@ function ConfigCard({ title, description, config, onChange, customized, onReset 
           ]}
           value={config.variant}
           onChange={(v) => update({ variant: v as 'lite' | 'pro' })}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-3" style={{ marginTop: 12 }}>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-text">Run mode</p>
+          <p className="text-[11px] text-text-muted">
+            <strong>Headless (-p)</strong> — phases run in the background via <code>claude -p</code> (no terminal); the panel streams each transcript. Avoids the macOS pseudo-terminal limit.<br />
+            <strong>Interactive</strong> — each phase opens a live terminal you can watch and type into.
+          </p>
+        </div>
+        <ToggleGroup
+          className="shrink-0"
+          options={[
+            { value: 'headless', label: 'Headless (-p)' },
+            { value: 'interactive', label: 'Interactive' },
+          ]}
+          value={config.headless ? 'headless' : 'interactive'}
+          onChange={(v) => update({ headless: v === 'headless' })}
         />
       </div>
 

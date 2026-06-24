@@ -4,6 +4,8 @@ import type { ReviewLoopState } from '../../../src/shared/types'
 const h = vi.hoisted(() => {
   const s: any = {
     phaseCalls: [],
+    headlessCalls: [],
+    killCalls: [], // killReviewLoopTerminals(sessionId) invocations
     failTab: null,
     holdTab: null,
     issues: [], // what round-N-issues.json contains
@@ -37,6 +39,19 @@ vi.mock('../../../src/main/services/review-phase.service', () => ({
       return Promise.resolve({ ok: false, terminalId: `term-${opts.tabId}`, output: '', error: 'phase blew up' })
     }
     return Promise.resolve({ ok: true, terminalId: `term-${opts.tabId}`, output: `OUT:${opts.tabId}` })
+  }),
+  // Headless phases have no PTY: record the call, stream a line, return ok.
+  runHeadlessPhase: vi.fn((opts: Record<string, any>) => {
+    h.headlessCalls.push(opts)
+    opts.onTranscript?.('▶ headless line')
+    return Promise.resolve({ ok: true, terminalId: '', output: 'OUT:headless' })
+  }),
+}))
+
+vi.mock('../../../src/main/services/terminal.service', () => ({
+  killReviewLoopTerminals: vi.fn((sessionId: string) => {
+    h.killCalls.push(sessionId)
+    return 0
   }),
 }))
 
@@ -87,7 +102,9 @@ const opts = (over: Record<string, any> = {}) => ({
   worktreePath: '/wt/sess-pro',
   branch: 'feat/x',
   baseBranch: 'main',
-  config: { enabled: true, variant: 'pro' as const, maxIterations: 5, consecutiveCleanRounds: 1 },
+  // Default to the interactive (foreground) path so the existing assertions
+  // about terminalId / onSpawn hold; headless has its own tests below.
+  config: { enabled: true, variant: 'pro' as const, maxIterations: 5, consecutiveCleanRounds: 1, headless: false },
   prNumber: 7,
   repoPath: '/repo',
   ...over,
@@ -95,6 +112,8 @@ const opts = (over: Record<string, any> = {}) => ({
 
 beforeEach(() => {
   h.phaseCalls = []
+  h.headlessCalls = []
+  h.killCalls = []
   h.failTab = null
   h.holdTab = null
   h.issues = []
@@ -124,7 +143,7 @@ describe('startReviewLoop (Pro)', () => {
   it('runs all three phases when triage flags a fixable issue', async () => {
     h.issues = [{ id: 'i1', title: 'bug', description: 'd', file: 'src/a.ts', line: 1, category: 'bug' }]
     h.triaged = [{ id: 'i1', title: 'bug', description: 'd', file: 'src/a.ts', line: 1, category: 'bug', introducedInPR: true, decision: 'fix', justification: 'real' }]
-    await startReviewLoop(opts({ config: { enabled: true, variant: 'pro', maxIterations: 1, consecutiveCleanRounds: 2 } }))
+    await startReviewLoop(opts({ config: { enabled: true, variant: 'pro', maxIterations: 1, consecutiveCleanRounds: 2, headless: false } }))
     await vi.waitFor(() => expect(latest()?.status).not.toBe('running'))
 
     expect(h.phaseCalls.map((c) => c.tabId)).toEqual([
@@ -174,5 +193,31 @@ describe('startReviewLoop (Pro)', () => {
     await vi.waitFor(() => expect(latest()?.status).not.toBe('running'))
     expect(latest()!.status).toBe('cancelled')
     expect(latest()!.stopReason).toBe('cancelled')
+  })
+
+  it('sweeps stale review-loop terminals on start and on finalize', async () => {
+    h.issues = []
+    await startReviewLoop(opts())
+    await vi.waitFor(() => expect(latest()?.status).not.toBe('running'))
+    // Once before the first round (new-loop sweep) and once on finalize.
+    expect(h.killCalls).toEqual(['sess-pro', 'sess-pro'])
+  })
+})
+
+describe('startReviewLoop (Pro, headless)', () => {
+  it('runs phases via runHeadlessPhase (no PTY) and streams a transcript into the slot', async () => {
+    h.issues = []
+    await startReviewLoop(
+      opts({ config: { enabled: true, variant: 'pro', maxIterations: 5, consecutiveCleanRounds: 1, headless: true } })
+    )
+    await vi.waitFor(() => expect(latest()?.status).not.toBe('running'))
+
+    // Headless path used; the foreground terminal path was not.
+    expect(h.headlessCalls.length).toBeGreaterThan(0)
+    expect(h.phaseCalls).toHaveLength(0)
+
+    const reviewSlot = latest()!.rounds[0].phaseSlots.find((s) => s.phase === 'review')!
+    expect(reviewSlot.terminalId).toBeUndefined()
+    expect(reviewSlot.transcript).toContain('▶ headless line')
   })
 })

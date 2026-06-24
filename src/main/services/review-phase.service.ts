@@ -20,6 +20,7 @@ import {
 import { onHookEvent } from './notification-server'
 import { writeClaudeHookSettings } from './hook.service'
 import { seedPermissions } from './permission-sync.service'
+import { runHeadlessClaude, killChildTree } from './claude-headless.service'
 
 export const DEFAULT_PHASE_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -54,10 +55,88 @@ export interface ForegroundPhaseOptions {
 
 export interface ForegroundPhaseResult {
   ok: boolean
+  /** Empty string for headless phases (no PTY). */
   terminalId: string
   /** ANSI-stripped tail of the terminal output, for cross-phase handoff. */
   output: string
   error?: string
+}
+
+export interface HeadlessPhaseOptions {
+  /** Hook-routing not needed (no PTY/Stop hook); used only for permission seeding. */
+  sessionId: string
+  worktreePath: string
+  /** Source repo for permission seeding (optional). */
+  repoPath?: string
+  claudeTheme?: string
+  claudeConfigDir?: string
+  /** Prompt piped to `claude -p` on stdin. */
+  prompt: string
+  timeoutMs?: number
+  /** Aborts the phase: kills the claude process tree and resolves with ok=false. */
+  signal?: AbortSignal
+  /** Called for each transcript line as it streams in, so the panel can render live. */
+  onTranscript?: (line: string) => void
+}
+
+/**
+ * Run one review-loop phase headlessly via `claude -p` (no PTY). Seeds the same
+ * worktree hooks + permission allowlist as the foreground path so an auto-mode
+ * run isn't starved, streams the transcript through `onTranscript`, and resolves
+ * with a {@link ForegroundPhaseResult} (terminalId is empty — there is no PTY).
+ */
+export async function runHeadlessPhase(
+  opts: HeadlessPhaseOptions
+): Promise<ForegroundPhaseResult> {
+  // Same worktree prep as the foreground path: hooks (harmless here) + the
+  // inherited permission allowlist so a non-bypass run can act on approved tools.
+  try {
+    writeClaudeHookSettings(opts.worktreePath, opts.claudeTheme ?? 'dark', opts.sessionId)
+  } catch {
+    // Non-fatal.
+  }
+  if (opts.repoPath) {
+    try {
+      seedPermissions(opts.repoPath, opts.worktreePath)
+    } catch {
+      // Non-fatal.
+    }
+  }
+
+  if (opts.signal?.aborted) {
+    return { ok: false, terminalId: '', output: '', error: 'cancelled' }
+  }
+
+  const env = opts.claudeConfigDir ? { CLAUDE_CONFIG_DIR: opts.claudeConfigDir } : undefined
+
+  let child: import('node:child_process').ChildProcessWithoutNullStreams | undefined
+  const onAbort = (): void => {
+    if (child) killChildTree(child)
+  }
+  opts.signal?.addEventListener('abort', onAbort, { once: true })
+
+  try {
+    const result = await runHeadlessClaude({
+      cwd: opts.worktreePath,
+      prompt: opts.prompt,
+      env,
+      timeoutMs: opts.timeoutMs ?? DEFAULT_PHASE_TIMEOUT_MS,
+      onTranscript: opts.onTranscript,
+      onChild: (c) => {
+        child = c
+        // The signal may have aborted between the check above and spawn.
+        if (opts.signal?.aborted) killChildTree(c)
+      },
+    })
+    return {
+      ok: result.ok,
+      terminalId: '',
+      output: result.transcript.join('\n'),
+      error: result.error,
+    }
+  } finally {
+    opts.signal?.removeEventListener('abort', onAbort)
+  }
 }
 
 // eslint-disable-next-line no-control-regex

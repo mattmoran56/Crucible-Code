@@ -687,6 +687,7 @@ export const mockReviewLoopSettings: ReviewLoopSettings = {
     variant: 'pro',
     maxIterations: 5,
     consecutiveCleanRounds: 2,
+    headless: true,
   },
   projectOverrides: {
     'proj-2': { enabled: false },

@@ -33,9 +33,11 @@ import {
 } from '../../shared/types'
 import {
   runForegroundPhase,
+  runHeadlessPhase,
   DEFAULT_PHASE_TIMEOUT_MS,
   type ForegroundPhaseResult,
 } from './review-phase.service'
+import { killReviewLoopTerminals } from './terminal.service'
 
 const execFileAsync = promisify(execFile)
 
@@ -101,6 +103,11 @@ export async function startReviewLoop(opts: StartReviewLoopOptions): Promise<voi
   }
 
   const config = { ...DEFAULT_REVIEW_LOOP_CONFIG, ...opts.config }
+
+  // Sweep any phase terminals left over from a prior loop on this session
+  // before starting a fresh one, so PTYs never accumulate across runs.
+  killReviewLoopTerminals(opts.sessionId)
+
   const loopDir = join(opts.worktreePath, '.crucible', 'review-loop')
   await mkdir(loopDir, { recursive: true })
 
@@ -356,6 +363,10 @@ async function runPhase(
   slot.startedAt = new Date().toISOString()
   emitState(loop)
 
+  if (loop.config.headless) {
+    return runHeadlessPhaseForSlot(loop, slot, prompt)
+  }
+
   const result = await runForegroundPhase({
     window: mainWindow!,
     sessionId: loop.sessionId,
@@ -374,6 +385,39 @@ async function runPhase(
     },
   })
 
+  return result
+}
+
+/** Headless variant of {@link runPhase}: no PTY, streams the transcript into the slot. */
+async function runHeadlessPhaseForSlot(
+  loop: ActiveLoop,
+  slot: ReviewLoopPhaseSlot,
+  prompt: string
+): Promise<ForegroundPhaseResult> {
+  slot.transcript = []
+  let lastEmit = 0
+  const result = await runHeadlessPhase({
+    sessionId: loop.sessionId,
+    worktreePath: loop.state.worktreePath,
+    repoPath: loop.repoPath,
+    claudeTheme: loop.claudeTheme,
+    claudeConfigDir: loop.claudeConfigDir,
+    prompt,
+    timeoutMs: PHASE_TIMEOUT_MS,
+    signal: loop.abort.signal,
+    onTranscript: (line) => {
+      const lines = slot.transcript!
+      lines.push(line)
+      // Bound memory + the per-emit structuredClone cost on long phases.
+      if (lines.length > 800) lines.splice(0, lines.length - 800)
+      const now = Date.now()
+      if (now - lastEmit > 200) {
+        lastEmit = now
+        emitState(loop)
+      }
+    },
+  })
+  emitState(loop)
   return result
 }
 
@@ -539,6 +583,12 @@ function finalize(loop: ActiveLoop, reason: ReviewLoopStopReason, errorMessage?:
   loop.state.endedAt = new Date().toISOString()
   if (errorMessage) loop.state.errorMessage = errorMessage
   emitState(loop)
+
+  // Kill any phase PTYs still alive for this session (headed mode). Each phase
+  // already frees its own terminal on its Stop hook, but a timed-out / stuck
+  // phase or a mid-phase cancel can leave one behind — sweep them so PTYs don't
+  // leak toward the macOS limit. No-op in headless mode (no PTYs).
+  killReviewLoopTerminals(loop.sessionId)
 
   // Drop the loop from the active-set so completed runs don't accumulate
   // (rounds, raw issues) in memory for the lifetime of the app. The renderer

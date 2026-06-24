@@ -377,6 +377,12 @@ export interface ReviewLoopPhaseSlot {
   terminalId?: string
   /** Workspace tab id used for hook routing + renderer attach (e.g. `review-loop:r1:review`). */
   tabId?: string
+  /**
+   * Headless-only: streamed transcript lines for this phase. When the loop runs
+   * with `headless: true` there is no PTY/`terminalId`; the panel renders these
+   * lines read-only instead of an xterm.
+   */
+  transcript?: string[]
   startedAt?: string
   endedAt?: string
   errorMessage?: string
@@ -424,6 +430,14 @@ export interface ReviewLoopConfig {
   variant: ReviewLoopVariant
   maxIterations: number
   consecutiveCleanRounds: number
+  /**
+   * When true (default), each phase runs as a headless `claude -p` subprocess
+   * (no PTY) and streams its transcript into the panel — avoids the macOS PTY
+   * limit. When false, each phase runs as a live, interactive foreground
+   * terminal the user can watch and type into. Either way: no bypass / no
+   * `--permission-mode acceptEdits`; headless inherits the user's auto default.
+   */
+  headless: boolean
 }
 
 export interface ReviewLoopProjectOverride {
@@ -431,6 +445,7 @@ export interface ReviewLoopProjectOverride {
   variant?: ReviewLoopVariant
   maxIterations?: number
   consecutiveCleanRounds?: number
+  headless?: boolean
 }
 
 export interface ReviewLoopSettings {
@@ -443,6 +458,7 @@ export const DEFAULT_REVIEW_LOOP_CONFIG: ReviewLoopConfig = {
   variant: 'lite',
   maxIterations: 5,
   consecutiveCleanRounds: 2,
+  headless: true,
 }
 
 // Scheduler ──────────────────────────────────────────────────────────────────
