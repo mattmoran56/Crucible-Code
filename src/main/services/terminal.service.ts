@@ -4,7 +4,10 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
+import { detectUsageLimit, type UsageLimitKind } from '../../shared/patterns'
+import type { UsageLimitEvent } from '../../shared/types'
 import { handleHookEvent, findContextById, getNotificationServerPort } from './notification-server'
+import { getSessionUsage } from './usage.service'
 import { getStorePath } from '../store-path'
 import { ensureGhShimInstalled } from './gh-shim.service'
 import { shouldCaptureContext } from './local-pr.service'
@@ -105,6 +108,14 @@ interface TerminalInstance {
   bufferSize: number
   /** Extra args appended to `claude` (e.g. `--dangerously-skip-permissions`). Persisted for crash-recovery. */
   claudeArgs?: string[]
+  /**
+   * Rolling tail of recent output scanned for the usage-limit banner. Kept
+   * separate from bufferChunks so the (possibly multi-chunk) banner is matched
+   * across PTY chunk boundaries without re-scanning the full 64KB buffer.
+   */
+  limitScanTail?: string
+  /** Epoch ms of the last USAGE_LIMIT_REACHED we emitted for this terminal. */
+  lastLimitEmitAt?: number
 }
 
 /**
@@ -150,6 +161,52 @@ function appendToBuffer(instance: TerminalInstance, chunk: string): void {
     instance.bufferChunks = [compacted]
     instance.bufferSize = compacted.length
   }
+}
+
+// Cap on the per-terminal scan tail. Big enough to span a banner split across
+// several PTY chunks, small enough that the regex scan stays cheap per chunk.
+const LIMIT_SCAN_TAIL_MAX = 8 * 1024
+// Once we've surfaced a limit hit, ignore further matches for this long. The
+// blocked prompt box keeps redrawing for the whole reset window; without this
+// every redraw would re-fire. The renderer also de-dupes per session, so this
+// only needs to cover the dismiss-without-queue case.
+const LIMIT_EMIT_COOLDOWN_MS = 10 * 60 * 1000
+
+/** Resolve a reset timestamp (unix seconds) for a detected limit hit. */
+function resolveResetsAt(sessionId: string, kind: UsageLimitKind): number {
+  const usage = getSessionUsage(sessionId)
+  const nowSec = Math.floor(Date.now() / 1000)
+  if (kind === 'weekly') {
+    return usage?.rateLimits?.sevenDay?.resetsAt || nowSec + 7 * 24 * 3600
+  }
+  return usage?.rateLimits?.fiveHour?.resetsAt || nowSec + 5 * 3600
+}
+
+/**
+ * Scan a freshly arrived PTY chunk for the genuine usage-limit banner and, on
+ * the first sighting, emit USAGE_LIMIT_REACHED so the renderer can offer to
+ * queue a follow-up. Only claude/review terminals are scanned.
+ */
+function detectAndEmitLimit(instance: TerminalInstance, chunk: string): void {
+  if (instance.mode !== 'claude' && instance.mode !== 'review') return
+
+  instance.limitScanTail = (instance.limitScanTail ?? '') + chunk
+  if (instance.limitScanTail.length > LIMIT_SCAN_TAIL_MAX) {
+    instance.limitScanTail = instance.limitScanTail.slice(-LIMIT_SCAN_TAIL_MAX)
+  }
+
+  const hit = detectUsageLimit(instance.limitScanTail)
+  if (!hit) return
+
+  const now = Date.now()
+  if (instance.lastLimitEmitAt && now - instance.lastLimitEmitAt < LIMIT_EMIT_COOLDOWN_MS) return
+  instance.lastLimitEmitAt = now
+  // Drop the tail so the same on-screen banner doesn't immediately re-match.
+  instance.limitScanTail = ''
+
+  const resetsAt = hit.resetsAt ?? resolveResetsAt(instance.sessionId, hit.kind)
+  const event: UsageLimitEvent = { sessionId: instance.sessionId, resetsAt }
+  safeSend(instance.window, IPC.USAGE_LIMIT_REACHED, event)
 }
 
 export interface PersistedTerminal {
@@ -309,7 +366,10 @@ function spawnPty(
 
   ptyProcess.onData((data) => {
     const current = terminals.get(terminalId)
-    if (current) appendToBuffer(current, data)
+    if (current) {
+      appendToBuffer(current, data)
+      detectAndEmitLimit(current, data)
+    }
     pendingChunks.push(data)
     if (!flushTimer) {
       flushTimer = setTimeout(flushPending, 16)

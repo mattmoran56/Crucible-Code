@@ -12,6 +12,7 @@ import { stopAllWatching as stopAllPermissionWatching } from './services/permiss
 import { stopScheduler } from './services/scheduler.service'
 import { stopFoundryService } from './services/foundry.service'
 import { stopLocalPRService } from './services/local-pr.service'
+import { startKeepAwake, stopKeepAwake } from './services/keep-awake.service'
 import { eventBus } from './services/event-bus'
 import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
 import { unregisterCloud } from '../../remote/server/cloud-client'
@@ -67,7 +68,13 @@ async function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // Keep the Mac awake for the whole lifetime of the app so terminals,
+  // Claude sessions, foundry workers and the relay keep running while the
+  // screen is locked. Released on quit (below).
+  startKeepAwake()
+  return createWindow()
+})
 
 let cloudUnregistered = false
 app.on('before-quit', (event) => {
@@ -86,6 +93,7 @@ app.on('before-quit', (event) => {
   stopFoundryService()
   stopLocalPRService()
   stopRelayServer()
+  stopKeepAwake()
 })
 
 app.on('window-all-closed', () => {
@@ -96,6 +104,7 @@ app.on('window-all-closed', () => {
   stopFoundryService()
   stopLocalPRService()
   stopRelayServer()
+  stopKeepAwake()
   app.quit()
 })
 

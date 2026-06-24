@@ -418,6 +418,7 @@ Monitor Claude Code usage and rate limits from the right panel.
 - **Session stats** — Cost, duration, lines added/removed per session
 - **Activity chart** — Daily activity over the past week (messages, sessions, tool calls)
 - **Subscription info** — Shows your current plan and rate limit tier
+- **Auto-continue on limit** — When a session or agent actually hits its usage limit, a popup offers to queue a follow-up prompt that fires automatically once the window resets. The trigger watches the terminal for Claude's real "usage limit reached" banner — the message that genuinely blocks a conversation — not a usage percentage, so accounts with no hard limit (overage/extra usage) never mis-fire. Opt into Settings → Usage Limits to skip the popup and auto-queue `continue` for you
 
 </details>
 
@@ -600,6 +601,10 @@ src/
 ### IPC
 
 All communication between renderer and main process goes through typed IPC channels defined in `src/shared/constants.ts`. The renderer has no Node.js access — it communicates exclusively via `window.api`, exposed by the preload script with `contextIsolation: true`.
+
+### Stays awake while running
+
+So long-running work — terminals, Claude sessions, review loops, the [Foundry](#foundry--autopilot-over-a-notion-backlog) and the remote relay — keeps running when you lock the screen and walk away, the app prevents the Mac from sleeping for its entire lifetime. It holds an Electron `powerSaveBlocker` of type `prevent-app-suspension` (started on launch, released on quit, re-armed after a forced sleep/resume), so the *system* stays awake while the *display* is still free to turn off when the screen locks. See `src/main/services/keep-awake.service.ts`. No setting — it's always on while the app is open.
 
 </details>
 
