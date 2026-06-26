@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useFoundryStore } from '../../stores/foundryStore'
@@ -23,14 +23,61 @@ const PHASE_LABEL: Record<FoundryPipelinePhase, string> = {
   orphaned: 'Orphaned',
 }
 
+// Phase chip colours map onto the app's theme-aware semantic tokens (defined
+// per data-theme in globals.css) so they keep good contrast in both light and
+// dark. A 1px border gives the pill definition where the tint is faint.
 const PHASE_COLOR: Record<FoundryPipelinePhase, string> = {
-  'spawn-requested': 'bg-amber-500/20 text-amber-300',
-  implementing: 'bg-blue-500/20 text-blue-300',
-  reviewing: 'bg-violet-500/20 text-violet-300',
-  finalizing: 'bg-emerald-500/20 text-emerald-300',
-  done: 'bg-emerald-500/20 text-emerald-300',
-  cancelled: 'bg-zinc-500/20 text-zinc-400',
-  orphaned: 'bg-rose-500/20 text-rose-300',
+  'spawn-requested': 'bg-warning/15 text-warning border-warning/40',
+  implementing: 'bg-accent/15 text-accent border-accent/40',
+  reviewing: 'bg-merged/15 text-merged border-merged/40',
+  finalizing: 'bg-success/15 text-success border-success/40',
+  done: 'bg-success/15 text-success border-success/40',
+  cancelled: 'bg-text-muted/10 text-text-muted border-border',
+  orphaned: 'bg-danger/15 text-danger border-danger/40',
+}
+
+function isActivePhase(phase: FoundryPipelinePhase): boolean {
+  return phase !== 'done' && phase !== 'cancelled' && phase !== 'orphaned'
+}
+
+interface FoundryStatusMeta {
+  /** Tailwind background class for the status dot. */
+  dot: string
+  /** Whether the dot should pulse (work in flight). */
+  pulse: boolean
+  /** Short human label for the status. */
+  label: string
+  /** Count of in-flight pipelines. */
+  activeCount: number
+  /** Any pipeline is flagged for attention. */
+  attention: boolean
+}
+
+function foundryStatusMeta(
+  cfg: FoundryConfig,
+  state: FoundryRuntimeState | undefined
+): FoundryStatusMeta {
+  const active = (state?.pipelines ?? []).filter((p) => isActivePhase(p.phase))
+  const attention = active.some((p) => p.attention)
+  const passInFlight = state?.passInFlight === true
+  const activeCount = active.length
+
+  if (!cfg.enabled) {
+    return { dot: 'bg-text-muted', pulse: false, label: 'Off', activeCount, attention }
+  }
+  if (attention) {
+    return { dot: 'bg-danger', pulse: true, label: 'Needs attention', activeCount, attention }
+  }
+  if (cfg.paused) {
+    return { dot: 'bg-warning', pulse: false, label: 'Paused', activeCount, attention }
+  }
+  if (passInFlight) {
+    return { dot: 'bg-warning', pulse: true, label: 'Pass running', activeCount, attention }
+  }
+  if (activeCount > 0) {
+    return { dot: 'bg-success', pulse: true, label: 'Running', activeCount, attention }
+  }
+  return { dot: 'bg-success/50', pulse: false, label: 'Idle', activeCount, attention }
 }
 
 export function FoundryPanel() {
@@ -39,6 +86,7 @@ export function FoundryPanel() {
   const reload = useFoundryStore((s) => s.reload)
   const projects = useProjectStore((s) => s.projects)
   const currentProjectId = useProjectStore((s) => s.activeProjectId)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   useEffect(() => {
     void reload()
@@ -49,29 +97,106 @@ export function FoundryPanel() {
     [configs, currentProjectId]
   )
 
-  // The most recent enabled foundry (or the most recent in general if none are
-  // enabled) is "selected" — its pipelines fill the top and its foreman
-  // terminal is pinned to the bottom. With one foundry per project this is
-  // typically just "the foundry".
+  // Honour the user's manual tab choice while it still exists; otherwise fall
+  // back to the first enabled foundry (or the first one configured). Multiple
+  // foundries can run at once — the tab strip lets you switch between them.
   const selected = useMemo(() => {
+    const manual = selectedId && projectFoundries.find((f) => f.id === selectedId)
+    if (manual) return manual
     const enabled = projectFoundries.find((f) => f.enabled)
     return enabled ?? projectFoundries[0] ?? null
-  }, [projectFoundries])
+  }, [projectFoundries, selectedId])
 
   if (!selected) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6 text-center">
-        <div>
-          <p className="text-sm text-text-muted">No foundry configured for this project.</p>
-          <p className="text-[11px] text-text-muted mt-2">
-            Add one in <strong>Settings → Foundry</strong>.
+      <div className="flex-1 flex items-center justify-center p-8 text-center">
+        <div className="max-w-[240px]">
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-bg-tertiary text-text-muted">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 20h20" /><path d="m4 20 2.5-9 4 4 3-6 4 5L20 20" />
+            </svg>
+          </div>
+          <p className="text-sm text-text">No foundry configured</p>
+          <p className="text-xs text-text-muted mt-1.5 leading-relaxed">
+            Add one in <strong className="text-text">Settings → Foundry</strong> to start
+            picking up tickets automatically.
           </p>
         </div>
       </div>
     )
   }
 
-  return <FoundryView cfg={selected} state={states[selected.id]} projects={projects} />
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      {projectFoundries.length > 1 && (
+        <FoundryTabs
+          foundries={projectFoundries}
+          states={states}
+          selectedId={selected.id}
+          onSelect={setSelectedId}
+        />
+      )}
+      <FoundryView
+        key={selected.id}
+        cfg={selected}
+        state={states[selected.id]}
+        projects={projects}
+      />
+    </div>
+  )
+}
+
+function FoundryTabs({
+  foundries,
+  states,
+  selectedId,
+  onSelect,
+}: {
+  foundries: FoundryConfig[]
+  states: Record<string, FoundryRuntimeState>
+  selectedId: string
+  onSelect: (id: string) => void
+}) {
+  return (
+    <div className="shrink-0 border-b border-border bg-bg-tertiary/40">
+      <div className="flex items-center gap-2 overflow-x-auto px-3 py-2.5 [scrollbar-width:thin]">
+        {foundries.map((f) => {
+          const meta = foundryStatusMeta(f, states[f.id])
+          const isSelected = f.id === selectedId
+          return (
+            <button
+              key={f.id}
+              onClick={() => onSelect(f.id)}
+              title={`${f.name} — ${meta.label}`}
+              className={
+                'group flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ' +
+                (isSelected
+                  ? 'border-accent/60 bg-accent/15 text-text'
+                  : 'border-border bg-bg-secondary text-text-muted hover:text-text hover:border-text-muted/50')
+              }
+            >
+              <span
+                className={`inline-block h-2 w-2 shrink-0 rounded-full ${meta.dot} ${
+                  meta.pulse ? 'animate-pulse' : ''
+                }`}
+              />
+              <span className="max-w-[120px] truncate font-medium">{f.name}</span>
+              {meta.activeCount > 0 && (
+                <span
+                  className={
+                    'shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ' +
+                    (isSelected ? 'bg-accent/25 text-text' : 'bg-bg-tertiary text-text-muted')
+                  }
+                >
+                  {meta.activeCount}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 function FoundryView({
@@ -80,72 +205,82 @@ function FoundryView({
   projects,
 }: {
   cfg: FoundryConfig
-  state: import('../../../shared/types').FoundryRuntimeState | undefined
+  state: FoundryRuntimeState | undefined
   projects: import('../../../shared/types').Project[]
 }) {
   const runNow = useFoundryStore((s) => s.runNow)
   const setPaused = useFoundryStore((s) => s.setPaused)
   const project = projects.find((p) => p.id === cfg.projectId)
   const pipelines = state?.pipelines ?? []
-  const activePipelines = pipelines.filter(
-    (p) => p.phase !== 'done' && p.phase !== 'cancelled' && p.phase !== 'orphaned'
-  )
+  const activePipelines = pipelines.filter((p) => isActivePhase(p.phase))
   const completedPipelines = pipelines.filter((p) => p.phase === 'done')
   const passes = state?.passes ?? []
   const latestPass = passes[passes.length - 1]
   const passInFlight = state?.passInFlight === true
+  const status = foundryStatusMeta(cfg, state)
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {/* Header */}
-      <div className="px-3 py-2 border-b border-border flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-text truncate">{cfg.name}</div>
-          <div className="text-[11px] text-text-muted truncate">
-            {project?.name ?? cfg.projectId}
-            {' · '}
-            {cfg.enabled ? (cfg.paused ? 'paused' : 'running') : 'off'}
-            {' · '}
-            max {cfg.maxConcurrentTasks}
+      <div className="px-4 py-3.5 border-b border-border">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[15px] font-semibold text-text truncate leading-tight">
+              {cfg.name}
+            </div>
+            <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
+              <span
+                className={`inline-block h-2 w-2 shrink-0 rounded-full ${status.dot} ${
+                  status.pulse ? 'animate-pulse' : ''
+                }`}
+              />
+              <span className="text-text">{status.label}</span>
+              <span className="text-text-muted/60">·</span>
+              <span className="truncate">{project?.name ?? cfg.projectId}</span>
+            </div>
           </div>
         </div>
-        <div className="flex gap-1 shrink-0">
-          {cfg.enabled && cfg.localPrMode && (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={state?.publish?.status === 'running'}
-              onClick={() => void window.api.foundry.publishPRs(cfg.id)}
-              title="Promote this run's local PRs to real GitHub PRs, in order"
-            >
-              {state?.publish?.status === 'running' ? 'Creating PRs…' : 'Create PRs'}
-            </Button>
-          )}
-          {cfg.enabled && (
-            <Button size="sm" variant="ghost" onClick={() => void runNow(cfg.id)}>
+
+        {cfg.enabled && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="primary" onClick={() => void runNow(cfg.id)}>
               Run pass
             </Button>
-          )}
-          {cfg.enabled && (
             <Button
               size="sm"
               variant="ghost"
+              className="border border-border"
               onClick={() => void setPaused(cfg.id, !cfg.paused)}
             >
               {cfg.paused ? 'Resume' : 'Pause'}
             </Button>
-          )}
-        </div>
+            {cfg.localPrMode && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="border border-border"
+                disabled={state?.publish?.status === 'running'}
+                onClick={() => void window.api.foundry.publishPRs(cfg.id)}
+                title="Promote this run's local PRs to real GitHub PRs, in order"
+              >
+                {state?.publish?.status === 'running' ? 'Creating PRs…' : 'Create PRs'}
+              </Button>
+            )}
+            <span className="ml-auto text-[11px] text-text-muted">
+              max {cfg.maxConcurrentTasks}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Off state */}
       {!cfg.enabled && (
-        <div className="flex-1 flex items-center justify-center p-6 text-center">
-          <div>
-            <p className="text-sm text-text-muted">Foundry is off.</p>
-            <p className="text-[11px] text-text-muted mt-2">
-              Turn it on from <strong>Settings → Foundry</strong> to start picking up
-              tickets.
+        <div className="flex-1 flex items-center justify-center p-8 text-center">
+          <div className="max-w-[240px]">
+            <p className="text-sm text-text">Foundry is off</p>
+            <p className="text-xs text-text-muted mt-1.5 leading-relaxed">
+              Turn it on from <strong className="text-text">Settings → Foundry</strong> to
+              start picking up tickets.
             </p>
           </div>
         </div>
@@ -155,61 +290,60 @@ function FoundryView({
       {cfg.enabled && (
         <div className="flex-1 min-h-0 flex flex-col">
           {/* Top half: status + pipelines */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-5">
             {state?.lastError && (
-              <div className="px-3 py-2 text-[11px] text-rose-300 bg-rose-500/10 border-b border-border">
+              <div className="rounded-lg px-3.5 py-3 text-xs leading-relaxed text-danger bg-danger/10 border border-danger/30">
                 {state.lastError}
               </div>
             )}
 
             {/* Foreman pass status */}
-            <div className="px-3 py-2 border-b border-border">
-              <div className="text-[11px] uppercase tracking-wide text-text-muted">
-                Foreman
+            <section>
+              <SectionLabel>Foreman</SectionLabel>
+              <div className="mt-2.5 rounded-lg border border-border bg-bg-tertiary/40 px-3.5 py-3">
+                {passInFlight ? (
+                  <div className="flex items-center gap-2 text-sm text-text">
+                    <span className="inline-block h-2 w-2 rounded-full bg-warning animate-pulse" />
+                    Pass running…
+                  </div>
+                ) : latestPass ? (
+                  <div className="text-xs text-text-muted leading-relaxed">
+                    Last pass <span className="text-text font-medium">#{latestPass.index}</span>{' '}
+                    · {latestPass.status} · {latestPass.trigger} · started{' '}
+                    {latestPass.startedPageIds.length} task(s)
+                    {latestPass.errorMessage ? ` · ${latestPass.errorMessage}` : ''}
+                  </div>
+                ) : (
+                  <div className="text-xs text-text-muted">No passes yet.</div>
+                )}
               </div>
-              {passInFlight ? (
-                <div className="mt-1 text-xs text-text flex items-center gap-2">
-                  <span className="inline-block h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                  Pass running…
-                </div>
-              ) : latestPass ? (
-                <div className="mt-1 text-xs text-text-muted">
-                  Last pass: #{latestPass.index} · {latestPass.status} ·{' '}
-                  {latestPass.trigger} · started {latestPass.startedPageIds.length} task(s)
-                  {latestPass.errorMessage ? ` · ${latestPass.errorMessage}` : ''}
-                </div>
-              ) : (
-                <div className="mt-1 text-xs text-text-muted">No passes yet.</div>
-              )}
-            </div>
+            </section>
 
             {/* Active pipelines */}
-            <div className="px-3 py-2">
-              <div className="text-[11px] uppercase tracking-wide text-text-muted mb-1">
-                Active ({activePipelines.length})
-              </div>
+            <section>
+              <SectionLabel>Active ({activePipelines.length})</SectionLabel>
               {activePipelines.length === 0 ? (
-                <div className="text-xs text-text-muted italic py-2">
+                <div className="mt-2.5 rounded-lg border border-dashed border-border px-3.5 py-5 text-center text-xs text-text-muted italic">
                   {passInFlight
                     ? 'Foreman is deciding what to start…'
                     : 'No pipelines running.'}
                 </div>
               ) : (
-                <div className="space-y-1">
+                <div className="mt-2.5 space-y-2.5">
                   {activePipelines.map((p) => (
                     <PipelineRow key={p.id} foundryId={cfg.id} pipeline={p} />
                   ))}
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Completed */}
             {completedPipelines.length > 0 && (
-              <details className="px-3 py-2 border-t border-border" open={false}>
-                <summary className="text-[11px] uppercase tracking-wide text-text-muted cursor-pointer select-none">
-                  Completed ({completedPipelines.length})
+              <details className="rounded-lg border border-border bg-bg-tertiary/30 px-3.5 py-3" open={false}>
+                <summary className="cursor-pointer select-none">
+                  <SectionLabel inline>Completed ({completedPipelines.length})</SectionLabel>
                 </summary>
-                <div className="space-y-1 mt-2">
+                <div className="space-y-2.5 mt-3">
                   {completedPipelines.slice(-10).reverse().map((p) => (
                     <PipelineRow key={p.id} foundryId={cfg.id} pipeline={p} />
                   ))}
@@ -219,14 +353,18 @@ function FoundryView({
 
             {/* Pass history */}
             {passes.length > 1 && (
-              <details className="px-3 py-2 border-t border-border">
-                <summary className="text-[11px] uppercase tracking-wide text-text-muted cursor-pointer select-none">
-                  Pass history ({passes.length})
+              <details className="rounded-lg border border-border bg-bg-tertiary/30 px-3.5 py-3">
+                <summary className="cursor-pointer select-none">
+                  <SectionLabel inline>Pass history ({passes.length})</SectionLabel>
                 </summary>
-                <div className="mt-2 space-y-1">
+                <div className="mt-3 space-y-2">
                   {[...passes].slice(-10).reverse().map((pass, i) => (
-                    <div key={`${pass.index}-${pass.startedAt}-${i}`} className="text-[11px] text-text-muted">
-                      #{pass.index} · {pass.status} · {pass.trigger} · started{' '}
+                    <div
+                      key={`${pass.index}-${pass.startedAt}-${i}`}
+                      className="text-xs text-text-muted leading-relaxed"
+                    >
+                      <span className="text-text font-medium">#{pass.index}</span> ·{' '}
+                      {pass.status} · {pass.trigger} · started{' '}
                       {pass.startedPageIds.length} task(s)
                       {pass.errorMessage ? ` · ${pass.errorMessage}` : ''}
                     </div>
@@ -246,6 +384,25 @@ function FoundryView({
         </div>
       )}
     </div>
+  )
+}
+
+function SectionLabel({
+  children,
+  inline = false,
+}: {
+  children: ReactNode
+  inline?: boolean
+}) {
+  return (
+    <span
+      className={
+        (inline ? 'inline-block ' : 'block ') +
+        'text-[11px] font-semibold uppercase tracking-wider text-text-muted'
+      }
+    >
+      {children}
+    </span>
   )
 }
 
@@ -302,16 +459,16 @@ function ForemanPtyPane({ terminalId }: { terminalId: string }) {
       className="border-t border-border flex flex-col shrink-0"
       style={{ height: 320 }}
     >
-      <div className="px-3 py-1.5 flex items-center justify-between border-b border-border">
-        <div className="text-[11px] uppercase tracking-wide text-text-muted">
-          Foreman <span className="normal-case">— interactive</span>
-        </div>
-        <span className="text-[11px] text-amber-300 flex items-center gap-1.5">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+      <div className="px-4 py-2.5 flex items-center justify-between border-b border-border">
+        <SectionLabel inline>
+          Foreman <span className="font-normal normal-case tracking-normal">— interactive</span>
+        </SectionLabel>
+        <span className="text-[11px] text-warning flex items-center gap-1.5">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
           live
         </span>
       </div>
-      <div ref={containerRef} className="flex-1 min-h-0" style={{ padding: 4 }} />
+      <div ref={containerRef} className="flex-1 min-h-0" style={{ padding: 6 }} />
     </div>
   )
 }
@@ -345,18 +502,18 @@ function ForemanTranscriptPane({ state }: { state: FoundryRuntimeState | undefin
       className="border-t border-border flex flex-col shrink-0"
       style={{ height: 320 }}
     >
-      <div className="px-3 py-1.5 flex items-center justify-between border-b border-border">
-        <div className="text-[11px] uppercase tracking-wide text-text-muted">
+      <div className="px-4 py-2.5 flex items-center justify-between border-b border-border">
+        <SectionLabel inline>
           Foreman transcript
           {latestPass && (
-            <span className="ml-2 text-text-muted normal-case">
+            <span className="ml-2 font-normal normal-case tracking-normal text-text-muted">
               · pass #{latestPass.index} {latestPass.trigger}
             </span>
           )}
-        </div>
+        </SectionLabel>
         {inFlight && (
-          <span className="text-[11px] text-amber-300 flex items-center gap-1.5">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <span className="text-[11px] text-warning flex items-center gap-1.5">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
             streaming
           </span>
         )}
@@ -365,16 +522,16 @@ function ForemanTranscriptPane({ state }: { state: FoundryRuntimeState | undefin
         <pre
           ref={scrollRef}
           onScroll={onScroll}
-          className="flex-1 min-h-0 overflow-y-auto text-[10.5px] leading-tight text-text whitespace-pre-wrap break-words"
+          className="flex-1 min-h-0 overflow-y-auto text-[11px] leading-relaxed text-text whitespace-pre-wrap break-words"
           style={{
-            padding: '8px 10px',
+            padding: '10px 14px',
             fontFamily: 'Menlo, Monaco, "Courier New", monospace',
           }}
         >
           {transcriptText}
         </pre>
       ) : (
-        <div className="flex-1 p-3 text-[11px] text-text-muted italic">
+        <div className="flex-1 p-4 text-xs text-text-muted italic">
           {inFlight
             ? 'Foreman starting…'
             : 'No pass yet. Hit "Run pass" to kick the foreman.'}
@@ -393,7 +550,7 @@ function PipelineRow({
 }) {
   const [expanded, setExpanded] = useState(false)
   const phase = pipeline.phase
-  const chipClass = PHASE_COLOR[phase] ?? 'bg-zinc-500/20 text-zinc-300'
+  const chipClass = PHASE_COLOR[phase] ?? 'bg-text-muted/10 text-text-muted border-border'
   const actions = useMemo(() => {
     if (phase === 'done' || phase === 'cancelled' || phase === 'orphaned') return [] as const
     const list: Array<'cancel' | 'resume' | 'retry-phase' | 'skip-phase'> = []
@@ -403,32 +560,49 @@ function PipelineRow({
     return list
   }, [phase, pipeline.attention])
   return (
-    <div className="text-xs border border-border rounded">
+    <div className="rounded-lg border border-border bg-bg-secondary/40 overflow-hidden">
       <button
-        className="w-full flex items-center justify-between gap-2 px-2 py-1.5 hover:bg-bg-tertiary"
+        className="w-full flex items-start gap-2.5 px-3.5 py-3 text-left hover:bg-bg-tertiary transition-colors"
         onClick={() => setExpanded((v) => !v)}
       >
-        <div className="min-w-0 text-left">
-          <div className="text-text truncate" title={pipeline.page.title}>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] text-text truncate" title={pipeline.page.title}>
             {pipeline.page.title || pipeline.page.id}
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span
+              className={`inline-block text-[10px] px-2 py-0.5 rounded-full border font-semibold uppercase tracking-wide ${chipClass}`}
+            >
+              {PHASE_LABEL[phase]}
+            </span>
+            {pipeline.prUrl && (
+              <span className="text-xs text-text-muted">PR #{pipeline.prNumber}</span>
+            )}
+          </div>
           {pipeline.attention && (
-            <div className="text-[11px] text-amber-300 truncate">
+            <div className="mt-1.5 text-xs text-warning leading-relaxed">
               ⚠ {pipeline.attention.reason}
             </div>
           )}
-          {pipeline.prUrl && !pipeline.attention && (
-            <div className="text-[11px] text-text-muted truncate">PR #{pipeline.prNumber}</div>
-          )}
         </div>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide ${chipClass}`}>
-          {PHASE_LABEL[phase]}
-        </span>
+        <svg
+          className={`mt-0.5 shrink-0 text-text-muted transition-transform ${expanded ? 'rotate-90' : ''}`}
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
       </button>
       {expanded && (
-        <div className="border-t border-border p-2 space-y-2">
+        <div className="border-t border-border p-3 space-y-2.5">
           {pipeline.prUrl && (
-            <div className="text-[11px]">
+            <div className="text-xs">
               PR:{' '}
               <a
                 className="text-accent underline"
@@ -441,20 +615,21 @@ function PipelineRow({
             </div>
           )}
           <details>
-            <summary className="text-[11px] text-text-muted cursor-pointer select-none">
+            <summary className="text-xs text-text-muted cursor-pointer select-none">
               Log ({pipeline.log.length})
             </summary>
-            <pre className="mt-1 text-[10px] text-text-muted whitespace-pre-wrap max-h-40 overflow-y-auto">
+            <pre className="mt-1.5 text-[11px] leading-relaxed text-text-muted whitespace-pre-wrap max-h-40 overflow-y-auto">
               {pipeline.log.join('\n')}
             </pre>
           </details>
           {actions.length > 0 && (
-            <div className="flex gap-1 flex-wrap">
+            <div className="flex gap-1.5 flex-wrap">
               {actions.map((a) => (
                 <Button
                   key={a}
                   size="sm"
                   variant="ghost"
+                  className="border border-border"
                   onClick={() =>
                     void window.api.foundry.pipelineAction(foundryId, pipeline.id, a)
                   }
@@ -469,4 +644,3 @@ function PipelineRow({
     </div>
   )
 }
-
