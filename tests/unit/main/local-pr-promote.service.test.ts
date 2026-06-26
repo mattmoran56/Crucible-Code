@@ -139,6 +139,28 @@ describe('local-pr-promote', () => {
     expect(gh.markPRReady).not.toHaveBeenCalled()
   })
 
+  it('drops the gh shim for the owning session once promoted', async () => {
+    await seed() // captured with contextId/sessionId 'ctx-1'
+    localPr.setCaptureContext('ctx-1', {})
+    expect(localPr.shouldCaptureContext('ctx-1')).toBe(true)
+
+    const id = localPr.listLocalPRs(PROJECT)[0].id
+    await promote.promoteLocalPR(id)
+
+    // Now a real GitHub PR — subsequent `gh` in that session must not be shimmed.
+    expect(localPr.shouldCaptureContext('ctx-1')).toBe(false)
+  })
+
+  it('leaves capture intact when promotion fails', async () => {
+    gh.createDraftPR.mockRejectedValueOnce(new Error('boom'))
+    await seed()
+    localPr.setCaptureContext('ctx-1', {})
+    const id = localPr.listLocalPRs(PROJECT)[0].id
+    await promote.promoteLocalPR(id)
+    // Promotion errored, so the local PR still owns the branch — keep shimming.
+    expect(localPr.shouldCaptureContext('ctx-1')).toBe(true)
+  })
+
   it('records an error + attention when createDraftPR throws', async () => {
     gh.createDraftPR.mockRejectedValueOnce(new Error('gh exploded'))
     await seed()
