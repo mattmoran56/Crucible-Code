@@ -145,7 +145,7 @@ function StackList({
 }
 
 function StackDetail({ stack }: { stack: PRStack }) {
-  const { selectStack, renameStack, removeEntry, reorder, addEntry } = usePRStackStore()
+  const { selectStack, renameStack, removeEntry, reorder, addEntry, publish } = usePRStackStore()
   const { localPRs, remotePRs } = usePRStore()
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
@@ -207,6 +207,7 @@ function StackDetail({ stack }: { stack: PRStack }) {
     setOverId(null)
   }
 
+  const publishing = stack.publish?.status === 'running'
   const propLog = stack.propagation?.log ?? []
   const pubLog = stack.publish?.log ?? []
   const activeLog = (stack.propagation?.status && stack.propagation.status !== 'idle')
@@ -255,6 +256,14 @@ function StackDetail({ stack }: { stack: PRStack }) {
           <DropdownMenu items={addItems.length ? addItems : [{ label: 'No PRs available', onClick: () => {} }]}>
             <Button variant="ghost" className="text-[11px]">+ Add PR</Button>
           </DropdownMenu>
+          <Button
+            variant="primary"
+            className="text-[11px]"
+            disabled={stack.entries.length === 0 || publishing}
+            onClick={() => publish(stack.id)}
+          >
+            {publishing ? 'Publishing…' : 'Publish'}
+          </Button>
         </div>
       </div>
 

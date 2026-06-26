@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto'
 import Store from 'electron-store'
 import type { BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
-import type { PRStack, PRStackEntry, PRStackEntryKind } from '../../shared/types'
+import type { PRStack, PRStackEntry, PRStackEntryKind, Project } from '../../shared/types'
 import { getStorePath } from '../store-path'
 import { eventBus, emitToRenderer } from './event-bus'
 import { getLocalPR, patchLocalPR } from './local-pr.service'
+import { promoteLocalPR } from './local-pr-promote.service'
+import * as github from './github.service'
 
 interface PRStackStoreShape {
   byProject: Record<string, PRStack[]>
@@ -269,6 +271,110 @@ function relinkChain(stack: PRStack): void {
 function persistWithRelink(stack: PRStack): PRStack {
   relinkChain(stack)
   return upsert(stack)
+}
+
+// ── Shared helpers (repo path, ordering, logging) ───────────────────────────
+
+/** Resolve a project's repo path (same lookup as local-pr-promote.service). */
+export function getProjectRepoPath(projectId: string): string | null {
+  const projectsStore = new Store<{ projects: Project[] }>({
+    cwd: getStorePath(),
+    defaults: { projects: [] },
+  })
+  return projectsStore.get('projects', []).find((p) => p.id === projectId)?.repoPath ?? null
+}
+
+/** Entries sorted bottom-first (order 0 = base). */
+function orderedEntries(stack: PRStack): PRStackEntry[] {
+  return [...stack.entries].sort((a, b) => a.order - b.order)
+}
+
+/** The branch a real entry should target = its predecessor's branch (or base). */
+function baseForEntry(stack: PRStack, ordered: PRStackEntry[], index: number): string {
+  const prev = index > 0 ? ordered[index - 1] : undefined
+  return prev?.branch ?? stack.baseBranch
+}
+
+function publishLog(stackId: string, message: string): void {
+  const stack = getStack(stackId)
+  if (!stack) return
+  const pub = stack.publish ?? { status: 'idle' as const, log: [] }
+  const log = [...pub.log, `${nowIso()} ${message}`].slice(-200)
+  upsert({ ...stack, publish: { ...pub, log } })
+}
+
+function setPublish(stackId: string, patch: Partial<NonNullable<PRStack['publish']>>): void {
+  const stack = getStack(stackId)
+  if (!stack) return
+  const pub = stack.publish ?? { status: 'idle' as const, log: [] }
+  upsert({ ...stack, publish: { ...pub, ...patch } })
+}
+
+// ── Publish — promote the whole stack to real chained GitHub PRs ─────────────
+
+const publishInFlight = new Set<string>()
+
+/**
+ * Walk the stack bottom-to-top and turn it into a real chain of GitHub PRs:
+ * local entries are promoted (push branch + open draft PR, chained base already
+ * linked by relinkChain), and real entries are retargeted onto their
+ * predecessor's branch. Idempotent and resumable — already-promoted local
+ * entries are skipped, so re-invoking after an error/restart continues from
+ * where it left off. CI gating is foundry-specific and stays in
+ * foundry.publishLocalPRStack (see plan follow-up: unify the two cursors).
+ */
+export async function publishStack(stackId: string): Promise<void> {
+  const stack = getStack(stackId)
+  if (!stack) return
+  if (publishInFlight.has(stackId)) return
+  publishInFlight.add(stackId)
+
+  const repoPath = getProjectRepoPath(stack.projectId)
+  setPublish(stackId, {
+    status: 'running',
+    startedAt: stack.publish?.startedAt ?? nowIso(),
+    currentEntryId: undefined,
+  })
+  publishLog(stackId, 'Publishing stack…')
+
+  try {
+    const ordered = orderedEntries(stack)
+    for (let i = 0; i < ordered.length; i++) {
+      const entry = ordered[i]
+      setPublish(stackId, { currentEntryId: entry.id })
+
+      if (entry.kind === 'local') {
+        const lpr = entry.localPrId ? getLocalPR(entry.localPrId) : null
+        if (!lpr) {
+          publishLog(stackId, `skip: local PR ${entry.localPrId} not found`)
+          continue
+        }
+        if (lpr.realPrNumber || lpr.status === 'open' || lpr.status === 'merged') {
+          publishLog(stackId, `LOCAL-${lpr.localNumber} already published (#${lpr.realPrNumber})`)
+          continue
+        }
+        publishLog(stackId, `Promoting LOCAL-${lpr.localNumber} (${lpr.title})…`)
+        const promoted = await promoteLocalPR(lpr.id, { markReady: true })
+        if (!promoted || promoted.status === 'error') {
+          setPublish(stackId, { status: 'error' })
+          publishLog(stackId, `LOCAL-${lpr.localNumber} failed to promote — stopping.`)
+          return
+        }
+        publishLog(stackId, `→ PR #${promoted.realPrNumber}`)
+      } else if (entry.kind === 'real' && entry.prNumber && repoPath) {
+        const base = baseForEntry(stack, ordered, i)
+        await github.setPRBase(repoPath, entry.prNumber, base)
+        publishLog(stackId, `Retargeted #${entry.prNumber} → ${base}`)
+      }
+    }
+    setPublish(stackId, { status: 'done', currentEntryId: undefined })
+    publishLog(stackId, 'Stack published.')
+  } catch (err) {
+    setPublish(stackId, { status: 'error' })
+    publishLog(stackId, `Publish failed: ${err instanceof Error ? err.message : String(err)}`)
+  } finally {
+    publishInFlight.delete(stackId)
+  }
 }
 
 /** Test-only: reset the lazy store handle. */

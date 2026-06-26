@@ -53,4 +53,10 @@ export function registerPRStackHandlers(window: BrowserWindow): void {
       return prStack.mergeStacks(targetId, sourceId)
     }
   )
+
+  // Long-running: kick off and return immediately; progress streams via
+  // PR_STACK_STATE_UPDATE (publish/propagation cursors on the stack).
+  handle(IPC.PR_STACK_PUBLISH, async (_e, stackId: string): Promise<void> => {
+    void prStack.publishStack(stackId)
+  })
 }
