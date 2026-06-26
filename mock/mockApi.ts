@@ -670,4 +670,132 @@ export const mockApi = {
       },
     }
   })(),
+
+  prStack: (() => {
+    const byProject: Record<string, Array<Record<string, any>>> = {}
+    const listeners: Array<(projectId: string, list: unknown[]) => void> = []
+    let seq = 0
+    let entSeq = 0
+    const emit = (projectId: string) => {
+      for (const cb of listeners) cb(projectId, [...(byProject[projectId] ?? [])])
+    }
+    const find = (id: string) => {
+      for (const list of Object.values(byProject)) {
+        const hit = list.find((s) => s.id === id)
+        if (hit) return hit
+      }
+      return undefined
+    }
+    const relink = (stack: Record<string, any>) => {
+      stack.entries.forEach((e: any, i: number) => {
+        e.order = i
+        e.baseBranch = i === 0 ? stack.baseBranch : stack.entries[i - 1].branch
+      })
+      stack.updatedAt = new Date().toISOString()
+    }
+    return {
+      list: async (projectId: string) => [...(byProject[projectId] ?? [])],
+      create: async (input: Record<string, any>) => {
+        seq += 1
+        const now = new Date().toISOString()
+        const stack = {
+          id: `stk-${seq}`,
+          projectId: input.projectId,
+          name: input.name,
+          baseBranch: input.baseBranch || 'main',
+          foundryId: input.foundryId,
+          entries: [],
+          publish: { status: 'idle', log: [] },
+          propagation: { status: 'idle', log: [] },
+          createdAt: now,
+          updatedAt: now,
+        }
+        ;(byProject[input.projectId] ??= []).push(stack)
+        emit(input.projectId)
+        return stack
+      },
+      rename: async (id: string, name: string) => {
+        const s = find(id)
+        if (!s) return null
+        s.name = name
+        emit(s.projectId)
+        return s
+      },
+      delete: async (id: string) => {
+        const s = find(id)
+        if (!s) return
+        byProject[s.projectId] = (byProject[s.projectId] ?? []).filter((x) => x.id !== id)
+        emit(s.projectId)
+      },
+      addEntry: async (stackId: string, input: Record<string, any>) => {
+        const s = find(stackId)
+        if (!s) return null
+        entSeq += 1
+        s.entries.push({
+          id: `ent-${entSeq}`,
+          kind: input.kind,
+          localPrId: input.localPrId,
+          prNumber: input.prNumber,
+          branch: input.branch || `feat/entry-${entSeq}`,
+          baseBranch: input.baseBranch,
+          order: s.entries.length,
+        })
+        relink(s)
+        emit(s.projectId)
+        return s
+      },
+      removeEntry: async (stackId: string, entryId: string) => {
+        const s = find(stackId)
+        if (!s) return null
+        s.entries = s.entries.filter((e: any) => e.id !== entryId)
+        relink(s)
+        emit(s.projectId)
+        return s
+      },
+      reorder: async (stackId: string, orderedEntryIds: string[]) => {
+        const s = find(stackId)
+        if (!s) return null
+        const byId = new Map(s.entries.map((e: any) => [e.id, e]))
+        s.entries = orderedEntryIds.map((id) => byId.get(id)).filter(Boolean)
+        relink(s)
+        emit(s.projectId)
+        return s
+      },
+      merge: async (targetId: string, sourceId: string) => {
+        const t = find(targetId)
+        const src = find(sourceId)
+        if (!t || !src) return null
+        t.entries.push(...src.entries)
+        relink(t)
+        byProject[src.projectId] = (byProject[src.projectId] ?? []).filter((x) => x.id !== sourceId)
+        emit(t.projectId)
+        return t
+      },
+      publish: async (stackId: string) => {
+        const s = find(stackId)
+        if (!s) return
+        s.publish = { status: 'done', log: [`${new Date().toISOString()} Stack published.`] }
+        emit(s.projectId)
+      },
+      restack: async (stackId: string) => {
+        const s = find(stackId)
+        if (!s) return
+        s.propagation = { status: 'done', log: [`${new Date().toISOString()} Restack complete.`] }
+        emit(s.projectId)
+      },
+      propagate: async (stackId: string) => {
+        const s = find(stackId)
+        if (!s) return
+        s.propagation = { status: 'done', log: [`${new Date().toISOString()} Propagation complete.`] }
+        emit(s.projectId)
+      },
+      onStateUpdate: (cb: (projectId: string, list: unknown[]) => void) => {
+        listeners.push(cb)
+        return () => {
+          const idx = listeners.indexOf(cb)
+          if (idx >= 0) listeners.splice(idx, 1)
+        }
+      },
+    }
+  })(),
 }
