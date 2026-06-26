@@ -374,6 +374,8 @@ const targets: ScreenshotTarget[] = [
     storyId: 'foundry-panel--multiple-foundries',
     viewport: { width: 460, height: 860 },
     delay: 800,
+    // Open the foundry switcher dropdown so the screenshot shows it.
+    clickSelector: 'button[title="Switch foundry"]',
   },
   {
     name: 'foundry-panel-off',

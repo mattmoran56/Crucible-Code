@@ -97,9 +97,9 @@ export function FoundryPanel() {
     [configs, currentProjectId]
   )
 
-  // Honour the user's manual tab choice while it still exists; otherwise fall
-  // back to the first enabled foundry (or the first one configured). Multiple
-  // foundries can run at once — the tab strip lets you switch between them.
+  // Honour the user's manual choice while it still exists; otherwise fall back
+  // to the first enabled foundry (or the first one configured). Multiple
+  // foundries can run at once — the header dropdown switches between them.
   const selected = useMemo(() => {
     const manual = selectedId && projectFoundries.find((f) => f.id === selectedId)
     if (manual) return manual
@@ -127,26 +127,24 @@ export function FoundryPanel() {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      {projectFoundries.length > 1 && (
-        <FoundryTabs
-          foundries={projectFoundries}
-          states={states}
-          selectedId={selected.id}
-          onSelect={setSelectedId}
-        />
-      )}
-      <FoundryView
-        key={selected.id}
-        cfg={selected}
-        state={states[selected.id]}
-        projects={projects}
-      />
-    </div>
+    <FoundryView
+      key={selected.id}
+      cfg={selected}
+      state={states[selected.id]}
+      projects={projects}
+      foundries={projectFoundries}
+      states={states}
+      onSelect={setSelectedId}
+    />
   )
 }
 
-function FoundryTabs({
+/**
+ * Dropdown switcher for when a project runs more than one foundry. The selected
+ * foundry's name doubles as the menu trigger; the menu lists every foundry with
+ * its live status and in-flight count.
+ */
+function FoundrySwitcher({
   foundries,
   states,
   selectedId,
@@ -157,44 +155,86 @@ function FoundryTabs({
   selectedId: string
   onSelect: (id: string) => void
 }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const selected = foundries.find((f) => f.id === selectedId)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
   return (
-    <div className="shrink-0 border-b border-border bg-bg-tertiary/40">
-      <div className="flex items-center gap-2 overflow-x-auto px-3 py-2.5 [scrollbar-width:thin]">
-        {foundries.map((f) => {
-          const meta = foundryStatusMeta(f, states[f.id])
-          const isSelected = f.id === selectedId
-          return (
-            <button
-              key={f.id}
-              onClick={() => onSelect(f.id)}
-              title={`${f.name} — ${meta.label}`}
-              className={
-                'group flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors ' +
-                (isSelected
-                  ? 'border-accent/60 bg-accent/15 text-text'
-                  : 'border-border bg-bg-secondary text-text-muted hover:text-text hover:border-text-muted/50')
-              }
-            >
-              <span
-                className={`inline-block h-2 w-2 shrink-0 rounded-full ${meta.dot} ${
-                  meta.pulse ? 'animate-pulse' : ''
-                }`}
-              />
-              <span className="max-w-[120px] truncate font-medium">{f.name}</span>
-              {meta.activeCount > 0 && (
-                <span
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="group flex max-w-full items-center gap-2 rounded-lg px-2 py-1 -mx-2 -my-1 hover:bg-bg-tertiary transition-colors"
+        title="Switch foundry"
+      >
+        <span className="text-[15px] font-semibold text-text truncate leading-tight">
+          {selected?.name}
+        </span>
+        <svg
+          className={`shrink-0 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`}
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-2 w-[260px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-bg-secondary shadow-xl">
+          <div className="px-4 pt-3.5 pb-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+            Foundries ({foundries.length})
+          </div>
+          <div className="pb-1.5">
+            {foundries.map((f) => {
+              const meta = foundryStatusMeta(f, states[f.id])
+              const isSelected = f.id === selectedId
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => {
+                    onSelect(f.id)
+                    setOpen(false)
+                  }}
                   className={
-                    'shrink-0 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ' +
-                    (isSelected ? 'bg-accent/25 text-text' : 'bg-bg-tertiary text-text-muted')
+                    'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors ' +
+                    (isSelected ? 'bg-accent/10' : 'hover:bg-bg-tertiary')
                   }
                 >
-                  {meta.activeCount}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
+                  <span
+                    className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${meta.dot} ${
+                      meta.pulse ? 'animate-pulse' : ''
+                    }`}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-text">
+                      {f.name}
+                    </span>
+                    <span className="block text-[11px] text-text-muted">{meta.label}</span>
+                  </span>
+                  {meta.activeCount > 0 && (
+                    <span className="shrink-0 rounded-full bg-bg-tertiary px-2.5 py-1 text-[11px] font-semibold tabular-nums text-text-muted">
+                      {meta.activeCount}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -203,10 +243,16 @@ function FoundryView({
   cfg,
   state,
   projects,
+  foundries,
+  states,
+  onSelect,
 }: {
   cfg: FoundryConfig
   state: FoundryRuntimeState | undefined
   projects: import('../../../shared/types').Project[]
+  foundries: FoundryConfig[]
+  states: Record<string, FoundryRuntimeState>
+  onSelect: (id: string) => void
 }) {
   const runNow = useFoundryStore((s) => s.runNow)
   const setPaused = useFoundryStore((s) => s.setPaused)
@@ -222,27 +268,34 @@ function FoundryView({
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {/* Header */}
-      <div className="px-4 py-3.5 border-b border-border">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+      <div className="px-6 py-5 border-b border-border">
+        <div className="min-w-0">
+          {foundries.length > 1 ? (
+            <FoundrySwitcher
+              foundries={foundries}
+              states={states}
+              selectedId={cfg.id}
+              onSelect={onSelect}
+            />
+          ) : (
             <div className="text-[15px] font-semibold text-text truncate leading-tight">
               {cfg.name}
             </div>
-            <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
-              <span
-                className={`inline-block h-2 w-2 shrink-0 rounded-full ${status.dot} ${
-                  status.pulse ? 'animate-pulse' : ''
-                }`}
-              />
-              <span className="text-text">{status.label}</span>
-              <span className="text-text-muted/60">·</span>
-              <span className="truncate">{project?.name ?? cfg.projectId}</span>
-            </div>
+          )}
+          <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
+            <span
+              className={`inline-block h-2 w-2 shrink-0 rounded-full ${status.dot} ${
+                status.pulse ? 'animate-pulse' : ''
+              }`}
+            />
+            <span className="text-text">{status.label}</span>
+            <span className="text-text-muted/60">·</span>
+            <span className="truncate">{project?.name ?? cfg.projectId}</span>
           </div>
         </div>
 
         {cfg.enabled && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button size="sm" variant="primary" onClick={() => void runNow(cfg.id)}>
               Run pass
             </Button>
@@ -290,9 +343,9 @@ function FoundryView({
       {cfg.enabled && (
         <div className="flex-1 min-h-0 flex flex-col">
           {/* Top half: status + pipelines */}
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-5">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-7">
             {state?.lastError && (
-              <div className="rounded-lg px-3.5 py-3 text-xs leading-relaxed text-danger bg-danger/10 border border-danger/30">
+              <div className="rounded-lg px-4 py-3.5 text-xs leading-relaxed text-danger bg-danger/10 border border-danger/30">
                 {state.lastError}
               </div>
             )}
@@ -300,7 +353,7 @@ function FoundryView({
             {/* Foreman pass status */}
             <section>
               <SectionLabel>Foreman</SectionLabel>
-              <div className="mt-2.5 rounded-lg border border-border bg-bg-tertiary/40 px-3.5 py-3">
+              <div className="mt-3.5 rounded-lg border border-border bg-bg-tertiary/40 px-4 py-4">
                 {passInFlight ? (
                   <div className="flex items-center gap-2 text-sm text-text">
                     <span className="inline-block h-2 w-2 rounded-full bg-warning animate-pulse" />
@@ -323,13 +376,13 @@ function FoundryView({
             <section>
               <SectionLabel>Active ({activePipelines.length})</SectionLabel>
               {activePipelines.length === 0 ? (
-                <div className="mt-2.5 rounded-lg border border-dashed border-border px-3.5 py-5 text-center text-xs text-text-muted italic">
+                <div className="mt-3 rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-text-muted italic">
                   {passInFlight
                     ? 'Foreman is deciding what to start…'
                     : 'No pipelines running.'}
                 </div>
               ) : (
-                <div className="mt-2.5 space-y-2.5">
+                <div className="mt-3.5 space-y-4">
                   {activePipelines.map((p) => (
                     <PipelineRow key={p.id} foundryId={cfg.id} pipeline={p} />
                   ))}
@@ -339,11 +392,11 @@ function FoundryView({
 
             {/* Completed */}
             {completedPipelines.length > 0 && (
-              <details className="rounded-lg border border-border bg-bg-tertiary/30 px-3.5 py-3" open={false}>
+              <details className="rounded-lg border border-border bg-bg-tertiary/30 px-4 py-3.5" open={false}>
                 <summary className="cursor-pointer select-none">
                   <SectionLabel inline>Completed ({completedPipelines.length})</SectionLabel>
                 </summary>
-                <div className="space-y-2.5 mt-3">
+                <div className="space-y-4 mt-3.5">
                   {completedPipelines.slice(-10).reverse().map((p) => (
                     <PipelineRow key={p.id} foundryId={cfg.id} pipeline={p} />
                   ))}
@@ -353,7 +406,7 @@ function FoundryView({
 
             {/* Pass history */}
             {passes.length > 1 && (
-              <details className="rounded-lg border border-border bg-bg-tertiary/30 px-3.5 py-3">
+              <details className="rounded-lg border border-border bg-bg-tertiary/30 px-4 py-3.5">
                 <summary className="cursor-pointer select-none">
                   <SectionLabel inline>Pass history ({passes.length})</SectionLabel>
                 </summary>
@@ -459,7 +512,7 @@ function ForemanPtyPane({ terminalId }: { terminalId: string }) {
       className="border-t border-border flex flex-col shrink-0"
       style={{ height: 320 }}
     >
-      <div className="px-4 py-2.5 flex items-center justify-between border-b border-border">
+      <div className="px-6 py-3 flex items-center justify-between border-b border-border">
         <SectionLabel inline>
           Foreman <span className="font-normal normal-case tracking-normal">— interactive</span>
         </SectionLabel>
@@ -468,7 +521,7 @@ function ForemanPtyPane({ terminalId }: { terminalId: string }) {
           live
         </span>
       </div>
-      <div ref={containerRef} className="flex-1 min-h-0" style={{ padding: 6 }} />
+      <div ref={containerRef} className="flex-1 min-h-0" style={{ padding: "8px 10px" }} />
     </div>
   )
 }
@@ -502,7 +555,7 @@ function ForemanTranscriptPane({ state }: { state: FoundryRuntimeState | undefin
       className="border-t border-border flex flex-col shrink-0"
       style={{ height: 320 }}
     >
-      <div className="px-4 py-2.5 flex items-center justify-between border-b border-border">
+      <div className="px-6 py-3 flex items-center justify-between border-b border-border">
         <SectionLabel inline>
           Foreman transcript
           {latestPass && (
@@ -524,7 +577,7 @@ function ForemanTranscriptPane({ state }: { state: FoundryRuntimeState | undefin
           onScroll={onScroll}
           className="flex-1 min-h-0 overflow-y-auto text-[11px] leading-relaxed text-text whitespace-pre-wrap break-words"
           style={{
-            padding: '10px 14px',
+            padding: '12px 22px',
             fontFamily: 'Menlo, Monaco, "Courier New", monospace',
           }}
         >
@@ -562,16 +615,16 @@ function PipelineRow({
   return (
     <div className="rounded-lg border border-border bg-bg-secondary/40 overflow-hidden">
       <button
-        className="w-full flex items-start gap-2.5 px-3.5 py-3 text-left hover:bg-bg-tertiary transition-colors"
+        className="w-full flex items-start gap-2.5 px-4 py-4 text-left hover:bg-bg-tertiary transition-colors"
         onClick={() => setExpanded((v) => !v)}
       >
         <div className="min-w-0 flex-1">
           <div className="text-[13px] text-text truncate" title={pipeline.page.title}>
             {pipeline.page.title || pipeline.page.id}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <span
-              className={`inline-block text-[10px] px-2 py-0.5 rounded-full border font-semibold uppercase tracking-wide ${chipClass}`}
+              className={`inline-block text-[10px] px-3 py-1.5 rounded-full border font-semibold uppercase tracking-wide ${chipClass}`}
             >
               {PHASE_LABEL[phase]}
             </span>
