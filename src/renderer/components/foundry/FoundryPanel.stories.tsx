@@ -43,12 +43,12 @@ const stubApi = (setup: SetupOptions): void => {
     ...api,
     foundry: {
       ...(api.foundry ?? {}),
-      list: async () => [setup.config],
-      getState: async (foundryId: string) =>
-        setup.state && foundryId === setup.config.id ? setup.state : null,
+      list: async () => setup.configs,
+      getState: async (foundryId: string) => setup.states?.[foundryId] ?? null,
       runNow: async () => {},
       setPaused: async () => {},
       pipelineAction: async () => {},
+      publishPRs: async () => {},
       openForeman: async () => null,
       onFireTask: () => () => {},
       onStateUpdate: () => () => {},
@@ -58,8 +58,13 @@ const stubApi = (setup: SetupOptions): void => {
 }
 
 interface SetupOptions {
-  config: FoundryConfig
-  state?: FoundryRuntimeState
+  configs: FoundryConfig[]
+  states?: Record<string, FoundryRuntimeState>
+}
+
+/** Convenience for single-foundry stories. */
+function single(config: FoundryConfig, state?: FoundryRuntimeState): SetupOptions {
+  return { configs: [config], states: state ? { [config.id]: state } : {} }
 }
 
 function Wrapper({ setup }: { setup: SetupOptions }) {
@@ -69,8 +74,8 @@ function Wrapper({ setup }: { setup: SetupOptions }) {
     setupStoresForStory()
     stubApi(setup)
     useFoundryStore.setState({
-      configs: [setup.config],
-      states: setup.state ? { [setup.config.id]: setup.state } : {},
+      configs: setup.configs,
+      states: setup.states ?? {},
     })
     setReady(true)
   }, [setup])
@@ -102,7 +107,7 @@ export default meta
 type Story = StoryObj<typeof FoundryPanel>
 
 export const Off: Story = {
-  render: () => <Wrapper setup={{ config: offConfig }} />,
+  render: () => <Wrapper setup={single(offConfig)} />,
 }
 
 const passInFlightState: FoundryRuntimeState = {
@@ -133,7 +138,7 @@ const passInFlightState: FoundryRuntimeState = {
 }
 
 export const PassRunning: Story = {
-  render: () => <Wrapper setup={{ config: baseConfig, state: passInFlightState }} />,
+  render: () => <Wrapper setup={single(baseConfig, passInFlightState)} />,
 }
 
 const runningPipelinesState: FoundryRuntimeState = {
@@ -230,5 +235,77 @@ const runningPipelinesState: FoundryRuntimeState = {
 }
 
 export const ActivePipelines: Story = {
-  render: () => <Wrapper setup={{ config: baseConfig, state: runningPipelinesState }} />,
+  render: () => <Wrapper setup={single(baseConfig, runningPipelinesState)} />,
+}
+
+// --- Multiple foundries running at once (tab selector) ---
+
+const secondConfig: FoundryConfig = {
+  ...baseConfig,
+  id: 'fnd-2',
+  name: 'Billing webhooks reconciliation',
+  baseBranch: 'project/billing-webhooks',
+  maxConcurrentTasks: 2,
+}
+
+const thirdConfig: FoundryConfig = {
+  ...baseConfig,
+  id: 'fnd-3',
+  name: 'Docs site migration',
+  baseBranch: 'project/docs-migration',
+  paused: true,
+  maxConcurrentTasks: 1,
+}
+
+const secondState: FoundryRuntimeState = {
+  foundryId: secondConfig.id,
+  pageStatusSnapshot: {},
+  documentedHashes: {},
+  pipelines: [
+    {
+      id: 'pipe-b1',
+      foundryId: secondConfig.id,
+      page: {
+        id: 'pb1',
+        url: 'https://app.notion.com/p/b1',
+        title: '[B2.1] Reconcile failed Stripe webhook retries',
+        rawProperties: {},
+      },
+      phase: 'implementing',
+      sessionId: 'sess-pipe-b1',
+      branch: 'feat/webhook-retries',
+      worktreePath: '/Users/dev/.codecrucible-worktrees/redeployable-monorepo/webhook-retries',
+      baseBranch: 'project/billing-webhooks',
+      startedAt: new Date(Date.now() - 9 * 60_000).toISOString(),
+      updatedAt: new Date(Date.now() - 40_000).toISOString(),
+      log: ['[15:02:11] Pipeline started — B2.1.'],
+    },
+  ],
+  passes: [
+    {
+      index: 1,
+      startedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+      endedAt: new Date(Date.now() - 9 * 60_000).toISOString(),
+      status: 'completed',
+      trigger: 'enabled',
+      startedPageIds: ['pb1'],
+      summary: 'started 1',
+      transcript: [],
+    },
+  ],
+  passInFlight: false,
+}
+
+export const MultipleFoundries: Story = {
+  render: () => (
+    <Wrapper
+      setup={{
+        configs: [baseConfig, secondConfig, thirdConfig],
+        states: {
+          [baseConfig.id]: runningPipelinesState,
+          [secondConfig.id]: secondState,
+        },
+      }}
+    />
+  ),
 }
