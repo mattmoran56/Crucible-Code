@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto'
 import Store from 'electron-store'
 import type { BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
-import type { PRStack, PRStackEntry, PRStackEntryKind, Project } from '../../shared/types'
+import type { PRStack, PRStackEntry, PRStackEntryKind, Project, FoundryConfig, LocalPR } from '../../shared/types'
 import { getStorePath } from '../store-path'
 import { eventBus, emitToRenderer } from './event-bus'
-import { getLocalPR, patchLocalPR } from './local-pr.service'
+import { getLocalPR, patchLocalPR, LOCAL_PR_CHANGED } from './local-pr.service'
 import { promoteLocalPR } from './local-pr-promote.service'
 import * as github from './github.service'
 
@@ -32,12 +32,42 @@ let mainWindow: BrowserWindow | null = null
 /** Event emitted on the process bus when a stack is created/changed. */
 export const PR_STACK_CHANGED = 'pr-stack:changed'
 
+let unsubLocalPR: (() => void) | null = null
+
 export function startPRStackService(window: BrowserWindow): void {
   mainWindow = window
+  // Funnel foundry-produced local PRs into a managed stack (one per foundry).
+  // Only acts on the first sighting of a local PR; status-only changes for an
+  // already-tracked entry are ignored so relinkChain's own patches don't loop.
+  if (!unsubLocalPR) {
+    const onLocalPRChanged = (lpr: LocalPR): void => {
+      if (!lpr?.foundryId) return
+      const existing = getStackForFoundry(lpr.foundryId)
+      if (existing && existing.entries.some((e) => e.localPrId === lpr.id)) return
+      const meta = getFoundryMeta(lpr.foundryId)
+      ensureStackForFoundry(lpr.foundryId, lpr.projectId, meta.name, meta.baseBranch, lpr.id)
+    }
+    eventBus.on(LOCAL_PR_CHANGED, onLocalPRChanged)
+    unsubLocalPR = () => eventBus.off(LOCAL_PR_CHANGED, onLocalPRChanged)
+  }
 }
 
 export function stopPRStackService(): void {
   mainWindow = null
+  unsubLocalPR?.()
+  unsubLocalPR = null
+}
+
+/** Read a foundry's display name + integration branch from its config store. */
+function getFoundryMeta(foundryId: string): { name: string; baseBranch: string } {
+  const cfgStore = new Store<{ foundries: FoundryConfig[] }>({
+    cwd: getStorePath(),
+    name: 'foundry-config',
+    defaults: { foundries: [] },
+  })
+  const cfg = cfgStore.get('foundries', []).find((f) => f.id === foundryId)
+  const baseBranch = cfg?.foundryBranch || `foundry/integration-${foundryId}`
+  return { name: cfg?.name ? `${cfg.name}` : `Foundry ${foundryId.slice(0, 6)}`, baseBranch }
 }
 
 // ── Persistence helpers ─────────────────────────────────────────────────────

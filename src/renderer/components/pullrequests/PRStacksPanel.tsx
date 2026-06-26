@@ -145,7 +145,8 @@ function StackList({
 }
 
 function StackDetail({ stack }: { stack: PRStack }) {
-  const { selectStack, renameStack, removeEntry, reorder, addEntry, publish } = usePRStackStore()
+  const { stacks, selectStack, renameStack, removeEntry, reorder, addEntry, publish, mergeStacks, deleteStack } =
+    usePRStackStore()
   const { localPRs, remotePRs } = usePRStore()
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
@@ -246,6 +247,18 @@ function StackDetail({ stack }: { stack: PRStack }) {
             {stack.name}
           </button>
         )}
+        <DropdownMenu
+          items={[
+            ...stacks
+              .filter((s) => s.id !== stack.id)
+              .map((s) => ({ label: `Merge into "${s.name}"`, onClick: () => mergeStacks(s.id, stack.id) })),
+            { label: 'Delete stack', variant: 'danger' as const, onClick: () => deleteStack(stack.id) },
+          ]}
+        >
+          <IconButton label="Stack actions">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+          </IconButton>
+        </DropdownMenu>
       </div>
 
       <div className="flex-shrink-0 border-b border-border" style={{ padding: '6px 8px' }}>
