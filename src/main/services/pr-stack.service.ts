@@ -538,6 +538,73 @@ async function resolveConflictWithClaude(
 }
 
 /**
+ * Merge `fromBranch` into `entry`'s branch and push, resolving conflicts with
+ * Claude when needed. Sets the propagation cursor/status as it goes. Returns true
+ * on success; on failure it logs, sets error state, and returns false so the
+ * caller stops the cascade (never leaving a half-merged tree pushed).
+ */
+async function mergeIntoEntry(
+  stackId: string,
+  entry: PRStackEntry,
+  fromBranch: string,
+  repoPath: string | null
+): Promise<boolean> {
+  const label = entryLabel(entry)
+  setPropagation(stackId, { currentEntryId: entry.id, status: 'running' })
+
+  if (!entry.branch) {
+    propagateLog(stackId, `${label}: missing branch info — skipping.`)
+    return true
+  }
+  const resolved = resolveEntryCwd(entry, repoPath)
+  if (!resolved) {
+    setPropagation(stackId, { status: 'error' })
+    propagateLog(stackId, `${label}: no worktree or repo to update from — stopping.`)
+    return false
+  }
+  const { cwd, needsCheckout } = resolved
+  if (needsCheckout) {
+    const co = await gitService.checkoutBranch(cwd, entry.branch, 'stash')
+    if (co.error) {
+      setPropagation(stackId, { status: 'error' })
+      propagateLog(stackId, `${label}: could not check out ${entry.branch}: ${co.error}`)
+      return false
+    }
+  }
+
+  await gitService.fetchAndPull(cwd, fromBranch)
+  const check = await gitService.checkMerge(cwd, fromBranch)
+  if (!check.hasConflicts) {
+    await gitService.mergeBranch(cwd, fromBranch)
+    await gitService.pushBranch(cwd)
+    propagateLog(stackId, `${label}: merged ${fromBranch} cleanly → pushed.`)
+    return true
+  }
+
+  // Conflict — land the markers, then have Claude resolve before continuing.
+  setPropagation(stackId, { status: 'awaiting-conflict' })
+  const merge = await gitService.mergeBranchAllowConflict(cwd, fromBranch)
+  if (!merge.conflicted) {
+    await gitService.pushBranch(cwd)
+    propagateLog(stackId, `${label}: merged ${fromBranch} → pushed.`)
+    setPropagation(stackId, { status: 'running' })
+    return true
+  }
+  propagateLog(stackId, `${label}: ${merge.unmergedFiles.length} conflicted file(s) — invoking Claude.`)
+  const ok = await resolveConflictWithClaude(stackId, entry, fromBranch, merge.unmergedFiles, cwd, repoPath)
+  if (!ok) {
+    await gitService.abortMerge(cwd)
+    setPropagation(stackId, { status: 'error', conflictSessionId: undefined })
+    propagateLog(stackId, `${label}: conflict not resolved — stopping. Fix manually and re-run.`)
+    return false
+  }
+  await gitService.pushBranch(cwd)
+  propagateLog(stackId, `${label}: conflicts resolved → pushed.`)
+  setPropagation(stackId, { status: 'running', conflictSessionId: undefined })
+  return true
+}
+
+/**
  * Cascade changes from `sourceEntryId` up the stack: for each entry above it (in
  * order, one fully done before the next), merge the entry below into it and push.
  * On conflict, Claude resolves before continuing. Persists the cursor after every
@@ -570,60 +637,13 @@ export async function propagateUpward(stackId: string, sourceEntryId: string): P
     propagateLog(stackId, `Propagating from ${entryLabel(ordered[srcIndex])} upward…`)
 
     for (let i = srcIndex + 1; i < ordered.length; i++) {
-      const entry = ordered[i]
       const below = ordered[i - 1]
-      const label = entryLabel(entry)
-      setPropagation(stackId, { currentEntryId: entry.id, status: 'running' })
-
-      if (!entry.branch || !below.branch) {
-        propagateLog(stackId, `${label}: missing branch info — skipping.`)
+      if (!below.branch) {
+        propagateLog(stackId, `${entryLabel(ordered[i])}: predecessor has no branch — skipping.`)
         continue
       }
-      const resolved = resolveEntryCwd(entry, repoPath)
-      if (!resolved) {
-        setPropagation(stackId, { status: 'error' })
-        propagateLog(stackId, `${label}: no worktree or repo to update from — stopping.`)
-        return
-      }
-      const { cwd, needsCheckout } = resolved
-      if (needsCheckout) {
-        const co = await gitService.checkoutBranch(cwd, entry.branch, 'stash')
-        if (co.error) {
-          setPropagation(stackId, { status: 'error' })
-          propagateLog(stackId, `${label}: could not check out ${entry.branch}: ${co.error}`)
-          return
-        }
-      }
-
-      await gitService.fetchAndPull(cwd, below.branch)
-      const check = await gitService.checkMerge(cwd, below.branch)
-      if (!check.hasConflicts) {
-        await gitService.mergeBranch(cwd, below.branch)
-        await gitService.pushBranch(cwd)
-        propagateLog(stackId, `${label}: merged ${below.branch} cleanly → pushed.`)
-        continue
-      }
-
-      // Conflict — land the markers, then have Claude resolve before continuing.
-      setPropagation(stackId, { status: 'awaiting-conflict' })
-      const merge = await gitService.mergeBranchAllowConflict(cwd, below.branch)
-      if (!merge.conflicted) {
-        await gitService.pushBranch(cwd)
-        propagateLog(stackId, `${label}: merged ${below.branch} → pushed.`)
-        setPropagation(stackId, { status: 'running' })
-        continue
-      }
-      propagateLog(stackId, `${label}: ${merge.unmergedFiles.length} conflicted file(s) — invoking Claude.`)
-      const ok = await resolveConflictWithClaude(stackId, entry, below.branch, merge.unmergedFiles, cwd, repoPath)
-      if (!ok) {
-        await gitService.abortMerge(cwd)
-        setPropagation(stackId, { status: 'error', conflictSessionId: undefined })
-        propagateLog(stackId, `${label}: conflict not resolved — stopping. Fix manually and re-run Propagate.`)
-        return
-      }
-      await gitService.pushBranch(cwd)
-      propagateLog(stackId, `${label}: conflicts resolved → pushed.`)
-      setPropagation(stackId, { status: 'running', conflictSessionId: undefined })
+      const ok = await mergeIntoEntry(stackId, ordered[i], below.branch, repoPath)
+      if (!ok) return
     }
 
     setPropagation(stackId, { status: 'done', currentEntryId: undefined })
@@ -631,6 +651,73 @@ export async function propagateUpward(stackId: string, sourceEntryId: string): P
   } catch (err) {
     setPropagation(stackId, { status: 'error' })
     propagateLog(stackId, `Propagation failed: ${err instanceof Error ? err.message : String(err)}`)
+  } finally {
+    propagateInFlight.delete(stackId)
+  }
+}
+
+/**
+ * Restack after a lower entry merged to trunk. Drops the merged entry (relink
+ * retargets the chain), retargets any real PRs above onto their new predecessor,
+ * then merges the stack base (now containing the merged code) into the new bottom
+ * entry and cascades upward — so every remaining branch incorporates the merge.
+ */
+export async function restackAfterMerge(stackId: string, mergedEntryId: string): Promise<void> {
+  const stack = getStack(stackId)
+  if (!stack) return
+  if (publishInFlight.has(stackId) || propagateInFlight.has(stackId)) return
+
+  const repoPath = getProjectRepoPath(stack.projectId)
+  propagateInFlight.add(stackId)
+  setPropagation(stackId, {
+    status: 'running',
+    sourceEntryId: undefined,
+    currentEntryId: undefined,
+    startedAt: stack.propagation?.startedAt ?? nowIso(),
+  })
+  try {
+    const merged = stack.entries.find((e) => e.id === mergedEntryId)
+    if (!merged) {
+      setPropagation(stackId, { status: 'error' })
+      propagateLog(stackId, 'merged entry not found — aborting.')
+      return
+    }
+    propagateLog(stackId, `Restacking after ${entryLabel(merged)} merged…`)
+
+    // Remove the merged entry; relinkChain retargets local entries' bases.
+    const updated = removeEntry(stackId, mergedEntryId)
+    if (!updated || updated.entries.length === 0) {
+      setPropagation(stackId, { status: 'done' })
+      propagateLog(stackId, 'Stack empty after restack — done.')
+      return
+    }
+    const re = orderedEntries(updated)
+
+    // Retarget real PRs above onto their new predecessor branch (local entries
+    // were already retargeted by relinkChain via patchLocalPR).
+    for (let i = 0; i < re.length; i++) {
+      const e = re[i]
+      if (e.kind === 'real' && e.prNumber && repoPath) {
+        const base = baseForEntry(updated, re, i)
+        await github.setPRBase(repoPath, e.prNumber, base)
+        propagateLog(stackId, `${entryLabel(e)}: base → ${base}`)
+      }
+    }
+
+    // Merge the stack base (trunk, now holding the merged PR) into the new bottom
+    // entry, then cascade the rest upward.
+    if (!(await mergeIntoEntry(stackId, re[0], updated.baseBranch, repoPath))) return
+    for (let i = 1; i < re.length; i++) {
+      const below = re[i - 1]
+      if (!below.branch) continue
+      if (!(await mergeIntoEntry(stackId, re[i], below.branch, repoPath))) return
+    }
+
+    setPropagation(stackId, { status: 'done', currentEntryId: undefined })
+    propagateLog(stackId, 'Restack complete.')
+  } catch (err) {
+    setPropagation(stackId, { status: 'error' })
+    propagateLog(stackId, `Restack failed: ${err instanceof Error ? err.message : String(err)}`)
   } finally {
     propagateInFlight.delete(stackId)
   }

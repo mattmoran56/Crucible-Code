@@ -66,4 +66,11 @@ export function registerPRStackHandlers(window: BrowserWindow): void {
       void prStack.propagateUpward(stackId, sourceEntryId)
     }
   )
+
+  handle(
+    IPC.PR_STACK_RESTACK,
+    async (_e, stackId: string, mergedEntryId: string): Promise<void> => {
+      void prStack.restackAfterMerge(stackId, mergedEntryId)
+    }
+  )
 }

@@ -145,7 +145,7 @@ function StackList({
 }
 
 function StackDetail({ stack }: { stack: PRStack }) {
-  const { stacks, selectStack, renameStack, removeEntry, reorder, addEntry, publish, propagate, mergeStacks, deleteStack } =
+  const { stacks, selectStack, renameStack, removeEntry, reorder, addEntry, publish, propagate, restack, mergeStacks, deleteStack } =
     usePRStackStore()
   const { localPRs, remotePRs } = usePRStore()
   const [dragId, setDragId] = useState<string | null>(null)
@@ -312,14 +312,25 @@ function StackDetail({ stack }: { stack: PRStack }) {
                 <span className="text-[10px] font-medium text-text-muted shrink-0">{r.label}</span>
                 <span className="text-xs text-text truncate flex-1 min-w-0">{r.title}</span>
                 <div className="opacity-0 group-hover:opacity-100 shrink-0 flex items-center">
-                  <IconButton
-                    label="Propagate this change upward"
-                    onClick={(e) => { e.stopPropagation(); propagate(stack.id, r.entry.id) }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
-                    </svg>
-                  </IconButton>
+                  {r.state === 'merged' ? (
+                    <IconButton
+                      label="Restack: this PR merged — rebase the rest onto the new base"
+                      onClick={(e) => { e.stopPropagation(); restack(stack.id, r.entry.id) }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                      </svg>
+                    </IconButton>
+                  ) : (
+                    <IconButton
+                      label="Propagate this change upward"
+                      onClick={(e) => { e.stopPropagation(); propagate(stack.id, r.entry.id) }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
+                      </svg>
+                    </IconButton>
+                  )}
                   <IconButton
                     label="Remove from stack"
                     variant="danger"
