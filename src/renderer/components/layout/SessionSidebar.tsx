@@ -17,6 +17,7 @@ import { ImportWorktreeDialog } from '../sessions/ImportWorktreeDialog'
 import { OpenBranchDialog } from '../sessions/OpenBranchDialog'
 import { ClaudeWebSessionCardContainer } from '../sessions/ClaudeWebSessionCard'
 import { useClaudeWebStore } from '../../stores/claudeWebStore'
+import { sessionsToDropCapture } from '../../lib/localPrCapture'
 import { PRCard } from '../pullrequests/PRCard'
 import { PRSortFilterMenu } from '../pullrequests/PRSortFilterMenu'
 import { usePRViewStore, DEFAULT_PR_VIEW, isDefaultView, type PersonFilter } from '../../stores/prViewStore'
@@ -203,12 +204,8 @@ export function SessionSidebar() {
   // process already dropped the in-memory capture at promote time; this keeps it
   // dropped durably.
   useEffect(() => {
-    for (const lpr of localPRs) {
-      if (!lpr.sessionId || lpr.realPrNumber == null) continue
-      const session = sessions.find((s) => s.id === lpr.sessionId)
-      if (session?.captureLocalPr) {
-        void setSessionCaptureLocalPr(session.projectId, session.id, false)
-      }
+    for (const session of sessionsToDropCapture(localPRs, sessions)) {
+      void setSessionCaptureLocalPr(session.projectId, session.id, false)
     }
   }, [localPRs, sessions, setSessionCaptureLocalPr])
 

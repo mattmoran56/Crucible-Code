@@ -23,9 +23,12 @@ const worktreeApi = {
 const terminalApi = {
   killSession: vi.fn(),
 }
+const localPrApi = {
+  setCapture: vi.fn(),
+}
 
 beforeEach(() => {
-  for (const o of [sessionApi, gitApi, worktreeApi, terminalApi]) {
+  for (const o of [sessionApi, gitApi, worktreeApi, terminalApi, localPrApi]) {
     for (const fn of Object.values(o)) (fn as any).mockReset()
   }
   ;(window as any).api = {
@@ -33,6 +36,7 @@ beforeEach(() => {
     git: gitApi,
     worktree: worktreeApi,
     terminal: terminalApi,
+    localPr: localPrApi,
   }
   useSessionStore.setState({
     sessions: [],
@@ -810,5 +814,72 @@ describe('sessionStore.queuePendingStartup', () => {
 
   it('consumePendingFocus returns false when nothing is pending', () => {
     expect(useSessionStore.getState().consumePendingFocus('s1')).toBe(false)
+  })
+})
+
+describe('sessionStore.setSessionCaptureLocalPr', () => {
+  const SESSION = {
+    id: 's1',
+    name: 's1',
+    branchName: 'session/s1',
+    worktreePath: '/wt/s1',
+    projectId: 'proj-1',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  }
+
+  beforeEach(() => {
+    sessionApi.save.mockResolvedValue(undefined)
+    localPrApi.setCapture.mockResolvedValue(undefined)
+    useSessionStore.setState({
+      currentProjectId: 'proj-1',
+      sessions: [{ ...SESSION }],
+    } as any)
+  })
+
+  it('enabling persists the flag, updates visible state, and turns the shim on', async () => {
+    await useSessionStore.getState().setSessionCaptureLocalPr('proj-1', 's1', true)
+
+    // Persisted with the flag flipped on.
+    expect(sessionApi.save).toHaveBeenCalledWith('proj-1', [
+      expect.objectContaining({ id: 's1', captureLocalPr: true }),
+    ])
+    // Visible state reflects it (active project).
+    expect(useSessionStore.getState().sessions[0].captureLocalPr).toBe(true)
+    // In-memory capture context (the gh shim) turned on for the session id.
+    expect(localPrApi.setCapture).toHaveBeenCalledWith('s1', true)
+  })
+
+  it('disabling clears the flag and drops the shim — the un-shim-on-promote path', async () => {
+    useSessionStore.setState({ sessions: [{ ...SESSION, captureLocalPr: true }] } as any)
+
+    await useSessionStore.getState().setSessionCaptureLocalPr('proj-1', 's1', false)
+
+    expect(sessionApi.save).toHaveBeenCalledWith('proj-1', [
+      expect.objectContaining({ id: 's1', captureLocalPr: false }),
+    ])
+    expect(useSessionStore.getState().sessions[0].captureLocalPr).toBe(false)
+    expect(localPrApi.setCapture).toHaveBeenCalledWith('s1', false)
+  })
+
+  it('only touches the named session, leaving siblings untouched', async () => {
+    const other = { ...SESSION, id: 's2', captureLocalPr: true }
+    useSessionStore.setState({ sessions: [{ ...SESSION }, other] } as any)
+
+    await useSessionStore.getState().setSessionCaptureLocalPr('proj-1', 's1', true)
+
+    const saved = sessionApi.save.mock.calls[0][1] as Array<Record<string, unknown>>
+    expect(saved.find((s) => s.id === 's1')?.captureLocalPr).toBe(true)
+    expect(saved.find((s) => s.id === 's2')?.captureLocalPr).toBe(true) // unchanged
+  })
+
+  it('does not swap the visible list when the toggle targets a non-active project', async () => {
+    useSessionStore.setState({ currentProjectId: 'proj-OTHER' } as any)
+
+    await useSessionStore.getState().setSessionCaptureLocalPr('proj-1', 's1', true)
+
+    // Still persists + drops the in-memory shim, but leaves visible state alone.
+    expect(sessionApi.save).toHaveBeenCalledWith('proj-1', expect.any(Array))
+    expect(localPrApi.setCapture).toHaveBeenCalledWith('s1', true)
+    expect(useSessionStore.getState().sessions[0].captureLocalPr).toBeUndefined()
   })
 })
