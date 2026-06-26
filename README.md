@@ -32,6 +32,7 @@
 - **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
 - **Foundry** — Run a whole Notion backlog on autopilot. An interactive foreman Claude plans dependencies; multiple worker sessions run in parallel; each pipeline goes implement → draft PR → review loop → ready. Human reviews code and tests; everything else is automated. See [docs/FOUNDRY.md](docs/FOUNDRY.md)
 - **Local PRs** — A staging stage between a draft branch and an open GitHub PR. Snapshot any session into a viewable, reviewable local PR (or let capture mode intercept the agent's `gh pr create`), then **Promote** it to a real PR. In local-PR mode Foundry builds a chained stack overnight that you publish in one click with **Create PRs** (open → optional local CI → fix-on-failure → ready, in order)
+- **PR stacks** — A right-hand panel for defining and managing named chains of dependent PRs (local and/or real). Drag to reorder, publish the whole chain to GitHub in order, restack after a merge, and **propagate** a lower change up the stack — with Claude resolving any merge conflicts. Foundry runs auto-populate a stack you can manage
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
@@ -358,6 +359,32 @@ See [docs/LOCAL_PRS.md](docs/LOCAL_PRS.md) for the full lifecycle, the captured 
 <tr>
 <td><img src="docs/screenshots/local-pr-card.png" alt="A local PR in the PR list — Local badge, LOCAL-1 number, branch → base, Promote / Discard actions" /></td>
 <td><img src="docs/screenshots/local-pr-panel.png" alt="The local PR review tab — rendered body with review checklist, plus the local diff — and a Promote to PR button" /></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary><strong>PR stacks</strong></summary>
+
+A **PR stack** is a first-class, named chain of dependent PRs — local PRs and/or already-open GitHub PRs, mixed — managed from the **PR Stacks** panel in the right activity bar (the stacked-layers icon). The bottom entry targets the stack's base branch; every entry above targets the one below it.
+
+**Managing a stack**
+- **Create / name** a stack, then **+ Add PR** to pull in any local PR or open GitHub PR not already in it.
+- **Drag to reorder** entries (shown tip-first). Reordering re-links the chain — each local PR's parent (and base branch) is updated automatically.
+- **Merge** one stack into another, or **delete** it, from the detail header menu.
+
+**Acting on a stack**
+- **Publish** — promotes the whole stack to real chained GitHub PRs in order: local entries are opened against their predecessor's branch; real entries are retargeted with `gh pr edit --base`. Idempotent and resumable.
+- **Restack after merge** — when a lower PR merges, drop it and rebase everything above onto the new base (real PRs retargeted on GitHub), then merge the new base up the chain.
+- **Propagate upward** — push a change to a lower branch and cascade it up the stack one entry at a time: each higher branch merges the one below and pushes, fully finishing before the next. On a conflict, **Claude resolves it** — driving the live worker session when one exists, otherwise a permission-seeded headless run — then the cascade continues. It never pushes a half-merged tree, and the cursor is resumable across restarts.
+
+**Foundry integration.** A Foundry run in local-PR mode auto-creates a managed stack from its chained local PRs, which you can then reorder, extend with other PRs, or merge with another run's stack.
+
+<table>
+<tr>
+<td><img src="docs/screenshots/pr-stack-list.png" alt="PR Stacks panel — list of stacks with a Foundry badge and entry counts" /></td>
+<td><img src="docs/screenshots/pr-stack-detail.png" alt="A stack's detail view — ordered entries tip-first with status/CI badges and branch → base, plus Add PR / Publish and per-entry propagate actions" /></td>
 </tr>
 </table>
 

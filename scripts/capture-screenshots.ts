@@ -398,6 +398,18 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 760, height: 640 },
     delay: 600,
   },
+  {
+    name: 'pr-stack-list',
+    storyId: 'pr-prstackspanel--stack-list',
+    viewport: { width: 420, height: 760 },
+    delay: 600,
+  },
+  {
+    name: 'pr-stack-detail',
+    storyId: 'pr-prstackspanel--stack-detail',
+    viewport: { width: 420, height: 760 },
+    delay: 600,
+  },
 ]
 
 async function captureScreenshots() {
