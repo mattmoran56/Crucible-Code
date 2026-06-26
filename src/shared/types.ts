@@ -980,3 +980,88 @@ export interface LocalPRUpdate {
   body?: string
   baseBranch?: string
 }
+
+// PR Stacks — a first-class, user-defined chain of dependent PRs. An ordered
+// list of entries, each referencing either a local PR (pre-promotion stage) or
+// an already-open GitHub PR. The bottom entry targets `baseBranch`; every entry
+// above targets the one below it. Foundry runs auto-create one. Managed from the
+// right-hand PR Stacks panel: reorder, add/remove, publish (promote the whole
+// chain to real PRs), restack-after-merge, and upward propagation (push to a
+// lower branch cascades up the chain, with Claude resolving conflicts). ────────
+
+export type PRStackEntryKind = 'local' | 'real'
+
+export interface PRStackEntry {
+  /** Stable id within the stack (survives reorder/promotion; used as DnD key). */
+  id: string
+  kind: PRStackEntryKind
+  /** Set when kind==='local' — references LocalPR.id. */
+  localPrId?: string
+  /** Set when kind==='real' — the GitHub PR number. */
+  prNumber?: number
+  /** Denormalized for display/ops without a round-trip; refreshed on load. */
+  branch?: string
+  baseBranch?: string
+  /** Position in the chain; 0 = bottom (targets the stack base). */
+  order: number
+}
+
+/** Resumable cursor for the "Publish" batch — mirrors FoundryRuntimeState.publish. */
+export interface PRStackPublishState {
+  status: 'idle' | 'running' | 'paused' | 'done' | 'error'
+  currentEntryId?: string
+  startedAt?: string
+  log: string[]
+}
+
+export type PRStackPropagationStatus =
+  | 'idle'
+  | 'running'
+  | 'awaiting-conflict'
+  | 'paused'
+  | 'done'
+  | 'error'
+
+/** Resumable cursor for upward propagation (the headline automation). */
+export interface PRStackPropagationState {
+  status: PRStackPropagationStatus
+  /** Entry whose push triggered the cascade (the "source"). */
+  sourceEntryId?: string
+  /** Entry currently being updated. */
+  currentEntryId?: string
+  /** Session id of the Claude worker resolving a conflict, if any. */
+  conflictSessionId?: string
+  startedAt?: string
+  log: string[]
+}
+
+export interface PRStack {
+  id: string
+  projectId: string
+  name: string
+  /** Branch the bottom entry targets (default = repo default branch). */
+  baseBranch: string
+  /** Link back to the originating run, when foundry-created. */
+  foundryId?: string
+  entries: PRStackEntry[]
+  publish?: PRStackPublishState
+  propagation?: PRStackPropagationState
+  createdAt: string
+  updatedAt: string
+}
+
+/** A stack entry with its referenced PR resolved to normalized display fields. */
+export interface ResolvedPRStackEntry {
+  entry: PRStackEntry
+  kind: PRStackEntryKind
+  title: string
+  branch: string
+  baseBranch: string
+  /** LocalPRStatus for local entries, or a coarse state for real PRs. */
+  status: string
+  ciStatus: CIStatus
+  prNumber?: number
+  prUrl?: string
+  /** True once a local entry has been promoted to a real PR. */
+  promoted: boolean
+}

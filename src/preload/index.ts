@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, FoundryConfig, FoundryFireTaskPayload, FoundryPipelineAction, FoundryRuntimeState, FoundryTaskStartedAck, FoundryWorkerPermissionMode, LocalPR, CreateLocalPRFromSessionInput, LocalPRUpdate } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, FoundryConfig, FoundryFireTaskPayload, FoundryPipelineAction, FoundryRuntimeState, FoundryTaskStartedAck, FoundryWorkerPermissionMode, LocalPR, CreateLocalPRFromSessionInput, LocalPRUpdate, PRStack, PRStackEntryKind } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -638,6 +638,48 @@ const api = {
         callback(projectId, list)
       ipcRenderer.on(IPC.LOCAL_PR_STATE_UPDATE, listener)
       return () => ipcRenderer.removeListener(IPC.LOCAL_PR_STATE_UPDATE, listener)
+    },
+  },
+
+  prStack: {
+    list: (projectId: string): Promise<PRStack[]> =>
+      ipcRenderer.invoke(IPC.PR_STACK_LIST, projectId),
+    create: (input: {
+      projectId: string
+      name: string
+      baseBranch: string
+      foundryId?: string
+    }): Promise<PRStack> => ipcRenderer.invoke(IPC.PR_STACK_CREATE, input),
+    rename: (id: string, name: string): Promise<PRStack | null> =>
+      ipcRenderer.invoke(IPC.PR_STACK_RENAME, id, name),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke(IPC.PR_STACK_DELETE, id),
+    addEntry: (
+      stackId: string,
+      input: {
+        kind: PRStackEntryKind
+        localPrId?: string
+        prNumber?: number
+        branch?: string
+        baseBranch?: string
+      }
+    ): Promise<PRStack | null> => ipcRenderer.invoke(IPC.PR_STACK_ADD_ENTRY, stackId, input),
+    removeEntry: (stackId: string, entryId: string): Promise<PRStack | null> =>
+      ipcRenderer.invoke(IPC.PR_STACK_REMOVE_ENTRY, stackId, entryId),
+    reorder: (stackId: string, orderedEntryIds: string[]): Promise<PRStack | null> =>
+      ipcRenderer.invoke(IPC.PR_STACK_REORDER, stackId, orderedEntryIds),
+    merge: (targetId: string, sourceId: string): Promise<PRStack | null> =>
+      ipcRenderer.invoke(IPC.PR_STACK_MERGE, targetId, sourceId),
+    publish: (stackId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_STACK_PUBLISH, stackId),
+    restack: (stackId: string, mergedEntryId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_STACK_RESTACK, stackId, mergedEntryId),
+    propagate: (stackId: string, sourceEntryId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_STACK_PROPAGATE, stackId, sourceEntryId),
+    onStateUpdate: (callback: (projectId: string, list: PRStack[]) => void) => {
+      const listener = (_e: unknown, projectId: string, list: PRStack[]) =>
+        callback(projectId, list)
+      ipcRenderer.on(IPC.PR_STACK_STATE_UPDATE, listener)
+      return () => ipcRenderer.removeListener(IPC.PR_STACK_STATE_UPDATE, listener)
     },
   },
 

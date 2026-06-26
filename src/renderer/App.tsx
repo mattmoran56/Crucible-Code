@@ -9,6 +9,8 @@ import { NotesPanel } from './components/notes/NotesPanel'
 import { UsagePanel } from './components/usage/UsagePanel'
 import { PermissionsPanel } from './components/permissions/PermissionsPanel'
 import { FoundryPanel } from './components/foundry/FoundryPanel'
+import { PRStacksPanel } from './components/pullrequests/PRStacksPanel'
+import { usePRStackStore } from './stores/prStackStore'
 import { useUsageStore } from './stores/usageStore'
 import { ResizeHandle, IconButton } from './components/ui'
 import { useProjectStore } from './stores/projectStore'
@@ -87,6 +89,14 @@ export default function App() {
     })
     return remove
   }, [applyReviewLoopState])
+
+  // Stream PR-stack updates (CRUD, publish/propagation progress) into the store.
+  useEffect(() => {
+    const remove = window.api.prStack.onStateUpdate((projectId, list) => {
+      usePRStackStore.getState().applyStackUpdate(projectId, list)
+    })
+    return () => { remove() }
+  }, [])
 
   // Register sessions from all projects with the notification store for cross-project badges
   // and recover any terminals that were running before a crash/restart
@@ -216,7 +226,7 @@ export default function App() {
                   style={{ padding: '10px 12px' }}
                 >
                   <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel === 'permissions' ? 'Permissions' : activeRightPanel === 'foundry' ? 'Foundry' : activeRightPanel}
+                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel === 'permissions' ? 'Permissions' : activeRightPanel === 'foundry' ? 'Foundry' : activeRightPanel === 'prStacks' ? 'PR Stacks' : activeRightPanel}
                   </span>
                   <IconButton label="Close panel" onClick={() => setActiveRightPanel(null)}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -229,6 +239,7 @@ export default function App() {
                   {activeRightPanel === 'usage' && <UsagePanel />}
                   {activeRightPanel === 'permissions' && <PermissionsPanel />}
                   {activeRightPanel === 'foundry' && <FoundryPanel />}
+                  {activeRightPanel === 'prStacks' && <PRStacksPanel />}
                 </div>
               </div>
             </>

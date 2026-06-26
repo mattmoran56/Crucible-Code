@@ -19,6 +19,7 @@ import { registerSchedulerHandlers } from './scheduler.ipc'
 import { registerNotionHandlers } from './notion.ipc'
 import { registerFoundryHandlers } from './foundry.ipc'
 import { registerLocalPRHandlers } from './local-pr.ipc'
+import { registerPRStackHandlers } from './pr-stack.ipc'
 import { registerRemoteHandlers } from './remote.ipc'
 import {
   registerContextMapping,
@@ -46,6 +47,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerNotionHandlers(window)
   registerFoundryHandlers(window)
   registerLocalPRHandlers(window)
+  registerPRStackHandlers(window)
   registerRemoteHandlers(window)
 
   // Context mapping management for notification routing.

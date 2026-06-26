@@ -254,4 +254,18 @@ export const IPC = {
   LOCAL_PR_PROMOTE: 'local-pr:promote',
   LOCAL_PR_SET_CAPTURE: 'local-pr:set-capture',
   LOCAL_PR_STATE_UPDATE: 'local-pr:state:update',
+
+  // PR Stacks — a user-defined chain of dependent PRs (local and/or real)
+  PR_STACK_LIST: 'pr-stack:list',
+  PR_STACK_CREATE: 'pr-stack:create',
+  PR_STACK_RENAME: 'pr-stack:rename',
+  PR_STACK_DELETE: 'pr-stack:delete',
+  PR_STACK_ADD_ENTRY: 'pr-stack:add-entry',
+  PR_STACK_REMOVE_ENTRY: 'pr-stack:remove-entry',
+  PR_STACK_REORDER: 'pr-stack:reorder',
+  PR_STACK_MERGE: 'pr-stack:merge',
+  PR_STACK_PUBLISH: 'pr-stack:publish',
+  PR_STACK_RESTACK: 'pr-stack:restack',
+  PR_STACK_PROPAGATE: 'pr-stack:propagate',
+  PR_STACK_STATE_UPDATE: 'pr-stack:state:update',
 } as const

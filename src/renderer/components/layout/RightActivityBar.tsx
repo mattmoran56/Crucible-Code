@@ -91,6 +91,26 @@ export function RightActivityBar({ activePanel, onToggle }: RightActivityBarProp
         </button>
       </Tooltip>
 
+      <Tooltip content="PR Stacks" side="left">
+        <button
+          aria-label="PR Stacks"
+          onClick={() => onToggle('prStacks')}
+          className={`w-8 h-8 rounded flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+            activePanel === 'prStacks'
+              ? 'bg-accent/15 text-accent'
+              : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
+          }`}
+          style={{ marginTop: 4 }}
+        >
+          {/* Stacked layers icon */}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+            <polyline points="2 17 12 22 22 17" />
+            <polyline points="2 12 12 17 22 12" />
+          </svg>
+        </button>
+      </Tooltip>
+
       {/* Custom buttons */}
       <CustomButtonBar placement="right-activity-bar" />
     </div>
