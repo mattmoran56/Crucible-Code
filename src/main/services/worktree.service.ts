@@ -124,8 +124,15 @@ export async function createWorktree(
     await g.raw(['worktree', 'add', '-b', branchName, wtPath, startPoint])
   } catch (err) {
     // If the worktree path exists the add succeeded — the error came from a
-    // post-checkout hook (e.g. git-lfs not installed). Ignore it.
-    await access(wtPath)
+    // post-checkout hook (e.g. git-lfs not installed). Ignore it. But if the
+    // path is genuinely absent the add really failed, so surface the ORIGINAL
+    // git error (e.g. "invalid reference: <base>") instead of masking it with a
+    // misleading ENOENT from access().
+    try {
+      await access(wtPath)
+    } catch {
+      throw err
+    }
   }
 
   return { path: wtPath, branch: branchName }

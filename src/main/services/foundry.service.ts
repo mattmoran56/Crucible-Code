@@ -44,8 +44,18 @@ import { findPRForBranch, markPRReady } from './github.service'
 import { getDefaultBranch } from './git.service'
 import { startReviewLoopLite } from './review-loop-lite.service'
 import { getTerminalBuffer, listTerminalsForSession, writeTerminal } from './terminal.service'
+import { readFile } from 'node:fs/promises'
+import { getLocalPR, getLocalPRForPipeline, getLocalPRForSession, listLocalPRs, patchLocalPR, setCaptureContext, LOCAL_PR_CHANGED } from './local-pr.service'
+import { promoteLocalPR } from './local-pr-promote.service'
+import { runLocalCI, ciLogTail } from './local-ci.service'
+import type { LocalPR } from '../../shared/types'
 
 const execFileAsync = promisify(execFile)
+
+/** Default integration branch a local-PR-mode run stacks onto. */
+function foundryBranchFor(cfg: { id: string; foundryBranch?: string }): string {
+  return cfg.foundryBranch?.trim() || `foundry/integration-${cfg.id.slice(0, 8)}`
+}
 
 const WATCH_INTERVAL_MS = 20_000
 const REQUEST_PASS_DEBOUNCE_MS = 5_000
@@ -99,6 +109,7 @@ let mainWindow: BrowserWindow | null = null
 let started = false
 let unsubReviewLoop: (() => void) | null = null
 let unsubSessionStatus: (() => void) | null = null
+let unsubLocalPR: (() => void) | null = null
 
 /** Listener slot for the foreman module — populated by registerForemanRunner. */
 let runForemanPass:
@@ -319,6 +330,21 @@ export function startFoundryService(window: BrowserWindow): void {
       void onSessionHookEvent(contextId, hookType)
     }
   )
+  // Local-PR mode: advance the implementing phase the instant a local PR is
+  // captured, instead of waiting for the 15s poll.
+  unsubLocalPR = subscribeOnBus(LOCAL_PR_CHANGED, (lpr: LocalPR) => {
+    if (!lpr) return
+    for (const rt of runtimes.values()) {
+      if (!rt.config.localPrMode) continue
+      // Match by pipelineId, or by sessionId when the capture metadata was lost.
+      const p = rt.state.pipelines.find(
+        (pp) =>
+          pp.phase === 'implementing' &&
+          (pp.id === lpr.pipelineId || (!!lpr.sessionId && pp.sessionId === lpr.sessionId))
+      )
+      if (p) void checkPRForPipeline(rt, p)
+    }
+  })
 
   // After the renderer is ready, fire startup-time triggers + rehydrate.
   setTimeout(() => {
@@ -334,8 +360,10 @@ export function stopFoundryService(): void {
   runtimes.clear()
   if (unsubReviewLoop) unsubReviewLoop()
   if (unsubSessionStatus) unsubSessionStatus()
+  if (unsubLocalPR) unsubLocalPR()
   unsubReviewLoop = null
   unsubSessionStatus = null
+  unsubLocalPR = null
   mainWindow = null
   started = false
 }
@@ -610,13 +638,25 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
   // worktree create — otherwise the renderer's worktree.create would fail
   // and the pipeline would never start. No-op when baseBranch is unset
   // (worktree.create falls back to the repo default).
-  if (rt.config.baseBranch?.trim()) {
+  // In local-PR mode the run builds a chained stack: the first pipeline targets
+  // the foundry integration branch, each subsequent one targets its
+  // predecessor's branch. Otherwise we use the configured base branch.
+  const localStack = !!rt.config.localPrMode
+  const predecessor = localStack ? lastStackPipeline(rt) : undefined
+  const baseToEnsure = localStack
+    ? foundryBranchFor(rt.config)
+    : rt.config.baseBranch?.trim()
+  const resolvedBase = localStack
+    ? predecessor?.branch || foundryBranchFor(rt.config)
+    : rt.config.baseBranch
+
+  if (baseToEnsure) {
     const repoPath = projectRepoPath(rt.config.projectId)
     if (repoPath) {
       try {
-        await ensureBaseBranchExists(repoPath, rt.config.baseBranch.trim())
+        await ensureBaseBranchExists(repoPath, baseToEnsure)
       } catch (err) {
-        rt.state.lastError = `base branch "${rt.config.baseBranch}" could not be ensured: ${err instanceof Error ? err.message : String(err)}`
+        rt.state.lastError = `base branch "${baseToEnsure}" could not be ensured: ${err instanceof Error ? err.message : String(err)}`
         saveAndEmit(rt)
         return null
       }
@@ -679,7 +719,13 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
     startedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     log: [`Pipeline started — ${opts.reason}`],
-    baseBranch: rt.config.baseBranch,
+    baseBranch: resolvedBase,
+    // Link the chained-stack parent. We deliberately DON'T record a provisional
+    // branch here: the real branch is `session/<sessionName>` (created by
+    // worktree.create, which ignores the foreman's suggested name) and is only
+    // known on ack. A successor chains off that real, pushed branch — never the
+    // foreman's suggestion, which may never exist.
+    parentPipelineId: localStack ? predecessor?.id : undefined,
   }
   rt.state.pipelines.push(pipeline)
   saveAndEmit(rt)
@@ -692,11 +738,33 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
     resolvedImplementPrompt,
     suggestedBranchName,
     suggestedSessionName,
-    baseBranch: rt.config.baseBranch,
+    baseBranch: resolvedBase,
     workerPermissionMode: rt.config.workerPermissionMode,
+    localPrCapture: localStack
+      ? {
+          foundryId: rt.config.id,
+          pipelineId: pipeline.id,
+          order: rt.state.pipelines.length - 1,
+        }
+      : undefined,
   }
   fireWorkerSpawn(rt, pipeline, payload)
   return pipeline
+}
+
+/**
+ * The most recent pipeline in the run whose worker has ACKED — i.e. it has a
+ * real `session/…` branch (created + pushed by the worker). Used to chain the
+ * next local PR's base onto a branch that actually exists. Skips
+ * cancelled/orphaned, and pipelines that haven't acked yet (no branch). When
+ * none qualify, the caller falls back to the foundry integration branch.
+ */
+function lastStackPipeline(rt: FoundryRuntime): FoundryPipeline | undefined {
+  for (let i = rt.state.pipelines.length - 1; i >= 0; i--) {
+    const p = rt.state.pipelines[i]
+    if (p.phase !== 'cancelled' && p.phase !== 'orphaned' && p.branch) return p
+  }
+  return undefined
 }
 
 function fireWorkerSpawn(rt: FoundryRuntime, pipeline: FoundryPipeline, payload: FoundryFireTaskPayload): void {
@@ -979,6 +1047,32 @@ async function checkPRForPipeline(rt: FoundryRuntime, p: FoundryPipeline): Promi
   if (p.phase !== 'implementing' || !p.worktreePath || !p.branch) return
   rt.advancing.add(p.id)
   try {
+    // Local-PR mode: advance on a captured local PR record (the gh shim wrote
+    // it), not a real GitHub PR. Match by pipelineId, falling back to sessionId
+    // — the capture metadata (pipelineId) can be lost if the app restarts
+    // between spawn and `gh pr create`, but the session link is stable.
+    if (rt.config.localPrMode) {
+      let lpr = getLocalPRForPipeline(p.id)
+      if (!lpr && p.sessionId) lpr = getLocalPRForSession(p.sessionId)
+      if (!lpr) return
+      // Stamp the linkage so the publisher (which filters by foundryId) and
+      // later lookups find it even when capture metadata was lost.
+      if (lpr.pipelineId !== p.id || lpr.foundryId !== rt.config.id) {
+        const order = rt.state.pipelines.findIndex((x) => x.id === p.id)
+        patchLocalPR(lpr.id, { pipelineId: p.id, foundryId: rt.config.id, order: Math.max(0, order) })
+      }
+      const fresh = rt.state.pipelines.find((pp) => pp.id === p.id)
+      if (!fresh || fresh.phase !== 'implementing') return
+      fresh.localPrId = lpr.id
+      fresh.prNumber = lpr.localNumber // fake local number — review loop ignores it
+      fresh.prUrl = lpr.realPrUrl ?? `LOCAL-${lpr.localNumber}`
+      fresh.attention = undefined
+      log(fresh, `Local PR LOCAL-${lpr.localNumber} captured — starting review loop.`)
+      saveAndEmit(rt)
+      await runReviewPhase(rt, fresh)
+      return
+    }
+
     const info = await findPRForBranch(p.worktreePath, p.branch)
     if (!info) return
     // Re-check phase after the await.
@@ -1017,6 +1111,7 @@ async function runReviewPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<v
       baseBranch,
       config: cfg,
       prNumber: p.prNumber,
+      isLocalPr: rt.config.localPrMode,
       // Foreground phase terminals spawn from main; inherit the default claude
       // account (like the foreman) and seed permissions from the source repo.
       repoPath: projectRepoPath(rt.config.projectId) ?? undefined,
@@ -1053,6 +1148,7 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
   if (!p.prNumber || !p.worktreePath) return
   p.phase = 'finalizing'
   saveAndEmit(rt)
+
   try {
     // Inject the ready-for-review command into the WORKER's existing PTY
     // (the same claude session that did the implement). The user can watch
@@ -1103,7 +1199,13 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
     // it as attention rather than silently overriding. With no prompt
     // configured we keep the auto-mark behaviour so default autopilot still
     // works.
-    if (tpl) {
+    // Local-PR mode: the worker's `gh pr edit`/`gh pr ready` were captured into
+    // the local PR record (checklist body + ready flag) and get replayed on
+    // promote — so there's no real PR to verify/mark here. Otherwise verify (or
+    // mark) the real GitHub PR as today.
+    if (rt.config.localPrMode) {
+      log(p, 'Local-PR mode: ready/checklist captured locally — will be applied on promote.')
+    } else if (tpl) {
       const verifiedReady = await verifyPRReady(p.worktreePath, p.prNumber)
       if (!verifiedReady) {
         p.attention = {
@@ -1154,11 +1256,221 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
   }
 }
 
+// ── "Create PRs": sequential stacked publisher (local-PR mode) ──────────────
+
+/**
+ * Walk this run's local PRs in creation order and promote each to a real
+ * GitHub PR. Idempotent and resumable: already-open/merged PRs are skipped, so
+ * re-invoking (e.g. after a restart with `publish.status === 'running'`)
+ * continues from where it left off. Chained bases are linked here so each
+ * successor PR targets its predecessor's branch.
+ *
+ * CI gating + fix-on-failure between promotes is wired in Phase 6
+ * (local-ci.service); when `localCi.enabled` is false the publisher promotes
+ * straight through, marking each PR ready.
+ */
+export async function publishLocalPRStack(foundryId: string): Promise<void> {
+  const rt = runtimes.get(foundryId)
+  if (!rt) return
+  if (rt.state.publish?.status === 'running' && !publishInFlight.has(foundryId)) {
+    // status says running but no in-flight promise (e.g. resume) — fall through.
+  } else if (publishInFlight.has(foundryId)) {
+    return // already walking
+  }
+  publishInFlight.add(foundryId)
+
+  const stack = listLocalPRs(rt.config.projectId)
+    .filter((l) => l.foundryId === foundryId)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+
+  // Link the chain so each successor promotes against its predecessor's branch.
+  for (let i = 1; i < stack.length; i++) {
+    if (stack[i].parentLocalPrId !== stack[i - 1].id) {
+      patchLocalPR(stack[i].id, { parentLocalPrId: stack[i - 1].id })
+    }
+  }
+
+  rt.state.publish = {
+    status: 'running',
+    startedAt: rt.state.publish?.startedAt ?? new Date().toISOString(),
+    log: rt.state.publish?.log ?? [],
+  }
+  saveAndEmit(rt)
+
+  const ciEnabled = !!rt.config.localCi?.enabled
+  try {
+    for (const lpr of stack) {
+      // Re-read — an earlier promote may have changed it.
+      const current = listLocalPRs(rt.config.projectId).find((l) => l.id === lpr.id)
+      if (!current || current.status === 'merged' || current.status === 'open' || current.status === 'ci-passed') {
+        continue
+      }
+      rt.state.publish.currentLocalPrId = lpr.id
+      publishLog(rt, `Promoting LOCAL-${lpr.localNumber} (${lpr.title})…`)
+
+      // Promote to a draft PR. Mark ready immediately only when CI isn't gating.
+      const promoted = await promoteLocalPR(lpr.id, { markReady: !ciEnabled })
+      if (!promoted || promoted.status === 'error') {
+        rt.state.publish.status = 'error'
+        publishLog(rt, `LOCAL-${lpr.localNumber} failed to promote — stopping.`)
+        saveAndEmit(rt)
+        return
+      }
+
+      if (ciEnabled && promoted.worktreePath && promoted.realPrNumber) {
+        const ciCfg = rt.config.localCi!
+        patchLocalPR(lpr.id, { status: 'ci-running' })
+        saveAndEmit(rt)
+        let ci = await runLocalCI(getLocalPR(lpr.id)!, ciCfg)
+        patchLocalPR(lpr.id, { status: ci.status === 'success' ? 'ci-passed' : 'ci-failed', ciResult: ci })
+        publishLog(rt, `LOCAL-${lpr.localNumber}: CI ${ci.status}.`)
+        saveAndEmit(rt)
+
+        let attempt = 0
+        while (ci.status !== 'success' && attempt < CI_FIX_MAX_ATTEMPTS) {
+          attempt++
+          const fixed = await attemptCIFix(rt, lpr.id, ci)
+          if (!fixed) break
+          patchLocalPR(lpr.id, { status: 'ci-running' })
+          saveAndEmit(rt)
+          ci = await runLocalCI(getLocalPR(lpr.id)!, ciCfg)
+          patchLocalPR(lpr.id, { status: ci.status === 'success' ? 'ci-passed' : 'ci-failed', ciResult: ci })
+          publishLog(rt, `LOCAL-${lpr.localNumber}: CI ${ci.status} (after fix attempt ${attempt}).`)
+          saveAndEmit(rt)
+        }
+
+        if (ci.status === 'success') {
+          await markPRReady(promoted.worktreePath, promoted.realPrNumber)
+          patchLocalPR(lpr.id, { status: 'open' })
+          publishLog(rt, `LOCAL-${lpr.localNumber}: CI passed — PR #${promoted.realPrNumber} marked ready.`)
+        } else {
+          rt.state.publish.status = 'error'
+          rt.state.publish.currentLocalPrId = lpr.id
+          publishLog(rt, `LOCAL-${lpr.localNumber}: CI still failing after ${attempt} fix attempt(s) — stopping for attention.`)
+          saveAndEmit(rt)
+          return
+        }
+      }
+      saveAndEmit(rt)
+    }
+    rt.state.publish.status = 'done'
+    rt.state.publish.currentLocalPrId = undefined
+    publishLog(rt, 'Stack published.')
+    saveAndEmit(rt)
+  } catch (err) {
+    rt.state.publish.status = 'error'
+    publishLog(rt, `Publish failed: ${err instanceof Error ? err.message : String(err)}`)
+    saveAndEmit(rt)
+  } finally {
+    publishInFlight.delete(foundryId)
+  }
+}
+
+const publishInFlight = new Set<string>()
+const CI_FIX_MAX_ATTEMPTS = 3
+
+/**
+ * Ask the worker to fix a CI failure. Prefers resuming the original worker
+ * session (it has full implementation context); if that PTY is gone (e.g. an
+ * overnight restart) we surface attention rather than guessing — a fresh-agent
+ * fallback can be layered on later. Returns true when the worker produced a
+ * response (it should have committed + pushed a fix).
+ */
+async function attemptCIFix(
+  rt: FoundryRuntime,
+  localPrId: string,
+  ci: LocalPR['ciResult']
+): Promise<boolean> {
+  const lpr = getLocalPR(localPrId)
+  if (!lpr?.sessionId) return false
+
+  let tail = ''
+  if (ci?.logTailPath) {
+    try {
+      tail = ciLogTail(await readFile(ci.logTailPath, 'utf8'))
+    } catch {
+      /* no log — proceed with a generic prompt */
+    }
+  }
+
+  const agent = listTerminalsForSession(lpr.sessionId).find((t) => t.tabId === 'agent')
+  if (!agent) {
+    publishLog(rt, `LOCAL-${lpr.localNumber}: worker session is gone — can't auto-fix CI. Resume it and retry, or fix manually.`)
+    return false
+  }
+
+  const prompt =
+    `Local CI failed for this PR. Please diagnose and fix the failure, then commit and push to this branch.\n\n` +
+    `CI log (tail):\n\n\`\`\`\n${tail || '(no log captured)'}\n\`\`\``
+  publishLog(rt, `LOCAL-${lpr.localNumber}: injecting CI fix into worker session ${lpr.sessionId.slice(0, 8)}…`)
+  saveAndEmit(rt)
+  return injectAndAwaitResponse(agent.terminalId, lpr.sessionId, prompt)
+}
+
+function publishLog(rt: FoundryRuntime, message: string): void {
+  if (!rt.state.publish) return
+  rt.state.publish.log = [...rt.state.publish.log, `${new Date().toISOString()} ${message}`].slice(-200)
+}
+
 // ── Pipeline retry / skip actions ───────────────────────────────────────────
+
+/**
+ * Re-fire a worker spawn for a pipeline, rebuilding the fire payload from
+ * config. Recomputes the chained base from the parent's REAL (acked) branch —
+ * or the foundry integration branch when the parent hasn't acked — so a retry
+ * never re-uses a stale/non-existent base. Shared by retryPhase and rehydrate.
+ */
+function refireWorkerSpawn(rt: FoundryRuntime, p: FoundryPipeline): void {
+  const ctx = buildPlaceholderContext(p.page)
+  const resolvedImplementPrompt = resolvePlaceholders(rt.config.implementCommandTemplate, ctx)
+  const branchTemplate = rt.config.branchNameTemplate ?? 'foundry/{{taskTitleSlug}}'
+  const suggestedBranchName = resolvePlaceholders(branchTemplate, ctx) || `foundry/${p.page.id.slice(0, 8)}`
+  const suggestedSessionName = p.page.title
+    ? slugify(p.page.title) || `foundry-${p.page.id.slice(0, 8)}`
+    : `foundry-${p.page.id.slice(0, 8)}`
+
+  const localStack = !!rt.config.localPrMode
+  let baseBranch = rt.config.baseBranch
+  if (localStack) {
+    const predecessor = p.parentPipelineId
+      ? rt.state.pipelines.find((x) => x.id === p.parentPipelineId && x.branch)
+      : lastStackPipeline(rt)
+    baseBranch = predecessor?.branch || foundryBranchFor(rt.config)
+    p.baseBranch = baseBranch // keep in sync for worktree.create
+  }
+
+  const payload: FoundryFireTaskPayload = {
+    foundryId: rt.config.id,
+    pipelineId: p.id,
+    projectId: rt.config.projectId,
+    page: p.page,
+    resolvedImplementPrompt,
+    suggestedBranchName,
+    suggestedSessionName,
+    baseBranch,
+    workerPermissionMode: rt.config.workerPermissionMode,
+    localPrCapture: localStack
+      ? {
+          foundryId: rt.config.id,
+          pipelineId: p.id,
+          order: Math.max(0, rt.state.pipelines.findIndex((x) => x.id === p.id)),
+        }
+      : undefined,
+  }
+  fireWorkerSpawn(rt, p, payload)
+}
 
 async function retryPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> {
   p.attention = undefined
   switch (p.phase) {
+    case 'spawn-requested':
+      // Worker never acked (e.g. worktree.create failed). Reset the ack counter
+      // and re-fire with a freshly-recomputed base.
+      rt.pipelineAcks.delete(p.id)
+      log(p, 'Retrying worker spawn.')
+      saveAndEmit(rt)
+      refireWorkerSpawn(rt, p)
+      return
     case 'reviewing':
       return runReviewPhase(rt, p)
     case 'finalizing':
@@ -1185,6 +1497,24 @@ async function skipPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<void> 
 // ── Rehydration ─────────────────────────────────────────────────────────────
 
 function rehydrateAfterStartup(rt: FoundryRuntime): void {
+  // Resume an interrupted "Create PRs" batch. publishLocalPRStack is idempotent
+  // (skips already-open PRs) so this safely continues from the cursor.
+  if (rt.state.publish?.status === 'running') {
+    void publishLocalPRStack(rt.config.id)
+  }
+
+  // Re-assert local-PR capture intent for in-flight workers so a `gh pr create`
+  // that lands AFTER this restart is still linked to its pipeline (the registry
+  // is in-memory and otherwise lost on restart). Already-captured PRs are linked
+  // by the sessionId fallback in checkPRForPipeline.
+  if (rt.config.localPrMode) {
+    rt.state.pipelines.forEach((p, i) => {
+      if ((p.phase === 'implementing' || p.phase === 'spawn-requested') && p.sessionId) {
+        setCaptureContext(p.sessionId, { foundryId: rt.config.id, pipelineId: p.id, order: i })
+      }
+    })
+  }
+
   // Make sure the configured base branch is reachable before we re-fire any
   // worker spawns — otherwise the renderer's worktree.create would ENOENT
   // and the pipeline would re-fire on every restart into the same error.
@@ -1202,26 +1532,9 @@ function rehydrateAfterStartup(rt: FoundryRuntime): void {
     switch (p.phase) {
       case 'spawn-requested': {
         log(p, 'Re-firing worker spawn after app start.')
-        // Reissue fire-task with the same payload shape (no longer have the
-        // resolved prompt though — rebuild from config).
-        const ctx = buildPlaceholderContext(p.page)
-        const resolvedImplementPrompt =
-          resolvePlaceholders(rt.config.implementCommandTemplate, ctx)
-        const branchTemplate = rt.config.branchNameTemplate ?? 'foundry/{{taskTitleSlug}}'
-        const suggestedBranchName = resolvePlaceholders(branchTemplate, ctx) || `foundry/${p.page.id.slice(0, 8)}`
-        const suggestedSessionName = p.page.title ? slugify(p.page.title) || `foundry-${p.page.id.slice(0, 8)}` : `foundry-${p.page.id.slice(0, 8)}`
-        const payload: FoundryFireTaskPayload = {
-          foundryId: rt.config.id,
-          pipelineId: p.id,
-          projectId: rt.config.projectId,
-          page: p.page,
-          resolvedImplementPrompt,
-          suggestedBranchName,
-          suggestedSessionName,
-          baseBranch: rt.config.baseBranch,
-          workerPermissionMode: rt.config.workerPermissionMode,
-        }
-        fireWorkerSpawn(rt, p, payload)
+        // Rebuild the fire payload from config, recomputing the chained base +
+        // capture meta (local-PR mode) so restarts don't lose them.
+        refireWorkerSpawn(rt, p)
         break
       }
       case 'implementing':
@@ -1238,14 +1551,14 @@ function rehydrateAfterStartup(rt: FoundryRuntime): void {
         break
     }
   }
-  if (rt.state.passInFlight) {
-    rt.state.passInFlight = false
-    if (rt.state.passes.length > 0) {
-      const last = rt.state.passes[rt.state.passes.length - 1]
-      if (last.status === 'running') {
-        last.status = 'aborted'
-        last.endedAt = new Date().toISOString()
-      }
+  rt.state.passInFlight = false
+  // Any pass still marked 'running' after a restart is a zombie (its foreman PTY
+  // is gone) — abort it so it doesn't linger forever. (A foreman PTY spawn that
+  // failed leaves such a record.)
+  for (const pass of rt.state.passes) {
+    if (pass.status === 'running') {
+      pass.status = 'aborted'
+      pass.endedAt = pass.endedAt ?? new Date().toISOString()
     }
   }
   saveAndEmit(rt)
@@ -1457,8 +1770,10 @@ export function _resetForTests(): void {
   runtimes.clear()
   if (unsubReviewLoop) unsubReviewLoop()
   if (unsubSessionStatus) unsubSessionStatus()
+  if (unsubLocalPR) unsubLocalPR()
   unsubReviewLoop = null
   unsubSessionStatus = null
+  unsubLocalPR = null
   mainWindow = null
   started = false
   runForemanPass = null

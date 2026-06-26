@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, FoundryConfig, FoundryFireTaskPayload, FoundryPipelineAction, FoundryRuntimeState, FoundryTaskStartedAck, FoundryWorkerPermissionMode } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, FoundryConfig, FoundryFireTaskPayload, FoundryPipelineAction, FoundryRuntimeState, FoundryTaskStartedAck, FoundryWorkerPermissionMode, LocalPR, CreateLocalPRFromSessionInput, LocalPRUpdate } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -567,6 +567,7 @@ const api = {
     setPaused: (foundryId: string, paused: boolean): Promise<void> =>
       ipcRenderer.invoke(IPC.FOUNDRY_SET_PAUSED, foundryId, paused),
     runNow: (foundryId: string): Promise<void> => ipcRenderer.invoke(IPC.FOUNDRY_RUN_NOW, foundryId),
+    publishPRs: (foundryId: string): Promise<void> => ipcRenderer.invoke(IPC.FOUNDRY_PUBLISH_PRS, foundryId),
     resetState: (foundryId: string): Promise<{ ok: boolean; reason?: string }> =>
       ipcRenderer.invoke(IPC.FOUNDRY_RESET_STATE, foundryId),
     getState: (foundryId: string): Promise<FoundryRuntimeState | null> =>
@@ -588,7 +589,8 @@ const api = {
       repoPath: string | undefined,
       contextId: string,
       tabId: string,
-      permissionMode: FoundryWorkerPermissionMode
+      permissionMode: FoundryWorkerPermissionMode,
+      localPrCapture?: { foundryId: string; pipelineId: string; order: number }
     ): Promise<string> =>
       ipcRenderer.invoke(
         IPC.FOUNDRY_SPAWN_WORKER,
@@ -600,7 +602,8 @@ const api = {
         repoPath,
         contextId,
         tabId,
-        permissionMode
+        permissionMode,
+        localPrCapture
       ),
     openForeman: (foundryId: string): Promise<{ terminalId: string; contextId: string } | null> =>
       ipcRenderer.invoke(IPC.FOUNDRY_OPEN_FOREMAN, foundryId),
@@ -614,6 +617,27 @@ const api = {
         callback(foundryId, state)
       ipcRenderer.on(IPC.FOUNDRY_STATE_UPDATE, listener)
       return () => ipcRenderer.removeListener(IPC.FOUNDRY_STATE_UPDATE, listener)
+    },
+  },
+
+  localPr: {
+    list: (projectId: string): Promise<LocalPR[]> =>
+      ipcRenderer.invoke(IPC.LOCAL_PR_LIST, projectId),
+    create: (input: CreateLocalPRFromSessionInput): Promise<LocalPR> =>
+      ipcRenderer.invoke(IPC.LOCAL_PR_CREATE, input),
+    update: (id: string, update: LocalPRUpdate): Promise<LocalPR | null> =>
+      ipcRenderer.invoke(IPC.LOCAL_PR_UPDATE, id, update),
+    discard: (id: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.LOCAL_PR_DISCARD, id),
+    promote: (id: string): Promise<LocalPR | null> =>
+      ipcRenderer.invoke(IPC.LOCAL_PR_PROMOTE, id),
+    setCapture: (contextId: string, enabled: boolean): Promise<void> =>
+      ipcRenderer.invoke(IPC.LOCAL_PR_SET_CAPTURE, contextId, enabled),
+    onStateUpdate: (callback: (projectId: string, list: LocalPR[]) => void) => {
+      const listener = (_e: unknown, projectId: string, list: LocalPR[]) =>
+        callback(projectId, list)
+      ipcRenderer.on(IPC.LOCAL_PR_STATE_UPDATE, listener)
+      return () => ipcRenderer.removeListener(IPC.LOCAL_PR_STATE_UPDATE, listener)
     },
   },
 

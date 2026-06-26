@@ -41,6 +41,12 @@ export interface Session {
   prNumber?: number
   baseBranch?: string
   notionTicket?: NotionTicketLink
+  /**
+   * When on, this session's terminals run with the local-PR `gh` shim on PATH,
+   * so a `gh pr create` the agent runs is captured into a local PR record
+   * instead of opening a real GitHub PR. See `gh-shim.service.ts`.
+   */
+  captureLocalPr?: boolean
 }
 
 export interface Commit {
@@ -86,6 +92,15 @@ export interface PullRequest {
   labels: PRLabel[]
   commentsCount: number
   reviews: PRReviewSummary[]
+  /**
+   * Set when this list entry is a local PR (not yet on GitHub). The renderer
+   * uses it to show a "Local" badge, route the detail view at local git, and
+   * offer "Promote to PR" instead of remote-only actions. `number` for a local
+   * entry is the negative of its `localNumber` so it never collides with a real
+   * PR number. Absent/undefined for normal remote PRs.
+   */
+  isLocal?: boolean
+  localPrId?: string
 }
 
 export interface PRFile {
@@ -695,6 +710,26 @@ export interface FoundryConfig {
    * Defaults to `['In review']`.
    */
   optimisticStatuses?: string[]
+  /**
+   * Local-PR mode. When on, workers produce LOCAL PRs (the gh shim captures
+   * their `gh pr create`) instead of opening real GitHub PRs, building a chained
+   * stack the user publishes later via "Create PRs". Default off.
+   */
+  localPrMode?: boolean
+  /**
+   * Integration branch the FIRST local PR in a run targets. Subsequent PRs
+   * chain onto their predecessor's branch. Default `foundry/integration-<id>`.
+   */
+  foundryBranch?: string
+  /** Local CI runner config used by the publisher between promotes (Phase 6). */
+  localCi?: {
+    enabled: boolean
+    runner: 'act'
+    image?: string
+    command?: string
+    workflowFilter?: string
+    timeoutMinutes?: number
+  }
 }
 
 export type FoundryPipelinePhase =
@@ -723,6 +758,10 @@ export interface FoundryPipeline {
   baseBranch?: string
   prNumber?: number
   prUrl?: string
+  /** Chained-stack predecessor (local-PR mode). */
+  parentPipelineId?: string
+  /** The local PR captured/produced for this pipeline (local-PR mode). */
+  localPrId?: string
   startedAt: string
   updatedAt: string
   log: string[]
@@ -775,6 +814,17 @@ export interface FoundryRuntimeState {
    * the pass times out.
    */
   foremanTerminalId?: string
+  /**
+   * Resumable cursor for the "Create PRs" batch publisher (local-PR mode). The
+   * local PRs themselves live in the separate `local-prs.json` store; this only
+   * tracks where the sequential walk is.
+   */
+  publish?: {
+    status: 'idle' | 'running' | 'paused' | 'done' | 'error'
+    currentLocalPrId?: string
+    startedAt?: string
+    log: string[]
+  }
 }
 
 export interface ForemanDecision {
@@ -810,6 +860,16 @@ export interface FoundryFireTaskPayload {
   baseBranch?: string
   workerPermissionMode: FoundryWorkerPermissionMode
   claudeAccountConfigDir?: string
+  /**
+   * Local-PR mode: when set, the renderer registers capture intent for the
+   * worker's context before spawning so its `gh pr create` becomes a local PR
+   * linked to this pipeline. Carries the chained-stack metadata.
+   */
+  localPrCapture?: {
+    foundryId: string
+    pipelineId: string
+    order: number
+  }
 }
 
 export interface FoundryTaskStartedAck {
@@ -825,3 +885,98 @@ export type FoundryPipelineAction =
   | 'resume'
   | 'retry-phase'
   | 'skip-phase'
+
+// Local PRs — a session-level stage between a draft branch and an open GitHub
+// PR. A local PR is a tracked record of a would-be pull request that lives on
+// the user's machine; it can be viewed/reviewed and then *promoted* to a real
+// GitHub PR. Produced manually from any session ("Create local PR") or by
+// capturing a worker's `gh pr create` (see gh-shim). Foundry is the biggest
+// consumer: an overnight run yields a chained stack of local PRs. ────────────
+
+export type LocalPRStatus =
+  | 'local' // captured/created, branch pushed, viewable & promotable
+  | 'promoting' // promote in progress
+  | 'open' // promoted → real GitHub PR open
+  | 'ci-running'
+  | 'ci-passed'
+  | 'ci-failed'
+  | 'merged'
+  | 'error'
+
+export interface LocalPRCIResult {
+  status: CIStatus
+  checks: PRCheck[]
+  ranAt: string
+  runner: string
+  /** Path to the full CI log on disk; only a short tail is kept in state. */
+  logTailPath?: string
+}
+
+export interface LocalPRAttention {
+  reason: string
+  since: string
+}
+
+export interface LocalPR {
+  id: string
+  /**
+   * Monotonic per-store display number (1, 2, 3…). Shown as `LOCAL-<n>` and
+   * echoed by the gh shim as the fake PR URL. The PR-list adapter uses
+   * `-localNumber` as the synthetic `PullRequest.number` so it never collides
+   * with a real PR number.
+   */
+  localNumber: number
+  projectId: string
+  /** Producing session — used for the detail view and fix-on-failure resume. */
+  sessionId?: string
+  /** Denormalized so the record survives session/pipeline cleanup. */
+  worktreePath?: string
+
+  // Foundry-only (optional):
+  foundryId?: string
+  pipelineId?: string
+  /** Creation order within a foundry run == promote order. */
+  order?: number
+  /** Chained stack: undefined => targets `baseBranch` directly. */
+  parentLocalPrId?: string
+
+  // PR content:
+  title: string
+  body: string
+  branch: string
+  headSha?: string
+  baseBranch: string
+
+  // State + promote results:
+  status: LocalPRStatus
+  /** Set when the worker ran `gh pr ready` (captured) — promote marks the real PR ready. */
+  readyForReview?: boolean
+  realPrNumber?: number
+  realPrUrl?: string
+  ciResult?: LocalPRCIResult
+  /** Review-loop findings stored locally (replaces the sticky gh comment). */
+  reviewFindings?: string
+
+  createdAt: string
+  updatedAt: string
+  log: string[]
+  attention?: LocalPRAttention
+}
+
+export interface CreateLocalPRFromSessionInput {
+  projectId: string
+  sessionId: string
+  worktreePath: string
+  branch: string
+  baseBranch?: string
+  /** Optional overrides; default from the last commit / branch name. */
+  title?: string
+  body?: string
+}
+
+/** Editable fields exposed through LOCAL_PR_UPDATE. */
+export interface LocalPRUpdate {
+  title?: string
+  body?: string
+  baseBranch?: string
+}

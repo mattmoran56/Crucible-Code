@@ -11,6 +11,7 @@ import { killAllTerminals } from './services/terminal.service'
 import { stopAllWatching as stopAllPermissionWatching } from './services/permission-sync.service'
 import { stopScheduler } from './services/scheduler.service'
 import { stopFoundryService } from './services/foundry.service'
+import { stopLocalPRService } from './services/local-pr.service'
 import { startKeepAwake, stopKeepAwake } from './services/keep-awake.service'
 import { eventBus } from './services/event-bus'
 import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
@@ -90,6 +91,7 @@ app.on('before-quit', (event) => {
   stopNotificationServer()
   stopScheduler()
   stopFoundryService()
+  stopLocalPRService()
   stopRelayServer()
   stopKeepAwake()
 })
@@ -100,6 +102,7 @@ app.on('window-all-closed', () => {
   stopNotificationServer()
   stopScheduler()
   stopFoundryService()
+  stopLocalPRService()
   stopRelayServer()
   stopKeepAwake()
   app.quit()

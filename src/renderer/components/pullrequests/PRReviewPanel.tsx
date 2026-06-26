@@ -9,6 +9,7 @@ import { PRConversationTab } from './PRConversationTab'
 import { PRCommitsTab } from './PRCommitsTab'
 import { PRScrollableDiffView } from './PRScrollableDiffView'
 import { FileTree } from './FileTree'
+import { LocalPRReviewPanel } from './LocalPRReviewPanel'
 import { ResizeHandle } from '../ui/ResizeHandle'
 import { useResizable } from '../../hooks/useResizable'
 import { Button } from '../ui/Button'
@@ -19,7 +20,7 @@ import { extractFileDiff } from '../../lib/extractFileDiff'
 
 export function PRReviewPanel() {
   const { activePRNumber, activeSessionId, sessions, didStash, clearActiveContext } = useSessionStore()
-  const { pullRequests, loadPRs } = usePRStore()
+  const { pullRequests, localPRs, loadPRs } = usePRStore()
   const { projects, activeProjectId } = useProjectStore()
 
   // Compute effective PR: explicit activePRNumber, or session's matched PR
@@ -51,12 +52,17 @@ export function PRReviewPanel() {
   const prNumber = effectivePRNumber
   const matchedPR = prNumber ? pullRequests.find((pr) => pr.number === prNumber) : undefined
   const prBaseRef = matchedPR ? `origin/${matchedPR.baseRefName}` : 'origin/main'
+  // Local PRs aren't on GitHub yet — resolve the stored record for the local view.
+  const localPR = matchedPR?.isLocal
+    ? localPRs.find((l) => l.id === matchedPR.localPrId)
+    : undefined
 
   const filesCol = useResizable({ direction: 'horizontal', initialSize: 240, minSize: 160, maxSize: 400 })
 
-  // Load PR data when active PR changes
+  // Load PR data when active PR changes. Local PRs use negative synthetic
+  // numbers and have no gh data — skip the fetch (handled by LocalPRReviewPanel).
   useEffect(() => {
-    if (prNumber && activeProject) {
+    if (prNumber && prNumber > 0 && activeProject) {
       loadPR(activeProject.repoPath, prNumber, activeProject.id)
     }
   }, [prNumber, activeProject?.id])
@@ -138,6 +144,18 @@ export function PRReviewPanel() {
         Select a PR from the sidebar to review
       </div>
     )
+  }
+
+  // Local PR: render the stored body + local diff instead of gh-backed review.
+  if (matchedPR?.isLocal) {
+    if (!localPR) {
+      return (
+        <div className="flex-1 flex items-center justify-center text-text-muted text-xs">
+          Loading local PR…
+        </div>
+      )
+    }
+    return <LocalPRReviewPanel localPR={localPR} />
   }
 
   if (loading) {

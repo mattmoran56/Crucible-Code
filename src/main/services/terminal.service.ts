@@ -6,9 +6,11 @@ import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import { detectUsageLimit, type UsageLimitKind } from '../../shared/patterns'
 import type { UsageLimitEvent } from '../../shared/types'
-import { handleHookEvent, findContextById } from './notification-server'
+import { handleHookEvent, findContextById, getNotificationServerPort } from './notification-server'
 import { getSessionUsage } from './usage.service'
 import { getStorePath } from '../store-path'
+import { ensureGhShimInstalled } from './gh-shim.service'
+import { shouldCaptureContext } from './local-pr.service'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
@@ -30,6 +32,56 @@ export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
  * `acceptEdits`, `bypassPermissions`, or `--dangerously-skip-permissions`.
  */
 export const AUTO_PERMISSION_MODE_ARGS: string[] = []
+
+/** Block the current thread for `ms` without busy-spinning. Only used on the
+ * rare transient spawn-failure retry path — never on the happy path. */
+function sleepSync(ms: number): void {
+  if (ms <= 0) return
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+  } catch {
+    // SharedArrayBuffer unavailable — skip the backoff rather than crash.
+  }
+}
+
+/** A pty/process spawn failed transiently — the OS was momentarily out of a
+ * resource (EAGAIN), surfaced by node-pty as "posix_spawnp failed". */
+function isTransientSpawnError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /posix_spawn|EAGAIN|resource temporarily unavailable|fork/i.test(msg)
+}
+
+/**
+ * Spawn with bounded retry + backoff. Under heavy load (many concurrent worker
+ * toolchains) macOS can return EAGAIN for a `posix_spawn`; node-pty throws
+ * "posix_spawnp failed". That's transient — retry a few times with a short
+ * backoff instead of letting a one-off saturation kill a session/foreman pass.
+ * Exported (with injectable sleep) so it can be unit-tested without real delays.
+ */
+export function spawnWithRetry<T>(
+  spawn: () => T,
+  retries = 4,
+  baseDelayMs = 80,
+  sleep: (ms: number) => void = sleepSync
+): T {
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= retries + 1; attempt++) {
+    try {
+      return spawn()
+    } catch (err) {
+      lastErr = err
+      if (attempt <= retries && isTransientSpawnError(err)) {
+        console.warn(
+          `[terminal] spawn failed (attempt ${attempt}/${retries + 1}): ${err instanceof Error ? err.message : String(err)} — backing off ${attempt * baseDelayMs}ms and retrying`
+        )
+        sleep(attempt * baseDelayMs)
+        continue
+      }
+      throw err
+    }
+  }
+  throw lastErr
+}
 
 interface TerminalInstance {
   pty: pty.IPty
@@ -228,6 +280,14 @@ function spawnPty(
 ): pty.IPty {
   const shell = process.env.SHELL || '/bin/zsh'
 
+  // Local-PR capture: when this context is in capture mode, prepend the gh shim
+  // dir to PATH so the agent's `gh pr create` is intercepted into a local PR.
+  const capture = shouldCaptureContext(instance.contextId)
+  const shimDir = capture ? ensureGhShimInstalled() : null
+  // Prepend in the shell body too — the login shell (`-l`) re-sources the
+  // user's profile, which may re-prepend PATH; doing it here wins afterwards.
+  const pathPrefix = shimDir ? `export PATH=${shellQuote(shimDir)}:"$PATH"; ` : ''
+
   let command: string
   let args: string[]
 
@@ -239,11 +299,11 @@ function spawnPty(
       commandString: instance.commandString,
       claudeArgs: instance.claudeArgs,
     })
-    args = ['-l', '-c', shellBody]
+    args = ['-l', '-c', pathPrefix + shellBody]
   } else if (instance.mode === 'command' && instance.commandString) {
     // Run a specific command via shell -l -c "cmd", exits when done
     command = shell
-    args = ['-l', '-c', instance.commandString]
+    args = ['-l', '-c', pathPrefix + instance.commandString]
   } else {
     command = shell
     args = []
@@ -269,13 +329,24 @@ function spawnPty(
   env.CRUCIBLE_CONTEXT_ID = instance.contextId
   env.CRUCIBLE_TAB_ID = instance.tabId
 
-  const ptyProcess = pty.spawn(command, args, {
-    name: 'xterm-256color',
-    cols: 120,
-    rows: 30,
-    cwd: instance.cwd,
-    env,
-  })
+  // Local-PR capture env — read by the gh shim. Also prepend the shim dir to
+  // PATH at the env level (belt-and-braces with the shell-body prepend above).
+  if (shimDir) {
+    env.CRUCIBLE_LOCAL_PR = '1'
+    env.CRUCIBLE_GH_SHIM_DIR = shimDir
+    env.CRUCIBLE_NOTIFY_PORT = String(getNotificationServerPort() ?? '')
+    env.PATH = `${shimDir}:${env.PATH ?? ''}`
+  }
+
+  const ptyProcess = spawnWithRetry(() =>
+    pty.spawn(command, args, {
+      name: 'xterm-256color',
+      cols: 120,
+      rows: 30,
+      cwd: instance.cwd,
+      env,
+    })
+  )
 
   // Coalesce PTY data into ~16ms (one render frame) windows before crossing
   // the IPC boundary. Claude streaming can fire 100+ data callbacks per
@@ -349,8 +420,27 @@ function spawnPty(
         const check = terminals.get(terminalId)
         if (!check || check.stopped) return
 
-        const newPty = spawnPty(terminalId, instance, true)
-        check.pty = newPty
+        try {
+          check.pty = spawnPty(terminalId, instance, true)
+        } catch (err) {
+          // Spawn failed even after retries (sustained saturation). Don't crash
+          // with an unhandled rejection — surface it and schedule another try.
+          safeSend(
+            instance.window,
+            IPC.TERMINAL_DATA,
+            terminalId,
+            `\r\n\x1b[90m[Claude Code restart failed: ${err instanceof Error ? err.message : String(err)} — retrying in 5s]\x1b[0m\r\n`
+          )
+          setTimeout(() => {
+            const again = terminals.get(terminalId)
+            if (!again || again.stopped || shuttingDown) return
+            try {
+              again.pty = spawnPty(terminalId, instance, true)
+            } catch {
+              /* give up quietly; user can reopen the terminal */
+            }
+          }, 5000)
+        }
       }, 1000)
     } else {
       safeSend(instance.window, IPC.TERMINAL_EXIT, terminalId, exitCode)

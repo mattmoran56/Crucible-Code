@@ -110,6 +110,17 @@ function FoundryView({
           </div>
         </div>
         <div className="flex gap-1 shrink-0">
+          {cfg.enabled && cfg.localPrMode && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={state?.publish?.status === 'running'}
+              onClick={() => void window.api.foundry.publishPRs(cfg.id)}
+              title="Promote this run's local PRs to real GitHub PRs, in order"
+            >
+              {state?.publish?.status === 'running' ? 'Creating PRs…' : 'Create PRs'}
+            </Button>
+          )}
           {cfg.enabled && (
             <Button size="sm" variant="ghost" onClick={() => void runNow(cfg.id)}>
               Run pass
@@ -213,8 +224,8 @@ function FoundryView({
                   Pass history ({passes.length})
                 </summary>
                 <div className="mt-2 space-y-1">
-                  {[...passes].slice(-10).reverse().map((pass) => (
-                    <div key={pass.index} className="text-[11px] text-text-muted">
+                  {[...passes].slice(-10).reverse().map((pass, i) => (
+                    <div key={`${pass.index}-${pass.startedAt}-${i}`} className="text-[11px] text-text-muted">
                       #{pass.index} · {pass.status} · {pass.trigger} · started{' '}
                       {pass.startedPageIds.length} task(s)
                       {pass.errorMessage ? ` · ${pass.errorMessage}` : ''}

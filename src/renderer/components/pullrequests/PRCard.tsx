@@ -13,6 +13,10 @@ interface Props {
   needsAttention?: boolean
   display?: PRListDisplay
   onClick: () => void
+  /** Promote a local PR to a real GitHub PR. Only used when `pr.isLocal`. */
+  onPromote?: () => void
+  /** Discard a local PR. Only used when `pr.isLocal`. */
+  onDiscard?: () => void
 }
 
 const REVIEW_STATE_RING: Record<PRReviewSummary['state'], string> = {
@@ -66,7 +70,7 @@ function PeopleRow({ icon, label, children }: PeopleRowProps) {
   )
 }
 
-export function PRCard({ pr, isNew, isActive, needsAttention, display, onClick }: Props) {
+export function PRCard({ pr, isNew, isActive, needsAttention, display, onClick, onPromote, onDiscard }: Props) {
   const cfg = display ?? DEFAULT_PR_LIST_DISPLAY
   const fields = cfg.fields
 
@@ -105,8 +109,16 @@ export function PRCard({ pr, isNew, isActive, needsAttention, display, onClick }
         {fields.unseen && isNew && (
           <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-accent" />
         )}
+        {pr.isLocal && (
+          <span
+            title="Local PR — not yet on GitHub. Promote to open a real PR."
+            className="shrink-0 rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide bg-warning/20 text-warning"
+          >
+            Local
+          </span>
+        )}
         <span className="font-medium truncate">
-          {fields.number ? `#${pr.number} ` : ''}{pr.title}
+          {fields.number ? (pr.isLocal ? `LOCAL-${-pr.number} ` : `#${pr.number} `) : ''}{pr.title}
         </span>
         {fields.attention && needsAttention && (
           <span
@@ -206,6 +218,33 @@ export function PRCard({ pr, isNew, isActive, needsAttention, display, onClick }
           {showUpdated && (
             <span className="ml-auto" title={new Date(pr.updatedAt).toLocaleString()}>
               {relativeTime(pr.updatedAt)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {pr.isLocal && (onPromote || onDiscard) && (
+        <div className="flex items-center gap-2 mt-2.5">
+          {onPromote && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); onPromote() }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); onPromote() } }}
+              className="rounded px-2 py-0.5 text-[10px] font-medium bg-accent/15 text-accent hover:bg-accent/25 cursor-pointer"
+            >
+              Promote to PR
+            </span>
+          )}
+          {onDiscard && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); onDiscard() }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); onDiscard() } }}
+              className="rounded px-2 py-0.5 text-[10px] font-medium text-text-muted hover:text-danger cursor-pointer"
+            >
+              Discard
             </span>
           )}
         </div>

@@ -6,18 +6,24 @@ const getSeenPRs = vi.fn()
 const markPRSeen = vi.fn()
 const getCurrentUser = vi.fn()
 const listCollaborators = vi.fn()
+const listLocal = vi.fn(async () => [])
 
 beforeEach(() => {
-  for (const fn of [listPRs, getSeenPRs, markPRSeen, getCurrentUser, listCollaborators]) fn.mockReset()
+  for (const fn of [listPRs, getSeenPRs, markPRSeen, getCurrentUser, listCollaborators, listLocal]) fn.mockReset()
+  listLocal.mockResolvedValue([])
   ;(window as any).api = {
     github: { listPRs, getSeenPRs, markPRSeen, getCurrentUser, listCollaborators },
+    localPr: { list: listLocal },
   }
   usePRStore.setState({
     prCache: {},
+    localPRCache: {},
     seenCache: {},
     collaboratorsCache: {},
     currentRepoPath: null,
     currentProjectId: null,
+    remotePRs: [],
+    localPRs: [],
     pullRequests: [],
     seenPRs: [],
     loading: false,
@@ -242,5 +248,65 @@ describe('prStore.clear (extended)', () => {
     usePRStore.getState().clear()
     expect(usePRStore.getState().collaboratorsCache['/repo']).toEqual([{ login: 'x' }])
     expect(usePRStore.getState().currentUser).toBe('alice')
+  })
+})
+
+const LOCAL = (over: Record<string, any> = {}) => ({
+  id: 'lpr-1', localNumber: 1, projectId: 'p1', title: 'Local change',
+  body: 'body', branch: 'feat/local', baseBranch: 'main', status: 'local',
+  createdAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z', log: [],
+  ...over,
+})
+
+describe('prStore — local PRs', () => {
+  it('adapts a local PR into a PullRequest with isLocal + negative number', async () => {
+    listLocal.mockResolvedValue([LOCAL()])
+    await usePRStore.getState().loadLocalPRs('p1')
+    const prs = usePRStore.getState().pullRequests
+    expect(prs).toHaveLength(1)
+    expect(prs[0]).toMatchObject({
+      isLocal: true, localPrId: 'lpr-1', number: -1,
+      title: 'Local change', headRefName: 'feat/local', isDraft: true, state: 'OPEN',
+    })
+  })
+
+  it('reflects merged state + CI status from the record', async () => {
+    listLocal.mockResolvedValue([LOCAL({ status: 'merged', ciResult: { status: 'failure', checks: [], ranAt: 'x', runner: 'act' } })])
+    await usePRStore.getState().loadLocalPRs('p1')
+    const pr = usePRStore.getState().pullRequests[0]
+    expect(pr.state).toBe('MERGED')
+    expect(pr.ciStatus).toBe('failure')
+  })
+
+  it('merges local PRs ahead of remote PRs', async () => {
+    listLocal.mockResolvedValue([LOCAL()])
+    listPRs.mockResolvedValue([{ number: 1001 } as any])
+    await usePRStore.getState().loadLocalPRs('p1')
+    await usePRStore.getState().loadPRs('/repo')
+    const prs = usePRStore.getState().pullRequests
+    expect(prs).toHaveLength(2)
+    expect(prs[0].isLocal).toBe(true)
+    expect(prs[1].number).toBe(1001)
+  })
+
+  it('dedupes a promoted local PR against its real PR', async () => {
+    listLocal.mockResolvedValue([LOCAL({ status: 'open', realPrNumber: 1001 })])
+    listPRs.mockResolvedValue([{ number: 1001 } as any])
+    await usePRStore.getState().loadLocalPRs('p1')
+    await usePRStore.getState().loadPRs('/repo')
+    const prs = usePRStore.getState().pullRequests
+    expect(prs).toHaveLength(1)
+    expect(prs[0].isLocal).toBeUndefined()
+    expect(prs[0].number).toBe(1001)
+  })
+
+  it('applyLocalPRUpdate swaps the visible list only for the active project', () => {
+    usePRStore.setState({ currentProjectId: 'p1' })
+    usePRStore.getState().applyLocalPRUpdate('p1', [LOCAL({ title: 'Pushed' }) as any])
+    expect(usePRStore.getState().pullRequests[0].title).toBe('Pushed')
+
+    usePRStore.getState().applyLocalPRUpdate('p2', [LOCAL({ id: 'lpr-2', projectId: 'p2', title: 'Other' }) as any])
+    expect(usePRStore.getState().pullRequests.some((p) => p.title === 'Other')).toBe(false)
+    expect(usePRStore.getState().localPRCache['p2']).toHaveLength(1)
   })
 })

@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { FoundryConfig, NotionTaskPayload } from '../../../src/shared/types'
 
 const stores: Record<string, Record<string, unknown>> = {}
@@ -689,5 +692,86 @@ describe('foundry.service — pruneState (memory bounding)', () => {
     for (const p of state.pipelines) {
       expect(p.log.length).toBeLessThanOrEqual(500)
     }
+  })
+})
+
+describe('foundry.service — local-PR mode', () => {
+  it('first pipeline targets the integration branch + carries capture meta', async () => {
+    const svc = await loadFresh()
+    svc.saveConfig(baseConfig({ localPrMode: true }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () =>
+      fakeNotionResponse(200, { results: [pageWithStatus('p1', 'Ready', 'Pickme')] })
+    )
+    const page: NotionTaskPayload = { id: 'p1', url: 'https://notion.so/p1', title: 'Pickme', rawProperties: {} }
+    const pipe = await svc.startPipeline({ foundryId: 'f-1', page, reason: 'test' })
+
+    expect(pipe).not.toBeNull()
+    expect(pipe!.baseBranch).toBe('foundry/integration-f-1')
+    const fire = sent.find((s) => s.channel === 'foundry:fire-task')
+    expect(fire).toBeTruthy()
+    const payload = fire!.args[0] as Record<string, any>
+    expect(payload.baseBranch).toBe('foundry/integration-f-1')
+    expect(payload.localPrCapture).toMatchObject({ foundryId: 'f-1', pipelineId: pipe!.id, order: 0 })
+  })
+
+  it('publishLocalPRStack promotes the stack in order, marks ready, and links the chain', async () => {
+    const svc = await loadFresh()
+    const localPr = await import('../../../src/main/services/local-pr.service')
+    svc.saveConfig(baseConfig({ localPrMode: true }))
+    svc.startFoundryService(fakeWindow)
+
+    // Real temp worktrees so promote's existsSync(worktreePath) passes.
+    const wt1 = mkdtempSync(join(tmpdir(), 'fnd-wt1-'))
+    const wt2 = mkdtempSync(join(tmpdir(), 'fnd-wt2-'))
+
+    // github.service.createDraftPR is mocked at the top of this file (returns
+    // PR #42), so promote doesn't shell out — execFile only sees the git push.
+    localPr.setCaptureContext('c1', { foundryId: 'f-1', order: 0 })
+    localPr.setCaptureContext('c2', { foundryId: 'f-1', order: 1 })
+    await localPr.captureLocalPR({ contextId: 'c1', projectId: 'proj-1', worktreePath: wt1, action: 'create', fields: { title: 'A', body: 'a', head: 'feat/a', base: 'main' } })
+    await localPr.captureLocalPR({ contextId: 'c2', projectId: 'proj-1', worktreePath: wt2, action: 'create', fields: { title: 'B', body: 'b', head: 'feat/b', base: 'main' } })
+
+    try {
+      await svc.publishLocalPRStack('f-1')
+
+      const list = localPr.listLocalPRs('proj-1').sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      expect(list).toHaveLength(2)
+      expect(list[0].status).toBe('open')
+      expect(list[1].status).toBe('open')
+      expect(list[0].realPrNumber).toBeGreaterThan(0)
+      expect(list[1].realPrNumber).toBeGreaterThan(0)
+      // chain linked by the publisher
+      expect(list[1].parentLocalPrId).toBe(list[0].id)
+      // publish cursor completed
+      expect(svc.getState('f-1')?.publish?.status).toBe('done')
+    } finally {
+      rmSync(wt1, { recursive: true, force: true })
+      rmSync(wt2, { recursive: true, force: true })
+    }
+  })
+  it('links a captured PR by sessionId when pipelineId metadata was lost (e.g. restart)', async () => {
+    const svc = await loadFresh()
+    const localPr = await import('../../../src/main/services/local-pr.service')
+    svc.saveConfig(baseConfig({ localPrMode: true }))
+    svc.startFoundryService(fakeWindow)
+    fetchMock.mockImplementation(async () => fakeNotionResponse(200, {}))
+    const page: NotionTaskPayload = { id: 'p1', url: 'https://notion.so/p1', title: 'T', rawProperties: {} }
+    const pipe = await svc.startPipeline({ foundryId: 'f-1', page, reason: 'test' })
+    svc.ackTaskStarted('f-1', { pipelineId: pipe!.id, sessionId: 'sess-x', branch: 'foundry/t', worktreePath: '/tmp/wt', baseBranch: 'main' })
+    const rt = svc.getRuntime('f-1')!
+    expect(rt.state.pipelines[0].phase).toBe('implementing')
+
+    // Capture a local PR with NO capture metadata (no setCaptureContext call) but
+    // a matching sessionId — simulating a restart between spawn and gh pr create.
+    // The LOCAL_PR_CHANGED bus event matches the pipeline by sessionId, links it,
+    // and advances — so the missing pipelineId is recovered from the session.
+    await localPr.captureLocalPR({ contextId: 'sess-x', projectId: 'proj-1', worktreePath: '/tmp/wt', action: 'create', fields: { title: 'A', body: 'a', head: 'foundry/t', base: 'main' } })
+    const seeded = localPr.listLocalPRs('proj-1')[0]
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(rt.state.pipelines[0].phase).toBe('reviewing')
+    expect(localPr.getLocalPR(seeded.id)?.pipelineId).toBe(pipe!.id)
+    expect(localPr.getLocalPR(seeded.id)?.foundryId).toBe('f-1')
   })
 })

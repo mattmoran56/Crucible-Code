@@ -23,6 +23,13 @@ const h = vi.hoisted(() => {
   return s
 })
 
+// review-loop.service imports patchLocalPR from local-pr.service, which pulls in
+// electron (via store-path) — mock it so the suite doesn't load the real
+// electron package (unavailable under CI's `--ignore-scripts` install).
+vi.mock('../../../src/main/services/local-pr.service', () => ({
+  patchLocalPR: vi.fn(),
+}))
+
 vi.mock('../../../src/main/services/review-phase.service', () => ({
   DEFAULT_PHASE_TIMEOUT_MS: 1000,
   runForegroundPhase: vi.fn((opts: Record<string, any>) => {

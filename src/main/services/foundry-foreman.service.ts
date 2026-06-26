@@ -339,7 +339,11 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
   const cfg = rt.config
   console.log(`[foundry-foreman:${foundryId}] runPass start (trigger=${trigger})`)
 
-  const passIndex = rt.state.passes.length + 1
+  // Monotonic, NOT `passes.length + 1` — the passes array is pruned (capped at
+  // ~50), so length-based indexing would stick at 51 forever, producing
+  // duplicate indexes (and duplicate React keys → a render storm). Pruning keeps
+  // the highest indexes, so max+1 stays correct across prunes.
+  const passIndex = rt.state.passes.reduce((m, p) => Math.max(m, p.index), 0) + 1
   const passDir = join(getStorePath(), 'foundry', cfg.id, `pass-${passIndex}`)
   await mkdir(passDir, { recursive: true })
   const contextPath = join(passDir, 'context.json')
@@ -396,19 +400,33 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
   // same trick the queued-session fire path uses. The user can also type
   // into this terminal while it runs to nudge the foreman.
   const foremanSessionId = `foundry-foreman-${cfg.id}`
-  const terminalId = spawnTerminal(
-    window,
-    foremanSessionId,
-    pickCwd(cfg),
-    'claude',
-    'dark',
-    undefined, // claudeConfigDir — inherit user's default
-    prompt,
-    pickCwd(cfg), // repoPath
-    false,
-    foremanSessionId,
-    'foreman'
-  )
+  let terminalId: string
+  try {
+    terminalId = spawnTerminal(
+      window,
+      foremanSessionId,
+      pickCwd(cfg),
+      'claude',
+      'dark',
+      undefined, // claudeConfigDir — inherit user's default
+      prompt,
+      pickCwd(cfg), // repoPath
+      false,
+      foremanSessionId,
+      'foreman'
+    )
+  } catch (err) {
+    // PTY spawn can fail under heavy load (posix_spawnp / EAGAIN). Record the
+    // pass as errored instead of leaving a zombie 'running' record forever.
+    passRecord.status = 'error'
+    passRecord.endedAt = new Date().toISOString()
+    passRecord.errorMessage = `foreman PTY spawn failed: ${err instanceof Error ? err.message : String(err)}`
+    rt.state.foremanTerminalId = undefined
+    rt.state.lastError = passRecord.errorMessage
+    saveStateEmit(rt)
+    console.error(`[foundry-foreman:${cfg.id}] pass #${passIndex} ${passRecord.errorMessage}`)
+    return
+  }
   rt.state.foremanTerminalId = terminalId
   console.log(`[foundry-foreman:${cfg.id}] pass #${passIndex} PTY ${terminalId} spawned`)
   saveStateEmit(rt)

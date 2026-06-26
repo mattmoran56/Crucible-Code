@@ -30,6 +30,47 @@ export function onHookEvent(listener: (evt: HookEvent) => void): () => void {
   return () => hookEvents.off('hook', listener)
 }
 
+/**
+ * Fields captured from an intercepted `gh pr create` (see gh-shim). title/body
+ * arrive base64-encoded on the wire; they're decoded before reaching the fn.
+ */
+export interface LocalPRCaptureArgs {
+  contextId: string
+  projectId: string
+  worktreePath: string
+  /** Which gh subcommand was intercepted. */
+  action: 'create' | 'edit' | 'ready' | 'view'
+  fields: {
+    title: string
+    body: string
+    /** Whether --title / --body(-file) were actually passed (for edit). */
+    haveTitle?: boolean
+    haveBody?: boolean
+    base?: string
+    head?: string
+    sha?: string
+    draft?: boolean
+    /** Comma-separated field list from `gh pr view --json`. */
+    json?: string
+  }
+}
+
+/**
+ * Handles a captured gh command against the local PR record. Returns the fake
+ * PR ref (create/edit), nothing meaningful (ready), or base64 view output
+ * (view) the shim prints back to the agent.
+ */
+export type LocalPRCaptureFn = (
+  args: LocalPRCaptureArgs
+) => Promise<{ number?: number; url?: string; view_b64?: string }>
+
+let localPRCaptureFn: LocalPRCaptureFn | null = null
+
+/** Register the handler that turns a captured `gh pr create` into a local PR. */
+export function setLocalPRCapture(fn: LocalPRCaptureFn | null): void {
+  localPRCaptureFn = fn
+}
+
 interface ContextMapping {
   contextId: string
   name: string
@@ -179,6 +220,73 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
             res.writeHead(400, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'invalid json' }))
           }
+        })
+      } else if (req.method === 'POST' && req.url?.startsWith('/local-pr')) {
+        // Captured `gh pr create` from the gh shim. Resolve the context (so we
+        // know which project/worktree this belongs to), hand off to the
+        // registered capture fn, and echo back the allocated fake PR ref so the
+        // shim can print a plausible PR URL to the agent.
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => {
+          chunks.push(chunk)
+        })
+        req.on('end', () => {
+          void (async () => {
+            try {
+              const body = Buffer.concat(chunks).toString('utf8')
+              const data = JSON.parse(body) as {
+                action?: 'create' | 'edit' | 'ready' | 'view'
+                title_b64?: string
+                body_b64?: string
+                have_title?: boolean
+                have_body?: boolean
+                base?: string
+                head?: string
+                sha?: string
+                draft?: boolean
+                json?: string
+                cwd?: string
+              }
+              const url = new URL(req.url!, `http://127.0.0.1`)
+              const contextParam = url.searchParams.get('context') || ''
+
+              let mapping = contextParam ? contextMappings.get(contextParam) : undefined
+              if (!mapping) mapping = findContextByWorktreePath(data.cwd || '')
+
+              if (!mapping || !localPRCaptureFn) {
+                res.writeHead(503, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ error: 'local PR capture not available' }))
+                return
+              }
+
+              const decode = (b64?: string): string =>
+                b64 ? Buffer.from(b64, 'base64').toString('utf8') : ''
+
+              const result = await localPRCaptureFn({
+                contextId: mapping.contextId,
+                projectId: mapping.projectId,
+                worktreePath: mapping.worktreePath,
+                action: data.action ?? 'create',
+                fields: {
+                  title: decode(data.title_b64),
+                  body: decode(data.body_b64),
+                  haveTitle: data.have_title,
+                  haveBody: data.have_body,
+                  base: data.base,
+                  head: data.head,
+                  sha: data.sha,
+                  draft: data.draft,
+                  json: data.json,
+                },
+              })
+
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: true, ...result }))
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'capture failed' }))
+            }
+          })()
         })
       } else if (req.method === 'POST' && req.url === '/notification') {
         // Legacy endpoint — treat as notification type, route by cwd
