@@ -639,17 +639,17 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
   // worktree create — otherwise the renderer's worktree.create would fail
   // and the pipeline would never start. No-op when baseBranch is unset
   // (worktree.create falls back to the repo default).
-  // In local-PR mode the run builds a chained stack: the first pipeline targets
-  // the foundry integration branch, each subsequent one targets its
-  // predecessor's branch. Otherwise we use the configured base branch.
+  // In local-PR mode every worker branches off the foundry integration branch
+  // and runs in parallel — no spawn-time chaining. The stack is assembled in
+  // completion order (pr-stack.service's LOCAL_PR_CHANGED listener) and any
+  // conflicts between parallel tickets are resolved by Claude at
+  // publish/propagate. Real dependencies are handled separately by
+  // optimisticContinue (the worker merges its dependency's PR branch in first).
   const localStack = !!rt.config.localPrMode
-  const predecessor = localStack ? lastStackPipeline(rt) : undefined
   const baseToEnsure = localStack
     ? foundryBranchFor(rt.config)
     : rt.config.baseBranch?.trim()
-  const resolvedBase = localStack
-    ? predecessor?.branch || foundryBranchFor(rt.config)
-    : rt.config.baseBranch
+  const resolvedBase = localStack ? foundryBranchFor(rt.config) : rt.config.baseBranch
 
   if (baseToEnsure) {
     const repoPath = projectRepoPath(rt.config.projectId)
@@ -721,12 +721,9 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
     updatedAt: new Date().toISOString(),
     log: [`Pipeline started — ${opts.reason}`],
     baseBranch: resolvedBase,
-    // Link the chained-stack parent. We deliberately DON'T record a provisional
-    // branch here: the real branch is `session/<sessionName>` (created by
-    // worktree.create, which ignores the foreman's suggested name) and is only
-    // known on ack. A successor chains off that real, pushed branch — never the
-    // foreman's suggestion, which may never exist.
-    parentPipelineId: localStack ? predecessor?.id : undefined,
+    // No spawn-time chaining: parallel workers all branch off the integration
+    // branch and the stack is assembled in completion order.
+    parentPipelineId: undefined,
   }
   rt.state.pipelines.push(pipeline)
   saveAndEmit(rt)
@@ -751,21 +748,6 @@ export async function startPipeline(opts: StartPipelineOptions): Promise<Foundry
   }
   fireWorkerSpawn(rt, pipeline, payload)
   return pipeline
-}
-
-/**
- * The most recent pipeline in the run whose worker has ACKED — i.e. it has a
- * real `session/…` branch (created + pushed by the worker). Used to chain the
- * next local PR's base onto a branch that actually exists. Skips
- * cancelled/orphaned, and pipelines that haven't acked yet (no branch). When
- * none qualify, the caller falls back to the foundry integration branch.
- */
-function lastStackPipeline(rt: FoundryRuntime): FoundryPipeline | undefined {
-  for (let i = rt.state.pipelines.length - 1; i >= 0; i--) {
-    const p = rt.state.pipelines[i]
-    if (p.phase !== 'cancelled' && p.phase !== 'orphaned' && p.branch) return p
-  }
-  return undefined
 }
 
 function fireWorkerSpawn(rt: FoundryRuntime, pipeline: FoundryPipeline, payload: FoundryFireTaskPayload): void {
@@ -1360,10 +1342,8 @@ function refireWorkerSpawn(rt: FoundryRuntime, p: FoundryPipeline): void {
   const localStack = !!rt.config.localPrMode
   let baseBranch = rt.config.baseBranch
   if (localStack) {
-    const predecessor = p.parentPipelineId
-      ? rt.state.pipelines.find((x) => x.id === p.parentPipelineId && x.branch)
-      : lastStackPipeline(rt)
-    baseBranch = predecessor?.branch || foundryBranchFor(rt.config)
+    // Parallel model: respawn off the integration branch too (no chaining).
+    baseBranch = foundryBranchFor(rt.config)
     p.baseBranch = baseBranch // keep in sync for worktree.create
   }
 

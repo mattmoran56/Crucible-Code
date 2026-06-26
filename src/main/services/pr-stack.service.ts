@@ -48,9 +48,18 @@ export function startPRStackService(window: BrowserWindow): void {
   if (!unsubLocalPR) {
     const onLocalPRChanged = (lpr: LocalPR): void => {
       if (!lpr?.foundryId) return
+      const meta = getFoundryMeta(lpr.foundryId)
+      if (meta.stackMode === 'none') return
+      if (meta.stackMode === 'existing') {
+        const target = meta.stackTargetStackId ? getStack(meta.stackTargetStackId) : null
+        if (!target) return // configured target missing — don't silently create one
+        if (target.entries.some((e) => e.localPrId === lpr.id)) return
+        addEntry(target.id, { kind: 'local', localPrId: lpr.id })
+        return
+      }
+      // 'new' (default): one stack per foundry, assembled in completion order.
       const existing = getStackForFoundry(lpr.foundryId)
       if (existing && existing.entries.some((e) => e.localPrId === lpr.id)) return
-      const meta = getFoundryMeta(lpr.foundryId)
       ensureStackForFoundry(lpr.foundryId, lpr.projectId, meta.name, meta.baseBranch, lpr.id)
     }
     eventBus.on(LOCAL_PR_CHANGED, onLocalPRChanged)
@@ -84,16 +93,29 @@ export function stopPRStackService(): void {
   unsubLocalPR = null
 }
 
-/** Read a foundry's display name + integration branch from its config store. */
-function getFoundryMeta(foundryId: string): { name: string; baseBranch: string } {
+interface FoundryStackMeta {
+  name: string
+  baseBranch: string
+  stackMode: 'new' | 'existing' | 'none'
+  stackTargetStackId?: string
+  conflictPrompt?: string
+}
+
+/** Read a foundry's stacking-relevant config from its config store. */
+function getFoundryMeta(foundryId: string): FoundryStackMeta {
   const cfgStore = new Store<{ foundries: FoundryConfig[] }>({
     cwd: getStorePath(),
     name: 'foundry-config',
     defaults: { foundries: [] },
   })
   const cfg = cfgStore.get('foundries', []).find((f) => f.id === foundryId)
-  const baseBranch = cfg?.foundryBranch || `foundry/integration-${foundryId}`
-  return { name: cfg?.name ? `${cfg.name}` : `Foundry ${foundryId.slice(0, 6)}`, baseBranch }
+  return {
+    name: cfg?.name ? `${cfg.name}` : `Foundry ${foundryId.slice(0, 6)}`,
+    baseBranch: cfg?.foundryBranch || `foundry/integration-${foundryId}`,
+    stackMode: cfg?.stackMode ?? 'new',
+    stackTargetStackId: cfg?.stackTargetStackId,
+    conflictPrompt: cfg?.stackConflictPrompt?.trim() || undefined,
+  }
 }
 
 // ── Persistence helpers ─────────────────────────────────────────────────────
@@ -478,7 +500,7 @@ function entryLabel(entry: PRStackEntry): string {
   return entry.prNumber ? `#${entry.prNumber}` : entry.branch ?? entry.id
 }
 
-function buildConflictPrompt(entryBranch: string, belowBranch: string, files: string[]): string {
+function defaultConflictPrompt(entryBranch: string, belowBranch: string, files: string[]): string {
   return [
     'You are resolving a git MERGE CONFLICT in a PR stack.',
     `Branch \`${entryBranch}\` is being updated by merging \`${belowBranch}\` into it,`,
@@ -490,6 +512,25 @@ function buildConflictPrompt(entryBranch: string, belowBranch: string, files: st
     'Do NOT push and do NOT touch anything unrelated to the conflicts — pushing is',
     'handled automatically once you finish.',
   ].join('\n')
+}
+
+/**
+ * Build the conflict-resolution prompt — a foundry-configured override (with
+ * `{{entryBranch}}`/`{{belowBranch}}`/`{{files}}` placeholders) when the stack
+ * belongs to a foundry that set one, else the built-in default.
+ */
+function buildConflictPrompt(
+  stack: PRStack,
+  entryBranch: string,
+  belowBranch: string,
+  files: string[]
+): string {
+  const custom = stack.foundryId ? getFoundryMeta(stack.foundryId).conflictPrompt : undefined
+  if (!custom) return defaultConflictPrompt(entryBranch, belowBranch, files)
+  return custom
+    .replace(/\{\{\s*entryBranch\s*\}\}/g, entryBranch)
+    .replace(/\{\{\s*belowBranch\s*\}\}/g, belowBranch)
+    .replace(/\{\{\s*files\s*\}\}/g, files.map((f) => ` - ${f}`).join('\n'))
 }
 
 /**
@@ -506,7 +547,10 @@ async function resolveConflictWithClaude(
   cwd: string,
   repoPath: string | null
 ): Promise<boolean> {
-  const prompt = buildConflictPrompt(entry.branch ?? '(branch)', belowBranch, unmergedFiles)
+  const stack = getStack(stackId)
+  const prompt = stack
+    ? buildConflictPrompt(stack, entry.branch ?? '(branch)', belowBranch, unmergedFiles)
+    : defaultConflictPrompt(entry.branch ?? '(branch)', belowBranch, unmergedFiles)
 
   // Preferred: drive the live worker PTY for a local entry.
   if (entry.kind === 'local' && entry.localPrId) {

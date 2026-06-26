@@ -717,10 +717,27 @@ export interface FoundryConfig {
    */
   localPrMode?: boolean
   /**
-   * Integration branch the FIRST local PR in a run targets. Subsequent PRs
-   * chain onto their predecessor's branch. Default `foundry/integration-<id>`.
+   * Integration branch every local PR in a run branches off. Default
+   * `foundry/integration-<id>`. Tickets run in parallel off this branch; the
+   * stack is assembled in completion order and conflicts are resolved at
+   * publish/propagate (see {@link stackMode}).
    */
   foundryBranch?: string
+  /**
+   * How a local-PR-mode run feeds a managed PR stack. `new` (default) creates
+   * one stack per foundry; `existing` appends completed local PRs to
+   * {@link stackTargetStackId}; `none` produces local PRs without grouping them.
+   * Only consulted when `localPrMode` is on.
+   */
+  stackMode?: 'new' | 'existing' | 'none'
+  /** Target stack id when `stackMode === 'existing'`. */
+  stackTargetStackId?: string
+  /**
+   * Custom prompt injected when Claude resolves a merge conflict while
+   * publishing/propagating this foundry's stack. Supports `{{entryBranch}}`,
+   * `{{belowBranch}}`, and `{{files}}` placeholders. Blank = built-in default.
+   */
+  stackConflictPrompt?: string
   /** Local CI runner config used by the publisher between promotes (Phase 6). */
   localCi?: {
     enabled: boolean

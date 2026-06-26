@@ -351,7 +351,7 @@ A **local PR** is a tracked record of a would-be pull request — title, body, b
 
 Local PRs appear in the normal PR list with a **Local** badge and a **Promote to PR** button. Promote pushes the branch, opens a real draft PR from the approved title/body/base, and the entry becomes the real PR.
 
-**Foundry overnight stacks.** Turn on **Local PR mode** in a Foundry's settings and an overnight run builds a *chained stack*: the first PR targets the integration branch, each subsequent one targets its predecessor. In the morning, **Create PRs** walks the stack in order — open each real PR, run optional [local CI](#review-loop) in Docker (`act`), fix-on-failure by resuming the worker, mark ready, then the next. The walk is resumable across restarts. The review loop runs against local PRs too, storing its findings on the record instead of posting a gh comment.
+**Foundry overnight stacks.** Turn on **Local PR mode** in a Foundry's settings and an overnight run produces local PRs that are assembled into a managed [PR stack](#pr-stacks). Workers branch off the integration branch and run **in parallel** — tickets join the stack in completion order rather than being forced into a series, and any conflicts between them are resolved by Claude when you publish or propagate. In the morning, **Create PRs** walks the stack in order — open each real PR, run optional [local CI](#review-loop) in Docker (`act`), fix-on-failure by resuming the worker, mark ready, then the next. The walk is resumable across restarts. The review loop runs against local PRs too, storing its findings on the record instead of posting a gh comment.
 
 See [docs/LOCAL_PRS.md](docs/LOCAL_PRS.md) for the full lifecycle, the captured `gh` commands, and the publish flow.
 
@@ -379,7 +379,7 @@ A **PR stack** is a first-class, named chain of dependent PRs — local PRs and/
 - **Restack after merge** — when a lower PR merges, drop it and rebase everything above onto the new base (real PRs retargeted on GitHub), then merge the new base up the chain.
 - **Propagate upward** — push a change to a lower branch and cascade it up the stack one entry at a time: each higher branch merges the one below and pushes, fully finishing before the next. On a conflict, **Claude resolves it** — driving the live worker session when one exists, otherwise a permission-seeded headless run — then the cascade continues. It never pushes a half-merged tree, and the cursor is resumable across restarts.
 
-**Foundry integration.** A Foundry run in local-PR mode auto-creates a managed stack from its chained local PRs, which you can then reorder, extend with other PRs, or merge with another run's stack.
+**Foundry integration.** Each Foundry chooses how its local-PR run feeds a stack (in its settings): **New stack** (one per foundry), **Add to an existing stack**, or **Don't stack**. Workers run in parallel off the integration branch and join the stack in completion order; a per-foundry **conflict-resolution prompt** controls how Claude resolves any overlap when the stack is published or propagated. You can still reorder, extend, or merge the resulting stack by hand.
 
 <table>
 <tr>

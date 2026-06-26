@@ -68,8 +68,18 @@ vi.mock('../../../src/main/services/claude-headless.service', () => ({ runHeadle
 vi.mock('../../../src/main/services/permission-sync.service', () => ({ seedPermissions: () => {} }))
 
 let svc: typeof import('../../../src/main/services/pr-stack.service')
+let bus: import('node:events').EventEmitter
 
 const PROJECT = 'proj-1'
+const FOUNDRY = 'fnd-1'
+
+function seedFoundryConfig(stackMode: 'new' | 'existing' | 'none', stackTargetStackId?: string): void {
+  stores['foundry-config'] = {
+    foundries: [
+      { id: FOUNDRY, name: 'My Foundry', projectId: PROJECT, foundryBranch: 'foundry/int', stackMode, stackTargetStackId },
+    ],
+  }
+}
 
 function seedLocalPR(id: string, localNumber: number, branch: string, extra: Partial<LocalPR> = {}): void {
   localPRs.set(id, {
@@ -104,6 +114,7 @@ beforeEach(async () => {
   runHeadlessClaude.mockReset().mockResolvedValue({ ok: true, transcript: [], costUsd: 0, exitCode: 0, signal: null })
   vi.resetModules()
   svc = await import('../../../src/main/services/pr-stack.service')
+  bus = (await import('../../../src/main/services/event-bus')).eventBus
 })
 
 describe('pr-stack.service — CRUD + chain linking', () => {
@@ -199,6 +210,43 @@ describe('pr-stack.service — publish', () => {
 
     await svc.publishStack(stack.id)
     expect(svc.getStack(stack.id)!.publish!.status).toBe('error')
+  })
+})
+
+describe('pr-stack.service — foundry stackMode routing', () => {
+  it("'new' auto-creates one stack per foundry from completed local PRs", () => {
+    seedFoundryConfig('new')
+    seedLocalPR('a', 1, 'feat/a', { foundryId: FOUNDRY })
+    svc.startPRStackService(null as never)
+    bus.emit('local-pr:changed', localPRs.get('a'))
+
+    const stacks = svc.listStacks(PROJECT)
+    expect(stacks).toHaveLength(1)
+    expect(stacks[0].foundryId).toBe(FOUNDRY)
+    expect(stacks[0].entries.map((e) => e.localPrId)).toEqual(['a'])
+  })
+
+  it("'none' produces no stack", () => {
+    seedFoundryConfig('none')
+    seedLocalPR('a', 1, 'feat/a', { foundryId: FOUNDRY })
+    svc.startPRStackService(null as never)
+    bus.emit('local-pr:changed', localPRs.get('a'))
+    expect(svc.listStacks(PROJECT)).toHaveLength(0)
+  })
+
+  it("'existing' appends to the configured target stack", () => {
+    const target = (() => {
+      seedFoundryConfig('new') // create a target stack first via a manual create
+      return svc.createStack({ projectId: PROJECT, name: 'Target', baseBranch: 'main' })
+    })()
+    seedFoundryConfig('existing', target.id)
+    seedLocalPR('a', 1, 'feat/a', { foundryId: FOUNDRY })
+    svc.startPRStackService(null as never)
+    bus.emit('local-pr:changed', localPRs.get('a'))
+
+    expect(svc.getStack(target.id)!.entries.map((e) => e.localPrId)).toEqual(['a'])
+    // No extra foundry stack was created.
+    expect(svc.listStacks(PROJECT)).toHaveLength(1)
   })
 })
 

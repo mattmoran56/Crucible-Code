@@ -266,6 +266,16 @@ function FoundryEditor({ cfg, schema, apiToken, onSave, onClose }: EditorProps) 
   const update = (patch: Partial<FoundryConfig>) =>
     setDraft((d) => ({ ...d, ...patch }))
 
+  // Existing stacks in the project, offered when "Add to existing stack".
+  const [projectStacks, setProjectStacks] = useState<Array<{ id: string; name: string }>>([])
+  useEffect(() => {
+    let alive = true
+    window.api.prStack.list(draft.projectId).then((list) => {
+      if (alive) setProjectStacks(list.map((s) => ({ id: s.id, name: s.name })))
+    })
+    return () => { alive = false }
+  }, [draft.projectId])
+
   // Status-like properties from the schema — the only ones whose value is
   // a finite enumerable list we can render as a dropdown.
   const statusProps: NotionDatabaseProperty[] = useMemo(
@@ -533,10 +543,66 @@ function FoundryEditor({ cfg, schema, apiToken, onSave, onClose }: EditorProps) 
           {draft.localPrMode && (
             <Input
               label="Foundry integration branch"
-              hint="The first PR in the stack targets this branch; each subsequent PR targets its predecessor. Defaults to foundry/integration-<id>."
+              hint="Every worker branches off this branch and runs in parallel; the stack is assembled in completion order. Defaults to foundry/integration-<id>."
               value={draft.foundryBranch ?? ''}
               onChange={(e) => update({ foundryBranch: e.target.value })}
             />
+          )}
+          {draft.localPrMode && (
+            <div style={{ marginTop: 10 }}>
+              <label className="block text-[11px] font-medium text-text-muted" style={{ marginBottom: 4 }}>
+                Stacking
+              </label>
+              <p className="text-[11px] text-text-muted" style={{ marginBottom: 6 }}>
+                How completed local PRs are grouped into a managed PR stack. Tickets run in
+                parallel and join the stack in completion order; conflicts between them are
+                resolved by Claude with the prompt below.
+              </p>
+              <ToggleGroup
+                options={[
+                  { value: 'new', label: 'New stack' },
+                  { value: 'existing', label: 'Add to existing' },
+                  { value: 'none', label: "Don't stack" },
+                ]}
+                value={draft.stackMode ?? 'new'}
+                onChange={(v) => update({ stackMode: v as 'new' | 'existing' | 'none' })}
+              />
+            </div>
+          )}
+          {draft.localPrMode && (draft.stackMode ?? 'new') === 'existing' && (
+            <div style={{ marginTop: 8 }}>
+              <label className="block text-[11px] font-medium text-text-muted" style={{ marginBottom: 4 }}>
+                Target stack
+              </label>
+              {projectStacks.length === 0 ? (
+                <p className="text-[11px] text-text-muted italic">
+                  No stacks in this project yet — create one in the PR Stacks panel first.
+                </p>
+              ) : (
+                <select
+                  value={draft.stackTargetStackId ?? ''}
+                  onChange={(e) => update({ stackTargetStackId: e.target.value || undefined })}
+                  className="bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent w-full"
+                  style={{ padding: '6px 10px' }}
+                >
+                  <option value="">(choose a stack)</option>
+                  {projectStacks.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          {draft.localPrMode && (draft.stackMode ?? 'new') !== 'none' && (
+            <div style={{ marginTop: 8 }}>
+              <PromptTextarea
+                label="Conflict-resolution prompt (optional)"
+                hint="Injected when Claude resolves a merge conflict while publishing/propagating this stack. Supports {{entryBranch}}, {{belowBranch}}, {{files}}. Empty = built-in default."
+                value={draft.stackConflictPrompt ?? ''}
+                fallback=""
+                onChange={(v) => update({ stackConflictPrompt: v })}
+              />
+            </div>
           )}
         </fieldset>
 
