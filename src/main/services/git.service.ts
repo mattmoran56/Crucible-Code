@@ -251,6 +251,61 @@ export async function mergeBranch(repoPath: string, branch: string): Promise<voi
   await g.merge([branch])
 }
 
+export interface MergeAttemptResult {
+  conflicted: boolean
+  /** Files left with conflict markers (only set when conflicted). */
+  unmergedFiles: string[]
+}
+
+/**
+ * Run a real `git merge` and, unlike `mergeBranch`, do NOT throw on conflict —
+ * leave the conflict markers in the working tree and report the unmerged files
+ * so a caller (PR-stack upward propagation) can hand them to a conflict
+ * resolver. A clean merge returns `{ conflicted: false, unmergedFiles: [] }`.
+ */
+export async function mergeBranchAllowConflict(
+  repoPath: string,
+  branch: string
+): Promise<MergeAttemptResult> {
+  const g = git(repoPath)
+  try {
+    await g.merge([branch])
+    return { conflicted: false, unmergedFiles: [] }
+  } catch {
+    // simple-git throws on a conflicting merge; the tree now holds the markers.
+    const unmergedFiles = await listUnmergedFiles(repoPath)
+    if (unmergedFiles.length === 0) throw new Error(`git merge ${branch} failed with no conflicts`)
+    return { conflicted: true, unmergedFiles }
+  }
+}
+
+/** Files currently in conflict (`git diff --name-only --diff-filter=U`). */
+export async function listUnmergedFiles(repoPath: string): Promise<string[]> {
+  const g = git(repoPath)
+  const out = await g.raw(['diff', '--name-only', '--diff-filter=U'])
+  return out
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+}
+
+/** Abort an in-progress merge, restoring the pre-merge tree. Best-effort. */
+export async function abortMerge(repoPath: string): Promise<void> {
+  const g = git(repoPath)
+  try {
+    await g.raw(['merge', '--abort'])
+  } catch {
+    // no merge in progress — nothing to abort
+  }
+}
+
+/** True when the working tree has no staged/unstaged/untracked changes. */
+export async function isWorkingTreeClean(repoPath: string): Promise<boolean> {
+  const g = git(repoPath)
+  const status = await g.status()
+  return status.isClean()
+}
+
 export async function getWorkingFileDiff(repoPath: string, filePath: string): Promise<string> {
   const g = git(repoPath)
   const staged = await g.diff(['--cached', '--', filePath])

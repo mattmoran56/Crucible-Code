@@ -75,6 +75,22 @@ export async function markPRReady(worktreePath: string, prNumber: number): Promi
   }
 }
 
+/**
+ * Retarget an open PR onto a new base branch (`gh pr edit <n> --base <base>`).
+ * Idempotent: swallows the "no changes"/"already" case so re-running the
+ * publisher or restack is safe. Used to chain real PRs and to restack PRs above
+ * a merged one onto the new base.
+ */
+export async function setPRBase(repoPath: string, prNumber: number, base: string): Promise<void> {
+  try {
+    await execFileAsync('gh', ['pr', 'edit', String(prNumber), '--base', base], { cwd: repoPath })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/no changes/i.test(msg) || /already/i.test(msg)) return
+    throw err
+  }
+}
+
 export async function getCurrentGitHubUser(repoPath: string): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync(
