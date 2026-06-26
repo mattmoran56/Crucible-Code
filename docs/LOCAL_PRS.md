@@ -41,7 +41,7 @@ Local PRs appear in the normal PR list with a **Local** badge and **Promote to P
 
 ![The local PR review tab](screenshots/local-pr-panel.png)
 
-**Promote** pushes the branch, opens a real draft PR from the approved title/body/base, marks it ready if the worker marked the local one ready, and the list entry becomes the real PR.
+**Promote** pushes the branch, opens a real draft PR from the approved title/body/base, marks it ready if the worker marked the local one ready, and the list entry becomes the real PR. Promote also **drops the gh shim** for the owning session — capture mode is turned off (in memory immediately, and the persisted per-session toggle is cleared so a restart doesn't re-enable it), so the agent's subsequent `gh` commands act on the real PR instead of being captured into a fresh local one.
 
 ---
 

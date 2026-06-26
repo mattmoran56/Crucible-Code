@@ -9,6 +9,7 @@ import {
   getLocalPR,
   patchLocalPR,
   appendLog,
+  setCaptureContext,
 } from './local-pr.service'
 
 const execFileAsync = promisify(execFile)
@@ -103,6 +104,15 @@ export async function promoteLocalPR(
       await github.markPRReady(cwd, pr.number)
     }
     appendLog(id, `promoted to PR #${pr.number}`)
+
+    // The local PR is now a real GitHub PR, so drop the gh shim for the session
+    // that owns it: a session keyed by capture context, once promoted, should
+    // run `gh` against GitHub directly rather than capturing into a fresh local
+    // PR. Capture is keyed by contextId, which equals the record's sessionId.
+    // (The renderer separately clears the persisted capture flag so it isn't
+    // re-asserted on the next sessions change or app restart.)
+    if (lpr.sessionId) setCaptureContext(lpr.sessionId, null)
+
     return next ?? getLocalPR(id)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

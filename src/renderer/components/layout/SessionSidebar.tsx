@@ -17,6 +17,7 @@ import { ImportWorktreeDialog } from '../sessions/ImportWorktreeDialog'
 import { OpenBranchDialog } from '../sessions/OpenBranchDialog'
 import { ClaudeWebSessionCardContainer } from '../sessions/ClaudeWebSessionCard'
 import { useClaudeWebStore } from '../../stores/claudeWebStore'
+import { sessionsToDropCapture } from '../../lib/localPrCapture'
 import { PRCard } from '../pullrequests/PRCard'
 import { PRSortFilterMenu } from '../pullrequests/PRSortFilterMenu'
 import { usePRViewStore, DEFAULT_PR_VIEW, isDefaultView, type PersonFilter } from '../../stores/prViewStore'
@@ -40,7 +41,7 @@ export function SessionSidebar() {
   const claudeWebLoading = useClaudeWebStore((s) => s.loading)
   const loadClaudeWebSessions = useClaudeWebStore((s) => s.loadSessions)
   const clearClaudeWebSessions = useClaudeWebStore((s) => s.clear)
-  const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadLocalPRs, applyLocalPRUpdate, loadSeenPRs, loadCurrentUser, markSeen, clear: clearPRs, currentUser } =
+  const { pullRequests, localPRs, seenPRs, loading: prsLoading, loadPRs, loadLocalPRs, applyLocalPRUpdate, loadSeenPRs, loadCurrentUser, markSeen, clear: clearPRs, currentUser } =
     usePRStore()
   const prViewByRepo = usePRViewStore((s) => s.byRepo)
   const resetPRView = usePRViewStore((s) => s.reset)
@@ -195,6 +196,18 @@ export function SessionSidebar() {
     })
     return () => { unsub() }
   }, [applyLocalPRUpdate])
+
+  // Once a session's local PR is promoted to a real GitHub PR, drop the gh shim
+  // for that session by clearing its persisted capture flag. Otherwise the
+  // re-assert effect above (and app restart) would keep capturing `gh pr create`
+  // into a fresh local PR even though the PR now lives on GitHub. The main
+  // process already dropped the in-memory capture at promote time; this keeps it
+  // dropped durably.
+  useEffect(() => {
+    for (const session of sessionsToDropCapture(localPRs, sessions)) {
+      void setSessionCaptureLocalPr(session.projectId, session.id, false)
+    }
+  }, [localPRs, sessions, setSessionCaptureLocalPr])
 
   // Claude Web sessions: load + poll on the same cadence when the project has
   // the feature enabled. Re-fires when currentUser arrives so the first list

@@ -139,6 +139,69 @@ describe('local-pr-promote', () => {
     expect(gh.markPRReady).not.toHaveBeenCalled()
   })
 
+  it('drops the gh shim for the owning session once promoted', async () => {
+    await seed() // captured with contextId/sessionId 'ctx-1'
+    localPr.setCaptureContext('ctx-1', {})
+    expect(localPr.shouldCaptureContext('ctx-1')).toBe(true)
+
+    const id = localPr.listLocalPRs(PROJECT)[0].id
+    await promote.promoteLocalPR(id)
+
+    // Now a real GitHub PR — subsequent `gh` in that session must not be shimmed.
+    expect(localPr.shouldCaptureContext('ctx-1')).toBe(false)
+  })
+
+  it('leaves capture intact when promotion fails', async () => {
+    gh.createDraftPR.mockRejectedValueOnce(new Error('boom'))
+    await seed()
+    localPr.setCaptureContext('ctx-1', {})
+    const id = localPr.listLocalPRs(PROJECT)[0].id
+    await promote.promoteLocalPR(id)
+    // Promotion errored, so the local PR still owns the branch — keep shimming.
+    expect(localPr.shouldCaptureContext('ctx-1')).toBe(true)
+  })
+
+  it('still drops capture when promoting with markReady', async () => {
+    await seed()
+    localPr.setCaptureContext('ctx-1', {})
+    const id = localPr.listLocalPRs(PROJECT)[0].id
+    await promote.promoteLocalPR(id, { markReady: true })
+    expect(gh.markPRReady).toHaveBeenCalledTimes(1)
+    expect(localPr.shouldCaptureContext('ctx-1')).toBe(false)
+  })
+
+  it('dropping capture is a no-op for records with no owning session', async () => {
+    await seed()
+    const id = localPr.listLocalPRs(PROJECT)[0].id
+    localPr.patchLocalPR(id, { sessionId: undefined })
+    // No capture was ever registered; promote must not throw on the drop.
+    const result = await promote.promoteLocalPR(id)
+    expect(result?.status).toBe('open')
+  })
+
+  it('promoting a chained child drops only the child session, not the parent', async () => {
+    // Parent captured by ctx-1, child by ctx-2, chained onto the parent.
+    await seed({ head: 'feat/parent' })
+    const parent = localPr.listLocalPRs(PROJECT)[0]
+    await localPr.captureLocalPR({
+      contextId: 'ctx-2',
+      projectId: PROJECT,
+      worktreePath: '/wt2',
+      action: 'create',
+      fields: { title: 'Child', body: 'b', base: 'main', head: 'feat/child' },
+    })
+    const child = localPr.listLocalPRs(PROJECT).find((p) => p.branch === 'feat/child')!
+    localPr.patchLocalPR(child.id, { parentLocalPrId: parent.id })
+
+    localPr.setCaptureContext('ctx-1', {})
+    localPr.setCaptureContext('ctx-2', {})
+
+    await promote.promoteLocalPR(child.id)
+
+    expect(localPr.shouldCaptureContext('ctx-2')).toBe(false) // child promoted
+    expect(localPr.shouldCaptureContext('ctx-1')).toBe(true) // parent untouched
+  })
+
   it('records an error + attention when createDraftPR throws', async () => {
     gh.createDraftPR.mockRejectedValueOnce(new Error('gh exploded'))
     await seed()
