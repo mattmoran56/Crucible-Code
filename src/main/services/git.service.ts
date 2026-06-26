@@ -306,6 +306,21 @@ export async function isWorkingTreeClean(repoPath: string): Promise<boolean> {
   return status.isClean()
 }
 
+/**
+ * Commit a merge that's resolved but not yet committed (MERGE_HEAD present with
+ * no unmerged paths). No-op if there's no merge in progress — so it's safe to
+ * call after a conflict resolver that may or may not have committed itself.
+ */
+export async function commitPendingMerge(repoPath: string): Promise<void> {
+  const g = git(repoPath)
+  try {
+    await g.raw(['rev-parse', '-q', '--verify', 'MERGE_HEAD'])
+  } catch {
+    return // no merge in progress
+  }
+  await g.raw(['-c', 'core.editor=true', 'commit', '--no-edit'])
+}
+
 export async function getWorkingFileDiff(repoPath: string, filePath: string): Promise<string> {
   const g = git(repoPath)
   const staged = await g.diff(['--cached', '--', filePath])

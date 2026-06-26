@@ -5,9 +5,15 @@ import { IPC } from '../../shared/constants'
 import type { PRStack, PRStackEntry, PRStackEntryKind, Project, FoundryConfig, LocalPR } from '../../shared/types'
 import { getStorePath } from '../store-path'
 import { eventBus, emitToRenderer } from './event-bus'
+import { existsSync } from 'node:fs'
 import { getLocalPR, patchLocalPR, LOCAL_PR_CHANGED } from './local-pr.service'
 import { promoteLocalPR } from './local-pr-promote.service'
 import * as github from './github.service'
+import * as gitService from './git.service'
+import { injectAndAwaitResponse } from './worker-inject.service'
+import { listTerminalsForSession } from './terminal.service'
+import { runHeadlessClaude } from './claude-headless.service'
+import { seedPermissions } from './permission-sync.service'
 
 interface PRStackStoreShape {
   byProject: Record<string, PRStack[]>
@@ -49,6 +55,26 @@ export function startPRStackService(window: BrowserWindow): void {
     }
     eventBus.on(LOCAL_PR_CHANGED, onLocalPRChanged)
     unsubLocalPR = () => eventBus.off(LOCAL_PR_CHANGED, onLocalPRChanged)
+  }
+  resumeInterrupted()
+}
+
+/**
+ * After a restart, resume any publish/propagation that was mid-flight. The
+ * cursors live on each stack; the operations are idempotent so re-entering is
+ * safe (already-done entries are skipped / re-merges are no-ops).
+ */
+function resumeInterrupted(): void {
+  for (const list of Object.values(readAll())) {
+    for (const stack of list) {
+      if (stack.publish?.status === 'running') {
+        void publishStack(stack.id)
+      }
+      const prop = stack.propagation
+      if ((prop?.status === 'running' || prop?.status === 'awaiting-conflict') && prop.sourceEntryId) {
+        void propagateUpward(stack.id, prop.sourceEntryId)
+      }
+    }
   }
 }
 
@@ -404,6 +430,209 @@ export async function publishStack(stackId: string): Promise<void> {
     publishLog(stackId, `Publish failed: ${err instanceof Error ? err.message : String(err)}`)
   } finally {
     publishInFlight.delete(stackId)
+  }
+}
+
+// ── Upward propagation — cascade a lower change up the stack ──────────────────
+
+const propagateInFlight = new Set<string>()
+
+function propagateLog(stackId: string, message: string): void {
+  const stack = getStack(stackId)
+  if (!stack) return
+  const prop = stack.propagation ?? { status: 'idle' as const, log: [] }
+  const log = [...prop.log, `${nowIso()} ${message}`].slice(-200)
+  upsert({ ...stack, propagation: { ...prop, log } })
+}
+
+function setPropagation(
+  stackId: string,
+  patch: Partial<NonNullable<PRStack['propagation']>>
+): void {
+  const stack = getStack(stackId)
+  if (!stack) return
+  const prop = stack.propagation ?? { status: 'idle' as const, log: [] }
+  upsert({ ...stack, propagation: { ...prop, ...patch } })
+}
+
+/** Working directory for an entry's branch: its own worktree if on disk, else repo root. */
+function resolveEntryCwd(
+  entry: PRStackEntry,
+  repoPath: string | null
+): { cwd: string; needsCheckout: boolean } | null {
+  if (entry.kind === 'local' && entry.localPrId) {
+    const lpr = getLocalPR(entry.localPrId)
+    if (lpr?.worktreePath && existsSync(lpr.worktreePath)) {
+      return { cwd: lpr.worktreePath, needsCheckout: false }
+    }
+  }
+  if (repoPath) return { cwd: repoPath, needsCheckout: true }
+  return null
+}
+
+function entryLabel(entry: PRStackEntry): string {
+  if (entry.kind === 'local' && entry.localPrId) {
+    const lpr = getLocalPR(entry.localPrId)
+    if (lpr) return lpr.realPrNumber ? `#${lpr.realPrNumber}` : `LOCAL-${lpr.localNumber}`
+  }
+  return entry.prNumber ? `#${entry.prNumber}` : entry.branch ?? entry.id
+}
+
+function buildConflictPrompt(entryBranch: string, belowBranch: string, files: string[]): string {
+  return [
+    'You are resolving a git MERGE CONFLICT in a PR stack.',
+    `Branch \`${entryBranch}\` is being updated by merging \`${belowBranch}\` into it,`,
+    'but the merge stopped with conflicts in these files:',
+    ...files.map((f) => ` - ${f}`),
+    '',
+    'Resolve every conflict, preserving the intent of BOTH sides. Then stage the',
+    'resolved files (`git add`) and commit the merge (`git commit --no-edit`).',
+    'Do NOT push and do NOT touch anything unrelated to the conflicts — pushing is',
+    'handled automatically once you finish.',
+  ].join('\n')
+}
+
+/**
+ * Ask Claude to resolve the conflicts left in `cwd`. Prefers the live worker PTY
+ * for a local entry (proven auto-mode inject path, same as foundry's CI fix);
+ * falls back to a seeded headless run when there's no live session. Returns true
+ * once the working tree is conflict-free.
+ */
+async function resolveConflictWithClaude(
+  stackId: string,
+  entry: PRStackEntry,
+  belowBranch: string,
+  unmergedFiles: string[],
+  cwd: string,
+  repoPath: string | null
+): Promise<boolean> {
+  const prompt = buildConflictPrompt(entry.branch ?? '(branch)', belowBranch, unmergedFiles)
+
+  // Preferred: drive the live worker PTY for a local entry.
+  if (entry.kind === 'local' && entry.localPrId) {
+    const lpr = getLocalPR(entry.localPrId)
+    if (lpr?.sessionId) {
+      const agent = listTerminalsForSession(lpr.sessionId).find((t) => t.tabId === 'agent')
+      if (agent) {
+        setPropagation(stackId, { conflictSessionId: lpr.sessionId })
+        propagateLog(stackId, `resolving via live session ${lpr.sessionId.slice(0, 8)}…`)
+        const ok = await injectAndAwaitResponse(agent.terminalId, lpr.sessionId, prompt)
+        await gitService.commitPendingMerge(cwd)
+        return ok && (await gitService.listUnmergedFiles(cwd)).length === 0
+      }
+    }
+  }
+
+  // Fallback: seeded headless run in the conflicted worktree (auto mode, no bypass).
+  propagateLog(stackId, 'resolving via headless claude…')
+  if (repoPath) {
+    try {
+      seedPermissions(repoPath, cwd)
+    } catch {
+      // Non-fatal — seeding just pre-approves tools.
+    }
+  }
+  const res = await runHeadlessClaude({ cwd, prompt })
+  await gitService.commitPendingMerge(cwd)
+  return res.ok && (await gitService.listUnmergedFiles(cwd)).length === 0
+}
+
+/**
+ * Cascade changes from `sourceEntryId` up the stack: for each entry above it (in
+ * order, one fully done before the next), merge the entry below into it and push.
+ * On conflict, Claude resolves before continuing. Persists the cursor after every
+ * step so a restart resumes; stops the cascade on any failure (never pushes a
+ * half-merged tree). Shares the per-stack lock with publish so they serialize.
+ */
+export async function propagateUpward(stackId: string, sourceEntryId: string): Promise<void> {
+  const stack = getStack(stackId)
+  if (!stack) return
+  if (publishInFlight.has(stackId) || propagateInFlight.has(stackId)) return
+  propagateInFlight.add(stackId)
+
+  const repoPath = getProjectRepoPath(stack.projectId)
+  setPropagation(stackId, {
+    status: 'running',
+    sourceEntryId,
+    currentEntryId: undefined,
+    conflictSessionId: undefined,
+    startedAt: stack.propagation?.startedAt ?? nowIso(),
+  })
+
+  try {
+    const ordered = orderedEntries(getStack(stackId)!)
+    const srcIndex = ordered.findIndex((e) => e.id === sourceEntryId)
+    if (srcIndex === -1) {
+      setPropagation(stackId, { status: 'error' })
+      propagateLog(stackId, 'source entry not found — aborting.')
+      return
+    }
+    propagateLog(stackId, `Propagating from ${entryLabel(ordered[srcIndex])} upward…`)
+
+    for (let i = srcIndex + 1; i < ordered.length; i++) {
+      const entry = ordered[i]
+      const below = ordered[i - 1]
+      const label = entryLabel(entry)
+      setPropagation(stackId, { currentEntryId: entry.id, status: 'running' })
+
+      if (!entry.branch || !below.branch) {
+        propagateLog(stackId, `${label}: missing branch info — skipping.`)
+        continue
+      }
+      const resolved = resolveEntryCwd(entry, repoPath)
+      if (!resolved) {
+        setPropagation(stackId, { status: 'error' })
+        propagateLog(stackId, `${label}: no worktree or repo to update from — stopping.`)
+        return
+      }
+      const { cwd, needsCheckout } = resolved
+      if (needsCheckout) {
+        const co = await gitService.checkoutBranch(cwd, entry.branch, 'stash')
+        if (co.error) {
+          setPropagation(stackId, { status: 'error' })
+          propagateLog(stackId, `${label}: could not check out ${entry.branch}: ${co.error}`)
+          return
+        }
+      }
+
+      await gitService.fetchAndPull(cwd, below.branch)
+      const check = await gitService.checkMerge(cwd, below.branch)
+      if (!check.hasConflicts) {
+        await gitService.mergeBranch(cwd, below.branch)
+        await gitService.pushBranch(cwd)
+        propagateLog(stackId, `${label}: merged ${below.branch} cleanly → pushed.`)
+        continue
+      }
+
+      // Conflict — land the markers, then have Claude resolve before continuing.
+      setPropagation(stackId, { status: 'awaiting-conflict' })
+      const merge = await gitService.mergeBranchAllowConflict(cwd, below.branch)
+      if (!merge.conflicted) {
+        await gitService.pushBranch(cwd)
+        propagateLog(stackId, `${label}: merged ${below.branch} → pushed.`)
+        setPropagation(stackId, { status: 'running' })
+        continue
+      }
+      propagateLog(stackId, `${label}: ${merge.unmergedFiles.length} conflicted file(s) — invoking Claude.`)
+      const ok = await resolveConflictWithClaude(stackId, entry, below.branch, merge.unmergedFiles, cwd, repoPath)
+      if (!ok) {
+        await gitService.abortMerge(cwd)
+        setPropagation(stackId, { status: 'error', conflictSessionId: undefined })
+        propagateLog(stackId, `${label}: conflict not resolved — stopping. Fix manually and re-run Propagate.`)
+        return
+      }
+      await gitService.pushBranch(cwd)
+      propagateLog(stackId, `${label}: conflicts resolved → pushed.`)
+      setPropagation(stackId, { status: 'running', conflictSessionId: undefined })
+    }
+
+    setPropagation(stackId, { status: 'done', currentEntryId: undefined })
+    propagateLog(stackId, 'Propagation complete.')
+  } catch (err) {
+    setPropagation(stackId, { status: 'error' })
+    propagateLog(stackId, `Propagation failed: ${err instanceof Error ? err.message : String(err)}`)
+  } finally {
+    propagateInFlight.delete(stackId)
   }
 }
 

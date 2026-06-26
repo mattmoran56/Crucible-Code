@@ -59,4 +59,11 @@ export function registerPRStackHandlers(window: BrowserWindow): void {
   handle(IPC.PR_STACK_PUBLISH, async (_e, stackId: string): Promise<void> => {
     void prStack.publishStack(stackId)
   })
+
+  handle(
+    IPC.PR_STACK_PROPAGATE,
+    async (_e, stackId: string, sourceEntryId: string): Promise<void> => {
+      void prStack.propagateUpward(stackId, sourceEntryId)
+    }
+  )
 }
