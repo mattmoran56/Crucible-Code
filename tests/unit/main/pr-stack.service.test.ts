@@ -29,17 +29,26 @@ vi.mock('electron', () => ({ app: { getPath: () => '/tmp/pr-stack-test', isPacka
 
 // In-memory local PR table the service reads/patches through.
 const localPRs = vi.hoisted(() => new Map<string, LocalPR>())
-vi.mock('../../../src/main/services/local-pr.service', () => ({
-  LOCAL_PR_CHANGED: 'local-pr:changed',
-  getLocalPR: (id: string) => localPRs.get(id) ?? null,
-  patchLocalPR: (id: string, patch: Partial<LocalPR>) => {
-    const cur = localPRs.get(id)
-    if (!cur) return null
-    const next = { ...cur, ...patch }
-    localPRs.set(id, next)
-    return next
-  },
-}))
+// Faithfully emit LOCAL_PR_CHANGED on patch (like the real service via
+// upsertLocalPR) so tests exercise the re-entrancy path that relinkChain
+// triggers — the bug that left foundry stacks created but empty.
+vi.mock('../../../src/main/services/local-pr.service', async () => {
+  const { eventBus } = await import('../../../src/main/services/event-bus')
+  return {
+    LOCAL_PR_CHANGED: 'local-pr:changed',
+    getLocalPR: (id: string) => localPRs.get(id) ?? null,
+    listLocalPRs: (projectId: string) =>
+      [...localPRs.values()].filter((p) => p.projectId === projectId),
+    patchLocalPR: (id: string, patch: Partial<LocalPR>) => {
+      const cur = localPRs.get(id)
+      if (!cur) return null
+      const next = { ...cur, ...patch }
+      localPRs.set(id, next)
+      eventBus.emit('local-pr:changed', next)
+      return next
+    },
+  }
+})
 
 const promoteLocalPR = vi.hoisted(() => vi.fn())
 vi.mock('../../../src/main/services/local-pr-promote.service', () => ({ promoteLocalPR }))

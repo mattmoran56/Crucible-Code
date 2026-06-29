@@ -6,7 +6,7 @@ import type { PRStack, PRStackEntry, PRStackEntryKind, Project, FoundryConfig, L
 import { getStorePath } from '../store-path'
 import { eventBus, emitToRenderer } from './event-bus'
 import { existsSync } from 'node:fs'
-import { getLocalPR, patchLocalPR, LOCAL_PR_CHANGED } from './local-pr.service'
+import { getLocalPR, patchLocalPR, listLocalPRs, LOCAL_PR_CHANGED } from './local-pr.service'
 import { promoteLocalPR } from './local-pr-promote.service'
 import * as github from './github.service'
 import * as gitService from './git.service'
@@ -47,6 +47,7 @@ export function startPRStackService(window: BrowserWindow): void {
   // already-tracked entry are ignored so relinkChain's own patches don't loop.
   if (!unsubLocalPR) {
     const onLocalPRChanged = (lpr: LocalPR): void => {
+      if (relinking) return // ignore events caused by our own relinkChain patches
       if (!lpr?.foundryId) return
       const meta = getFoundryMeta(lpr.foundryId)
       if (meta.stackMode === 'none') return
@@ -65,7 +66,32 @@ export function startPRStackService(window: BrowserWindow): void {
     eventBus.on(LOCAL_PR_CHANGED, onLocalPRChanged)
     unsubLocalPR = () => eventBus.off(LOCAL_PR_CHANGED, onLocalPRChanged)
   }
+  reconcileFoundryStacks()
   resumeInterrupted()
+}
+
+/**
+ * Backfill: ensure every foundry-created stack contains all of its foundry's
+ * local PRs. The live listener only adds a PR when it emits a change event, so
+ * PRs captured before the stack existed (or while assembly was broken) would
+ * otherwise never appear. Runs once on service start; idempotent.
+ */
+function reconcileFoundryStacks(): void {
+  for (const list of Object.values(readAll())) {
+    for (const stack of list) {
+      if (!stack.foundryId) continue
+      if (getFoundryMeta(stack.foundryId).stackMode === 'none') continue
+      const prs = listLocalPRs(stack.projectId)
+        .filter((l) => l.foundryId === stack.foundryId)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      for (const lpr of prs) {
+        const cur = getStack(stack.id)
+        if (cur && !cur.entries.some((e) => e.localPrId === lpr.id)) {
+          addEntry(stack.id, { kind: 'local', localPrId: lpr.id })
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -346,9 +372,23 @@ function relinkChain(stack: PRStack): void {
   })
 }
 
+// Set while we patch local PRs from inside the service (relinkChain). The
+// LOCAL_PR_CHANGED listener ignores events fired during this window so our own
+// patches don't re-trigger stack assembly (which previously recursed until the
+// call stack overflowed, leaving stacks created but empty).
+let relinking = false
+
 function persistWithRelink(stack: PRStack): PRStack {
-  relinkChain(stack)
-  return upsert(stack)
+  // Persist the entry first so any re-entrant lookup sees it, then relink the
+  // local-PR chain (which patches local PRs) under the re-entrancy guard.
+  const saved = upsert(stack)
+  relinking = true
+  try {
+    relinkChain(saved)
+  } finally {
+    relinking = false
+  }
+  return upsert(saved)
 }
 
 // ── Shared helpers (repo path, ordering, logging) ───────────────────────────
