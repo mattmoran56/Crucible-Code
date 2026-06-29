@@ -1078,27 +1078,42 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
       const terminals = listTerminalsForSession(p.sessionId)
       const agentTerminal = terminals.find((t) => t.tabId === 'agent')
       if (!agentTerminal) {
-        p.attention = {
-          reason: 'worker session terminal is gone — cannot inject ready-for-review command',
-          since: new Date().toISOString(),
+        // Local-PR mode: readiness is recorded on the local PR and applied to
+        // the real PR on promote, so a missing worker PTY (e.g. macOS PTY-limit
+        // exhaustion) must NOT wedge the pipeline in finalizing. Skip the
+        // best-effort checklist injection and finish. Real PRs still need the
+        // worker to mark the live PR ready, so they surface attention.
+        if (rt.config.localPrMode) {
+          log(p, 'Ready-for-review: no live agent terminal — skipping injection (local PR, marked ready on promote).')
+        } else {
+          p.attention = {
+            reason: 'worker session terminal is gone — cannot inject ready-for-review command',
+            since: new Date().toISOString(),
+          }
+          log(p, `Ready-for-review: no live agent terminal for session ${p.sessionId}.`)
+          saveAndEmit(rt)
+          return
         }
-        log(p, `Ready-for-review: no live agent terminal for session ${p.sessionId}.`)
+      } else {
+        log(p, `Injecting ready-for-review command into session ${p.sessionId.slice(0, 8)}…`)
         saveAndEmit(rt)
-        return
-      }
-      log(p, `Injecting ready-for-review command into session ${p.sessionId.slice(0, 8)}…`)
-      saveAndEmit(rt)
-      workerRan = await injectAndAwaitResponse(agentTerminal.terminalId, p.sessionId, cmd)
-      if (!workerRan) {
-        p.attention = {
-          reason: 'ready-for-review command never produced a worker response (timeout or stale stop event)',
-          since: new Date().toISOString(),
+        workerRan = await injectAndAwaitResponse(agentTerminal.terminalId, p.sessionId, cmd)
+        if (!workerRan) {
+          if (rt.config.localPrMode) {
+            log(p, 'Ready-for-review: no verified worker response — continuing (local PR).')
+          } else {
+            p.attention = {
+              reason: 'ready-for-review command never produced a worker response (timeout or stale stop event)',
+              since: new Date().toISOString(),
+            }
+            log(p, 'Ready-for-review: no verified worker response.')
+            saveAndEmit(rt)
+            return
+          }
+        } else {
+          log(p, 'Ready-for-review command finished.')
         }
-        log(p, 'Ready-for-review: no verified worker response.')
-        saveAndEmit(rt)
-        return
       }
-      log(p, 'Ready-for-review command finished.')
     } else if (tpl) {
       log(p, 'Ready-for-review skipped — no worker session id on pipeline.')
     }
@@ -1114,7 +1129,11 @@ async function runFinalizePhase(rt: FoundryRuntime, p: FoundryPipeline): Promise
     // promote — so there's no real PR to verify/mark here. Otherwise verify (or
     // mark) the real GitHub PR as today.
     if (rt.config.localPrMode) {
-      log(p, 'Local-PR mode: ready/checklist captured locally — will be applied on promote.')
+      // Record readiness on the local PR so promote flips the real PR to ready.
+      // This also re-emits LOCAL_PR_CHANGED, so the PR-stack listener picks the
+      // entry up if it wasn't already assembled.
+      if (p.localPrId) patchLocalPR(p.localPrId, { readyForReview: true })
+      log(p, 'Local-PR mode: marked ready locally — applied to the real PR on promote.')
     } else if (tpl) {
       const verifiedReady = await verifyPRReady(p.worktreePath, p.prNumber)
       if (!verifiedReady) {
