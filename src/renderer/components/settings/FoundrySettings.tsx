@@ -183,6 +183,22 @@ export function FoundrySettings({ projects }: Props) {
               <Button size="sm" variant="ghost" onClick={() => setEditingId(cfg.id)}>
                 Edit
               </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                title="Create an exact copy of this foundry, turned off"
+                onClick={() => {
+                  // Deep clone so the copy doesn't share nested arrays/objects
+                  // with the original. New id → fresh runtime state. Always off.
+                  const copy = structuredClone(cfg)
+                  copy.id = crypto.randomUUID()
+                  copy.name = `${cfg.name} (copy)`
+                  copy.enabled = false
+                  void save(copy)
+                }}
+              >
+                Duplicate
+              </Button>
               {!cfg.enabled && (
                 <Button
                   size="sm"
