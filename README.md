@@ -349,7 +349,7 @@ A **local PR** is a tracked record of a would-be pull request — title, body, b
 - **Create local PR** — from a session's action menu, snapshots its branch/base into a local PR (title/body default from the last commit). The branch is pushed to origin so it's always promotable.
 - **Capture mode** — toggle **Capture PRs locally** on a session and the gh shim on its PATH intercepts the agent's `gh pr create`, turning it into a local PR instead of opening a real one. Every other `gh` command passes straight through.
 
-Local PRs appear in the normal PR list with a **Local** badge and a **Promote to PR** button. Promote pushes the branch, opens a real draft PR from the approved title/body/base, and the entry becomes the real PR.
+Local PRs appear in the normal PR list with a **Local** badge and a **Promote to PR** button. Promote pushes the branch, opens a real draft PR from the approved title/body/base, and the entry becomes the real PR. Promoting also drops the gh shim for that session (capture mode turns off), so the agent's later `gh` commands act on the real PR instead of being captured into a new local one.
 
 **Foundry overnight stacks.** Turn on **Local PR mode** in a Foundry's settings and an overnight run produces local PRs that are assembled into a managed [PR stack](#pr-stacks). Workers branch off the integration branch and run **in parallel** — tickets join the stack in completion order rather than being forced into a series, and any conflicts between them are resolved by Claude when you publish or propagate. In the morning, **Create PRs** walks the stack in order — open each real PR, run optional [local CI](#review-loop) in Docker (`act`), fix-on-failure by resuming the worker, mark ready, then the next. The walk is resumable across restarts. The review loop runs against local PRs too, storing its findings on the record instead of posting a gh comment.
 
@@ -555,6 +555,8 @@ The LLM can suggest anything (start 50 tasks! re-document the same plan!). The v
 
 **Optimistic continue.** A per-foundry toggle (default off) for when human PR review is the bottleneck. Normally a dependency only unblocks the next ticket once it's merged to trunk (a *completed status* like `Done`/`Testing`). Turn this on and dependencies in an **optimistic status** (default `In review` — PR open, not yet merged) also count: the foreman picks up the next ticket they unblock, and the FSM prepends a deterministic `git merge origin/<dep-branch>` preamble to the worker's prompt so the prerequisite code is merged in before implementation starts. If a dependency's branch can't be resolved, the pipeline parks for attention instead of starting work that's missing code. Safe to toggle while running — it takes effect on the next pass. See [docs/FOUNDRY.md](docs/FOUNDRY.md#optimistic-continue).
 
+**Switching between foundries.** A project can run more than one foundry at once. When it does, the foundry name in the panel header becomes a dropdown switcher — open it to see every foundry with a live status dot (running / pass-in-flight / needs-attention / paused / off), a one-word status, and a badge counting its in-flight pipelines. Pick one and its pipelines and foreman pane fill the panel below. With a single foundry the header is just the name.
+
 **Live foreman PTY in the panel.** The Foundry side panel pins a real `claude` PTY in its bottom 320 px while a pass is running. You watch the foreman think in real time; type into it to nudge it; when it writes `decision.json` the PTY closes automatically. Between passes the pane falls back to the previous pass's transcript (read-only).
 
 **Reset.** The card has a Reset button when the foundry is off — wipes pipelines, pass history, snapshot, documented hashes; keeps the config. Useful when state has drifted from reality.
@@ -567,6 +569,9 @@ The LLM can suggest anything (start 50 tasks! re-document the same plan!). The v
 <tr>
 <td><img src="docs/screenshots/foundry-settings-configured.png" alt="Foundry settings card with on/off toggle, Edit, Reset, Delete actions" /></td>
 <td><img src="docs/screenshots/foundry-panel-off.png" alt="Foundry panel when the foundry is disabled" /></td>
+</tr>
+<tr>
+<td colspan="2"><img src="docs/screenshots/foundry-panel-multiple.png" alt="Foundry panel with the multi-foundry dropdown switcher open — each foundry listed with a status dot, status label, and active-pipeline count" /></td>
 </tr>
 <tr>
 <td colspan="2"><img src="docs/screenshots/foundry-settings-editor.png" alt="Foundry editor with multi-line implement and ready-for-review prompts, task-set filter, eligibility filter, completion transition, pickup updates" /></td>
