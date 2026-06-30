@@ -85,6 +85,51 @@ describe('runHeadlessClaude — command construction', () => {
   })
 })
 
+describe('runHeadlessClaude — CLAUDE_CONFIG_DIR handling', () => {
+  it('expands a leading ~/ in the caller-provided config dir (subprocess has no shell to do it)', async () => {
+    const p = runHeadlessClaude({
+      cwd: '/wt',
+      prompt: 'x',
+      env: { CLAUDE_CONFIG_DIR: '~/.claude-personal' },
+    })
+    await Promise.resolve()
+    h.child._exit(0)
+    await p
+
+    const dir = h.spawnCalls[0].opts.env.CLAUDE_CONFIG_DIR as string
+    expect(dir.startsWith('~/')).toBe(false)
+    expect(dir.startsWith('/')).toBe(true)
+    expect(dir.endsWith('/.claude-personal')).toBe(true)
+  })
+
+  it('leaves an absolute config dir untouched', async () => {
+    const p = runHeadlessClaude({
+      cwd: '/wt',
+      prompt: 'x',
+      env: { CLAUDE_CONFIG_DIR: '/Users/matt/.claude-personal' },
+    })
+    await Promise.resolve()
+    h.child._exit(0)
+    await p
+    expect(h.spawnCalls[0].opts.env.CLAUDE_CONFIG_DIR).toBe('/Users/matt/.claude-personal')
+  })
+
+  it('drops an inherited CLAUDE_CONFIG_DIR when the caller does not pass one', async () => {
+    const prev = process.env.CLAUDE_CONFIG_DIR
+    process.env.CLAUDE_CONFIG_DIR = '~/.claude-personal'
+    try {
+      const p = runHeadlessClaude({ cwd: '/wt', prompt: 'x' })
+      await Promise.resolve()
+      h.child._exit(0)
+      await p
+      expect(h.spawnCalls[0].opts.env.CLAUDE_CONFIG_DIR).toBeUndefined()
+    } finally {
+      if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR
+      else process.env.CLAUDE_CONFIG_DIR = prev
+    }
+  })
+})
+
 describe('runHeadlessClaude — stream-json parsing', () => {
   it('turns assistant text + tool_use events into streamed transcript lines', async () => {
     const streamed: string[] = []
