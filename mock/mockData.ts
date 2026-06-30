@@ -965,3 +965,80 @@ export const mockReviewLoopHeadless: ReviewLoopState = {
   ],
 }
 
+/**
+ * Efficient variant: fresh headless reviews stacked on the left (one per round,
+ * clear context each time), a single persistent interactive worker on the right
+ * that triages + implements every round and keeps its context across the loop.
+ */
+export const mockReviewLoopEfficient: ReviewLoopState = {
+  sessionId: 'sess-1',
+  branch: 'session/add-pr-review',
+  baseBranch: 'main',
+  worktreePath: '/Users/dev/.codecrucible-worktrees/CodeCrucible/add-pr-review',
+  variant: 'efficient',
+  status: 'running',
+  currentPhase: 'triage',
+  iteration: 2,
+  startedAt: new Date(baseTime).toISOString(),
+  skippedIssues: [],
+  persistentTerminalId: 'term-review-loop-persistent',
+  persistentTabId: 'review-loop:persistent',
+  rounds: [
+    {
+      index: 1,
+      startedAt: new Date(baseTime + 1_000).toISOString(),
+      endedAt: new Date(baseTime + 92_000).toISOString(),
+      phase: 'idle',
+      phaseSlots: [
+        {
+          phase: 'review',
+          status: 'completed',
+          tabId: 'review-loop:r1:review',
+          transcript: [
+            '[13:00:01] ▶ session 9c2f started (claude-opus-4-8)',
+            '[13:00:03] Running /review on the PR diff…',
+            '[13:00:21] 🔧 Bash git diff main...session/add-pr-review',
+            '[13:00:34] Found 2 issues: a refresh/selection race and a missing await.',
+          ],
+        },
+        { phase: 'triage', status: 'completed', tabId: 'review-loop:persistent' },
+        { phase: 'fix', status: 'completed', tabId: 'review-loop:persistent' },
+      ],
+      log: [
+        '[2026-04-30T13:00:01Z] Running /review (round 1)…',
+        '[2026-04-30T13:00:34Z] Review complete — handed to the persistent worker.',
+        '[2026-04-30T13:01:32Z] Worker committed fixes for round 1.',
+      ],
+      rawIssues: [],
+      triaged: [],
+    },
+    {
+      index: 2,
+      startedAt: new Date(baseTime + 95_000).toISOString(),
+      phase: 'triage',
+      phaseSlots: [
+        {
+          phase: 'review',
+          status: 'completed',
+          tabId: 'review-loop:r2:review',
+          transcript: [
+            '[13:01:35] ▶ session b1e4 started (claude-opus-4-8)',
+            '[13:01:38] Running /review on the PR diff…',
+            '[13:02:01] 🔧 Bash git diff main...session/add-pr-review',
+            '[13:02:03] Found 1 issue: a listener leak on unmount.',
+          ],
+        },
+        { phase: 'triage', status: 'running', tabId: 'review-loop:persistent' },
+        { phase: 'fix', status: 'pending', tabId: 'review-loop:persistent' },
+      ],
+      log: [
+        '[2026-04-30T13:01:35Z] Running /review (round 2)…',
+        '[2026-04-30T13:02:03Z] Review complete — pasted into the live worker.',
+        '[2026-04-30T13:02:05Z] Worker triaging (remembers round 1 decisions)…',
+      ],
+      rawIssues: [],
+      triaged: [],
+    },
+  ],
+}
+

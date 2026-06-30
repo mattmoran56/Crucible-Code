@@ -11,6 +11,8 @@
  * session_id + total cost, kills the process tree on timeout/cancel.
  */
 import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { AUTO_PERMISSION_MODE_ARGS } from './terminal.service'
 
 export const DEFAULT_PHASE_TIMEOUT_MS = 30 * 60 * 1000
@@ -184,6 +186,12 @@ export function runHeadlessClaude(opts: HeadlessClaudeOptions): Promise<Headless
     const env: NodeJS.ProcessEnv = { ...process.env, ...(opts.env ?? {}) }
     if (!opts.env || !('CLAUDE_CONFIG_DIR' in opts.env)) {
       delete env.CLAUDE_CONFIG_DIR
+    } else if (env.CLAUDE_CONFIG_DIR?.startsWith('~/')) {
+      // A spawned subprocess (no shell) won't expand `~`, so a config dir stored
+      // as `~/.claude-personal` would resolve to a literal `./~/...` and the run
+      // would fall back to "not logged in". Expand it here, mirroring the
+      // foreground path in terminal.service.ts.
+      env.CLAUDE_CONFIG_DIR = join(homedir(), env.CLAUDE_CONFIG_DIR.slice(2))
     }
 
     const child = spawn('claude', args, {

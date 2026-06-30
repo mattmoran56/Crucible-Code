@@ -370,7 +370,7 @@ export interface ReviewLoopTriagedIssue extends ReviewLoopIssue {
   justification: string
 }
 
-export type ReviewLoopVariant = 'pro' | 'lite'
+export type ReviewLoopVariant = 'pro' | 'lite' | 'efficient'
 
 /** Lifecycle of a single foreground phase terminal within a round. */
 export type ReviewLoopPhaseStatus =
@@ -437,11 +437,26 @@ export interface ReviewLoopState {
   errorMessage?: string
   /** Pro-only: items the loop chose not to fix; surfaced in sticky PR comment. Empty for Lite. */
   skippedIssues: ReviewLoopTriagedIssue[]
+  /**
+   * Efficient-only: the single long-lived interactive `claude` PTY that runs
+   * triage + implementation for every round (the right-hand panel). Its
+   * conversation/context persists across rounds. Unused by Lite/Pro.
+   */
+  persistentTerminalId?: string
+  /** Efficient-only: workspace tab id of {@link persistentTerminalId}. */
+  persistentTabId?: string
 }
 
 export interface ReviewLoopConfig {
   enabled: boolean
-  /** Lite (default): unstructured, /review-driven handoff. Pro: structured 3-phase pipeline with JSON intermediates and PR comments. Both run as three live foreground terminal columns per round. */
+  /**
+   * Lite (default): unstructured, /review-driven handoff. Pro: structured
+   * 3-phase pipeline with JSON intermediates and PR comments. Both run as three
+   * live foreground terminal columns per round. Efficient: fresh headless
+   * reviews (stacked, left) hand off to one persistent interactive worker
+   * (right) that triages + implements every round, keeping context across the
+   * loop — cheaper than re-paying fresh context for triage/fix each round.
+   */
   variant: ReviewLoopVariant
   maxIterations: number
   consecutiveCleanRounds: number
@@ -451,6 +466,8 @@ export interface ReviewLoopConfig {
    * limit. When false, each phase runs as a live, interactive foreground
    * terminal the user can watch and type into. Either way: no bypass / no
    * `--permission-mode acceptEdits`; headless inherits the user's auto default.
+   * Ignored by the Efficient variant, whose topology is fixed (headless
+   * reviews + one interactive worker).
    */
   headless: boolean
 }
