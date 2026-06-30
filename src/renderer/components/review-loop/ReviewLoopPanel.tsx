@@ -12,6 +12,7 @@ import type {
   ReviewLoopState,
   ReviewLoopStopReason,
   ReviewLoopTriagedIssue,
+  ReviewLoopVariant,
 } from '../../../shared/types'
 
 interface Props {
@@ -114,7 +115,26 @@ export function ReviewLoopPanel({ visible = true }: Props) {
   )
 }
 
-function EmptyState({ variant, headless }: { variant: 'lite' | 'pro'; headless: boolean }) {
+function EmptyState({ variant, headless }: { variant: ReviewLoopVariant; headless: boolean }) {
+  if (variant === 'efficient') {
+    return (
+      <div className="text-xs text-text-muted">
+        <p>
+          Press <strong>Start review loop</strong> to begin. The <strong>Efficient</strong> variant
+          splits work across two panels:
+        </p>
+        <ul style={{ marginTop: 8, paddingLeft: 18, listStyle: 'disc' }}>
+          <li><strong>Left</strong> — a fresh, headless <code>claude -p</code> <strong>review</strong> per round, stacked. Clear context every time so reviews stay unbiased.</li>
+          <li><strong>Right</strong> — one <strong>live, interactive</strong> worker terminal that triages then implements every round, keeping its context across the whole loop (so it remembers what it already chose to skip).</li>
+        </ul>
+        <p style={{ marginTop: 12 }}>
+          Each round: a new review streams in on the left, gets handed to the worker on the right to
+          triage, then to implement, commit, and push. The loop stops after consecutive clean rounds
+          (no new commit), the iteration cap, or manual cancel.
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="text-xs text-text-muted">
       <p>
@@ -152,6 +172,18 @@ function LoopStateView({
   sessionName: string
   panelVisible: boolean
 }) {
+  if ((state.variant ?? 'pro') === 'efficient') {
+    return (
+      <div className="flex flex-col gap-3">
+        <SummaryBar state={state} />
+        {state.rounds.length === 0 && state.status === 'running' && (
+          <p className="text-xs text-text-muted">Starting first review…</p>
+        )}
+        <EfficientLoopView state={state} sessionName={sessionName} panelVisible={panelVisible} />
+      </div>
+    )
+  }
+
   // Newest round first so the active round is at the top of the scroll area.
   const reversed = [...state.rounds].reverse()
   return (
@@ -170,6 +202,100 @@ function LoopStateView({
           panelVisible={panelVisible}
         />
       ))}
+    </div>
+  )
+}
+
+/**
+ * Efficient variant layout: stacked headless reviews on the left (one per
+ * round, fresh context), a single persistent interactive worker on the right
+ * (triage + implementation for every round, context kept across the loop).
+ */
+function EfficientLoopView({
+  state,
+  sessionName,
+  panelVisible,
+}: {
+  state: ReviewLoopState
+  sessionName: string
+  panelVisible: boolean
+}) {
+  const register = useTerminalStore((s) => s.registerDynamicTerminal)
+
+  // Attach the renderer store to the persistent worker PTY the main process spawned.
+  useEffect(() => {
+    if (state.persistentTerminalId && state.persistentTabId) {
+      register(
+        state.persistentTabId,
+        state.persistentTerminalId,
+        state.sessionId,
+        sessionName,
+        'claude',
+        state.sessionId
+      )
+    }
+  }, [state.persistentTerminalId, state.persistentTabId, state.sessionId, sessionName, register])
+
+  // Newest round at the top of the review stack.
+  const reversedRounds = [...state.rounds].reverse()
+  const workerActive = state.status === 'running' && (state.currentPhase === 'triage' || state.currentPhase === 'fix')
+
+  return (
+    <div className="flex gap-2" style={{ minHeight: 460 }}>
+      {/* Left: stacked fresh reviews */}
+      <div className="flex flex-col min-w-0 border border-border rounded overflow-hidden bg-bg-tertiary" style={{ width: '42%', minWidth: 240 }}>
+        <div className="border-b border-border bg-bg-secondary" style={{ padding: '4px 8px' }}>
+          <span className="text-[11px] font-medium text-text">Reviews</span>
+          <span className="text-[10px] text-text-muted"> · fresh context each round</span>
+        </div>
+        <div className="flex-1 overflow-y-auto flex flex-col gap-2" style={{ padding: 6, minHeight: 0 }}>
+          {reversedRounds.length === 0 && (
+            <p className="text-[11px] text-text-muted" style={{ padding: 4 }}>No reviews yet.</p>
+          )}
+          {reversedRounds.map((round) => {
+            const review = round.phaseSlots.find((s) => s.phase === 'review')
+            return (
+              <div key={round.index} className="border border-border rounded overflow-hidden flex flex-col" style={{ minHeight: 160 }}>
+                <div className="flex items-center justify-between gap-2 border-b border-border bg-bg-secondary" style={{ padding: '3px 8px' }}>
+                  <span className="text-[11px] font-medium text-text">Round {round.index} review</span>
+                  <PhasePill status={review?.status ?? 'pending'} />
+                </div>
+                <div className="relative flex-1" style={{ minHeight: 120 }}>
+                  <HeadlessTranscript
+                    lines={review?.transcript ?? []}
+                    status={review?.status ?? 'pending'}
+                    error={review?.errorMessage}
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Right: the single persistent interactive worker */}
+      <div className="flex-1 flex flex-col min-w-0 border border-border rounded overflow-hidden bg-bg-tertiary" style={{ minWidth: 280 }}>
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-bg-secondary" style={{ padding: '4px 8px' }}>
+          <span className="text-[11px] font-medium text-text">
+            Worker <span className="text-text-muted">· triage + implementation (context kept)</span>
+          </span>
+          {workerActive && <PhasePill status="running" />}
+        </div>
+        <div className="flex-1 relative" style={{ minHeight: 0 }}>
+          {state.persistentTerminalId ? (
+            <TerminalView
+              terminalId={state.persistentTerminalId}
+              sessionId={state.sessionId}
+              sessionName={sessionName}
+              visible={panelVisible}
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-[11px] text-text-muted">
+              {state.status === 'running' ? 'Waiting for the first review…' : 'Worker not started.'}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -253,7 +379,7 @@ function RoundRow({
   panelVisible,
 }: {
   round: ReviewLoopRound
-  variant: 'lite' | 'pro'
+  variant: ReviewLoopVariant
   sessionId: string
   sessionName: string
   panelVisible: boolean

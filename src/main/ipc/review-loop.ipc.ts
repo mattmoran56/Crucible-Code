@@ -24,6 +24,13 @@ import {
   setReviewLoopLiteWindow,
   startReviewLoopLite,
 } from '../services/review-loop-lite.service'
+import {
+  cancelReviewLoopEfficient,
+  getReviewLoopEfficientState,
+  hasReviewLoopEfficient,
+  setReviewLoopEfficientWindow,
+  startReviewLoopEfficient,
+} from '../services/review-loop-efficient.service'
 
 interface PersistedShape {
   workspace: ReviewLoopConfig
@@ -42,6 +49,7 @@ const store = new Store<PersistedShape>({
 export function registerReviewLoopHandlers(window: BrowserWindow): void {
   setReviewLoopWindow(window)
   setReviewLoopLiteWindow(window)
+  setReviewLoopEfficientWindow(window)
 
   handle(IPC.REVIEW_LOOP_SETTINGS_GET, async (): Promise<ReviewLoopSettings> => {
     return {
@@ -63,6 +71,8 @@ export function registerReviewLoopHandlers(window: BrowserWindow): void {
     async (_e, opts: StartReviewLoopOptions): Promise<void> => {
       if (opts.config?.variant === 'pro') {
         await startReviewLoop(opts)
+      } else if (opts.config?.variant === 'efficient') {
+        await startReviewLoopEfficient(opts)
       } else {
         await startReviewLoopLite(opts)
       }
@@ -72,13 +82,18 @@ export function registerReviewLoopHandlers(window: BrowserWindow): void {
   handle(IPC.REVIEW_LOOP_CANCEL, async (_e, sessionId: string): Promise<void> => {
     // Cancel on whichever variant is running for this session.
     if (hasReviewLoopLite(sessionId)) cancelReviewLoopLite(sessionId)
+    else if (hasReviewLoopEfficient(sessionId)) cancelReviewLoopEfficient(sessionId)
     else cancelReviewLoop(sessionId)
   })
 
   handle(
     IPC.REVIEW_LOOP_STATE_GET,
     async (_e, sessionId: string): Promise<ReviewLoopState | null> => {
-      return getReviewLoopLiteState(sessionId) ?? getReviewLoopState(sessionId)
+      return (
+        getReviewLoopLiteState(sessionId) ??
+        getReviewLoopEfficientState(sessionId) ??
+        getReviewLoopState(sessionId)
+      )
     }
   )
 }
