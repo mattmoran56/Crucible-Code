@@ -29,7 +29,7 @@
 - **Remote access** — Pair a second device's browser to your desktop instance over the LAN, or over a hosted end-to-end encrypted Cloudflare Worker relay that works through VPNs and hotel Wi-Fi. View projects, sessions, settings, and live agent terminals from anywhere (full mobile layout, PWA-installable on iOS)
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
-- **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
+- **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Pick a variant per project: **Lite**/**Pro** (three fresh sessions per round) or **Efficient** (fresh stacked reviews + one persistent worker that keeps context across rounds — cheaper). Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
 - **Foundry** — Run a whole Notion backlog on autopilot. An interactive foreman Claude plans dependencies; multiple worker sessions run in parallel; each pipeline goes implement → draft PR → review loop → ready. Human reviews code and tests; everything else is automated. See [docs/FOUNDRY.md](docs/FOUNDRY.md)
 - **Local PRs** — A staging stage between a draft branch and an open GitHub PR. Snapshot any session into a viewable, reviewable local PR (or let capture mode intercept the agent's `gh pr create`), then **Promote** it to a real PR. In local-PR mode Foundry builds a chained stack overnight that you publish in one click with **Create PRs** (open → optional local CI → fix-on-failure → ready, in order)
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
@@ -507,7 +507,10 @@ The Review Loop tab in the session workspace shows live progress: an overall sta
 </tr>
 <tr>
 <td><img src="docs/screenshots/review-loop-headless.png" alt="Headless run: each phase streams its claude -p transcript read-only, no terminal" /></td>
-<td><img src="docs/screenshots/review-loop-settings.png" alt="Workspace defaults and per-project overrides, including the headless/interactive run-mode toggle" /></td>
+<td><img src="docs/screenshots/review-loop-settings.png" alt="Workspace defaults and per-project overrides, including the variant and headless/interactive run-mode toggles" /></td>
+</tr>
+<tr>
+<td colspan="2"><img src="docs/screenshots/review-loop-efficient.png" alt="Efficient variant: stacked fresh reviews on the left, one persistent interactive worker on the right" /></td>
 </tr>
 </table>
 
