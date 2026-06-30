@@ -36,6 +36,34 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   }
 }
 
+// jsdom on Node 26 doesn't expose localStorage/sessionStorage; many stores read
+// them at module load (and tests call localStorage.clear() in beforeEach). On
+// CI's Node 22 jsdom provides them, so this guard is a no-op there — it only
+// fills the gap locally so the component suite matches CI. In-memory Storage.
+if (typeof window !== 'undefined' && !window.localStorage) {
+  const makeStorage = (): Storage => {
+    let store: Record<string, string> = {}
+    return {
+      get length() {
+        return Object.keys(store).length
+      },
+      clear: () => {
+        store = {}
+      },
+      getItem: (k: string) => (k in store ? store[k] : null),
+      setItem: (k: string, v: string) => {
+        store[k] = String(v)
+      },
+      removeItem: (k: string) => {
+        delete store[k]
+      },
+      key: (i: number) => Object.keys(store)[i] ?? null,
+    } as Storage
+  }
+  Object.defineProperty(window, 'localStorage', { configurable: true, value: makeStorage() })
+  Object.defineProperty(window, 'sessionStorage', { configurable: true, value: makeStorage() })
+}
+
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
