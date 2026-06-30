@@ -1022,8 +1022,10 @@ async function runReviewPhase(rt: FoundryRuntime, p: FoundryPipeline): Promise<v
       config: cfg,
       prNumber: p.prNumber,
       isLocalPr: rt.config.localPrMode,
-      // Foreground phase terminals spawn from main; inherit the default claude
-      // account (like the foreman) and seed permissions from the source repo.
+      // Bill the project's configured Claude account (the same one the workers
+      // use), not the user's default. Undefined → default account. Also seed
+      // permissions from the source repo.
+      claudeConfigDir: projectClaudeConfigDir(rt.config.projectId),
       repoPath: projectRepoPath(rt.config.projectId) ?? undefined,
     })
     log(p, `Review loop started for PR #${p.prNumber}.`)
@@ -1509,6 +1511,28 @@ function projectRepoPath(projectId: string): string | null {
     return proj?.repoPath ?? null
   } catch {
     return null
+  }
+}
+
+/**
+ * Resolve the CLAUDE_CONFIG_DIR for a project's configured Claude account, so
+ * main-process foundry phases (foreman pass, review loop) bill the SAME account
+ * the workers use rather than silently falling back to the user's default
+ * account. Returns undefined when the project has no account configured (→
+ * default account, the correct behaviour) or the account no longer exists.
+ * Reads the default `config.json` store, where project.ipc persists both.
+ */
+export function projectClaudeConfigDir(projectId: string): string | undefined {
+  try {
+    const fresh = new Store<{
+      projects: Array<{ id: string; claudeAccountId?: string }>
+      accounts: Array<{ id: string; configDir: string }>
+    }>({ cwd: getStorePath(), defaults: { projects: [], accounts: [] } })
+    const proj = fresh.get('projects', []).find((p) => p.id === projectId)
+    if (!proj?.claudeAccountId) return undefined
+    return fresh.get('accounts', []).find((a) => a.id === proj.claudeAccountId)?.configDir
+  } catch {
+    return undefined
   }
 }
 

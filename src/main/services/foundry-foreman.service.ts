@@ -30,6 +30,7 @@ import {
   flushState,
   getRuntime,
   notionAccessFor,
+  projectClaudeConfigDir,
   registerForemanRunner,
   startPipeline,
   tryAppendTicketMarkdown,
@@ -408,7 +409,7 @@ export async function runPass(foundryId: string, trigger: FoundryPassTrigger): P
       pickCwd(cfg),
       'claude',
       'dark',
-      undefined, // claudeConfigDir — inherit user's default
+      projectClaudeConfigDir(cfg.projectId), // bill the project's account, not the default
       prompt,
       pickCwd(cfg), // repoPath
       false,
