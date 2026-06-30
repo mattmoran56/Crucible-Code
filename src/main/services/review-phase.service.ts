@@ -21,6 +21,17 @@ import { onHookEvent } from './notification-server'
 import { writeClaudeHookSettings } from './hook.service'
 import { seedPermissions } from './permission-sync.service'
 import { runHeadlessClaude, killChildTree } from './claude-headless.service'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+/**
+ * Expand a leading `~/` to an absolute path. Env vars aren't shell-expanded, so
+ * a raw `~/.claude-personal` CLAUDE_CONFIG_DIR would point claude at a literal
+ * `~` dir → "Not logged in". Mirrors the expansion in terminal.service.
+ */
+function resolveConfigDir(configDir: string): string {
+  return configDir.startsWith('~/') ? join(homedir(), configDir.slice(2)) : configDir
+}
 
 export const DEFAULT_PHASE_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -107,7 +118,9 @@ export async function runHeadlessPhase(
     return { ok: false, terminalId: '', output: '', error: 'cancelled' }
   }
 
-  const env = opts.claudeConfigDir ? { CLAUDE_CONFIG_DIR: opts.claudeConfigDir } : undefined
+  const env = opts.claudeConfigDir
+    ? { CLAUDE_CONFIG_DIR: resolveConfigDir(opts.claudeConfigDir) }
+    : undefined
 
   let child: import('node:child_process').ChildProcessWithoutNullStreams | undefined
   const onAbort = (): void => {
