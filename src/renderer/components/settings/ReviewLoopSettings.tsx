@@ -130,7 +130,8 @@ function ConfigCard({ title, description, config, onChange, customized, onReset 
           <p className="text-xs text-text">Variant</p>
           <p className="text-[11px] text-text-muted">
             <strong>Lite</strong> — unstructured: <code>/review</code> → triage table → "do what you think". UI shows raw session output.<br />
-            <strong>Pro</strong> — structured 3-phase pipeline with JSON intermediates, issue list, and sticky PR comment.
+            <strong>Pro</strong> — structured 3-phase pipeline with JSON intermediates, issue list, and sticky PR comment.<br />
+            <strong>Efficient</strong> — fresh headless reviews (stacked) hand off to one persistent interactive worker that triages + implements every round, keeping context across the loop. Cheaper, and it remembers what it already chose to skip.
           </p>
         </div>
         <ToggleGroup
@@ -138,9 +139,10 @@ function ConfigCard({ title, description, config, onChange, customized, onReset 
           options={[
             { value: 'lite', label: 'Lite' },
             { value: 'pro', label: 'Pro' },
+            { value: 'efficient', label: 'Efficient' },
           ]}
           value={config.variant}
-          onChange={(v) => update({ variant: v as 'lite' | 'pro' })}
+          onChange={(v) => update({ variant: v as ReviewLoopConfig['variant'] })}
         />
       </div>
 
@@ -152,15 +154,21 @@ function ConfigCard({ title, description, config, onChange, customized, onReset 
             <strong>Interactive</strong> — each phase opens a live terminal you can watch and type into.
           </p>
         </div>
-        <ToggleGroup
-          className="shrink-0"
-          options={[
-            { value: 'headless', label: 'Headless (-p)' },
-            { value: 'interactive', label: 'Interactive' },
-          ]}
-          value={config.headless ? 'headless' : 'interactive'}
-          onChange={(v) => update({ headless: v === 'headless' })}
-        />
+        {config.variant === 'efficient' ? (
+          <span className="shrink-0 text-[11px] text-text-muted border border-border rounded-md" style={{ padding: '4px 12px' }}>
+            Fixed: headless reviews + 1 live worker
+          </span>
+        ) : (
+          <ToggleGroup
+            className="shrink-0"
+            options={[
+              { value: 'headless', label: 'Headless (-p)' },
+              { value: 'interactive', label: 'Interactive' },
+            ]}
+            value={config.headless ? 'headless' : 'interactive'}
+            onChange={(v) => update({ headless: v === 'headless' })}
+          />
+        )}
       </div>
 
       <div
