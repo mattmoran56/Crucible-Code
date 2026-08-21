@@ -363,6 +363,26 @@ const targets: ScreenshotTarget[] = [
   },
   // ── Foundry ────────────────────────────────────────────────────────────
   {
+    name: 'overseer-panel-fleet-table',
+    storyId: 'overseer-overseerpanel--fleet-table',
+    viewport: { width: 520, height: 760 },
+  },
+  {
+    name: 'overseer-panel-heartbeat',
+    storyId: 'overseer-overseerpanel--heartbeat-report',
+    viewport: { width: 520, height: 760 },
+  },
+  {
+    name: 'overseer-panel-refuses-permission',
+    storyId: 'overseer-overseerpanel--refuses-permission-prompt',
+    viewport: { width: 520, height: 760 },
+  },
+  {
+    name: 'overseer-settings',
+    storyId: 'app-full-layout--settings',
+    clickNav: 'Overseer',
+  },
+  {
     name: 'foundry-panel-pass-running',
     storyId: 'foundry-panel--pass-running',
     viewport: { width: 460, height: 860 },

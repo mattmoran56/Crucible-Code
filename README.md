@@ -30,6 +30,7 @@
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
 - **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Pick a variant per project: **Lite**/**Pro** (three fresh sessions per round) or **Efficient** (fresh stacked reviews + one persistent worker that keeps context across rounds — cheaper). Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
+- **Overseer** — A master agent over every session in every project. Ask it what's going on and it answers from live session state; it can read a session, message one, or start a new one. A heartbeat checks the fleet on a timer and only speaks up when something needs you — a tick that finds nothing changed never reaches the model, so a quiet fleet is free. Model is switchable (Haiku by default) with a daily cost cap. See [docs/OVERSEER.md](docs/OVERSEER.md)
 - **Foundry** — Run a whole Notion backlog on autopilot. An interactive foreman Claude plans dependencies; multiple worker sessions run in parallel; each pipeline goes implement → draft PR → review loop → ready. Human reviews code and tests; everything else is automated. See [docs/FOUNDRY.md](docs/FOUNDRY.md)
 - **Local PRs** — A staging stage between a draft branch and an open GitHub PR. Snapshot any session into a viewable, reviewable local PR (or let capture mode intercept the agent's `gh pr create`), then **Promote** it to a real PR. In local-PR mode Foundry builds a chained stack overnight that you publish in one click with **Create PRs** (open → optional local CI → fix-on-failure → ready, in order)
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
@@ -513,6 +514,59 @@ The Review Loop tab in the session workspace shows live progress: an overall sta
 <td colspan="2"><img src="docs/screenshots/review-loop-efficient.png" alt="Efficient variant: stacked fresh reviews on the left, one persistent interactive worker on the right" /></td>
 </tr>
 </table>
+
+</details>
+
+<details>
+<summary><strong>Overseer — a master agent over every session</strong></summary>
+
+A manager for the fleet. Open it from the right activity bar and ask what's going on across every
+project; it answers from live session state rather than guessing.
+
+**What it can do**
+
+| Tool | What it does |
+|------|--------------|
+| `list_sessions` | Every session in every project with status and deterministic signals |
+| `read_session` | The tail of one session's agent terminal, plus what it's currently showing |
+| `send_message_to_session` | Type into a live session — answer its question, pass extra context |
+| `start_session` | New worktree, branch, agent terminal and opening prompt |
+| `report_to_user` | How it speaks up during a heartbeat |
+
+**Heartbeat.** With it on, the Overseer checks the fleet every N seconds (minimum 30). The check
+itself is deterministic and free: it builds a snapshot of every session's status and signals, and
+only spends a model call when that snapshot actually changed since the last tick. A fleet where
+nothing is happening costs nothing, no matter how often it ticks. When something has changed it
+runs a pass and calls `report_to_user` only if there's something worth your attention.
+
+**Signals** are computed in plain TypeScript before the model sees anything: `waiting-permission`,
+`waiting-question`, `finished-turn`, `no-output-15m`, `no-agent-terminal`. They're what makes a
+cheap model useful here — it's ranking pre-computed facts, not parsing terminal output.
+
+**Cost control.** The model is switchable in the panel header and in Settings → Overseer, defaulting
+to **Haiku 4.5**. There's a daily USD cap that hard-stops passes, a cap on tool rounds per turn, and
+a running spend readout in the panel.
+
+**Safety.** Writes are off by default — read-only means it can look and report but not act. Even
+with writes on, `send_message_to_session` refuses when the session is showing a **tool-permission
+prompt**: answering "1. Yes" on your behalf would be a permissions bypass by proxy, and those stay
+yours. The classifier fails closed, so anything it can't confidently read as a safe prompt is
+refused too. Every message it sends is prefixed `[Overseer]` in the session transcript.
+
+**Setup.** Settings → Overseer, paste an Anthropic API key (or export `ANTHROPIC_API_KEY`). This is
+billed to your Anthropic API account, separate from the Claude Code subscription the sessions
+themselves use.
+
+![Overseer panel](docs/screenshots/overseer-panel-fleet-table.png)
+
+The heartbeat speaking up on its own, and the write gate refusing a permission prompt:
+
+![Overseer heartbeat](docs/screenshots/overseer-panel-heartbeat.png)
+![Overseer refusing a permission prompt](docs/screenshots/overseer-panel-refuses-permission.png)
+
+![Overseer settings](docs/screenshots/overseer-settings.png)
+
+Design and roadmap: [docs/OVERSEER.md](docs/OVERSEER.md)
 
 </details>
 

@@ -255,6 +255,24 @@ body {
 .markdown-body > :first-child { margin-top: 0; }
 .markdown-body > :last-child { margin-bottom: 0; }
 
+/* Overseer panel — markdown in a column narrow enough that a fleet table would
+   otherwise squash its columns to single characters. Scroll it instead. */
+.overseer-markdown {
+  overflow-x: auto;
+}
+.overseer-markdown table {
+  width: auto;
+  min-width: 100%;
+}
+.overseer-markdown th,
+.overseer-markdown td {
+  white-space: nowrap;
+  padding: 4px 7px;
+}
+.overseer-markdown p {
+  overflow-wrap: anywhere;
+}
+
 /* Loading screen animations */
 @keyframes cc-spin {
   to { transform: rotate(360deg); }

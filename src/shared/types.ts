@@ -997,3 +997,83 @@ export interface LocalPRUpdate {
   body?: string
   baseBranch?: string
 }
+
+// ── Overseer ────────────────────────────────────────────────────────────────
+// A master agent that watches every session in every project. See
+// docs/OVERSEER.md for the full design; this is the v0 surface.
+
+/**
+ * Models the Overseer may run on. Deliberately explicit rather than a free
+ * string: the picker is the main cost lever, and Haiku is the default so a
+ * misbehaving heartbeat is cheap.
+ */
+export const OVERSEER_MODELS = [
+  { id: 'claude-haiku-4-5', label: 'Haiku 4.5 — cheapest', blurb: '$1 / $5 per Mtok' },
+  { id: 'claude-sonnet-5', label: 'Sonnet 5 — balanced', blurb: '$3 / $15 per Mtok' },
+  { id: 'claude-opus-5', label: 'Opus 5 — most capable', blurb: '$5 / $25 per Mtok' },
+] as const
+
+export type OverseerModelId = (typeof OVERSEER_MODELS)[number]['id']
+
+export interface OverseerSettings {
+  /** Anthropic API key. Falls back to the ANTHROPIC_API_KEY env var when blank. */
+  apiKey?: string
+  model: string
+  /** Heartbeat interval in seconds. Minimum 30. */
+  heartbeatSeconds: number
+  heartbeatEnabled: boolean
+  /** Hard ceiling on spend per rolling day; passes stop once exceeded. */
+  dailyCostCapUsd: number
+  /** Max tool-use round trips in a single turn before the loop bails out. */
+  maxIterations: number
+  /**
+   * Allow the Overseer to type into a live session (`send_message_to_session`)
+   * and to create sessions (`start_session`). Off means read-only.
+   */
+  allowWrites: boolean
+}
+
+export type OverseerRole = 'user' | 'assistant' | 'tool' | 'system'
+
+export interface OverseerMessage {
+  id: string
+  role: OverseerRole
+  content: string
+  createdAt: string
+  /** Set on `tool` messages — which tool ran and whether it succeeded. */
+  toolName?: string
+  toolOk?: boolean
+  /** Set when the message came from a heartbeat rather than a user turn. */
+  fromHeartbeat?: boolean
+  /** Set on assistant messages the Overseer flagged as needing you. */
+  needsAttention?: boolean
+  costUsd?: number
+}
+
+export interface OverseerState {
+  messages: OverseerMessage[]
+  /** True while a pass is in flight. */
+  running: boolean
+  lastError?: string
+  lastHeartbeatAt?: string
+  /** Rolling-day spend, reset when the day rolls over. */
+  spendTodayUsd: number
+  spendDay: string
+  /** Unread assistant messages since the panel was last opened. */
+  unread: number
+}
+
+/** One session as the Overseer sees it. Deterministic — no LLM involved. */
+export interface OverseerSessionSnapshot {
+  sessionId: string
+  name: string
+  projectId: string
+  projectName: string
+  branchName: string
+  status: SessionStatus | 'idle'
+  /** Cheap deterministic flags, e.g. `waiting-permission`, `no-output-15m`. */
+  signals: string[]
+  lastActivityAt?: string
+  costUsd?: number
+  hasAgentTerminal: boolean
+}

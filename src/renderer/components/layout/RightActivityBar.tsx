@@ -5,14 +5,52 @@ import { CustomButtonBar } from '../buttons/CustomButtonBar'
 interface RightActivityBarProps {
   activePanel: string | null
   onToggle: (panel: string) => void
+  /** Unread Overseer messages — surfaced as a dot on its button. */
+  overseerUnread?: number
 }
 
-export function RightActivityBar({ activePanel, onToggle }: RightActivityBarProps) {
+export function RightActivityBar({
+  activePanel,
+  onToggle,
+  overseerUnread = 0,
+}: RightActivityBarProps) {
   return (
     <div
       className="flex flex-col items-center bg-bg-secondary border-l border-border flex-shrink-0"
       style={{ width: 44, paddingTop: 8 }}
     >
+      <Tooltip content="Overseer" side="left">
+        <button
+          aria-label="Overseer"
+          onClick={() => onToggle('overseer')}
+          className={`w-8 h-8 rounded flex items-center justify-center transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+            activePanel === 'overseer'
+              ? 'bg-accent/15 text-accent'
+              : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
+          }`}
+        >
+          {/* Eye-over-nodes: one watcher above many workers */}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 8s3.5-4 10-4 10 4 10 4-3.5 4-10 4S2 8 2 8z" />
+            <circle cx="12" cy="8" r="1.6" />
+            <path d="M6 16v4" /><path d="M12 16v4" /><path d="M18 16v4" />
+            <path d="M6 16h12" />
+          </svg>
+          {overseerUnread > 0 && activePanel !== 'overseer' && (
+            <span
+              className="absolute rounded-full"
+              style={{
+                top: 4,
+                right: 4,
+                width: 6,
+                height: 6,
+                background: 'var(--color-accent)',
+              }}
+            />
+          )}
+        </button>
+      </Tooltip>
+
       <Tooltip content="Notes" side="left">
         <button
           aria-label="Notes"

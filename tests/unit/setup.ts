@@ -26,6 +26,13 @@ if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {}
 }
 
+// jsdom doesn't implement Element.scrollTo either; panels that keep a
+// conversation pinned to the bottom (the Overseer panel) call it on every new
+// message, so we no-op it the same way.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = function () {}
+}
+
 // jsdom 26 added a partial ResizeObserver but stories that read it expect a
 // constructor that takes a callback.
 if (typeof globalThis.ResizeObserver === 'undefined') {

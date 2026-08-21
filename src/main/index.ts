@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import fixPath from 'fix-path'
 import { registerAllHandlers } from './ipc/register'
+import { installSessionStatusTracking } from './services/session-status.service'
 import {
   startNotificationServer,
   stopNotificationServer,
@@ -54,6 +55,10 @@ async function createWindow() {
   // Start the notification HTTP server before registering handlers
   await startNotificationServer(mainWindow)
   setNotificationWindow(mainWindow)
+
+  // Mirror hook-driven session status into the main process so the Overseer
+  // (and anything else without a window) can see who is waiting on someone.
+  installSessionStatusTracking()
 
   registerAllHandlers(mainWindow)
 

@@ -14,6 +14,7 @@ import { ButtonSettings } from './ButtonSettings'
 import { PRListDisplaySettings } from './PRListDisplaySettings'
 import { StartupPromptSettings } from './StartupPromptSettings'
 import { ReviewLoopSettings } from './ReviewLoopSettings'
+import { OverseerSettings } from './OverseerSettings'
 import { NotionIntegrationSettings } from './NotionIntegrationSettings'
 import { FoundrySettings } from './FoundrySettings'
 import { SettingsSidebar, type SettingsSection } from './SettingsSidebar'
@@ -833,6 +834,11 @@ export function SettingsPage() {
                 />
               )}
               <NotionIntegrationSettings projects={filterProject(notionProjectId || initialProjectId)} />
+            </Panel>
+
+            {/* Overseer */}
+            <Panel visible={activeSection === 'overseer'}>
+              <OverseerSettings />
             </Panel>
 
             {/* Foundry */}

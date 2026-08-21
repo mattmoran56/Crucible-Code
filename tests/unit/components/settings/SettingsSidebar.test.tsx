@@ -32,6 +32,7 @@ describe('SettingsSidebar', () => {
       'Cleanup & Limits',
       'Claude Accounts',
       'Buttons',
+      'Overseer',
       'Project Defaults',
       'PR List Display',
       'Startup Prompts',
@@ -45,9 +46,9 @@ describe('SettingsSidebar', () => {
     }
   })
 
-  it('renders exactly eleven nav buttons when projects exist', () => {
+  it('renders exactly twelve nav buttons when projects exist', () => {
     renderSidebar({ hasProjects: true })
-    expect(screen.getAllByRole('button')).toHaveLength(11)
+    expect(screen.getAllByRole('button')).toHaveLength(12)
   })
 
   it('hides project-requiring items when there are no projects', () => {
@@ -116,6 +117,7 @@ describe('SettingsSidebar', () => {
       'Cleanup & Limits',
       'Claude Accounts',
       'Buttons',
+      'Overseer',
       'Project Defaults',
       'PR List Display',
       'Startup Prompts',

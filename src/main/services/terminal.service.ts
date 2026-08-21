@@ -106,6 +106,12 @@ interface TerminalInstance {
    */
   bufferChunks: string[]
   bufferSize: number
+  /**
+   * Epoch ms of the last PTY output. The Overseer uses it to tell a session
+   * that is thinking from one that has silently stalled — a distinction no
+   * hook event makes, because a stuck agent never asks for anything.
+   */
+  lastOutputAt?: number
   /** Extra args appended to `claude` (e.g. `--dangerously-skip-permissions`). Persisted for crash-recovery. */
   claudeArgs?: string[]
   /**
@@ -156,6 +162,7 @@ const BUFFER_COMPACT_AT = BUFFER_CAP * 2
 function appendToBuffer(instance: TerminalInstance, chunk: string): void {
   instance.bufferChunks.push(chunk)
   instance.bufferSize += chunk.length
+  instance.lastOutputAt = Date.now()
   if (instance.bufferSize > BUFFER_COMPACT_AT) {
     const compacted = instance.bufferChunks.join('').slice(-BUFFER_CAP)
     instance.bufferChunks = [compacted]
@@ -573,6 +580,31 @@ export function getTerminalBuffer(terminalId: string): string {
   instance.bufferChunks = [compacted]
   instance.bufferSize = compacted.length
   return compacted
+}
+
+/** Epoch ms of the terminal's last PTY output, or undefined if it never spoke. */
+export function getTerminalLastOutputAt(terminalId: string): number | undefined {
+  return terminals.get(terminalId)?.lastOutputAt
+}
+
+// Bracketed paste, so claude's TUI treats a multi-line block as one paste
+// rather than a burst of keystrokes (which it would try to autocomplete).
+export const BRACKETED_PASTE_START = '\x1b[200~'
+export const BRACKETED_PASTE_END = '\x1b[201~'
+/** Let the TUI render the pasted block before the submit CR lands. */
+export const BRACKETED_PASTE_DELAY_MS = 250
+
+/**
+ * Type a prompt into a live claude terminal and submit it. The single
+ * injection path — foundry's `injectAndAwaitResponse` and the Overseer's
+ * `send_message_to_session` both go through here, so the paste/delay/CR
+ * sequence has one definition rather than one per caller.
+ */
+export async function injectPrompt(terminalId: string, prompt: string): Promise<void> {
+  const normalised = prompt.replace(/\r\n/g, '\n')
+  writeTerminal(terminalId, `${BRACKETED_PASTE_START}${normalised}${BRACKETED_PASTE_END}`)
+  await new Promise((r) => setTimeout(r, BRACKETED_PASTE_DELAY_MS))
+  writeTerminal(terminalId, '\r')
 }
 
 export function writeTerminal(terminalId: string, data: string): void {

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, FoundryConfig, FoundryFireTaskPayload, FoundryPipelineAction, FoundryRuntimeState, FoundryTaskStartedAck, FoundryWorkerPermissionMode, LocalPR, CreateLocalPRFromSessionInput, LocalPRUpdate } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, FoundryConfig, FoundryFireTaskPayload, FoundryPipelineAction, FoundryRuntimeState, FoundryTaskStartedAck, FoundryWorkerPermissionMode, LocalPR, CreateLocalPRFromSessionInput, LocalPRUpdate, OverseerState, OverseerSettings } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -514,6 +514,32 @@ const api = {
       const listener = (_e: unknown, state: ReviewLoopState) => callback(state)
       ipcRenderer.on(IPC.REVIEW_LOOP_STATE_UPDATE, listener)
       return () => ipcRenderer.removeListener(IPC.REVIEW_LOOP_STATE_UPDATE, listener)
+    },
+  },
+
+  overseer: {
+    getState: (): Promise<OverseerState> => ipcRenderer.invoke(IPC.OVERSEER_STATE_GET),
+    send: (text: string): Promise<void> => ipcRenderer.invoke(IPC.OVERSEER_SEND, text),
+    cancel: (): Promise<void> => ipcRenderer.invoke(IPC.OVERSEER_CANCEL),
+    clear: (): Promise<void> => ipcRenderer.invoke(IPC.OVERSEER_CLEAR),
+    heartbeatNow: (): Promise<void> => ipcRenderer.invoke(IPC.OVERSEER_HEARTBEAT_NOW),
+    markRead: (): Promise<void> => ipcRenderer.invoke(IPC.OVERSEER_MARK_READ),
+    getSettings: (): Promise<OverseerSettings> => ipcRenderer.invoke(IPC.OVERSEER_SETTINGS_GET),
+    setSettings: (settings: Partial<OverseerSettings>): Promise<OverseerSettings> =>
+      ipcRenderer.invoke(IPC.OVERSEER_SETTINGS_SET, settings),
+    onStateUpdate: (callback: (state: OverseerState) => void) => {
+      const listener = (_e: unknown, state: OverseerState) => callback(state)
+      ipcRenderer.on(IPC.OVERSEER_STATE_UPDATE, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.OVERSEER_STATE_UPDATE, listener)
+      }
+    },
+    onSessionsChanged: (callback: (projectId: string) => void) => {
+      const listener = (_e: unknown, projectId: string) => callback(projectId)
+      ipcRenderer.on(IPC.OVERSEER_SESSIONS_CHANGED, listener)
+      return () => {
+        ipcRenderer.removeListener(IPC.OVERSEER_SESSIONS_CHANGED, listener)
+      }
     },
   },
 

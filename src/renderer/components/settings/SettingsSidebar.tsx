@@ -9,6 +9,7 @@ export type SettingsSection =
   | 'notion'
   | 'review-loop'
   | 'foundry'
+  | 'overseer'
   | 'project-defaults'
   | 'buttons'
   | 'about'
@@ -25,6 +26,7 @@ const ITEMS: NavItem[] = [
   { id: 'cleanup-limits', label: 'Cleanup & Limits', group: 'global' },
   { id: 'claude-accounts', label: 'Claude Accounts', group: 'global' },
   { id: 'buttons', label: 'Buttons', group: 'global' },
+  { id: 'overseer', label: 'Overseer', group: 'global' },
   { id: 'project-defaults', label: 'Project Defaults', group: 'project', requiresProjects: true },
   { id: 'pr-list', label: 'PR List Display', group: 'project' },
   { id: 'startup-prompts', label: 'Startup Prompts', group: 'project', requiresProjects: true },
