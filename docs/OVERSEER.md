@@ -221,3 +221,50 @@ Worth being honest: a pass on every hook event across a busy fleet is the failur
 - Vitest units: status reducer, prompt-state classifier, JSONL parser, signals, decision validator, staleness guard. All pure functions — no Electron needed.
 - Storybook stories for panel states (empty, queue-only, proposal pending, proposal stale, digest).
 - Per `CLAUDE.md`: front-end PRs need screenshots with absolute raw URLs; README gets a feature bullet and a `<details>` section as the panel lands.
+
+---
+
+## Dispatch, memory, and voice
+
+Three additions after the first review. Dispatch and memory change the plan; voice explicitly doesn't.
+
+### Dispatching agents
+
+The original plan let the Overseer manage existing sessions but never start one. That's too narrow — "spin up someone to look at the flaky billing test" is the most natural thing to say to a manager, and the mechanics already exist.
+
+A `dispatch` proposal kind: `{ projectId, branchName, sessionName, prompt, baseBranch? }`. Executing it is the path Foundry already walks — `worktree.service` creates the worktree and branch, `spawnTerminal` starts the agent terminal, the startup-prompt mechanism injects the opening brief. Little new code; mostly wiring an existing pipeline to a new caller.
+
+It stays a **proposal**, same as everything else. Dispatch is cheap to approve and expensive to get wrong — a mis-scoped agent burns an hour and leaves a branch to clean up.
+
+Guards: a concurrency ceiling (`maxDispatchedSessions`) so a chatty pass can't spawn twelve workers; branch-name collision checks; and dispatched sessions are tagged with their originating proposal so the audit trail runs both ways.
+
+### Memory — three tiers, one small hot context
+
+The failure mode to design against: the Overseer accumulating every session's transcript into one enormous conversation that gets slower, dumber, and more expensive every hour. The fix is to keep the master's own context small and push everything else onto disk behind tools.
+
+**Tier 1 — hot (in the pass's context).** The fleet snapshot: one line per session — name, project, status, signals, a one-line "what it's doing". Regenerated deterministically every pass, never accumulated. Bounded by session count, not by time.
+
+**Tier 2 — warm (on disk, read via tools).** Two things:
+- *Per-session rolling summary* — a short "what this session is trying to do, where it got to, what's blocking it", regenerated cheaply on each `stop` hook. Reading twenty of these costs less than reading one raw transcript.
+- *Event log* — append-only JSONL of everything the Overseer observed, proposed, and executed. This is the durable record; it's also what makes "what did you do overnight?" answerable without keeping the conversation alive.
+
+**Tier 3 — cold (only on demand).** Raw JSONL transcripts. Never in context by default; pulled only when a specific question needs them.
+
+**Sub-agent drill-down** is what makes Tier 3 affordable. When you ask "what actually happened in the billing session?", the master doesn't read the transcript — it spawns a scoped `claude -p` with *only* that session's transcript and a narrow question, and gets back a paragraph. The master's context grows by a paragraph, not by a transcript. This is the "chop and change between contexts" idea: many small disposable contexts, one small persistent one, nothing merged into a single mega-thread.
+
+The master's own conversation then only ever holds: your messages, its replies, the current snapshot, and summaries it explicitly fetched. When even that gets long, the existing plan already covers it — restart the resume chain with a carry-over summary.
+
+### Voice — deferred, but don't design it out
+
+Not in the plan. The reasoning, so it isn't relitigated:
+
+Voice is a transport swap, not an architecture. **The Claude API has no audio modality** — text, images and documents only — so voice is always a separate STT in front and a separate TTS behind, with the same text agent in the middle. On top of a working text loop it's roughly: a global hotkey (`globalShortcut`, currently unused in this app), an STT (macOS dictation for free, `whisper.cpp` locally, or a cloud API), and a TTS (`say`, or a cloud voice). A day or two.
+
+What's genuinely hard about voice is not the voice:
+- **Target disambiguation.** "Send that to the auth session" has no clickable list to resolve against. Needs short speakable session names and a spoken confirm loop.
+- **Turn-taking.** Push-to-talk avoids it; always-on wake-word is a separate project.
+- **Approval by ear.** Approving a paragraph of technical reply text read aloud is slow and error-prone — voice pushes toward auto-approve, so adopting voice is really an autonomy decision, not a UI one.
+
+**The one thing to do now for voice's sake:** build a **command surface**, not a chat widget. Typed intents — `dispatch`, `context`, `status`, `focus`, `approve` — that the chat box produces and the service consumes. Then adding voice is swapping the parser. A freeform chat blob would mean rebuilding intent extraction later.
+
+Also cheap and worth doing now: keep session names short and speakable. It costs nothing today and is a prerequisite the day voice lands.
