@@ -43,7 +43,11 @@ import { addPickedUp, loadConfig as loadNotionConfig } from './notion-poller.ser
 import { findPRForBranch, markPRReady } from './github.service'
 import { getDefaultBranch } from './git.service'
 import { startReviewLoopLite } from './review-loop-lite.service'
-import { getTerminalBuffer, listTerminalsForSession, writeTerminal } from './terminal.service'
+import {
+  getTerminalBuffer,
+  injectPrompt,
+  listTerminalsForSession,
+} from './terminal.service'
 import { readFile } from 'node:fs/promises'
 import { getLocalPR, getLocalPRForPipeline, getLocalPRForSession, listLocalPRs, patchLocalPR, setCaptureContext, LOCAL_PR_CHANGED } from './local-pr.service'
 import { promoteLocalPR } from './local-pr-promote.service'
@@ -913,10 +917,7 @@ async function applyDeferredPickupUpdates(rt: FoundryRuntime, p: FoundryPipeline
 
 // ── PR polling (the only thing we watch during 'implementing') ──────────────
 
-const BRACKETED_PASTE_START = '\x1b[200~'
-const BRACKETED_PASTE_END = '\x1b[201~'
 const READY_TIMEOUT_MS = 15 * 60_000
-const BRACKETED_PASTE_DELAY_MS = 250
 /** How much the PTY buffer must grow for us to count this stop as "real". */
 const MIN_RESPONSE_GROWTH_BYTES = 200
 
@@ -937,10 +938,7 @@ async function injectAndAwaitResponse(
   prompt: string
 ): Promise<boolean> {
   const bufferBefore = getTerminalBuffer(terminalId).length
-  const normalised = prompt.replace(/\r\n/g, '\n')
-  writeTerminal(terminalId, `${BRACKETED_PASTE_START}${normalised}${BRACKETED_PASTE_END}`)
-  await new Promise((r) => setTimeout(r, BRACKETED_PASTE_DELAY_MS))
-  writeTerminal(terminalId, '\r')
+  await injectPrompt(terminalId, prompt)
 
   // Keep listening for stop events until either we see a "real" one (buffer
   // grew meaningfully → claude actually produced output) or we run out of

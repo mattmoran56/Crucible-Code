@@ -2,7 +2,7 @@
 
 > One agent that watches every session in every project, tells you what's going on, unblocks what it safely can, and escalates the rest to you in a chat panel.
 
-**Status: plan / not yet implemented.** This document is the design and delivery plan. Naming (`Overseer`) is a placeholder — swap it before Phase 0 if you prefer `Chief`, `Bridge`, or `Lead`.
+**Status: v0 shipped, rest still planned.** The "What v0 actually ships" section near the bottom lists what exists in the app today; everything else here is still the delivery plan. Naming (`Overseer`) is a placeholder — swap it before Phase 0 if you prefer `Chief`, `Bridge`, or `Lead`.
 
 ## The idea
 
@@ -268,3 +268,79 @@ What's genuinely hard about voice is not the voice:
 **The one thing to do now for voice's sake:** build a **command surface**, not a chat widget. Typed intents — `dispatch`, `context`, `status`, `focus`, `approve` — that the chat box produces and the service consumes. Then adding voice is swapping the parser. A freeform chat blob would mean rebuilding intent extraction later.
 
 Also cheap and worth doing now: keep session names short and speakable. It costs nothing today and is a prerequisite the day voice lands.
+
+---
+
+## What v0 actually ships
+
+Built on `claude/master-agent-project-sessions-68pcxu`. This is a working prototype, deliberately
+narrower than the plan above — and it takes one decision differently, for a reason.
+
+### Divergence from the plan: SDK, not `claude -p`
+
+The plan chose a headless `claude -p` foreman. v0 uses the **Anthropic SDK with an API key**
+instead. Why: the panel is a *conversation* with tool use, and the SDK gives an explicit model
+parameter, a real tool loop, and per-call cost numbers. The `-p` path gives none of those cleanly —
+and the model parameter matters most here, because it is the cost lever.
+
+The consequence is honest and worth stating: **this is billed to your API account, not your Claude
+Code subscription.** The sessions it manages still run on the subscription; only the manager costs
+API dollars. That's the trade for being able to run it on Haiku and switch models per-turn.
+
+### What exists
+
+| Piece | File |
+|---|---|
+| Pure logic — status reducer, prompt classifier, signals, digest, pricing | `src/shared/overseer.ts` |
+| Main-process session status from hook events | `src/main/services/session-status.service.ts` |
+| Agent loop, tools, heartbeat, cost cap | `src/main/services/overseer.service.ts` |
+| IPC surface | `src/main/ipc/overseer.ipc.ts` |
+| Panel + settings | `src/renderer/components/overseer/`, `src/renderer/components/settings/OverseerSettings.tsx` |
+| Tests | `tests/unit/overseer.test.ts` |
+
+Five tools: `list_sessions`, `read_session`, `send_message_to_session`, `start_session`,
+`report_to_user`. Tool calls go through `invokeHandler` — the same registry the remote relay uses —
+so there is one writer to the session store, not two.
+
+### Safety, as built
+
+The plan's hard rules are in the code, not the prompt:
+
+- `detectPromptState` classifies the screen and **fails closed**; `canTypeInto` permits only
+  `input-idle` and `question`. A permission prompt is refused with an explanation telling the model
+  to escalate instead. Ten unit tests cover this gate specifically.
+- Writes are **off by default**. Read-only is the shipping default; `allowWrites` turns on both
+  typing into sessions and creating them.
+- Every injected message is prefixed `[Overseer]` in the session transcript, so the audit trail is
+  visible where the work happens.
+- Daily USD cap hard-stops passes; tool rounds per turn are capped.
+
+### The heartbeat, and why it is cheap
+
+A tick builds the fleet snapshot in plain TypeScript and compares its digest to the previous tick.
+Unchanged → it returns without touching the API. So a 60-second heartbeat over a quiet fleet costs
+nothing at all, and cost scales with how much is *happening*, not with how often you check.
+
+### Known gaps vs the plan above
+
+- **No JSONL transcript reader.** `read_session` scrapes the terminal buffer, which is what the plan
+  warns against. The hook payload already carries `session_id` and `transcript_path` — wiring that
+  up is the highest-value next step.
+- **No proposal/approval flow.** v0 acts directly when writes are on, gated by the classifier,
+  rather than proposing for approval. The approval UI is the next phase.
+- **Status is duplicated**, not unified: `session-status.service.ts` and the renderer's
+  `notificationStore` both derive status. They share the transition reducer, so they can't drift on
+  the rules, but the renderer store was left alone rather than refactored.
+- **No attention queue, digest, or close-out summaries** — the panel is conversation plus heartbeat.
+- **`start_session` doesn't run project startup prompts** or honour per-project Claude accounts
+  beyond the config dir.
+- **Not on the remote receiver yet.** State lives in main and travels over IPC, so it should be a
+  small follow-up rather than a rewrite.
+
+### Trying it
+
+1. Settings → Overseer → paste an Anthropic API key.
+2. Leave the model on Haiku 4.5 and the daily cap low while you poke at it.
+3. Open the Overseer panel (top icon in the right activity bar) and ask:
+   *"Give me a table of all sessions, roughly where each is up to, and whether it needs input."*
+4. Turn on **Heartbeat** to have it check by itself; **Writes** only once you trust what it says.

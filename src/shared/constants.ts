@@ -254,4 +254,16 @@ export const IPC = {
   LOCAL_PR_PROMOTE: 'local-pr:promote',
   LOCAL_PR_SET_CAPTURE: 'local-pr:set-capture',
   LOCAL_PR_STATE_UPDATE: 'local-pr:state:update',
+  // Overseer — a master agent over every session in every project
+  OVERSEER_STATE_GET: 'overseer:state:get',
+  OVERSEER_STATE_UPDATE: 'overseer:state:update',
+  OVERSEER_SEND: 'overseer:send',
+  OVERSEER_CANCEL: 'overseer:cancel',
+  OVERSEER_CLEAR: 'overseer:clear',
+  OVERSEER_SETTINGS_GET: 'overseer:settings:get',
+  OVERSEER_SETTINGS_SET: 'overseer:settings:set',
+  OVERSEER_HEARTBEAT_NOW: 'overseer:heartbeat-now',
+  OVERSEER_MARK_READ: 'overseer:mark-read',
+  /** Main → renderer: the Overseer created/changed sessions; reload the list. */
+  OVERSEER_SESSIONS_CHANGED: 'overseer:sessions-changed',
 } as const

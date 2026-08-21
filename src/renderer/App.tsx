@@ -9,6 +9,7 @@ import { NotesPanel } from './components/notes/NotesPanel'
 import { UsagePanel } from './components/usage/UsagePanel'
 import { PermissionsPanel } from './components/permissions/PermissionsPanel'
 import { FoundryPanel } from './components/foundry/FoundryPanel'
+import { OverseerPanel } from './components/overseer/OverseerPanel'
 import { useUsageStore } from './stores/usageStore'
 import { ResizeHandle, IconButton } from './components/ui'
 import { useProjectStore } from './stores/projectStore'
@@ -29,6 +30,7 @@ import { useReviewLoopStore } from './stores/reviewLoopStore'
 import { useSchedulerBootstrap } from './hooks/useSchedulerBootstrap'
 import { useNotionBootstrap } from './hooks/useNotionBootstrap'
 import { useFoundryBootstrap } from './hooks/useFoundryBootstrap'
+import { useOverseerStore } from './stores/overseerStore'
 import { UsageLimitToast } from './components/usage/UsageLimitToast'
 
 export default function App() {
@@ -50,6 +52,7 @@ export default function App() {
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
   const rightPanel = useResizable({ direction: 'horizontal', initialSize: 300, minSize: 200, maxSize: 600, inverted: true })
   const [activeRightPanel, setActiveRightPanel] = useState<string | null>(null)
+  const overseerUnread = useOverseerStore((s) => s.state.unread)
   const [loading, setLoading] = useState(true)
   const [showLoader, setShowLoader] = useState(true)
 
@@ -87,6 +90,16 @@ export default function App() {
     })
     return remove
   }, [applyReviewLoopState])
+
+  // Stream Overseer state (chat turns, heartbeat reports) from main. The panel
+  // does not have to be open — a heartbeat that fires while it is closed still
+  // lands in the thread and lights the activity-bar dot.
+  useEffect(() => {
+    void useOverseerStore.getState().load()
+    return window.api.overseer.onStateUpdate((next) => {
+      useOverseerStore.getState().applyState(next)
+    })
+  }, [])
 
   // Register sessions from all projects with the notification store for cross-project badges
   // and recover any terminals that were running before a crash/restart
@@ -216,7 +229,7 @@ export default function App() {
                   style={{ padding: '10px 12px' }}
                 >
                   <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel === 'permissions' ? 'Permissions' : activeRightPanel === 'foundry' ? 'Foundry' : activeRightPanel}
+                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel === 'permissions' ? 'Permissions' : activeRightPanel === 'foundry' ? 'Foundry' : activeRightPanel === 'overseer' ? 'Overseer' : activeRightPanel}
                   </span>
                   <IconButton label="Close panel" onClick={() => setActiveRightPanel(null)}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -229,13 +242,18 @@ export default function App() {
                   {activeRightPanel === 'usage' && <UsagePanel />}
                   {activeRightPanel === 'permissions' && <PermissionsPanel />}
                   {activeRightPanel === 'foundry' && <FoundryPanel />}
+                  {activeRightPanel === 'overseer' && <OverseerPanel />}
                 </div>
               </div>
             </>
           )}
 
           {/* Right activity bar — always visible */}
-          <RightActivityBar activePanel={activeRightPanel} onToggle={toggleRightPanel} />
+          <RightActivityBar
+            activePanel={activeRightPanel}
+            onToggle={toggleRightPanel}
+            overseerUnread={overseerUnread}
+          />
         </div>
       </div>
       <UsageLimitToast />

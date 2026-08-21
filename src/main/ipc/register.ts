@@ -20,6 +20,7 @@ import { registerNotionHandlers } from './notion.ipc'
 import { registerFoundryHandlers } from './foundry.ipc'
 import { registerLocalPRHandlers } from './local-pr.ipc'
 import { registerRemoteHandlers } from './remote.ipc'
+import { registerOverseerHandlers } from './overseer.ipc'
 import {
   registerContextMapping,
   removeContextMapping,
@@ -47,6 +48,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerFoundryHandlers(window)
   registerLocalPRHandlers(window)
   registerRemoteHandlers(window)
+  registerOverseerHandlers(window)
 
   // Context mapping management for notification routing.
   // The renderer registers sessions, the Code editor (per-project) and individual

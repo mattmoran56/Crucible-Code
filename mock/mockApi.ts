@@ -326,6 +326,48 @@ export const mockApi = {
     onStateUpdate: () => noop(),
   },
 
+  overseer: {
+    /**
+     * Stories override the thread by setting `__mockOverseerState` before
+     * mount; the default is an empty conversation so the panel renders its
+     * suggestion prompts.
+     */
+    getState: async () => {
+      const override = (globalThis as any).__mockOverseerState
+      return (
+        override ?? {
+          messages: [],
+          running: false,
+          spendTodayUsd: 0,
+          spendDay: '',
+          unread: 0,
+        }
+      )
+    },
+    getSettings: async () => {
+      const override = (globalThis as any).__mockOverseerSettings
+      return (
+        override ?? {
+          apiKey: 'sk-ant-mock',
+          model: 'claude-haiku-4-5',
+          heartbeatSeconds: 60,
+          heartbeatEnabled: true,
+          dailyCostCapUsd: 2,
+          maxIterations: 12,
+          allowWrites: false,
+        }
+      )
+    },
+    setSettings: async (settings: unknown) => settings,
+    send: async () => {},
+    cancel: async () => {},
+    clear: async () => {},
+    heartbeatNow: async () => {},
+    markRead: async () => {},
+    onStateUpdate: () => noop(),
+    onSessionsChanged: () => noop(),
+  },
+
   claudeWeb: {
     listSessions: async () => [
       {
