@@ -47,7 +47,7 @@ function Bubble({ message }: { message: OverseerMessage }) {
 
   const isUser = message.role === 'user'
   return (
-    <div style={{ padding: '6px 12px' }}>
+    <div style={{ padding: '6px 12px', minWidth: 0 }}>
       <div className="flex items-center gap-2" style={{ marginBottom: 3 }}>
         <span className="text-xs font-medium text-text-muted">
           {isUser ? 'You' : 'Overseer'}
@@ -71,7 +71,7 @@ function Bubble({ message }: { message: OverseerMessage }) {
         )}
       </div>
       <div
-        className="text-sm overseer-markdown"
+        className="text-sm markdown-body overseer-markdown"
         style={{
           background: isUser ? 'var(--color-bg-tertiary)' : 'transparent',
           borderRadius: 6,
@@ -136,7 +136,10 @@ export function OverseerPanel() {
   const capReached = !!settings && state.spendTodayUsd >= settings.dailyCostCapUsd
 
   return (
-    <div className="h-full flex flex-col" style={{ background: 'var(--color-bg-secondary)' }}>
+    <div
+      className="h-full flex flex-col min-w-0 overflow-hidden"
+      style={{ background: 'var(--color-bg-secondary)' }}
+    >
       {settings && (
         <div
           className="flex items-center gap-2 border-b border-border flex-shrink-0 flex-wrap"
@@ -237,7 +240,7 @@ export function OverseerPanel() {
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ paddingBottom: 8 }}>
+      <div ref={scrollRef} className="flex-1 min-w-0 overflow-y-auto" style={{ paddingBottom: 8 }}>
         {state.messages.length === 0 && (
           <div style={{ padding: 12 }}>
             <p className="text-xs text-text-muted" style={{ marginBottom: 8 }}>

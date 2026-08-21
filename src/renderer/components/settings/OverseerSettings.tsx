@@ -41,11 +41,12 @@ export function OverseerSettings() {
         panel on the right activity bar.
       </p>
 
-      <label className="block text-sm" style={{ marginBottom: 4 }}>
+      <label htmlFor="overseer-api-key" className="block text-sm" style={{ marginBottom: 4 }}>
         Anthropic API key
       </label>
       <div className="flex gap-2" style={{ marginBottom: 4 }}>
         <input
+          id="overseer-api-key"
           type="password"
           value={keyDraft}
           placeholder="sk-ant-…"
@@ -77,10 +78,11 @@ export function OverseerSettings() {
         to fall back to the <code>ANTHROPIC_API_KEY</code> environment variable.
       </p>
 
-      <label className="block text-sm" style={{ marginBottom: 4 }}>
+      <label htmlFor="overseer-model" className="block text-sm" style={{ marginBottom: 4 }}>
         Model
       </label>
       <select
+        id="overseer-model"
         value={settings.model}
         onChange={(e) => void saveSettings({ model: e.target.value })}
         className={field}
@@ -97,10 +99,11 @@ export function OverseerSettings() {
         replies to sessions.
       </p>
 
-      <label className="block text-sm" style={{ marginBottom: 4 }}>
+      <label htmlFor="overseer-cap" className="block text-sm" style={{ marginBottom: 4 }}>
         Daily cost cap (USD)
       </label>
       <input
+        id="overseer-cap"
         type="number"
         min={0}
         step={0.5}
@@ -123,6 +126,7 @@ export function OverseerSettings() {
       </label>
       <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
         <input
+          aria-label="Heartbeat interval in seconds"
           type="number"
           min={30}
           step={30}
@@ -151,10 +155,11 @@ export function OverseerSettings() {
         to answer a tool-permission prompt — those stay yours.
       </p>
 
-      <label className="block text-sm" style={{ marginBottom: 4 }}>
+      <label htmlFor="overseer-max-rounds" className="block text-sm" style={{ marginBottom: 4 }}>
         Max tool rounds per turn
       </label>
       <input
+        id="overseer-max-rounds"
         type="number"
         min={1}
         max={40}

@@ -557,6 +557,15 @@ refused too. Every message it sends is prefixed `[Overseer]` in the session tran
 billed to your Anthropic API account, separate from the Claude Code subscription the sessions
 themselves use.
 
+![Overseer panel](docs/screenshots/overseer-panel-fleet-table.png)
+
+The heartbeat speaking up on its own, and the write gate refusing a permission prompt:
+
+![Overseer heartbeat](docs/screenshots/overseer-panel-heartbeat.png)
+![Overseer refusing a permission prompt](docs/screenshots/overseer-panel-refuses-permission.png)
+
+![Overseer settings](docs/screenshots/overseer-settings.png)
+
 Design and roadmap: [docs/OVERSEER.md](docs/OVERSEER.md)
 
 </details>

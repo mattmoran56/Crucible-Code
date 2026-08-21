@@ -781,4 +781,8 @@ export function installOverseer(window: BrowserWindow): void {
 export function stopOverseer(): void {
   if (heartbeatTimer) clearInterval(heartbeatTimer)
   heartbeatTimer = null
+  // Drop the remembered fleet shape too. Leaving it behind would make the
+  // first tick after a restart compare against a snapshot from the previous
+  // run; `installOverseer` re-seeds it deliberately.
+  lastDigest = undefined
 }
