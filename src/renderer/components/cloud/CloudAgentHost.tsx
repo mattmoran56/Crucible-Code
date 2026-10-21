@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { CloudCreateState } from '../../../shared/types'
 import { applyCloudCreated } from '../../lib/cloudCreate'
+import { applyTeleportState } from '../../lib/cloudTeleport'
 import { projectConfigDir } from '../../lib/visualAgents'
 import { branchMismatchToast, reconcileTeleportBranch } from '../../lib/teleportBranch'
 import { useCloudSessionStore } from '../../stores/cloudSessionStore'
@@ -49,6 +50,10 @@ export function CloudAgentHost({
   const project = useProjectStore((s) => s.projects.find((p) => p.id === session?.projectId))
   const accounts = useProjectStore((s) => s.claudeAccounts)
   const teleportTerminal = useCloudSessionStore((s) => s.teleports[sessionId] ?? null)
+  const teleportRun = useCloudSessionStore((s) => {
+    const run = s.teleportRuns[sessionId]
+    return run && run.terminalId === s.teleports[sessionId] ? run : null
+  })
   const branchNotice = useCloudSessionStore((s) => s.branchNotices[sessionId] ?? null)
 
   const [phase, setPhase] = useState<CloudAgentPhase>(teleportTerminal ? 'teleported' : 'web')
@@ -173,7 +178,6 @@ export function CloudAgentHost({
     const stop = setTimeout(() => clearInterval(timer), BRANCH_POLL_WINDOW_MS)
     const offExit = window.api.terminal.onExit((id) => {
       if (id !== teleportTerminal) return
-      setPhase('teleport-ended')
       void check()
     })
     return () => {
@@ -184,18 +188,42 @@ export function CloudAgentHost({
     }
   }, [teleportTerminal, sessionId])
 
+  // The run lives in the main process; pick it up if this tab was remounted
+  // (events only carry changes).
+  useEffect(() => {
+    if (!teleportTerminal || teleportRun) return
+    let cancelled = false
+    void window.api.cloudSession
+      .teleportState?.(sessionId)
+      .then((state) => {
+        if (!cancelled && state && state.terminalId === teleportTerminal) useCloudSessionStore.getState().setTeleportRun(state)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [teleportTerminal, teleportRun, sessionId])
+
+  // Done: the conversation is local — resume it as a visual agent (the app-level
+  // listener normally gets there first; this is idempotent).
+  useEffect(() => {
+    if (teleportRun?.status === 'done') void applyTeleportState(teleportRun)
+  }, [teleportRun])
+
+  const finishTeleport = useCallback(() => {
+    void window.api.cloudSession.finishTeleport?.(sessionId)
+  }, [sessionId])
+
   const teleport = useCallback(async () => {
     if (!session?.cloud) return
     const link = session.cloud
     setPhase('teleport-checking')
     setDirtyFiles([])
     setError(null)
-    // Recorded before the PTY starts so transcript discovery on a later
-    // launch looks at files written from here on.
-    const teleportedAt = new Date().toISOString()
     try {
       const result = await window.api.cloudSession.teleport({
         sessionId: session.id,
+        projectId: session.projectId,
         worktreePath: session.worktreePath,
         cloudSessionId: link.sessionId,
         configDir: projectConfigDir(project, accounts),
@@ -208,10 +236,14 @@ export function CloudAgentHost({
         return
       }
       register(result.terminalId)
-      // Keep this tab on the teleport PTY for the rest of this run, even
-      // though the session is local from now on.
+      // Keep this tab on the teleport view until the conversation is local,
+      // even though the session is local from now on.
+      if (result.state) useCloudSessionStore.getState().setTeleportRun(result.state)
       useCloudSessionStore.getState().setTeleport(session.id, result.terminalId)
       setPhase('teleported')
+      // startedAt was taken before the PTY started, so transcript discovery
+      // (if this run is interrupted) looks at files written from then on.
+      const teleportedAt = result.state?.startedAt ?? new Date().toISOString()
       await useSessionStore.getState().patchSession(session.projectId, session.id, {
         location: 'local',
         cloud: { ...link, teleportedAt },
@@ -258,7 +290,11 @@ export function CloudAgentHost({
     ? startError
       ? 'create-failed'
       : createPhaseFor(createRun, starting)
-    : phase
+    : teleportTerminal
+      ? teleportRun?.status === 'failed'
+        ? 'teleport-ended'
+        : 'teleported'
+      : phase
   const createError = startError ?? (createRun?.status === 'failed' ? createRun.error ?? null : null)
   // The create PTY while creating (and its scrollback after a failure), or
   // the still-attached CLI when the user asks for it.
@@ -270,7 +306,9 @@ export function CloudAgentHost({
       visible={visible}
       phase={effectivePhase}
       terminalId={shownTerminal}
-      error={pending ? createError : error}
+      error={pending ? createError : teleportRun?.status === 'failed' ? teleportRun.error ?? null : error}
+      teleportRun={teleportRun}
+      onFinishTeleport={finishTeleport}
       mayExist={pending && !!createRun?.mayExist}
       onRetryCreate={pending ? () => void startCreate() : undefined}
       onOpenCloudHome={openCloudHome}

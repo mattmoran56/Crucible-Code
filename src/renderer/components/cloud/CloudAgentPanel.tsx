@@ -1,15 +1,18 @@
 // The Agent tab for a cloud session: a slim toolbar (styled like the visual
 // agent's session bar) over, in turn: the `claude --cloud` terminal that
 // creates the cloud session, the embedded claude.ai/code session page, and —
-// once teleported — the terminal the session came down into.
+// while teleporting — the progress view over the `claude --teleport` PTY
+// (TeleportProgress). Once the conversation is local the Agent tab becomes
+// the visual agent.
 
 import React, { useState } from 'react'
-import type { Session } from '../../../shared/types'
+import type { CloudTeleportState, Session } from '../../../shared/types'
 import { shortCloudId } from '../../../shared/cloud-session'
 import { cn } from '../../lib/cn'
 import { TerminalView } from '../terminal/TerminalView'
 import { Spinner } from '../visual-agent/icons'
 import { CloudWebView } from './CloudWebView'
+import { TeleportProgress } from './TeleportProgress'
 import { BranchIcon, CloudIcon, ExternalIcon, TeleportIcon } from './icons'
 
 /** Teleport checked out a different branch than the one the app created. */
@@ -33,9 +36,9 @@ export type CloudAgentPhase =
   | 'teleport-checking'
   /** The worktree has changes; teleport refused. */
   | 'teleport-blocked'
-  /** `claude --teleport <id>` is running — then it is the live local session. */
+  /** `claude --teleport <id>` is pulling the session down (progress view over its PTY). */
   | 'teleported'
-  /** The teleported (now local) Claude session exited. */
+  /** The teleport ended before the conversation was local; see `error`. */
   | 'teleport-ended'
   /** Something failed; see `error`. */
   | 'error'
@@ -52,6 +55,10 @@ export interface CloudAgentPanelProps {
   phase: CloudAgentPhase
   /** The teleport PTY, once a teleport is running. */
   terminalId: string | null
+  /** The main process's teleport run (steps, needs-input, done/failed). */
+  teleportRun?: CloudTeleportState | null
+  /** Close the teleport PTY now and open the conversation in the Agent view. */
+  onFinishTeleport?: () => void
   error?: string | null
   dirtyFiles?: string[]
   onOpenInBrowser: () => void
@@ -88,6 +95,8 @@ export function CloudAgentPanel({
   visible,
   phase,
   terminalId,
+  teleportRun,
+  onFinishTeleport,
   error,
   dirtyFiles,
   onOpenInBrowser,
@@ -223,13 +232,22 @@ export function CloudAgentPanel({
       ) : null}
       {branchNotice ? <BranchNoticeBar notice={branchNotice} onCleanup={onCleanupBranch} /> : null}
 
-      {terminalId ? (
+      {terminalId && teleported ? (
+        <TeleportProgress
+          run={teleportRun ?? null}
+          terminalId={terminalId}
+          sessionId={session.id}
+          sessionName={session.name}
+          visible={visible}
+          onFinish={onFinishTeleport}
+        />
+      ) : terminalId ? (
         <div className="relative min-h-0 flex-1">
           <TerminalView terminalId={terminalId} sessionId={session.id} sessionName={session.name} visible={visible} />
         </div>
       ) : cloud && !teleported ? (
         // The page goes away (and its guest is torn down) once teleported.
-        <CloudWebView url={cloud.url} visible={visible} onOpenInBrowser={onOpenInBrowser} embed={embedWebview} />
+        <CloudWebView sessionId={session.id} url={cloud.url} visible={visible} embed={embedWebview} />
       ) : (
         <div className="relative min-h-0 flex-1" />
       )}
@@ -332,8 +350,8 @@ function PhaseLabel({ phase }: { phase: CloudAgentPhase }) {
     'create-failed': 'not started',
     'create-interrupted': 'not started',
     'teleport-checking': 'checking worktree…',
-    teleported: 'running locally',
-    'teleport-ended': 'local session ended',
+    teleported: 'teleporting…',
+    'teleport-ended': 'teleport stopped',
   }
   const label = text[phase]
   if (!label) return null
@@ -438,7 +456,12 @@ function Banner({
       )
       break
     case 'teleport-ended':
-      body = 'The local Claude session exited. Its conversation is on this machine now.'
+      tone = 'danger'
+      body = (
+        <span className="block whitespace-pre-wrap font-mono text-[10.5px]">
+          {error ?? 'The teleport ended before the conversation came down.'}
+        </span>
+      )
       actions = onOpenLocally ? (
         <button type="button" onClick={onOpenLocally} className={BAR_BTN}>
           Continue as local agent
