@@ -818,31 +818,13 @@ describe('sessionStore visual agents', () => {
     useSessionStore.setState({ currentProjectId: 'p1', sessions: [S('s1'), S('s2')] } as any)
   })
 
-  it('createSession records agentView only when the visual interface was asked for', async () => {
+  it('createSession queues the startup prompt for the Agent tab without any view field', async () => {
     worktreeApi.create.mockResolvedValue({ path: '/wt/new', branch: 'session/feat' })
-    await useSessionStore.getState().createSession('p1', '/repo', 'feat', undefined, 'go', undefined, 'visual')
+    await useSessionStore.getState().createSession('p1', '/repo', 'feat', undefined, 'go')
     const created = useSessionStore.getState().sessions.find((s) => s.name === 'feat')!
-    expect(created.agentView).toBe('visual')
-    // The startup prompt still queues: the visual agent takes it as its first message.
+    expect('agentView' in created).toBe(false)
+    // The visual agent takes the startup prompt as its first message.
     expect(useSessionStore.getState().pendingStartup).toEqual({ sessionId: created.id, command: 'go' })
-
-    await useSessionStore.getState().createSession('p1', '/repo', 'plain')
-    const plain = useSessionStore.getState().sessions.find((s) => s.name === 'plain')!
-    expect('agentView' in plain).toBe(false)
-  })
-
-  it('setSessionAgentView persists the switch and clears it back to terminal', async () => {
-    await useSessionStore.getState().setSessionAgentView('p1', 's1', 'visual')
-    expect(useSessionStore.getState().sessions[0].agentView).toBe('visual')
-    expect(sessionApi.save).toHaveBeenLastCalledWith('p1', useSessionStore.getState().sessions)
-
-    await useSessionStore.getState().setSessionAgentView('p1', 's1', 'terminal')
-    expect('agentView' in useSessionStore.getState().sessions[0]).toBe(false)
-    expect(sessionApi.save).toHaveBeenCalledTimes(2)
-
-    // No-op when already on that view.
-    await useSessionStore.getState().setSessionAgentView('p1', 's1', 'terminal')
-    expect(sessionApi.save).toHaveBeenCalledTimes(2)
   })
 
   it('setSessionVisualAgent saves, updates and forgets the resume record per tab', async () => {

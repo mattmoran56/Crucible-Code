@@ -38,10 +38,6 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   // Custom-prompt textarea content. Only used when schedule mode is on —
   // chip-driven prompts cover the non-scheduled path.
   const [customPrompt, setCustomPrompt] = useState('')
-  // Open the new session's Agent tab as a Visual Agent. Only offered when the
-  // project has opted in to visual agents.
-  const [openVisual, setOpenVisual] = useState(false)
-  const visualAvailable = !!project.visualAgentsEnabled
   const { createSession } = useSessionStore()
   const addQueuedSession = useSchedulerStore((s) => s.addQueuedSession)
   const usageResetDelayMinutes = useSettingsStore((s) => s.usageResetDelayMinutes)
@@ -72,7 +68,6 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
     setScheduleEnabled(false)
     setScheduledForInput('')
     setCustomPrompt('')
-    setOpenVisual(false)
     setBranchesLoading(true)
     Promise.all([
       window.api.git.defaultBranch(project.repoPath),
@@ -171,9 +166,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           project.repoPath,
           name.trim(),
           baseBranch || undefined,
-          startupCommand,
-          undefined,
-          visualAvailable && openVisual ? 'visual' : undefined
+          startupCommand
         )
       }
       setName('')
@@ -262,19 +255,6 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
             placeholder={selectedPrompt.inputPlaceholder}
             error={showInputError ? 'This prompt requires an input' : undefined}
           />
-        )}
-
-        {visualAvailable && !scheduleEnabled && (
-          <label className="flex items-center gap-2 text-xs text-text cursor-pointer select-none">
-            <input
-              type="checkbox"
-              data-testid="open-visual-agent"
-              checked={openVisual}
-              onChange={(e) => setOpenVisual(e.target.checked)}
-              className="cursor-pointer"
-            />
-            Open agent as visual interface
-          </label>
         )}
 
         <div>

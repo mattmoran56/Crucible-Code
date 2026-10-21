@@ -11,8 +11,6 @@ export interface Project {
   claudeAccountId?: string
   claudeWebEnabled?: boolean
   claudeWebBranchPrefix?: string
-  /** Opt-in: allow agents in this project to open as a Visual Agent (chat UI over `claude -p`). Off by default. */
-  visualAgentsEnabled?: boolean
 }
 
 export interface ClaudeWebSession {
@@ -43,11 +41,10 @@ export interface Session {
   prNumber?: number
   baseBranch?: string
   notionTicket?: NotionTicketLink
-  /** How the core Agent tab renders: the claude PTY (default) or the Visual Agent chat UI. */
-  agentView?: 'terminal' | 'visual'
   /**
    * Visual agents in this session keyed by workspace tab id ('agent' for the
-   * core tab, 'visual-agent:N' for dynamic ones). Persisted so a restart of the
+   * core tab, 'agent:N' for dynamic ones, or 'visual-agent:N' for tabs opened
+   * before agents were always visual). Persisted so a restart of the
    * app resumes the same Claude conversation on the same model.
    */
   visualAgents?: Record<string, { claudeSessionId: string; model: string }>

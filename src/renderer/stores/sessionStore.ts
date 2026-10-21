@@ -43,16 +43,14 @@ interface SessionState {
   detachedWorktree: DetachedWorktreeInfo | null
   openedAsMainBranch: string | null
   previousMainBranch: string | null
-  /** A startup command queued by createSession, consumed by the agent terminal once it spawns. */
+  /** A startup prompt queued by createSession, consumed by the Agent tab's visual agent as its first message. */
   pendingStartup: { sessionId: string; command: string } | null
   /** A session whose agent xterm should auto-focus on first attach, consumed by useTerminal. */
   pendingFocusSessionId: string | null
   loadSessions: (projectId: string) => Promise<void>
-  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string, notionTicket?: NotionTicketLink, agentView?: 'terminal' | 'visual') => Promise<void>
+  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string, notionTicket?: NotionTicketLink) => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
   renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
-  /** Switch the core Agent tab between the claude terminal and the Visual Agent UI. */
-  setSessionAgentView: (projectId: string, sessionId: string, view: 'terminal' | 'visual') => Promise<void>
   /**
    * Record (or with `null`, forget) the Claude session + model a visual agent
    * tab is on, so the next app launch resumes the same conversation.
@@ -192,7 +190,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  createSession: async (projectId, repoPath, name, baseBranch, startupCommand, notionTicket, agentView) => {
+  createSession: async (projectId, repoPath, name, baseBranch, startupCommand, notionTicket) => {
     const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch)
     const session: Session = {
       id: crypto.randomUUID(),
@@ -204,7 +202,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       lastActiveAt: new Date().toISOString(),
       baseBranch,
       notionTicket,
-      ...(agentView === 'visual' ? { agentView } : {}),
     }
 
     const sessions = sortByCreatedAtDesc([...get().sessions, session])
@@ -296,20 +293,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     set({ sessions })
-  },
-
-  setSessionAgentView: async (projectId, sessionId, view) => {
-    const current = get().sessions.find((s) => s.id === sessionId)
-    if (!current || (current.agentView ?? 'terminal') === view) return
-    const sessions = get().sessions.map((s) => {
-      if (s.id !== sessionId) return s
-      const next = { ...s }
-      if (view === 'visual') next.agentView = 'visual'
-      else delete next.agentView
-      return next
-    })
-    await window.api.session.save(projectId, sessions)
-    if (get().currentProjectId === projectId) set({ sessions })
   },
 
   setSessionVisualAgent: async (projectId, sessionId, tabKey, entry) => {
