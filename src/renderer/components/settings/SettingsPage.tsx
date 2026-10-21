@@ -17,6 +17,7 @@ import { ReviewLoopSettings } from './ReviewLoopSettings'
 import { NotionIntegrationSettings } from './NotionIntegrationSettings'
 import { SettingsSidebar, type SettingsSection } from './SettingsSidebar'
 import { ProjectPicker } from './ProjectPicker'
+import { SessionLocationSetting } from './SessionLocationSetting'
 
 const LIGHT_THEMES = THEMES.filter((t) => !t.isDark)
 const DARK_THEMES = THEMES.filter((t) => t.isDark)
@@ -683,7 +684,7 @@ export function SettingsPage() {
             <Panel visible={activeSection === 'project-defaults'}>
               <SectionHeader
                 title="Project Defaults"
-                description="Per-project Claude account settings."
+                description="Per-project default session location (cloud or local) and Claude account settings."
               />
 
               {hasProjects && (
@@ -696,6 +697,8 @@ export function SettingsPage() {
 
                   {selectedDefaultsProject && (
                     <div className="flex flex-col gap-4">
+                      <SessionLocationSetting project={selectedDefaultsProject} />
+
                       <div className="border border-border rounded-md" style={{ padding: '12px 14px' }}>
                         <p className="text-xs font-medium text-text" style={{ marginBottom: 4 }}>
                           Claude account
