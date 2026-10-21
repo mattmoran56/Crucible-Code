@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCloudSessionStore } from '../../../src/renderer/stores/cloudSessionStore'
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore'
+import { useProjectStore } from '../../../src/renderer/stores/projectStore'
 
 const sessionApi = {
   list: vi.fn(),
@@ -258,6 +259,58 @@ describe('sessionStore.loadSessions', () => {
     const s = useSessionStore.getState()
     expect(s.currentProjectId).toBe('p2')
     expect(s.sessions.map((x) => x.id)).toEqual(['b1'])
+  })
+
+  describe('abandoned teleports', () => {
+    const link = { sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc', branch: 'session/x' }
+    // The bad state left by a teleport abandoned before Claude saved anything.
+    const stuck = (id: string, extra: Record<string, unknown> = {}) =>
+      S(id, { location: 'local', cloud: { ...link, teleportedAt: '2026-10-21T09:00:00.000Z', localResumeResolved: true }, ...extra })
+    let cloudApi: { discoverLocal: ReturnType<typeof vi.fn>; teleportState: ReturnType<typeof vi.fn> }
+
+    beforeEach(() => {
+      cloudApi = { discoverLocal: vi.fn(async () => null), teleportState: vi.fn(async () => null) }
+      ;(window as any).api.cloudSession = cloudApi
+      useProjectStore.setState({
+        projects: [{ id: 'p1', name: 'acme', repoPath: '/repo', claudeAccountId: 'a1' }],
+        claudeAccounts: [{ id: 'a1', label: 'Work', configDir: '/cfg/work' }],
+      } as any)
+      useCloudSessionStore.setState({ teleports: {} })
+    })
+
+    it('moves a teleported session with no transcript and no Claude session back to the cloud, and saves it', async () => {
+      sessionApi.list.mockResolvedValue([stuck('a')])
+      await useSessionStore.getState().loadSessions('p1')
+      expect(cloudApi.discoverLocal).toHaveBeenCalledWith({
+        worktreePath: '/wt/a',
+        configDir: '/cfg/work',
+        since: '2026-10-21T09:00:00.000Z',
+      })
+      const a = useSessionStore.getState().sessions[0]
+      expect(a.location).toBe('cloud')
+      expect(a.cloud).toEqual({ ...link, teleportIncomplete: true })
+      expect(sessionApi.save).toHaveBeenCalledWith('p1', [expect.objectContaining({ id: 'a', location: 'cloud' })])
+    })
+
+    it('leaves sessions with a transcript, a Claude session, a live run, or no teleport alone', async () => {
+      sessionApi.list.mockResolvedValue([
+        stuck('has-transcript'),
+        stuck('has-agent', { visualAgents: { agent: { claudeSessionId: 'c1', model: 'opus' } } }),
+        stuck('live-run'),
+        stuck('this-run'),
+        S('plain'),
+      ])
+      useCloudSessionStore.setState({ teleports: { 'this-run': 'term-1' } })
+      cloudApi.discoverLocal.mockImplementation(async (o: any) => (o.worktreePath === '/wt/has-transcript' ? 'local-1' : null))
+      cloudApi.teleportState.mockImplementation(async (id: string) => (id === 'live-run' ? { status: 'needs-input' } : null))
+      await useSessionStore.getState().loadSessions('p1')
+      for (const s of useSessionStore.getState().sessions) {
+        expect(s.cloud?.teleportIncomplete).toBeUndefined()
+        if (s.id !== 'plain') expect(s.location).toBe('local')
+      }
+      expect(cloudApi.discoverLocal).toHaveBeenCalledTimes(1)
+      expect(sessionApi.save).not.toHaveBeenCalled()
+    })
   })
 })
 

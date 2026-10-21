@@ -251,16 +251,16 @@ describe('cloud session Agent tab', () => {
     expect(api.finishTeleport).toHaveBeenCalledWith('s1')
   })
 
-  it('hands over when Claude has the conversation but has not saved it: terminal shown, Open in Agent view warns, then a fresh agent', async () => {
+  it('hands over when Claude has the conversation but has not saved it: terminal shown, Open in Agent view warns', async () => {
     await startTeleport()
     emitTeleport({ status: 'needs-input', waiting: 'first-message', steps: ['Validating session', 'Session resumed'] })
     expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText(/saves it locally after your first message/)).toBeTruthy()
-    expect(screen.getByTestId('teleport-finish').getAttribute('title')).toMatch(/starts a fresh agent/)
+    expect(screen.getByTestId('teleport-finish').getAttribute('title')).toMatch(/goes back to the cloud/)
     // After the first message Claude saved it: the button just opens it.
     emitTeleport({ status: 'needs-input', waiting: 'first-message', claudeSessionId: 'local-claude-5', steps: ['Session resumed'] })
     expect(screen.getByText(/Saved locally/)).toBeTruthy()
-    expect(screen.getByTestId('teleport-finish').getAttribute('title')).not.toMatch(/fresh/)
+    expect(screen.getByTestId('teleport-finish').getAttribute('title')).not.toMatch(/back to the cloud/)
   })
 
   it('a stalled teleport says so, with the terminal and a way out', async () => {
@@ -270,18 +270,55 @@ describe('cloud session Agent tab', () => {
     expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: 'Open in Agent view' }))
     expect(api.finishTeleport).toHaveBeenCalledWith('s1')
-    // Ended with nothing saved: the tab starts a fresh visual agent.
+    // Ended with nothing saved: abandoned, back to the cloud page with a retry.
     emitTeleport({ status: 'done', steps: ['Validating session'] })
-    await waitFor(() => expect(screen.getByTestId('visual-agent').dataset.resume).toBe(''))
-    expect(useSessionStore.getState().sessions[0].cloud?.localResumeResolved).toBe(true)
+    await waitFor(() => expect(screen.getByTestId('teleport-incomplete')).toBeTruthy())
+    expect(screen.queryByTestId('visual-agent')).toBeNull()
+    expect(screen.getByTestId('cloud-web-stub')).toBeTruthy()
   })
 
-  it('a teleport that ends early shows why, and can continue as a local agent', async () => {
+  it('an abandoned teleport goes back to the cloud page with a notice, and Teleport again retries', async () => {
+    await startTeleport()
+    emitTeleport({ status: 'needs-input', waiting: 'first-message', steps: ['Session resumed'] })
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Agent view' }))
+    emitTeleport({ status: 'done', steps: ['Session resumed'] })
+    await waitFor(() => expect(screen.getByTestId('teleport-incomplete').textContent).toMatch(
+      /Teleport didn't finish — nothing was saved locally/
+    ))
+    expect(screen.queryByTestId('teleport-progress')).toBeNull()
+    expect(screen.queryByTestId('visual-agent')).toBeNull()
+    expect(screen.getByTestId('cloud-web-stub')).toBeTruthy()
+    expect(screen.getByText('Cloud')).toBeTruthy()
+    expect(screen.getByTestId('cloud-branch').textContent).toBe('session/feat')
+    const s = useSessionStore.getState().sessions[0]
+    expect(s.location).toBe('cloud')
+    expect(s.cloud).toEqual({
+      sessionId: 'session_01abcdefgh',
+      url: 'https://claude.ai/code/session_01abcdefgh',
+      teleportIncomplete: true,
+    })
+    expect(s.visualAgents).toBeUndefined()
+    expect(useCloudSessionStore.getState().teleports).toEqual({})
+
+    // Retry: same confirm and clean-tree check; the notice goes away.
+    api.teleport.mockResolvedValue({ ok: true, terminalId: 'term-teleport-2', state: teleportRun({ terminalId: 'term-teleport-2', startedAt: '2026-10-21T11:00:00.000Z' }) })
+    fireEvent.click(screen.getByRole('button', { name: /Teleport again/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Teleport' }))
+    await waitFor(() => expect(screen.getByTestId('teleport-progress')).toBeTruthy())
+    expect(api.teleport).toHaveBeenCalledTimes(2)
+    const retried = useSessionStore.getState().sessions[0]
+    expect(retried.location).toBe('local')
+    expect(retried.cloud?.teleportedAt).toBe('2026-10-21T11:00:00.000Z')
+    expect(retried.cloud?.teleportIncomplete).toBeUndefined()
+    expect(screen.queryByTestId('teleport-incomplete')).toBeNull()
+  })
+
+  it('a teleport that ends early shows why, and closing it resumes whatever Claude saved', async () => {
     await startTeleport()
     emitTeleport({ status: 'failed', error: 'Teleport ended (exit 1) before the conversation came down:\nnope' })
     expect(screen.getByRole('alert').textContent).toMatch(/before the conversation came down/)
     api.discoverLocal.mockResolvedValue('local-claude-2')
-    fireEvent.click(screen.getByRole('button', { name: 'Continue as local agent' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close teleport' }))
     await waitFor(() => expect(screen.getByTestId('visual-agent').dataset.resume).toBe('local-claude-2'))
     expect(api.discoverLocal).toHaveBeenCalledWith(expect.objectContaining({ since: '2026-10-21T10:00:00.000Z' }))
   })
@@ -411,13 +448,46 @@ describe('session teleported in an earlier run', () => {
     expect(worktree.deleteLocalBranch).not.toHaveBeenCalled()
   })
 
-  it('falls back to a fresh visual agent when nothing is found, and does not retry', async () => {
+  it('goes back to the cloud page (not a fresh agent) when nothing was saved locally', async () => {
     useSessionStore.setState({ sessions: [teleported] } as any)
     api.discoverLocal.mockResolvedValue(null)
     render(<SessionWorkspace />)
-    await waitFor(() => expect(screen.getByTestId('visual-agent').dataset.resume).toBe(''))
-    expect(useSessionStore.getState().sessions[0].cloud?.localResumeResolved).toBe(true)
+    await waitFor(() => expect(screen.getByTestId('teleport-incomplete')).toBeTruthy())
+    expect(screen.queryByTestId('visual-agent')).toBeNull()
+    expect(screen.getByTestId('cloud-web-stub')).toBeTruthy()
+    const s = useSessionStore.getState().sessions[0]
+    expect(s.location).toBe('cloud')
+    expect(s.cloud?.teleportedAt).toBeUndefined()
+    expect(s.cloud?.teleportIncomplete).toBe(true)
     expect(api.discoverLocal).toHaveBeenCalledTimes(1)
+  })
+
+  it('the pool re-adds the claude.ai page once an abandoned teleport is back in the cloud', async () => {
+    const ua = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Chrome/130 Electron/33.4.11')
+    try {
+      useSessionStore.setState({ sessions: [teleported] } as any)
+      api.discoverLocal.mockResolvedValue(null)
+      render(
+        <>
+          <CloudWebPool />
+          <SessionWorkspace />
+        </>
+      )
+      await waitFor(() => expect(screen.getByTestId('cloud-webview').getAttribute('src')).toBe(cloudSession.cloud.url))
+      expect(useCloudWebPoolStore.getState().entries.s1).toBeTruthy()
+    } finally {
+      ua.mockRestore()
+    }
+  })
+
+  it('Dismiss hides the incomplete-teleport notice', async () => {
+    useSessionStore.setState({
+      sessions: [{ ...cloudSession, cloud: { ...cloudSession.cloud, teleportIncomplete: true } }],
+    } as any)
+    render(<SessionWorkspace />)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => expect(screen.queryByTestId('teleport-incomplete')).toBeNull())
+    expect(useSessionStore.getState().sessions[0].cloud?.teleportIncomplete).toBeUndefined()
   })
 })
 
