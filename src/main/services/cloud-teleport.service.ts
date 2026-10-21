@@ -10,19 +10,26 @@
  *
  * Why a PTY and not the visual agent's `-p` stream-json argv: the CLI does
  * accept `--teleport` in print mode (2.1.306 has a `tengu_teleport_print`
- * branch), but there it fails hard on anything it would otherwise ask about,
- * reports failures only to its debug log, and keeps the pulled conversation in
- * memory until the first new turn — so there is no local transcript to show
- * as history until the user has already sent something. The interactive REPL
- * writes the teleported conversation to
- * `<config>/projects/<encoded cwd>/<new uuid>.jsonl` as soon as it loads it.
+ * branch), but there it fails hard on anything it would otherwise ask about
+ * and reports failures only to its debug log.
  *
- * Completion: we poll for that transcript (findTeleportTranscript: newest
- * `.jsonl` since the start that carries a teleport marker). Once it is there
- * and has stopped growing, the REPL is closed (Ctrl-C twice, then a kill) and
- * the run is `done` with the local Claude session id; the renderer resumes it
- * as a visual agent (`--resume <id>`), whose history is rebuilt from that
- * transcript.
+ * Completion: we poll for the teleported transcript (findTeleportTranscript:
+ * newest `.jsonl` since the start that carries a teleport marker). Once it is
+ * there and has stopped growing, the REPL is closed (Ctrl-C twice, then a
+ * kill) and the run is `done` with the local Claude session id; the renderer
+ * resumes it as a visual agent (`--resume <id>`).
+ *
+ * BUT (verified in the 2.1.306 binary): the interactive REPL hands the pulled
+ * rows to its transcript recorder as the *restored* conversation, and the
+ * recorder skips restored messages (`ignore: isAsRestored(...)`) — so nothing
+ * is written to `<config>/projects/<encoded cwd>/` until the conversation
+ * changes, i.e. the user's first message. Waiting on the transcript alone
+ * therefore hangs forever. We also watch the PTY for the REPL being up
+ * ("Session resumed", its "? for shortcuts" footer); if it is up and no
+ * transcript shows within TELEPORT_TRANSCRIPT_WAIT_MS the run goes to
+ * `needs-input` / `first-message` with the terminal revealed. Any run with no
+ * progress for TELEPORT_STALL_MS goes to `needs-input` / `timeout`. Neither
+ * ever closes the REPL on its own once the user may be typing in it.
  *
  * PERMISSIONS: argv from teleportArgv, which spreads the empty
  * AUTO_PERMISSION_MODE_ARGS — never bypass, never --permission-mode.
@@ -45,8 +52,10 @@ export const TELEPORT_PTY_TAB = 'agent'
 
 /** How often to look for the teleported transcript. */
 export const TELEPORT_POLL_MS = 1_000
-/** After the CLI says the session resumed, how long to wait for its transcript before asking the user. */
-export const TELEPORT_TRANSCRIPT_WAIT_MS = 20_000
+/** After the REPL is up, how long to wait for its transcript before handing over to the user. */
+export const TELEPORT_TRANSCRIPT_WAIT_MS = 8_000
+/** With no step, prompt or REPL seen for this long, show the terminal and offer a way out. */
+export const TELEPORT_STALL_MS = 120_000
 /** How long the REPL gets to exit after Ctrl-C before it is killed. */
 export const TELEPORT_EXIT_WAIT_MS = 4_000
 
@@ -54,13 +63,34 @@ const OUTPUT_CAP = 64 * 1024
 
 /* --- reading the PTY (pure) ------------------------------------------------ */
 
-/** Progress lines `claude --teleport` prints (verified strings, 2.1.306). */
-const STEPS: Array<{ re: RegExp; label: string }> = [
-  { re: /Validating session/i, label: 'Validating session' },
-  { re: /Fetching session logs/i, label: 'Fetching session logs' },
-  { re: /Getting branch info/i, label: 'Getting branch info' },
-  { re: /Checking out branch/i, label: 'Checking out branch' },
-  { re: /Session resumed/i, label: 'Session resumed' },
+/**
+ * The CLI's teleport progress view (2.1.306, verified in the binary) lists
+ * all four steps from its first frame — ◯ for steps not reached, a spinner
+ * (◐◓◑◒) on the current one, ✔ on finished ones — so a label alone says
+ * nothing; only a label drawn with a spinner or a tick has been reached.
+ */
+const STEPS: Array<{ label: string }> = [
+  { label: 'Validating session' },
+  { label: 'Fetching session logs' },
+  { label: 'Getting branch info' },
+  { label: 'Checking out branch' },
+]
+/** The step label Session-resumed is reported under (TeleportProgress maps it). */
+export const SESSION_RESUMED_STEP = 'Session resumed'
+
+/** ✔/✓/√ (done) or ◐◓◑◒ (current), then a few non-letters (spaces, the cleared colour codes). */
+const REACHED_MARK = '[✔✓√◐◓◑◒][^A-Za-z\\n]{0,6}'
+const reachedRe = (label: string): RegExp => new RegExp(`${REACHED_MARK}${label.replace(/ /g, '\\s*')}`, 'i')
+
+/**
+ * The REPL is up with the teleported conversation loaded: its "Session
+ * resumed" notice, the bridge notice, or the prompt footer. Spaces are
+ * optional because cursor moves between words are stripped.
+ */
+const READY: RegExp[] = [
+  /Session\s*resumed/i,
+  /its\s*own\s*copy\s*of\s*the\s*session/i,
+  /\?\s*for\s*shortcuts/i,
 ]
 
 /** The CLI is waiting for the user (dialogs and menus it may show). */
@@ -76,14 +106,24 @@ const PROMPTS: RegExp[] = [
   /❯\s*\d+\.\s/,
 ]
 
-/** The steps seen so far, in CLI order, each once. */
+/** The steps reached so far (drawn with a spinner or a tick), in CLI order, each once. */
 export function progressStepsIn(text: string): string[] {
   const plain = stripAnsi(text)
-  return STEPS.filter((s) => s.re.test(plain)).map((s) => s.label)
+  const steps = STEPS.filter((s) => reachedRe(s.label).test(plain)).map((s) => s.label)
+  // A later step reached means the earlier ones are done even if their ticks
+  // were drawn in a frame we only saw part of.
+  const furthest = STEPS.findIndex((s) => s.label === steps.at(-1))
+  const all = furthest < 0 ? [] : STEPS.slice(0, furthest + 1).map((s) => s.label)
+  return replReadyIn(plain) ? [...all, SESSION_RESUMED_STEP] : all
 }
 
-/** The CLI printed that the teleported session is loaded. */
-export const sessionResumedIn = (text: string): boolean => /Session resumed/i.test(stripAnsi(text))
+/** The REPL is up with the teleported conversation (see READY). */
+export const replReadyIn = (text: string): boolean => {
+  const plain = stripAnsi(text)
+  return READY.some((re) => re.test(plain))
+}
+/** @deprecated name kept for callers; same as replReadyIn. */
+export const sessionResumedIn = replReadyIn
 
 const lastIndexOf = (text: string, patterns: RegExp[]): number => {
   let last = -1
@@ -97,13 +137,13 @@ const lastIndexOf = (text: string, patterns: RegExp[]): number => {
 /**
  * Whether the CLI is (still) asking something: a prompt appeared and no
  * progress followed it. Dialogs redraw while shown, so the newest prompt is
- * compared with the newest progress line.
+ * compared with the newest progress line / REPL marker.
  */
 export function awaitingInputIn(text: string): boolean {
   const plain = stripAnsi(text)
   const prompt = lastIndexOf(plain, PROMPTS)
   if (prompt < 0) return false
-  return prompt > lastIndexOf(plain, STEPS.map((s) => s.re))
+  return prompt > lastIndexOf(plain, [...STEPS.map((s) => new RegExp(s.label, 'i')), ...READY])
 }
 
 /* --- runs ------------------------------------------------------------------ */
@@ -123,12 +163,22 @@ interface Run {
   opts: StartTeleportOptions
   window: BrowserWindow
   output: string
-  resumedAt: number | null
+  /** When the REPL was first seen up (READY). */
+  readyAt: number | null
+  /** Last time the PTY showed progress (a new step, a prompt, the REPL). */
+  progressAt: number
   lastSize: number | null
   poll: ReturnType<typeof setInterval> | null
   unwatch?: () => void
   polling: boolean
   exited: boolean
+  /** The user asked to leave the terminal (finishTeleport). */
+  userFinished: boolean
+  /**
+   * The REPL was handed to the user (first-message): from here the run never
+   * closes the terminal on its own — they may be mid-turn in it.
+   */
+  handedOver: boolean
 }
 
 const runs = new Map<string, Run>()
@@ -144,8 +194,10 @@ const live = (run: Run): boolean => runs.get(run.state.sessionId) === run
 
 function update(run: Run, patch: Partial<CloudTeleportState>): void {
   const next = { ...run.state, ...patch }
+  if (next.status !== 'needs-input') delete next.waiting
   const changed =
     next.status !== run.state.status ||
+    next.waiting !== run.state.waiting ||
     next.error !== run.state.error ||
     next.claudeSessionId !== run.state.claudeSessionId ||
     next.steps.join('\n') !== run.state.steps.join('\n')
@@ -191,7 +243,7 @@ function closePty(run: Run): void {
   }, TELEPORT_EXIT_WAIT_MS)
 }
 
-/** The conversation is local: close the PTY; `done` follows on its exit. */
+/** The conversation is local (or the user asked to leave): close the PTY; `done` follows on its exit. */
 function finish(run: Run): void {
   if (run.state.status === 'finishing' || run.state.status === 'done') return
   stopPolling(run)
@@ -202,9 +254,15 @@ function finish(run: Run): void {
 async function settle(run: Run, code: number): Promise<void> {
   const found = await transcriptOf(run).catch(() => null)
   if (!live(run)) return
-  const sure = !!found && (found.marked || run.resumedAt !== null || run.state.status === 'finishing')
+  const sure = !!found && (found.marked || run.readyAt !== null || run.state.status === 'finishing')
   if (found && sure) {
     update(run, { status: 'done', claudeSessionId: found.id, error: undefined })
+    return
+  }
+  if (run.userFinished) {
+    // The user chose the Agent view without a saved transcript: hand over with
+    // no id, and the renderer starts a fresh agent (and says so).
+    update(run, { status: 'done', claudeSessionId: undefined, error: undefined })
     return
   }
   const tail = summarizeCreateFailure(run.output)
@@ -223,7 +281,13 @@ async function tick(run: Run): Promise<void> {
   try {
     const found = await transcriptOf(run).catch(() => null)
     if (!live(run) || run.exited) return
-    if (found && (found.marked || run.resumedAt !== null)) {
+    if (found && (found.marked || run.readyAt !== null)) {
+      if (run.handedOver || run.state.waiting === 'timeout') {
+        // The user may be mid-turn in the terminal: never close it under
+        // them. Record the id; "Open in Agent view" finishes the run.
+        if (run.state.claudeSessionId !== found.id) update(run, { claudeSessionId: found.id })
+        return
+      }
       // Wait for it to stop growing so we do not close the REPL mid-write.
       if (run.lastSize === found.size) {
         update(run, { claudeSessionId: found.id })
@@ -233,10 +297,15 @@ async function tick(run: Run): Promise<void> {
       run.lastSize = found.size
       return
     }
-    if (run.resumedAt !== null && Date.now() - run.resumedAt > TELEPORT_TRANSCRIPT_WAIT_MS && run.state.status !== 'needs-input') {
-      // The CLI says it is loaded but nothing is on disk yet: let the user see
-      // the terminal. Polling continues; finishTeleport can be asked for.
-      update(run, { status: 'needs-input' })
+    if (run.state.status === 'needs-input') return
+    const now = Date.now()
+    if (run.readyAt !== null && now - run.readyAt > TELEPORT_TRANSCRIPT_WAIT_MS) {
+      // The REPL has the conversation, but Claude Code writes it to disk only
+      // once it changes. Show the terminal; the user can carry on there.
+      run.handedOver = true
+      update(run, { status: 'needs-input', waiting: 'first-message' })
+    } else if (run.readyAt === null && now - run.progressAt > TELEPORT_STALL_MS) {
+      update(run, { status: 'needs-input', waiting: 'timeout' })
     }
   } finally {
     run.polling = false
@@ -247,10 +316,22 @@ function onData(run: Run, data: string): void {
   run.output = (run.output + data).slice(-OUTPUT_CAP)
   if (run.state.status !== 'running' && run.state.status !== 'needs-input') return
   const steps = Array.from(new Set([...run.state.steps, ...progressStepsIn(run.output)]))
-  if (run.resumedAt === null && sessionResumedIn(run.output)) run.resumedAt = Date.now()
-  const waiting = awaitingInputIn(run.output)
-  const stalled = run.resumedAt !== null && Date.now() - run.resumedAt > TELEPORT_TRANSCRIPT_WAIT_MS
-  update(run, { steps, status: waiting || (stalled && run.state.status === 'needs-input') ? 'needs-input' : 'running' })
+  const now = Date.now()
+  if (steps.length !== run.state.steps.length) run.progressAt = now
+  if (run.readyAt === null && replReadyIn(run.output)) {
+    run.readyAt = now
+    run.progressAt = now
+  }
+  if (awaitingInputIn(run.output)) {
+    run.progressAt = now
+    update(run, { steps, status: 'needs-input', waiting: 'prompt' })
+    return
+  }
+  // A dialog answered → back to running, or to the hand-over once the REPL
+  // was handed to the user. A timeout clears only once something moves.
+  if (run.handedOver) return update(run, { steps, status: 'needs-input', waiting: 'first-message' })
+  if (run.state.waiting === 'timeout' && run.progressAt !== now) return update(run, { steps })
+  update(run, { steps, status: 'running' })
 }
 
 /**
@@ -289,11 +370,14 @@ export function startTeleport(window: BrowserWindow, opts: StartTeleportOptions)
     opts,
     window,
     output: '',
-    resumedAt: null,
+    readyAt: null,
+    progressAt: Date.now(),
     lastSize: null,
     poll: null,
     polling: false,
     exited: false,
+    userFinished: false,
+    handedOver: false,
   }
   runs.set(opts.sessionId, run)
   run.unwatch = terminalService.watchTerminal(terminalId, {
@@ -314,12 +398,15 @@ export function startTeleport(window: BrowserWindow, opts: StartTeleportOptions)
 
 /**
  * The user asked to switch to the visual agent now (e.g. the transcript is
- * there but the CLI never printed a marker). Closes the PTY; the run settles
- * to `done` if a transcript written since the start exists.
+ * there but the CLI never printed a marker, or the run was handed over).
+ * Closes the PTY; the run settles to `done` with the transcript written since
+ * the start, or — none saved — `done` with no id (the renderer starts a fresh
+ * agent and says why).
  */
 export function finishTeleport(sessionId: string): CloudTeleportState | null {
   const run = runs.get(sessionId)
   if (!run) return null
+  run.userFinished = true
   if (run.exited) {
     if (run.state.status === 'failed' || run.state.status === 'running' || run.state.status === 'needs-input') {
       run.state = { ...run.state, status: 'finishing' }

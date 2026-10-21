@@ -32,11 +32,14 @@ vi.mock('../../../src/main/services/cloud-session.service', async (importOrigina
 import {
   TELEPORT_EXIT_WAIT_MS,
   TELEPORT_POLL_MS,
+  TELEPORT_STALL_MS,
+  TELEPORT_TRANSCRIPT_WAIT_MS,
   _resetTeleportRuns,
   awaitingInputIn,
   finishTeleport,
   getTeleportState,
   progressStepsIn,
+  replReadyIn,
   sessionResumedIn,
   startTeleport,
 } from '../../../src/main/services/cloud-teleport.service'
@@ -64,12 +67,35 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+/** One frame of the CLI's teleport progress view (2.1.306): every step is listed from the start. */
+const frame = (current: number): string =>
+  ['Validating session', 'Fetching session logs', 'Getting branch info', 'Checking out branch']
+    .map((label, i) => `${i < current ? '\x1b[32m✔\x1b[39m' : i === current ? '\x1b[38;5;174m◐\x1b[39m' : '◯'} ${i === current ? `\x1b[1m${label}\x1b[22m` : label}`)
+    .join('\r\n') + '\r\n'
+
 describe('reading the teleport PTY', () => {
-  it('finds the CLI progress steps through ANSI noise, in CLI order', () => {
-    const out = '\x1b[2K\x1b[32m✓\x1b[0m Fetching session logs\r\n\x1b[1mValidating session\x1b[0m…\r\n'
-    expect(progressStepsIn(out)).toEqual(['Validating session', 'Fetching session logs'])
-    expect(sessionResumedIn(out)).toBe(false)
-    expect(sessionResumedIn('⎿ Session resumed')).toBe(true)
+  it('counts only the steps drawn with a spinner or tick — the first frame lists all four', () => {
+    // Root cause of the checklist jumping straight to "Loading the
+    // conversation locally": every label is on screen from the first frame.
+    expect(progressStepsIn(`\x1b[1m◐ Teleporting session…\x1b[22m\r\n${frame(0)}`)).toEqual(['Validating session'])
+    expect(progressStepsIn(frame(2))).toEqual(['Validating session', 'Fetching session logs', 'Getting branch info'])
+    // Cursor-forward between glyph and label still counts.
+    expect(progressStepsIn('\x1b[32m✔\x1b[1CFetching session logs')).toEqual(['Validating session', 'Fetching session logs'])
+  })
+
+  it('knows the REPL is up from "Session resumed" or its prompt footer, even with words run together', () => {
+    expect(replReadyIn(frame(3))).toBe(false)
+    expect(replReadyIn('⎿ Session resumed')).toBe(true)
+    expect(replReadyIn('⎿ Session\x1b[8Gresumed')).toBe(true)
+    expect(replReadyIn('\x1b[2m? for shortcuts\x1b[22m')).toBe(true)
+    expect(sessionResumedIn).toBe(replReadyIn)
+    expect(progressStepsIn(`${frame(3)}⎿ Session resumed`)).toEqual([
+      'Validating session',
+      'Fetching session logs',
+      'Getting branch info',
+      'Checking out branch',
+      'Session resumed',
+    ])
   })
 
   it('treats a prompt as pending until progress follows it', () => {
@@ -93,7 +119,7 @@ describe('a teleport run', () => {
 
   it('reports steps, then closes the REPL once the marked transcript stops growing, and is done with its id', async () => {
     startTeleport(win, opts)
-    pty().onData!('Validating session\r\nFetching session logs\r\n')
+    pty().onData!(frame(1))
     expect(sent.at(-1)).toMatchObject({ status: 'running', steps: ['Validating session', 'Fetching session logs'] })
 
     h.transcript = { id: 'local-1', path: '/p/local-1.jsonl', size: 100, mtime: 1, marked: true }
@@ -136,9 +162,10 @@ describe('a teleport run', () => {
   it('goes to needs-input on a CLI prompt, and back to running once it moves on', () => {
     startTeleport(win, opts)
     pty().onData!('Validating session\r\nWould you like to stash these changes and continue with teleport?\r\n')
-    expect(getTeleportState('s1')?.status).toBe('needs-input')
+    expect(getTeleportState('s1')).toMatchObject({ status: 'needs-input', waiting: 'prompt' })
     pty().onData!('Checking out branch\r\n')
     expect(getTeleportState('s1')?.status).toBe('running')
+    expect(getTeleportState('s1')?.waiting).toBeUndefined()
   })
 
   it('fails with the CLI output tail when the PTY exits before the conversation is local', async () => {
@@ -160,5 +187,67 @@ describe('a teleport run', () => {
     pty().onExit!(0)
     await tick(0)
     expect(getTeleportState('s1')).toMatchObject({ status: 'done', claudeSessionId: 'local-9' })
+  })
+
+  // Root cause (verified in 2.1.306): the REPL loads the teleported rows as
+  // its restored conversation and its transcript recorder skips restored
+  // messages, so nothing reaches disk until the conversation changes. The run
+  // used to wait on the transcript forever ("Loading the conversation
+  // locally" spinning). Now: REPL up + no transcript → hand over to the user.
+  it('hands over to the terminal when the REPL is up but Claude has saved no transcript', async () => {
+    startTeleport(win, opts)
+    pty().onData!(`${frame(3)}\x1b[2J⎿ Session resumed\r\n❯ \r\n? for shortcuts`)
+    expect(getTeleportState('s1')).toMatchObject({ status: 'running' })
+    expect(getTeleportState('s1')?.steps).toContain('Session resumed')
+    await tick(TELEPORT_TRANSCRIPT_WAIT_MS + TELEPORT_POLL_MS)
+    expect(getTeleportState('s1')).toMatchObject({ status: 'needs-input', waiting: 'first-message' })
+    expect(h.writeTerminal).not.toHaveBeenCalled()
+  })
+
+  it('never closes a handed-over REPL on its own; records the transcript id once one is saved', async () => {
+    startTeleport(win, opts)
+    pty().onData!('⎿ Session resumed\r\n')
+    await tick(TELEPORT_TRANSCRIPT_WAIT_MS + TELEPORT_POLL_MS)
+    // The user sends a message; Claude now writes the whole conversation.
+    h.transcript = { id: 'local-7', path: '/p', size: 900, mtime: 1, marked: true }
+    await tick()
+    await tick()
+    await tick()
+    expect(getTeleportState('s1')).toMatchObject({ status: 'needs-input', waiting: 'first-message', claudeSessionId: 'local-7' })
+    expect(h.writeTerminal).not.toHaveBeenCalled()
+    // A permission prompt inside the REPL, then it moves on: still handed over.
+    pty().onData!('Do you want to proceed?\r\n❯ 1. Yes\r\n')
+    expect(getTeleportState('s1')?.waiting).toBe('prompt')
+    pty().onData!('⎿ Session resumed\r\n? for shortcuts')
+    expect(getTeleportState('s1')?.waiting).toBe('first-message')
+    await tick()
+    expect(h.writeTerminal).not.toHaveBeenCalled()
+    // "Open in Agent view".
+    finishTeleport('s1')
+    expect(h.writeTerminal).toHaveBeenCalledWith('term-t', '\x03')
+    pty().onExit!(0)
+    await tick(0)
+    expect(sent.at(-1)).toMatchObject({ status: 'done', claudeSessionId: 'local-7' })
+  })
+
+  it('times out to the terminal when nothing moves, and Open in Agent view then hands over with no id', async () => {
+    startTeleport(win, opts)
+    pty().onData!(frame(1))
+    await tick(TELEPORT_STALL_MS + TELEPORT_POLL_MS)
+    expect(getTeleportState('s1')).toMatchObject({ status: 'needs-input', waiting: 'timeout' })
+    finishTeleport('s1')
+    pty().onExit!(130)
+    await tick(0)
+    const last = sent.at(-1)!
+    expect(last.status).toBe('done')
+    expect(last.claudeSessionId).toBeUndefined()
+  })
+
+  it('clears a timeout once the CLI moves on', async () => {
+    startTeleport(win, opts)
+    await tick(TELEPORT_STALL_MS + TELEPORT_POLL_MS)
+    expect(getTeleportState('s1')?.waiting).toBe('timeout')
+    pty().onData!(frame(2))
+    expect(getTeleportState('s1')).toMatchObject({ status: 'running' })
   })
 })

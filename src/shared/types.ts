@@ -97,6 +97,17 @@ export type CloudTeleportResult =
  */
 export type CloudTeleportStatus = 'running' | 'needs-input' | 'finishing' | 'done' | 'failed'
 
+/**
+ * Why a `needs-input` run is waiting on the user:
+ * - prompt: the CLI is showing a dialog/menu (stash, trust, sign-in, …)
+ * - first-message: the REPL has the conversation loaded but Claude Code only
+ *   saves a teleported conversation to disk once it changes (2.1.306), so
+ *   there is no transcript to resume yet; the user can carry on in the
+ *   terminal, after which "Open in Agent view" picks the transcript up
+ * - timeout: no progress for a long time; the terminal shows what is going on
+ */
+export type CloudTeleportWaiting = 'prompt' | 'first-message' | 'timeout'
+
 /** Snapshot of one teleport run (main process → renderer). */
 export interface CloudTeleportState {
   /** App session id. */
@@ -112,6 +123,8 @@ export interface CloudTeleportState {
   startedAt: string
   /** The local Claude session the teleport wrote, once found. */
   claudeSessionId?: string
+  /** Set with `needs-input`: what the run is waiting for. */
+  waiting?: CloudTeleportWaiting
   error?: string
 }
 
