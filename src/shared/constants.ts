@@ -169,9 +169,6 @@ export const IPC = {
   REVIEW_LOOP_STATE_GET: 'review-loop:state:get',
   REVIEW_LOOP_STATE_UPDATE: 'review-loop:state:update',
 
-  // Claude Web Sessions
-  CLAUDE_WEB_LIST_SESSIONS: 'claude-web:list-sessions',
-
   // Scheduler — queued sessions and queued messages
   SCHEDULER_LIST_QUEUED_SESSIONS: 'scheduler:list-queued-sessions',
   SCHEDULER_ADD_QUEUED_SESSION: 'scheduler:add-queued-session',

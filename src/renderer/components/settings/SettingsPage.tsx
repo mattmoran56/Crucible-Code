@@ -105,25 +105,6 @@ export function SettingsPage() {
     })
   }
 
-  const handleClaudeWebEnabledChange = async (projectId: string, enabled: boolean) => {
-    const project = projects.find((p) => p.id === projectId)
-    if (!project) return
-    await updateProject({
-      ...project,
-      claudeWebEnabled: enabled || undefined,
-    })
-  }
-
-  const handleClaudeWebPrefixChange = async (projectId: string, prefix: string) => {
-    const project = projects.find((p) => p.id === projectId)
-    if (!project) return
-    const trimmed = prefix.trim()
-    await updateProject({
-      ...project,
-      claudeWebBranchPrefix: trimmed || undefined,
-    })
-  }
-
   const handleSaveAndLogin = async () => {
     if (!editingAccount?.label || !editingAccount?.configDir) return
     const newAccount: ClaudeAccount = {
@@ -702,7 +683,7 @@ export function SettingsPage() {
             <Panel visible={activeSection === 'project-defaults'}>
               <SectionHeader
                 title="Project Defaults"
-                description="Per-project Claude account and Claude Web session settings."
+                description="Per-project Claude account settings."
               />
 
               {hasProjects && (
@@ -745,51 +726,6 @@ export function SettingsPage() {
                             </p>
                           ) : null
                         })()}
-                      </div>
-
-                      <div className="border border-border rounded-md" style={{ padding: '12px 14px' }}>
-                        <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-                          <div>
-                            <p className="text-xs font-medium text-text">Claude Web sessions</p>
-                            <p className="text-[11px] text-text-muted">
-                              Surface Claude Code web sessions in the sidebar for this project. Off by default.
-                            </p>
-                          </div>
-                          <label className="flex items-center gap-2 shrink-0 text-xs text-text cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={!!selectedDefaultsProject.claudeWebEnabled}
-                              onChange={(e) => handleClaudeWebEnabledChange(selectedDefaultsProject.id, e.target.checked)}
-                              className="cursor-pointer"
-                            />
-                            Enable
-                          </label>
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <label
-                            htmlFor={`claude-web-prefix-${selectedDefaultsProject.id}`}
-                            className={`text-[11px] shrink-0 ${selectedDefaultsProject.claudeWebEnabled ? 'text-text-muted' : 'text-text-muted opacity-50'}`}
-                          >
-                            Branch prefix
-                          </label>
-                          <input
-                            id={`claude-web-prefix-${selectedDefaultsProject.id}`}
-                            type="text"
-                            disabled={!selectedDefaultsProject.claudeWebEnabled}
-                            defaultValue={selectedDefaultsProject.claudeWebBranchPrefix ?? ''}
-                            placeholder="claude/"
-                            key={selectedDefaultsProject.id}
-                            onBlur={(e) => {
-                              const next = e.target.value.trim()
-                              const current = selectedDefaultsProject.claudeWebBranchPrefix ?? ''
-                              if (next !== current) {
-                                handleClaudeWebPrefixChange(selectedDefaultsProject.id, e.target.value)
-                              }
-                            }}
-                            className={`flex-1 bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent ${selectedDefaultsProject.claudeWebEnabled ? '' : 'opacity-50 cursor-not-allowed'}`}
-                            style={{ padding: '4px 10px' }}
-                          />
-                        </div>
                       </div>
                     </div>
                   )}

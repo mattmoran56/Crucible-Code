@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 /**
  * Extended visual-regression suite covering the stories that the original
  * storybook.spec.ts does not snapshot: DiffViewer, PRConversationTab,
- * RemoteTogglePopover, ClaudeWebSessionCard, the remaining Full-App layout
+ * RemoteTogglePopover, the remaining Full-App layout
  * states, and the remote receiver components. Baselines update with:
  *
  *   npm run test:screenshots:update
@@ -60,16 +60,6 @@ function remotePopoverTargets(): Target[] {
     { name: 'remote-popover-cloud-connected', storyId: 'layout-remotetogglepopover--open-cloud-connected', viewport: v, delay: 300, interact: openToggle },
     { name: 'remote-popover-short-code', storyId: 'layout-remotetogglepopover--open-short-code-mode', viewport: v, delay: 300, interact: openToggle },
     { name: 'remote-popover-require-approval', storyId: 'layout-remotetogglepopover--open-require-approval-on', viewport: v, delay: 300, interact: openToggle },
-  ]
-}
-
-function claudeWebCardTargets(): Target[] {
-  const v = { width: 320, height: 150 }
-  return [
-    { name: 'claude-web-card-default', storyId: 'sessions-claudewebsessioncard--default', viewport: v },
-    { name: 'claude-web-card-opening', storyId: 'sessions-claudewebsessioncard--opening', viewport: v },
-    { name: 'claude-web-card-open-pr', storyId: 'sessions-claudewebsessioncard--with-open-pr', viewport: v },
-    { name: 'claude-web-card-draft-pr', storyId: 'sessions-claudewebsessioncard--with-draft-pr', viewport: v },
   ]
 }
 
@@ -147,7 +137,6 @@ const TARGETS: Target[] = [
   ...diffViewerTargets(),
   ...prConversationTargets(),
   ...remotePopoverTargets(),
-  ...claudeWebCardTargets(),
   ...sessionCardExtraTargets(),
   ...fullAppExtraTargets(),
   ...receiverTargets(),

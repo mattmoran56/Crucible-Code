@@ -13,7 +13,6 @@ import { registerFileHandlers } from './file.ipc'
 import { registerButtonHandlers } from './button.ipc'
 import { registerStartupPromptHandlers } from './startup-prompt.ipc'
 import { registerReviewLoopHandlers } from './review-loop.ipc'
-import { registerClaudeWebHandlers } from './claudeWeb.ipc'
 import { registerSchedulerHandlers } from './scheduler.ipc'
 import { registerNotionHandlers } from './notion.ipc'
 import { registerRemoteHandlers } from './remote.ipc'
@@ -38,7 +37,6 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerButtonHandlers(window)
   registerStartupPromptHandlers()
   registerReviewLoopHandlers(window)
-  registerClaudeWebHandlers()
   registerSchedulerHandlers(window)
   registerNotionHandlers(window)
   registerRemoteHandlers(window)

@@ -15,7 +15,6 @@ import { useWorkspaceLayoutStore, type WorkspaceTab } from '../../stores/workspa
 import { useButtonStore } from '../../stores/buttonStore'
 import { useStartupPromptStore } from '../../stores/startupPromptStore'
 import { useReviewLoopStore } from '../../stores/reviewLoopStore'
-import { useClaudeWebStore } from '../../stores/claudeWebStore'
 import { useVisualAgentStore } from '../../stores/visualAgentStore'
 import type { VisualAgentSnapshot } from '../../../shared/visual-agent'
 
@@ -304,32 +303,6 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     states: reviewLoopStates,
   })
 
-  // Claude Web store — three remote claude/* branches authored by the current
-  // user, sorted newest first. Mirrors what the IPC handler would return.
-  useClaudeWebStore.setState({
-    sessions: [
-      {
-        branchName: 'claude/zen-mendeleev',
-        headSha: 'aaa1111',
-        lastCommitDate: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        authorName: 'Matt Moran',
-      },
-      {
-        branchName: 'claude/eager-darwin',
-        headSha: 'bbb2222',
-        lastCommitDate: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-        authorName: 'Matt Moran',
-      },
-      {
-        branchName: 'claude/wise-curie',
-        headSha: 'ccc3333',
-        lastCommitDate: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
-        authorName: 'Matt Moran',
-      },
-    ],
-    loading: false,
-  })
-
   // Settings store
   if (options.settingsOpen) {
     useSettingsStore.setState({ isOpen: true })
@@ -409,7 +382,6 @@ export function resetStores() {
     loaded: false,
     states: {},
   })
-  useClaudeWebStore.setState({ sessions: [], loading: false })
   useWorkspaceLayoutStore.setState({ columns: [], savedLayouts: {} })
   useVisualAgentStore.setState({ agents: {}, errors: {}, ui: {}, options: {} })
 }
