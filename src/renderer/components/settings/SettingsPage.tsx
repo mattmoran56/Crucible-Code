@@ -116,6 +116,15 @@ export function SettingsPage() {
     })
   }
 
+  const handleVisualAgentsEnabledChange = async (projectId: string, enabled: boolean) => {
+    const project = projects.find((p) => p.id === projectId)
+    if (!project) return
+    await updateProject({
+      ...project,
+      visualAgentsEnabled: enabled || undefined,
+    })
+  }
+
   const handleClaudeWebPrefixChange = async (projectId: string, prefix: string) => {
     const project = projects.find((p) => p.id === projectId)
     if (!project) return
@@ -704,7 +713,7 @@ export function SettingsPage() {
             <Panel visible={activeSection === 'project-defaults'}>
               <SectionHeader
                 title="Project Defaults"
-                description="Per-project Claude account and Claude Web session settings."
+                description="Per-project Claude account, Claude Web session and Visual Agent settings."
               />
 
               {hasProjects && (
@@ -791,6 +800,27 @@ export function SettingsPage() {
                             className={`flex-1 bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent ${selectedDefaultsProject.claudeWebEnabled ? '' : 'opacity-50 cursor-not-allowed'}`}
                             style={{ padding: '4px 10px' }}
                           />
+                        </div>
+                      </div>
+
+                      <div className="border border-border rounded-md" style={{ padding: '12px 14px' }}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-medium text-text">Visual agents</p>
+                            <p className="text-[11px] text-text-muted">
+                              Open agents as a chat interface instead of a terminal (New Visual Agent tab, Terminal | Visual switch on the Agent tab). Off by default.
+                            </p>
+                          </div>
+                          <label className="flex items-center gap-2 shrink-0 text-xs text-text cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              data-testid="visual-agents-toggle"
+                              checked={!!selectedDefaultsProject.visualAgentsEnabled}
+                              onChange={(e) => handleVisualAgentsEnabledChange(selectedDefaultsProject.id, e.target.checked)}
+                              className="cursor-pointer"
+                            />
+                            Enable
+                          </label>
                         </div>
                       </div>
                     </div>

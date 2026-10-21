@@ -11,6 +11,8 @@ export interface Project {
   claudeAccountId?: string
   claudeWebEnabled?: boolean
   claudeWebBranchPrefix?: string
+  /** Opt-in: allow agents in this project to open as a Visual Agent (chat UI over `claude -p`). Off by default. */
+  visualAgentsEnabled?: boolean
 }
 
 export interface ClaudeWebSession {
@@ -47,6 +49,14 @@ export interface Session {
    * instead of opening a real GitHub PR. See `gh-shim.service.ts`.
    */
   captureLocalPr?: boolean
+  /** How the core Agent tab renders: the claude PTY (default) or the Visual Agent chat UI. */
+  agentView?: 'terminal' | 'visual'
+  /**
+   * Visual agents in this session keyed by workspace tab id ('agent' for the
+   * core tab, 'visual-agent:N' for dynamic ones). Persisted so a restart of the
+   * app resumes the same Claude conversation on the same model.
+   */
+  visualAgents?: Record<string, { claudeSessionId: string; model: string }>
 }
 
 export interface Commit {
