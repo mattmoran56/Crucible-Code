@@ -19,6 +19,7 @@
 
 - **Multi-project management** — Open multiple git repos, switch with draggable tabs, per-project notifications
 - **Session isolation** — Each session gets its own git worktree and branch — no conflicts between parallel agents
+- **Cloud sessions & Teleport** — New sessions start in Claude Code on the web by default, so heavy builds and CI-style test runs happen off your machine. Watch and talk to the cloud session from the Agent tab, then hit **Teleport** to pull it down into the local worktree and carry on there
 - **Embedded terminals** — Full xterm.js shell terminals per session, opened from the workspace tab bar
 - **Git integration** — Commit log, changed files, and a GitHub-style syntax-highlighted diff viewer (Shiki) with full-file syntax context, click-anywhere context expansion, per-hunk collapse, and side-by-side or unified modes
 - **PR review panel** — Review pull requests without leaving the IDE: conversation, checks, file tree, inline comments, merge
@@ -226,13 +227,31 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 
 - **Create from scratch** — New branch from any base branch
 - **Cmd+N shortcut** — Opens the New Session dialog from anywhere in the app
-- **Agent tab** — Every session opens on its Agent tab, a visual agent (see **Visual agents** below) running in the worktree
+- **Cloud or local** — The New Session dialog has a **Cloud / Local** toggle. Cloud (the default, configurable per project) runs the agent in Claude Code on the web; Local runs it in the worktree (see **Cloud sessions & Teleport** below)
+- **Agent tab** — Every session opens on its Agent tab: a visual agent (see **Visual agents** below) running in the worktree, or for a cloud session, a terminal attached to the cloud session with a **Teleport** button
+- **Cloud badge** — Sessions running in the cloud show a small **Cloud** badge on their sidebar card
 - **Import existing worktree** — Bring in worktrees created outside CodeCrucible
 - **Open remote branch** — Create a session from a remote branch with autocomplete
 - **Open as main branch** — Temporarily check out a session's branch on the main repo (useful for builds that need the real repo path)
 - **Rename a session** — Give a session a more identifiable name from the card's `⋯` menu; the underlying git branch is renamed to match
 
 ![Rename session dialog](docs/screenshots/rename-session-dialog.png)
+
+</details>
+
+<details>
+<summary><strong>Cloud sessions & Teleport</strong></summary>
+
+Run a session's agent in [Claude Code on the web](https://claude.ai/code) instead of on your machine, watch it from the app, and bring it down locally when you want to test.
+
+- **Cloud by default** — New sessions start in the cloud unless the project's **Settings → Project Defaults → Default session location** is set to **Local**. The New Session dialog's **Cloud / Local** toggle starts from that default; Local behaves exactly as before
+- **Starting one** — The worktree and `session/<name>` branch are created as usual, the branch is pushed to GitHub (`git push -u origin <branch>`, so the cloud VM clones it rather than the default branch), and the cloud session is started from the worktree with `claude -p "<task>" --cloud`. A cloud session needs a task: the chosen startup prompt, or what you type in the dialog's **Task** box. If it fails to start, the error is shown and the worktree is removed
+- **Watching it** — The Agent tab shows a terminal attached to the session (`claude --cloud <id>`), so you can watch it work and send messages. The toolbar shows a **Cloud** badge, the session id and **Open in browser**. If attaching isn't enabled for your account, the tab says so, offers **Open in browser**, and gives you a box to send follow-ups (`claude -p "<message>" --cloud <id>`)
+- **Teleport** — The **Teleport** button asks to confirm, checks the worktree has no uncommitted changes (if it does it lists them and stops; nothing is stashed for you), then runs `claude --teleport <id>` in the same tab, so you watch the session's branch and conversation come down. From there it is an ordinary local Claude session in the worktree, and the session's **Cloud** badge goes away
+- **After a restart** — A teleported session's Agent tab opens as a normal visual agent that resumes the teleported conversation. The app finds that conversation's local transcript under your Claude config's `projects/` directory; if it can't, you get a fresh agent and a notice. The conversation continues, but the visual agent only shows messages from after the teleport
+- **Requirements** — Signed in to claude.ai in the Claude Code CLI (for the project's Claude account), and the repo on GitHub with the Claude GitHub App installed
+- **Scheduled sessions** — Scheduled and Notion-started sessions still run locally
+- **Permissions** — No `--permission-mode` or bypass flag is passed to any of these commands; they run in your default (auto) mode
 
 </details>
 
@@ -256,7 +275,7 @@ Configure per-project prompts that can optionally auto-run in a new session's ag
 <details>
 <summary><strong>Terminal management</strong></summary>
 
-Sessions can open embedded terminals (xterm.js + node-pty) in the worktree directory. The Agent tab itself is a visual agent (see **Visual agents** below), not a terminal.
+Sessions can open embedded terminals (xterm.js + node-pty) in the worktree directory. The Agent tab itself is a visual agent (see **Visual agents** below), not a terminal — except for cloud sessions, whose Agent tab is a terminal attached to the cloud session.
 
 - **New Terminal** — Add shell terminals from the workspace tab bar's **+** menu
 - **Claude terminals elsewhere** — Foreground Claude custom buttons and the interactive review loop still run Claude Code in a terminal you can watch and type into
@@ -271,7 +290,7 @@ Sessions can open embedded terminals (xterm.js + node-pty) in the worktree direc
 
 ![Visual agent](docs/screenshots/visual-agent.png)
 
-The agent interface: a chat UI for Claude Code, driven over `claude -p --input-format stream-json` instead of a terminal. There is no setting — every session's **Agent** tab is a visual agent, and no Claude terminal is spawned for it.
+The agent interface: a chat UI for Claude Code, driven over `claude -p --input-format stream-json` instead of a terminal. There is no setting — every local session's **Agent** tab is a visual agent, and no Claude terminal is spawned for it. (A cloud session's Agent tab is a terminal attached to the cloud session instead; see **Cloud sessions & Teleport**.)
 
 - **Opening one** — Each session's Agent tab starts one (a startup prompt becomes its first message). **New Agent** in the workspace tab bar's **+** menu opens another, labelled **Agent N**; **New Terminal** still opens a plain shell. Agent tabs from layouts saved before this change open as visual agents too
 - **Code workspace** — **New Agent** in the Code (editor) view opens a visual agent in the repo root too. These aren't tied to a session, so they start a fresh conversation after an app restart
