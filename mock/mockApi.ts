@@ -56,6 +56,7 @@ function mockPty(lines: string[]): string {
 const terminalExitCallbacks: Array<(terminalId: string, exitCode: number) => void> = []
 let terminalCounter = 0
 const cloudCreateCallbacks: Array<(state: any) => void> = []
+const cloudTeleportCallbacks: Array<(state: any) => void> = []
 
 function noop() { return () => {} }
 
@@ -522,11 +523,46 @@ export const mockApi = {
       }
     },
     send: async (opts: { cloudSessionId: string }) => ({ sessionId: opts.cloudSessionId, url: `https://claude.ai/code/${opts.cloudSessionId}` }),
-    teleport: async (opts: { cloudSessionId: string }) => ({ ok: true as const, terminalId: mockPty([
-      `\x1b[90m$ claude --teleport ${opts.cloudSessionId}\x1b[0m\r\n`,
-      'Fetching branch from origin…\r\n',
-      'Checked out session branch. Loaded conversation history.\r\n\r\n> ',
-    ]) }),
+    // Teleport: the CLI's steps in a PTY; the run reports them, then 'done'
+    // with a local session id (the Agent tab then resumes it visually).
+    teleport: async (opts: { sessionId: string; projectId?: string; cloudSessionId: string }) => {
+      const terminalId = mockPty([
+        `\x1b[90m$ claude --teleport ${opts.cloudSessionId}\x1b[0m\r\n`,
+        '\x1b[32m✓\x1b[0m Validating session\r\n',
+        '\x1b[32m✓\x1b[0m Fetching session logs\r\n',
+        '\x1b[32m✓\x1b[0m Getting branch info\r\n',
+        '\x1b[32m✓\x1b[0m Checking out branch\r\n',
+        '⎿ Session resumed\r\n',
+      ])
+      const base = {
+        sessionId: opts.sessionId,
+        projectId: opts.projectId,
+        terminalId,
+        startedAt: new Date().toISOString(),
+      }
+      const steps = ['Validating session', 'Fetching session logs', 'Getting branch info', 'Checking out branch', 'Session resumed']
+      const emit = (state: any) => {
+        for (const cb of cloudTeleportCallbacks) cb(state)
+      }
+      steps.forEach((_, i) =>
+        setTimeout(() => emit({ ...base, status: 'running', steps: steps.slice(0, i + 1) }), 400 * (i + 1))
+      )
+      setTimeout(() => emit({ ...base, status: 'finishing', steps }), 400 * (steps.length + 1))
+      setTimeout(
+        () => emit({ ...base, status: 'done', steps, claudeSessionId: '00000000-0000-4000-8000-00000000c10d' }),
+        400 * (steps.length + 2)
+      )
+      return { ok: true as const, terminalId, state: { ...base, status: 'running' as const, steps: [] } }
+    },
+    teleportState: async () => null,
+    finishTeleport: async () => null,
+    onTeleportEvent: (cb: (state: any) => void) => {
+      cloudTeleportCallbacks.push(cb)
+      return () => {
+        const i = cloudTeleportCallbacks.indexOf(cb)
+        if (i >= 0) cloudTeleportCallbacks.splice(i, 1)
+      }
+    },
     discoverLocal: async () => null,
     openUrl: async () => {},
   },
