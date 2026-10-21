@@ -32,6 +32,7 @@
 - **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Pick a variant per project: **Lite**/**Pro** (three fresh sessions per round) or **Efficient** (fresh stacked reviews + one persistent worker that keeps context across rounds — cheaper). Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
 - **Foundry** — Run a whole Notion backlog on autopilot. An interactive foreman Claude plans dependencies; multiple worker sessions run in parallel; each pipeline goes implement → draft PR → review loop → ready. Human reviews code and tests; everything else is automated. See [docs/FOUNDRY.md](docs/FOUNDRY.md)
 - **Local PRs** — A staging stage between a draft branch and an open GitHub PR. Snapshot any session into a viewable, reviewable local PR (or let capture mode intercept the agent's `gh pr create`), then **Promote** it to a real PR. In local-PR mode Foundry builds a chained stack overnight that you publish in one click with **Create PRs** (open → optional local CI → fix-on-failure → ready, in order)
+- **Visual agents** — Opt-in per project: run Claude Code as a chat interface instead of a terminal — rich tool cards with diffs, inline permission and question cards, a sub-agent tray, `/btw` side questions in a fork, a model picker, and conversations that resume across app restarts
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
@@ -265,6 +266,32 @@ Every session gets an embedded terminal (xterm.js + node-pty) that opens in the 
 - **Theme sync** — Terminal colors update when you change the app theme
 - **Claude Code theme** — Separately configurable light/dark theme for the Claude Code CLI
 - **Intervention detection** — Terminal output is scanned for permission prompts and questions, triggering notifications
+
+</details>
+
+<details>
+<summary><strong>Visual agents</strong></summary>
+
+![Visual agent](docs/screenshots/visual-agent.png)
+
+An optional chat interface to Claude Code, driven over `claude -p --input-format stream-json` instead of a terminal. It is **off by default** and enabled per project in **Settings → Project Defaults → Visual agents**; with it off, nothing renders and no process is spawned.
+
+![Visual agents toggle](docs/screenshots/visual-agent-settings.png)
+
+- **Opening one** — Pick **New Visual Agent** from the workspace tab bar's **+** menu, flip the **Terminal | Visual** switch on a session's Agent tab, or tick **Open agent as visual interface** when creating a session (its startup prompt becomes the first message). A visual Agent tab never spawns the Claude terminal; switching back to Terminal stops the visual agent
+- **Model picker** — Choose Opus, Fable, Sonnet or Haiku below the composer (or with `/model`); switching mid-conversation keeps the conversation
+- **Tool cards** — Each tool call is a card: edits render as syntax-highlighted diffs, Bash shows the command and its output, reads and searches collapse into a one-line summary you can expand
+- **Permission and question cards** — When Claude needs approval (or asks a question with options) the card appears inline with Allow / Always allow / Deny, and the status bar switches to **Needs you**
+- **Sub-agents** — Tasks Claude spawns appear in a tray above the composer; click one to open its full thread in a sheet that slides in from the right
+- **`/btw` side questions** — Ask something without derailing the run: `/btw <question>` (or **Ask aside**) forks the conversation into a no-tools side session whose answer slides up over the composer. Nothing it says goes back into the main conversation
+- **Slash menu** — Type `/` for commands: `/btw`, `/model`, `/clear` (fresh conversation), `/compact`, `/init`, `/review`, `/security-review`, `/cost` and more, fuzzy-matched as you type
+- **Stop / interrupt** — `Esc` or **Stop turn** interrupts the current turn; **End session** stops the process; **Restart** brings it back on the same conversation
+- **Resume** — Each visual agent's Claude session id and model are saved on the session, so after an app restart the tab picks up the same conversation (its transcript is replayed from disk)
+- **Permissions** — Runs in your default (auto) permission mode: no `--permission-mode` or bypass flag is ever passed, and the worktree's permission allowlist and hooks are seeded exactly as for terminal agents
+
+![Adding a visual agent tab](docs/screenshots/visual-agent-add-tab.png)
+
+![A /btw side question](docs/screenshots/visual-agent-fork-sheet.png)
 
 </details>
 
