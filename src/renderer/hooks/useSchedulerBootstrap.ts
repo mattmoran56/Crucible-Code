@@ -160,6 +160,14 @@ export async function fireQueuedMessage(item: QueuedMessage): Promise<void> {
   }
 
   const cloud = session.location === 'cloud' ? session.cloud : undefined
+  if (session.location === 'cloud' && !cloud) {
+    // Still being created (or creation failed): there is nothing to send to
+    // yet, and the message must not fall through to a local agent.
+    useToastStore
+      .getState()
+      .addToast('error', `Couldn't send the queued message: the cloud session "${session.name}" hasn't started yet`)
+    return
+  }
   try {
     if (cloud) {
       // A cloud session has no local agent: queue the message to the Claude

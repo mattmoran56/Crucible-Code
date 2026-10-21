@@ -59,5 +59,5 @@ export const sessionDeletesLocalBranch = (session: Pick<Session, 'branchName' | 
   !!session.branchName && (session.branchName.startsWith('session/') || !!session.ownsBranch)
 
 /** Whether renaming the session renames its branch (see sessionStore.renameSession). */
-export const renameMovesBranch = (session: Pick<Session, 'name' | 'branchName' | 'cloud'>): boolean =>
-  !session.cloud && session.branchName === `session/${session.name}`
+export const renameMovesBranch = (session: Pick<Session, 'name' | 'branchName' | 'cloud' | 'cloudPending'>): boolean =>
+  !session.cloud && !session.cloudPending && session.branchName === `session/${session.name}`

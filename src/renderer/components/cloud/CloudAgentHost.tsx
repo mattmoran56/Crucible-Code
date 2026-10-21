@@ -1,7 +1,11 @@
-// Drives a cloud session's Agent tab: shows the claude.ai/code session page
-// embedded, and teleports the session down to the worktree on request.
+// Drives a cloud session's Agent tab: creates the cloud session (a visible
+// `claude --cloud <task>` terminal the user can answer), then shows the
+// claude.ai/code session page embedded, and teleports the session down to the
+// worktree on request.
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import type { CloudCreateState } from '../../../shared/types'
+import { applyCloudCreated } from '../../lib/cloudCreate'
 import { projectConfigDir } from '../../lib/visualAgents'
 import { branchMismatchToast, reconcileTeleportBranch } from '../../lib/teleportBranch'
 import { useCloudSessionStore } from '../../stores/cloudSessionStore'
@@ -21,6 +25,15 @@ export const BRANCH_POLL_MS = 3_000
 export const BRANCH_POLL_WINDOW_MS = 2 * 60_000
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+
+/** Where the user lists their cloud sessions (a create may have gone through unseen). */
+export const CLAUDE_CODE_HOME = 'https://claude.ai/code'
+
+/** Which create phase a pending session is in, from its run (or the lack of one). */
+export function createPhaseFor(run: CloudCreateState | null, starting: boolean): CloudAgentPhase {
+  if (!run) return starting ? 'creating' : 'create-interrupted'
+  return run.status === 'failed' ? 'create-failed' : 'creating'
+}
 
 export function CloudAgentHost({
   sessionId,
@@ -43,6 +56,14 @@ export function CloudAgentHost({
   const [dirtyFiles, setDirtyFiles] = useState<string[]>([])
 
   const cloud = session?.cloud
+  const pending = !!session?.cloudPending && !cloud
+  const createRun = useCloudSessionStore((s) => s.creates[sessionId] ?? null)
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
+  /** After creation: show the still-attached local CLI instead of the page. */
+  const [showCli, setShowCli] = useState(false)
+  const createTerminal = createRun?.terminalId ?? null
+  const cliAttached = !!createRun?.attached && !!createTerminal
 
   const register = useCallback(
     (terminalId: string) => {
@@ -52,6 +73,84 @@ export function CloudAgentHost({
     },
     [sessionId, session?.name]
   )
+
+  // Every create PTY goes into the terminal store so the Agent tab's status
+  // (and the TerminalView) follow it.
+  useEffect(() => {
+    if (createTerminal) register(createTerminal)
+  }, [createTerminal, register])
+
+  const startCreate = useCallback(async () => {
+    const current = useSessionStore.getState().sessions.find((s) => s.id === sessionId)
+    const pendingLink = current?.cloudPending
+    if (!current || !pendingLink || current.cloud) return
+    setStarting(true)
+    setStartError(null)
+    try {
+      const state = await window.api.cloudSession.start({
+        sessionId: current.id,
+        projectId: current.projectId,
+        worktreePath: current.worktreePath,
+        branch: pendingLink.branch,
+        task: pendingLink.task,
+        configDir: projectConfigDir(project, accounts),
+        repoPath: project?.repoPath,
+        claudeTheme: useSettingsStore.getState().claudeTheme,
+      })
+      // An event may already have moved the run on (session found quickly).
+      const known = useCloudSessionStore.getState().creates[sessionId]
+      if (!known || known.terminalId !== state.terminalId || state.status === 'failed') {
+        useCloudSessionStore.getState().setCreate(state)
+      }
+    } catch (err) {
+      setStartError(`Couldn't start the cloud session: ${message(err)}`)
+    } finally {
+      setStarting(false)
+    }
+  }, [sessionId, project, accounts])
+
+  // A pending session: pick up a run already going in the main process (the
+  // tab was remounted), start one if this session was just created, else
+  // (app restarted mid-create) wait for the user — re-running the CLI on its
+  // own could create a second cloud session.
+  const checkedRun = useRef(false)
+  useEffect(() => {
+    if (!pending || checkedRun.current) return
+    checkedRun.current = true
+    void (async () => {
+      let run: CloudCreateState | null = useCloudSessionStore.getState().creates[sessionId] ?? null
+      if (!run) {
+        try {
+          run = (await window.api.cloudSession.createState?.(sessionId)) ?? null
+        } catch {
+          run = null
+        }
+        if (run) useCloudSessionStore.getState().setCreate(run)
+      }
+      if (run) {
+        void applyCloudCreated(run)
+        return
+      }
+      if (useCloudSessionStore.getState().consumeAutoStart(sessionId)) void startCreate()
+    })()
+  }, [pending, sessionId, startCreate])
+
+  const closeCli = useCallback(() => {
+    if (!createTerminal) return
+    // The CLI says detaching leaves the cloud session running.
+    void window.api.terminal.kill(createTerminal)
+    setShowCli(false)
+  }, [createTerminal])
+
+  const openCloudHome = useCallback(() => {
+    void window.api.cloudSession.openUrl(CLAUDE_CODE_HOME)
+  }, [])
+
+  const deleteSession = useCallback(async () => {
+    const current = useSessionStore.getState().sessions.find((s) => s.id === sessionId)
+    if (!current || !project) return
+    await useSessionStore.getState().removeSession(current.projectId, project.repoPath, current.id, { deleteRemoteBranch: true })
+  }, [sessionId, project])
 
   // Once teleported: notice when the local session exits, and check which
   // branch the teleport checked out (it does so early, so poll briefly, and
@@ -155,13 +254,31 @@ export function CloudAgentHost({
   )
 
   if (!session) return null
+  const effectivePhase: CloudAgentPhase = pending
+    ? startError
+      ? 'create-failed'
+      : createPhaseFor(createRun, starting)
+    : phase
+  const createError = startError ?? (createRun?.status === 'failed' ? createRun.error ?? null : null)
+  // The create PTY while creating (and its scrollback after a failure), or
+  // the still-attached CLI when the user asks for it.
+  const shownTerminal =
+    teleportTerminal ?? (pending ? createTerminal : showCli && cliAttached ? createTerminal : null)
   return (
     <CloudAgentPanel
       session={session}
       visible={visible}
-      phase={phase}
-      terminalId={teleportTerminal}
-      error={error}
+      phase={effectivePhase}
+      terminalId={shownTerminal}
+      error={pending ? createError : error}
+      mayExist={pending && !!createRun?.mayExist}
+      onRetryCreate={pending ? () => void startCreate() : undefined}
+      onOpenCloudHome={openCloudHome}
+      onDeleteSession={pending ? deleteSession : undefined}
+      cliAttached={!pending && !teleportTerminal && cliAttached}
+      showingCli={showCli}
+      onToggleCli={() => setShowCli((v) => !v)}
+      onCloseCli={closeCli}
       dirtyFiles={dirtyFiles}
       onOpenInBrowser={openInBrowser}
       onTeleport={() => void teleport()}

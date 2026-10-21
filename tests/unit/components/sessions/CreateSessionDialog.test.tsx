@@ -52,7 +52,6 @@ describe('<CreateSessionDialog> location toggle', () => {
     expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'fix-auth', 'main', 'Fix the auth bug', undefined, {
       branchName: 'session/fix-auth',
       location: 'cloud',
-      configDir: '/cfg/work',
     })
     await waitFor(() => expect(onClose).toHaveBeenCalled())
   })

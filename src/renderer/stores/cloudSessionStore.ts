@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { CloudCreateState } from '../../shared/types'
 import type { BranchMismatch } from '../lib/teleportBranch'
 
 /**
@@ -12,6 +13,12 @@ import type { BranchMismatch } from '../lib/teleportBranch'
  *
  * `branchNotices` holds, per app session, a teleport that landed on a
  * different branch than the app created — shown until dismissed.
+ *
+ * `creates` mirrors the main process's interactive `claude --cloud` create
+ * runs (per app session). `autoStart` marks sessions created in this run whose
+ * Agent tab should start that run on first mount; a pending session without
+ * the mark (e.g. after an app restart) offers Retry instead of re-running the
+ * CLI on its own, which could create a second cloud session.
  */
 interface CloudSessionState {
   teleports: Record<string, string>
@@ -19,6 +26,12 @@ interface CloudSessionState {
   clearTeleport: (sessionId: string) => void
   branchNotices: Record<string, BranchMismatch>
   setBranchNotice: (sessionId: string, notice: BranchMismatch | null) => void
+  creates: Record<string, CloudCreateState>
+  setCreate: (state: CloudCreateState) => void
+  autoStart: Record<string, true>
+  requestAutoStart: (sessionId: string) => void
+  /** True once for a session marked by requestAutoStart. */
+  consumeAutoStart: (sessionId: string) => boolean
 }
 
 export const useCloudSessionStore = create<CloudSessionState>((set) => ({
@@ -38,4 +51,16 @@ export const useCloudSessionStore = create<CloudSessionState>((set) => ({
       const { [sessionId]: _, ...rest } = s.branchNotices
       return { branchNotices: rest }
     }),
+  creates: {},
+  setCreate: (state) => set((s) => ({ creates: { ...s.creates, [state.sessionId]: state } })),
+  autoStart: {},
+  requestAutoStart: (sessionId) => set((s) => ({ autoStart: { ...s.autoStart, [sessionId]: true } })),
+  consumeAutoStart: (sessionId) => {
+    if (!useCloudSessionStore.getState().autoStart[sessionId]) return false
+    set((s) => {
+      const { [sessionId]: _, ...rest } = s.autoStart
+      return { autoStart: rest }
+    })
+    return true
+  },
 }))

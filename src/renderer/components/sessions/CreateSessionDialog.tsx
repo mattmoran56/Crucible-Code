@@ -11,8 +11,6 @@ import {
 import type { Project, QueuedSession, SessionLocation } from '../../../shared/types'
 import { resolveDefaultSessionLocation } from '../../../shared/cloud-session'
 import { defaultSessionBranch, validateBranchName } from '../../../shared/branch-name'
-import { useProjectStore } from '../../stores/projectStore'
-import { projectConfigDir } from '../../lib/visualAgents'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { Dialog } from '../ui/Dialog'
 import { Input } from '../ui/Input'
@@ -50,7 +48,6 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   // The session branch follows the name/location until the user edits it.
   const [branchInput, setBranchInput] = useState('')
   const [branchEdited, setBranchEdited] = useState(false)
-  const claudeAccounts = useProjectStore((s) => s.claudeAccounts)
   const { createSession } = useSessionStore()
   const addQueuedSession = useSchedulerStore((s) => s.addQueuedSession)
   const usageResetDelayMinutes = useSettingsStore((s) => s.usageResetDelayMinutes)
@@ -210,7 +207,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           undefined,
           {
             branchName: branch || undefined,
-            ...(cloud ? { location: 'cloud' as const, configDir: projectConfigDir(project, claudeAccounts) } : {}),
+            ...(cloud ? { location: 'cloud' as const } : {}),
           }
         )
       }
@@ -369,7 +366,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
 
         {creating && cloud && (
           <p className="text-[11px] text-text-muted" role="status">
-            Pushing the branch and starting the cloud session…
+            Creating the worktree — the cloud session starts in its Agent tab…
           </p>
         )}
 

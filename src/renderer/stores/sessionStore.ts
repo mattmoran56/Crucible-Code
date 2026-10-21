@@ -3,6 +3,7 @@ import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocat
 import { useToastStore } from './toastStore'
 import { renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name'
 import { useTerminalStore } from './terminalStore'
+import { useCloudSessionStore } from './cloudSessionStore'
 import { useVisualAgentStore } from './visualAgentStore'
 
 type WorkspaceTab = 'agent' | 'git' | 'pr'
@@ -100,13 +101,13 @@ interface SessionState {
 
 export interface CreateSessionOptions {
   /**
-   * 'cloud' starts the agent in Claude Code on the web: the worktree is
-   * created as usual, its branch pushed, and a cloud session started with the
-   * startup command as its task (required). Default/omitted is 'local'.
+   * 'cloud' runs the agent in Claude Code on the web: the worktree is created
+   * as usual and the session saved with `cloudPending` (the startup command is
+   * its task, required); its Agent tab then pushes the branch and runs the
+   * interactive `claude --cloud` that creates the cloud session. Default/omitted
+   * is 'local'.
    */
   location?: SessionLocation
-  /** Claude config dir for the project's account (cloud only). */
-  configDir?: string | null
   /** Branch to create for the session. Defaults to `session/<name>`. */
   branchName?: string
 }
@@ -244,33 +245,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
 
     if (cloud) {
-      try {
-        const created = await window.api.cloudSession.create({
-          worktreePath: worktreeInfo.path,
-          branch: worktreeInfo.branch,
-          prompt: startupCommand!.trim(),
-          configDir: options?.configDir ?? null,
-        })
-        session.location = 'cloud'
-        session.cloud = {
-          sessionId: created.sessionId,
-          url: created.url,
-          branch: created.branch ?? worktreeInfo.branch,
-        }
-      } catch (err) {
-        // Don't leave a half-made session behind: the user can retry, or
-        // switch the dialog to Local. (A pushed branch stays on origin.)
-        try {
-          await window.api.worktree.remove(repoPath, worktreeInfo.path, { deleteBranch: worktreeInfo.branch })
-        } catch {
-          // Best effort.
-        }
-        throw new Error(`Couldn't start the cloud session: ${err instanceof Error ? err.message : String(err)}`)
+      // Creating the cloud side is interactive (`claude --cloud <task>` in a
+      // PTY), so the session is saved as pending and its Agent tab drives the
+      // CLI until the new session's URL shows up (CloudAgentHost).
+      session.location = 'cloud'
+      session.cloudPending = {
+        task: startupCommand!.trim(),
+        branch: worktreeInfo.branch,
+        createdAt: new Date().toISOString(),
       }
     }
 
     const sessions = sortByCreatedAtDesc([...get().sessions, session])
     await window.api.session.save(projectId, sessions)
+    // Its Agent tab starts the interactive create on first mount.
+    if (cloud) useCloudSessionStore.getState().requestAutoStart(session.id)
     if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
     set({

@@ -1,6 +1,7 @@
 // The Agent tab for a cloud session: a slim toolbar (styled like the visual
-// agent's session bar) over the embedded claude.ai/code session page — and,
-// once teleported, the terminal the session came down into.
+// agent's session bar) over, in turn: the `claude --cloud` terminal that
+// creates the cloud session, the embedded claude.ai/code session page, and —
+// once teleported — the terminal the session came down into.
 
 import React, { useState } from 'react'
 import type { Session } from '../../../shared/types'
@@ -20,6 +21,12 @@ export interface BranchNotice {
 }
 
 export type CloudAgentPhase =
+  /** `claude --cloud <task>` is running in the terminal; no session id yet. */
+  | 'creating'
+  /** The create CLI exited (or the push failed) without a session id. */
+  | 'create-failed'
+  /** A pending session with no create run (the app restarted mid-create). */
+  | 'create-interrupted'
   /** The embedded claude.ai/code page is shown. */
   | 'web'
   /** Checking the worktree before a teleport. */
@@ -59,6 +66,21 @@ export interface CloudAgentPanelProps {
   onCleanupBranch?: (branch: string) => Promise<string>
   /** Force the real <webview> (tests) or its stub (stories). */
   embedWebview?: boolean
+  /** create-failed: Claude was cancelled after sending the request, so a session may exist. */
+  mayExist?: boolean
+  /** Start the interactive create again. */
+  onRetryCreate?: () => void
+  /** Open claude.ai/code (the session list). */
+  onOpenCloudHome?: () => void
+  /** Remove the pending session (worktree, branch). Offered while it has no cloud session. */
+  onDeleteSession?: () => Promise<void> | void
+  /** The create CLI is still running after the session was created. */
+  cliAttached?: boolean
+  /** Whether the attached CLI's terminal is shown instead of the page. */
+  showingCli?: boolean
+  onToggleCli?: () => void
+  /** End the local CLI (the cloud session keeps running). */
+  onCloseCli?: () => void
 }
 
 export function CloudAgentPanel({
@@ -75,6 +97,14 @@ export function CloudAgentPanel({
   branchNotice,
   onCleanupBranch,
   embedWebview,
+  mayExist,
+  onRetryCreate,
+  onOpenCloudHome,
+  onDeleteSession,
+  cliAttached,
+  showingCli,
+  onToggleCli,
+  onCloseCli,
 }: CloudAgentPanelProps) {
   const [confirming, setConfirming] = useState(false)
   const cloud = session.cloud
@@ -145,7 +175,7 @@ export function CloudAgentPanel({
               Cancel
             </button>
           </span>
-        ) : !teleported ? (
+        ) : !teleported && cloud ? (
           <button
             type="button"
             onClick={() => setConfirming(true)}
@@ -165,7 +195,32 @@ export function CloudAgentPanel({
         onOpenInBrowser={cloud ? onOpenInBrowser : undefined}
         onDismissError={onDismissError}
         onOpenLocally={onOpenLocally}
+        mayExist={mayExist}
+        onRetryCreate={onRetryCreate}
+        onOpenCloudHome={onOpenCloudHome}
+        onDeleteSession={onDeleteSession}
       />
+      {cliAttached ? (
+        <div
+          role="status"
+          className="flex shrink-0 items-center gap-2 border-b border-border bg-bg-secondary px-3! py-1! text-[11px] text-text-muted"
+          data-testid="cloud-cli-attached"
+        >
+          <span className="min-w-0 flex-1">
+            Local CLI still attached to this cloud session. Closing it leaves the session running in the cloud.
+          </span>
+          {onToggleCli ? (
+            <button type="button" onClick={onToggleCli} className={BAR_BTN}>
+              {showingCli ? 'Show claude.ai' : 'Show terminal'}
+            </button>
+          ) : null}
+          {onCloseCli ? (
+            <button type="button" onClick={onCloseCli} className={BAR_BTN}>
+              Close
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {branchNotice ? <BranchNoticeBar notice={branchNotice} onCleanup={onCleanupBranch} /> : null}
 
       {terminalId ? (
@@ -179,6 +234,43 @@ export function CloudAgentPanel({
         <div className="relative min-h-0 flex-1" />
       )}
     </div>
+  )
+}
+
+/** Delete a pending session (worktree + branch), after a confirm. */
+function DeleteSessionButton({ onDelete }: { onDelete: () => Promise<void> | void }) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)} className={BAR_BTN}>
+        Delete session…
+      </button>
+    )
+  }
+  return (
+    <span className="flex items-center gap-1" role="group" aria-label="Confirm delete session">
+      <span>Delete the worktree and branch?</span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true)
+          try {
+            await onDelete()
+          } finally {
+            setBusy(false)
+            setConfirming(false)
+          }
+        }}
+        className={TELEPORT_BTN}
+      >
+        {busy ? <Spinner /> : null} Delete
+      </button>
+      <button type="button" onClick={() => setConfirming(false)} disabled={busy} className={BAR_BTN}>
+        Cancel
+      </button>
+    </span>
   )
 }
 
@@ -236,6 +328,9 @@ function BranchNoticeBar({ notice, onCleanup }: { notice: BranchNotice; onCleanu
 
 function PhaseLabel({ phase }: { phase: CloudAgentPhase }) {
   const text: Partial<Record<CloudAgentPhase, string>> = {
+    creating: 'starting cloud session…',
+    'create-failed': 'not started',
+    'create-interrupted': 'not started',
     'teleport-checking': 'checking worktree…',
     teleported: 'running locally',
     'teleport-ended': 'local session ended',
@@ -256,6 +351,10 @@ function Banner({
   onOpenInBrowser,
   onDismissError,
   onOpenLocally,
+  mayExist,
+  onRetryCreate,
+  onOpenCloudHome,
+  onDeleteSession,
 }: {
   phase: CloudAgentPhase
   error?: string | null
@@ -263,6 +362,10 @@ function Banner({
   onOpenInBrowser?: () => void
   onDismissError: () => void
   onOpenLocally?: () => void
+  mayExist?: boolean
+  onRetryCreate?: () => void
+  onOpenCloudHome?: () => void
+  onDeleteSession?: () => Promise<void> | void
 }) {
   let tone: 'danger' | 'info' = 'info'
   let body: React.ReactNode = null
@@ -273,7 +376,48 @@ function Banner({
     </button>
   ) : null
 
+  const createActions = (retryLabel: string) => (
+    <>
+      {onRetryCreate ? (
+        <button type="button" onClick={onRetryCreate} className={TELEPORT_BTN}>
+          {retryLabel}
+        </button>
+      ) : null}
+      {onOpenCloudHome ? (
+        <button type="button" onClick={onOpenCloudHome} className={BAR_BTN}>
+          <ExternalIcon size={11} /> Open claude.ai/code
+        </button>
+      ) : null}
+      {onDeleteSession ? <DeleteSessionButton onDelete={onDeleteSession} /> : null}
+    </>
+  )
+
   switch (phase) {
+    case 'creating':
+      body = 'Starting the cloud session. Answer anything Claude asks in the terminal below; this tab switches to claude.ai once the session exists.'
+      break
+    case 'create-failed':
+      tone = 'danger'
+      body = (
+        <>
+          <span className="block whitespace-pre-wrap font-mono text-[10.5px]">
+            {error ?? 'Claude did not create a cloud session.'}
+          </span>
+          {mayExist ? (
+            <span className="mt-1 block">
+              Claude was stopped after sending the request, so the session may exist anyway. Check claude.ai/code before retrying.
+            </span>
+          ) : null}
+          <span className="mt-1 block text-text-muted">The worktree and branch are kept.</span>
+        </>
+      )
+      actions = createActions('Retry')
+      break
+    case 'create-interrupted':
+      body =
+        'This cloud session was never confirmed: the app closed before Claude reported it. If it started, it is listed on claude.ai/code. Otherwise start it again.'
+      actions = createActions('Retry start')
+      break
     case 'teleport-blocked':
       tone = 'danger'
       body = (

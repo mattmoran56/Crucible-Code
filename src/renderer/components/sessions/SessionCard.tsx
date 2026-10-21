@@ -95,7 +95,7 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
   const [renameError, setRenameError] = useState<string | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [deleteRemote, setDeleteRemote] = useState(false)
-  const remoteBranch = session.cloud ? sessionRemoteBranch(session) : undefined
+  const remoteBranch = session.cloud || session.cloudPending ? sessionRemoteBranch(session) : undefined
   const deletesLocalBranch = sessionDeletesLocalBranch(session)
   const movesBranch = renameMovesBranch(session)
 
