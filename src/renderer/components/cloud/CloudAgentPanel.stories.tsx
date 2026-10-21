@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import type { Session } from '../../../shared/types'
+import type { CloudTeleportState, Session } from '../../../shared/types'
 import { CloudAgentPanel, type BranchNotice, type CloudAgentPhase } from './CloudAgentPanel'
 
 /** A fixed cloud session — no clock-dependent fields, so baselines stay stable. */
@@ -54,14 +54,23 @@ const TRANSCRIPTS = {
   ],
   teleport: [
     '\x1b[90m$ claude --teleport session_01Hx7QmCloudDemo\x1b[0m\r\n',
-    'Fetching branch from origin…\r\n',
-    'Checked out session branch. Loaded conversation history.\r\n\r\n> ',
+    '\x1b[32m✓\x1b[0m Validating session\r\n',
+    '\x1b[32m✓\x1b[0m Fetching session logs\r\n',
+    '\x1b[33m⠋\x1b[0m Getting branch info\r\n',
+  ],
+  teleportStash: [
+    '\x1b[90m$ claude --teleport session_01Hx7QmCloudDemo\x1b[0m\r\n',
+    '\x1b[32m✓\x1b[0m Validating session\r\n\r\n',
+    '\x1b[1mWorking directory has changes\x1b[0m\r\n',
+    'Teleport will switch git branches. The following changes were found:\r\n  M src/auth/session.ts\r\n\r\n',
+    'Would you like to stash these changes and continue with teleport?\r\n',
+    '\x1b[36m❯ 1. Stash changes and continue\x1b[0m\r\n',
+    '  2. Exit\r\n',
   ],
   teleportEnded: [
     '\x1b[90m$ claude --teleport session_01Hx7QmCloudDemo\x1b[0m\r\n',
-    'Checked out session branch. Loaded conversation history.\r\n\r\n',
-    '\x1b[1m●\x1b[0m Done — the refresh token is now rotated on every use.\r\n',
-    '\x1b[90mSession ended.\x1b[0m\r\n',
+    '\x1b[32m✓\x1b[0m Validating session\r\n',
+    "\x1b[31mError: You must run claude --teleport session_01Hx7QmCloudDemo from a checkout of acme/web.\x1b[0m\r\n",
   ],
 } satisfies Record<string, string[]>
 
@@ -87,6 +96,8 @@ interface StoryProps {
   mayExist?: boolean
   /** The create CLI is still attached after the session was created. */
   cliAttached?: boolean
+  /** The main process's teleport run, for the Teleporting… view. */
+  teleportRun?: Pick<CloudTeleportState, 'status' | 'steps'> & { error?: string }
 }
 
 /** Spawns a fake PTY for the transcript (if any), then mounts the panel. */
@@ -101,6 +112,7 @@ function Harness({
   failLoad,
   mayExist,
   cliAttached,
+  teleportRun,
 }: StoryProps) {
   const [terminalId, setTerminalId] = useState<string | null>(null)
   const [ready, setReady] = useState(!transcript)
@@ -126,6 +138,12 @@ function Harness({
         visible
         phase={phase}
         terminalId={terminalId}
+        teleportRun={
+          teleportRun && terminalId
+            ? { sessionId: session.id, terminalId, startedAt: '2026-10-21T08:45:00.000Z', ...teleportRun }
+            : null
+        }
+        onFinishTeleport={noop}
         error={error}
         dirtyFiles={dirtyFiles}
         onOpenInBrowser={noop}
@@ -214,14 +232,36 @@ export const TeleportBlocked: Story = {
   },
 }
 
-/** Pulled down to the worktree — now the live local Claude session. */
+/** Teleporting: the CLI's steps over its (collapsed) terminal. Then the tab becomes the visual agent. */
 export const Teleported: Story = {
-  args: { session: TELEPORTED_SESSION, phase: 'teleported', transcript: 'teleport' },
+  args: {
+    session: TELEPORTED_SESSION,
+    phase: 'teleported',
+    transcript: 'teleport',
+    teleportRun: { status: 'running', steps: ['Validating session', 'Fetching session logs'] },
+  },
 }
 
-/** The teleported (now local) Claude session exited. */
+/** The CLI stopped to ask something: the terminal is revealed so the user can answer. */
+export const TeleportNeedsInput: Story = {
+  args: {
+    session: TELEPORTED_SESSION,
+    phase: 'teleported',
+    transcript: 'teleportStash',
+    teleportRun: { status: 'needs-input', steps: ['Validating session'] },
+  },
+}
+
+/** The teleport ended before the conversation came down. */
 export const TeleportEnded: Story = {
-  args: { session: TELEPORTED_SESSION, phase: 'teleport-ended', transcript: 'teleportEnded' },
+  args: {
+    session: TELEPORTED_SESSION,
+    phase: 'teleport-ended',
+    transcript: 'teleportEnded',
+    error:
+      'Teleport ended (exit 1) before the conversation came down:\nError: You must run claude --teleport session_01Hx7QmCloudDemo from a checkout of acme/web.',
+    teleportRun: { status: 'failed', steps: ['Validating session'] },
+  },
 }
 
 /** The teleport checked out another branch: the session follows it; cleanup is offered. */
@@ -230,6 +270,7 @@ export const TeleportBranchChanged: Story = {
     session: { ...TELEPORTED_SESSION, branchName: 'claude/fix-auth-refresh-x7Qm' },
     phase: 'teleported',
     transcript: 'teleport',
+    teleportRun: { status: 'running', steps: ['Validating session', 'Fetching session logs', 'Getting branch info', 'Checking out branch'] },
     branchNotice: { expected: 'session/fix-auth-refresh', actual: 'claude/fix-auth-refresh-x7Qm' },
   },
 }
