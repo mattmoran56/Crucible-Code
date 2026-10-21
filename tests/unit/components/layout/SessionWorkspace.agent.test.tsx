@@ -9,7 +9,7 @@ import type { VisualAgentStartOptions } from '../../../../src/shared/visual-agen
 
 vi.mock('../../../../src/renderer/components/visual-agent/VisualAgentPanel', () => ({
   VisualAgentPanel: ({ agentId, startOptions, visible }: { agentId: string; startOptions: VisualAgentStartOptions; visible: boolean }) => (
-    <div data-testid="visual-agent" data-agent={agentId} data-prompt={startOptions.initialPrompt ?? ''} data-visible={String(visible)} />
+    <div data-testid="visual-agent" data-agent={agentId} data-prompt={startOptions.initialPrompt ?? ''} data-resume={startOptions.resumeClaudeSessionId ?? ''} data-visible={String(visible)} />
   ),
 }))
 vi.mock('../../../../src/renderer/components/terminal/DynamicTerminalPanel', () => ({
@@ -113,5 +113,25 @@ describe('<SessionWorkspace> agent tabs', () => {
     expect(agents().find((el) => el.dataset.agent === 's1:agent:3')!.dataset.visible).toBe('true')
     expect(screen.queryByTestId('dynamic-terminal')).toBeNull()
     expect(terminalSpawn).not.toHaveBeenCalled()
+  })
+
+  it('resumes each agent tab on the conversation saved under its own tab key', () => {
+    useSessionStore.setState({
+      sessions: [
+        {
+          ...session,
+          visualAgents: {
+            agent: { claudeSessionId: 'cs-core', model: 'claude-opus-5-5' },
+            'agent:3': { claudeSessionId: 'cs-three', model: 'claude-opus-5-5' },
+          },
+        },
+      ],
+    } as any)
+    useWorkspaceLayoutStore.setState({
+      savedLayouts: { s1: [{ id: 'c9', tabs: ['agent', 'agent:3'] as WorkspaceTab[], activeTab: 'agent' as WorkspaceTab, flex: 1 }] },
+    })
+    render(<SessionWorkspace />)
+    const resume = Object.fromEntries(agents().map((el) => [el.dataset.agent, el.dataset.resume]))
+    expect(resume).toEqual({ 's1:agent': 'cs-core', 's1:agent:3': 'cs-three' })
   })
 })
