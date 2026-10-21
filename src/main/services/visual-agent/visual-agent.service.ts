@@ -464,10 +464,24 @@ export async function startVisualAgent(opts: VisualAgentStartOptions): Promise<V
   const existing = agents.get(opts.agentId)
   if (existing) {
     await existing.ready
-    if (isAlive(existing.child) || existing.state === 'starting') return snapshotOf(existing)
+    // A stop is in flight (e.g. Restart): let the old process go before respawning.
+    if (existing.stopping && existing.child && isAlive(existing.child)) await waitForExit(existing.child, 3000)
+    if (isAlive(existing.child) || (existing.state === 'starting' && existing.child)) return snapshotOf(existing)
+    if (opts.fresh) {
+      // "Clear": a new Claude conversation on the same agent id.
+      existing.claudeSessionId = null
+      existing.events = []
+      existing.partials.clear()
+      existing.lastPartialId = null
+      existing.usage = null
+      existing.forks = []
+      existing.asks.clear()
+      existing.ctx.lastSession = null
+      existing.writer = new TranscriptWriter(transcriptDir())
+    }
     // The process ended (stopped, crashed, or app restarted it away): bring it
     // back on the same conversation without replaying what we already hold.
-    existing.opts = { ...existing.opts, ...opts }
+    existing.opts = { ...existing.opts, ...opts, fresh: undefined, initialPrompt: null }
     if (opts.model && isValidModel(opts.model)) existing.model = opts.model
     prepWorktree(existing.opts)
     spawnMain(existing)

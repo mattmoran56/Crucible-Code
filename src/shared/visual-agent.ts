@@ -84,4 +84,10 @@ export interface VisualAgentStartOptions {
   resumeClaudeSessionId?: string | null
   claudeConfigDir?: string | null
   initialPrompt?: string | null
+  /**
+   * Restart only: when the agent already exists but its process has ended,
+   * drop the held conversation and begin a new Claude session instead of
+   * resuming the old one.
+   */
+  fresh?: boolean
 }

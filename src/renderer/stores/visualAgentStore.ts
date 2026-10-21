@@ -201,6 +201,13 @@ interface VisualAgentStoreState {
   stop: (agentId: string) => Promise<void>
   /** Stop and start again, resuming the same Claude conversation unless `fresh`. */
   restart: (agentId: string, fresh?: boolean) => Promise<void>
+  /**
+   * Stop an agent and forget this renderer's hold on it, so a later
+   * `ensureStarted` (tab reopened, view switched back) respawns it.
+   */
+  release: (agentId: string) => Promise<void>
+  /** Release every agent started for a session (session deleted). */
+  releaseSession: (sessionId: string) => Promise<void>
   answer: (
     agentId: string,
     requestId: string,
@@ -220,6 +227,8 @@ let unsubscribe: (() => void) | null = null
 const inFlight = new Map<string, Promise<void>>()
 /** Agents this renderer has fetched a snapshot for (frames alone don't count). */
 const started = new Set<string>()
+/** Agents stopped by `release`, to be respawned (not just re-read) when started again. */
+const released = new Set<string>()
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
@@ -250,7 +259,11 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
     subscribe()
     try {
       const existing = await bridge.getState(opts.agentId)
-      const snap = existing ?? (await bridge.start(opts))
+      // An agent this renderer released (tab closed, view switched) comes back
+      // on its conversation rather than as an ended transcript.
+      const revive = existing !== null && released.has(opts.agentId) && (existing.state === 'done' || existing.state === 'failed')
+      released.delete(opts.agentId)
+      const snap = existing && !revive ? existing : await bridge.start(opts)
       started.add(opts.agentId)
       set((s) => ({ agents: { ...s.agents, [opts.agentId]: mergeSnapshot(s.agents[opts.agentId], snap) } }))
     } catch (error) {
@@ -341,12 +354,45 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
         return { agents, errors: { ...s.errors, [agentId]: null } }
       })
       const resume = fresh ? null : (snap?.claudeSessionId ?? opts.resumeClaudeSessionId ?? null)
-      await startFresh({
-        ...opts,
-        model: snap?.model ?? opts.model,
-        resumeClaudeSessionId: resume,
-        initialPrompt: null,
-      })
+      const bridge = api()
+      if (!bridge) return
+      subscribe()
+      try {
+        // Straight to start: the main process respawns an ended agent (and
+        // drops its conversation when `fresh`), where getState would only
+        // hand back the ended transcript.
+        const next = await bridge.start({
+          ...opts,
+          model: snap?.model ?? opts.model,
+          resumeClaudeSessionId: resume,
+          initialPrompt: null,
+          fresh,
+        })
+        started.add(agentId)
+        set((s) => ({ agents: { ...s.agents, [agentId]: mergeSnapshot(s.agents[agentId], next) } }))
+      } catch (error) {
+        fail(agentId, error)
+        patchSnap(agentId, (held) => ({ ...held, state: 'failed' }))
+      }
+    },
+
+    release: async (agentId) => {
+      const wasHeld = started.has(agentId) || inFlight.has(agentId) || !!get().options[agentId]
+      started.delete(agentId)
+      if (!wasHeld) return
+      released.add(agentId)
+      try {
+        await api()?.stop(agentId)
+      } catch {
+        /* already gone */
+      }
+    },
+
+    releaseSession: async (sessionId) => {
+      const ids = Object.values(get().options)
+        .filter((opts) => opts.sessionId === sessionId)
+        .map((opts) => opts.agentId)
+      await Promise.all(ids.map((id) => get().release(id)))
     },
 
     answer: async (agentId, requestId, decision, answers) => {
