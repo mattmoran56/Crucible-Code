@@ -22,6 +22,7 @@ import {
   stopNotificationServer,
   setLocalPRCapture,
   registerContextMapping,
+  VISUAL_AGENT_HOOK_TAB,
   removeContextMapping,
   type LocalPRCaptureArgs,
 } from '../../../src/main/services/notification-server'
@@ -146,6 +147,15 @@ describe('notification-server /local-pr endpoint', () => {
     setLocalPRCapture(async () => ({ ok: true, view_b64: 'Zm9v' } as any))
     const res = await post('/local-pr?context=ctx-1&tab=agent', { action: 'view', json: 'number' })
     expect(res.json.view_b64).toBe('Zm9v')
+  })
+
+  it('routes /hook events to the tab, but drops ones from visual-agent processes', async () => {
+    const received: string[] = []
+    const off = onHookEvent((e) => received.push(`${e.contextId}|${e.tabId}|${e.hookType}`))
+    await post('/hook?type=stop&context=ctx-1&tab=agent:2', { cwd: '/wt' })
+    await post(`/hook?type=stop&context=ctx-1&tab=${VISUAL_AGENT_HOOK_TAB}`, { cwd: '/wt' })
+    off()
+    expect(received).toEqual(['ctx-1|agent:2|stop'])
   })
 
   it('503s when no capture handler is registered', async () => {

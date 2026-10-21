@@ -29,7 +29,9 @@ import {
   type VisualAgentSnapshot,
   type VisualAgentStartOptions,
 } from '../../../shared/visual-agent'
+import type { HookType } from '../../../shared/types'
 import { emitToRenderer } from '../event-bus'
+import { handleHookEvent, VISUAL_AGENT_HOOK_TAB } from '../notification-server'
 import { killChildTree } from '../claude-headless.service'
 import { writeClaudeHookSettings } from '../hook.service'
 import { seedPermissions, startWatching } from '../permission-sync.service'
@@ -123,10 +125,43 @@ function emit(held: LiveAgent, frame: VisualAgentFrame): void {
   emitToRenderer(mainWindow, IPC.VISUAL_AGENT_FRAME, held.agentId, frame)
 }
 
+/**
+ * Which tab-status event a run-state transition means, in the same vocabulary
+ * as the Claude Code hooks terminals use (prompt → working, notification →
+ * needs attention, stop → done). Visual agents report from their run state
+ * instead of hooks: permission and AskUserQuestion prompts go over stdio
+ * (`--permission-prompt-tool stdio`), so the Notification hook never fires.
+ */
+export function hookTypeForTransition(
+  prev: VisualAgentRunState,
+  next: VisualAgentRunState
+): HookType | null {
+  if (prev === next) return null
+  // Includes needs-input → running: answering the last ask resumes the turn
+  // and clears the attention dot.
+  if (next === 'running') return 'prompt'
+  if (next === 'needs-input') return 'notification'
+  if (next === 'idle' && (prev === 'running' || prev === 'needs-input')) return 'stop'
+  return null
+}
+
+/** The workspace tab an agent lives in: agentId is `${sessionId}:${tabKey}`. */
+export function workspaceTabId(opts: Pick<VisualAgentStartOptions, 'agentId' | 'sessionId'>): string {
+  const prefix = `${opts.sessionId}:`
+  return opts.agentId.startsWith(prefix) ? opts.agentId.slice(prefix.length) : opts.agentId
+}
+
+function reportStatus(held: LiveAgent, prev: VisualAgentRunState, next: VisualAgentRunState): void {
+  const hookType = hookTypeForTransition(prev, next)
+  if (hookType) handleHookEvent(held.opts.sessionId, workspaceTabId(held.opts), hookType)
+}
+
 function setState(held: LiveAgent, state: VisualAgentRunState): void {
   if (held.state === state) return
+  const prev = held.state
   held.state = state
   emit(held, { t: 'state', state, turnStartedAt: held.turnStartedAt })
+  reportStatus(held, prev, state)
 }
 
 function pushEvents(held: LiveAgent, events: VisualAgentEvent[]): void {
@@ -179,9 +214,11 @@ export function buildEnv(opts: VisualAgentStartOptions): NodeJS.ProcessEnv {
   } else {
     delete env.CLAUDE_CONFIG_DIR
   }
-  // Hook routing: the hook curl expands these to attribute events to this tab.
+  // The worktree's hooks still run inside this process. Tab status comes from
+  // the run state (see reportStatus), so tag hook calls with a sentinel tab
+  // the notification server drops rather than double-reporting.
   env.CRUCIBLE_CONTEXT_ID = opts.sessionId
-  env.CRUCIBLE_TAB_ID = opts.agentId
+  env.CRUCIBLE_TAB_ID = VISUAL_AGENT_HOOK_TAB
   return env
 }
 
@@ -313,8 +350,10 @@ function handleLine(held: LiveAgent, parsed: unknown, raw: string): void {
       clearAllPartials(held)
       held.turnStartedAt = null
       // Always emit: turnStartedAt changed even if state did not.
+      const prev = held.state
       held.state = 'idle'
       emit(held, { t: 'state', state: 'idle', turnStartedAt: null })
+      reportStatus(held, prev, 'idle')
     }
   }
 }
@@ -569,8 +608,10 @@ export function sendVisualAgentMessage(agentId: string, text: string): void {
   }
   writeOut(held, userMessageFrame(text))
   held.turnStartedAt = nowIso()
+  const prev = held.state
   held.state = 'running'
   emit(held, { t: 'state', state: 'running', turnStartedAt: held.turnStartedAt })
+  reportStatus(held, prev, 'running')
 }
 
 export function interruptVisualAgent(agentId: string): void {

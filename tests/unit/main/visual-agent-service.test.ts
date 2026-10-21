@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const h = vi.hoisted(() => {
-  const s: any = { spawnCalls: [], children: [], frames: [], userData: '' }
+  const s: any = { spawnCalls: [], children: [], frames: [], hooks: [], userData: '' }
   s.makeChild = () => {
     const listeners: Record<string, Function[]> = {}
     const on = (key: string) => (e: string, cb: Function) => ((listeners[`${key}${e}`] ??= []).push(cb))
@@ -61,6 +61,11 @@ vi.mock('../../../src/main/services/event-bus', () => ({
     h.frames.push({ channel, agentId, frame }),
 }))
 
+vi.mock('../../../src/main/services/notification-server', () => ({
+  VISUAL_AGENT_HOOK_TAB: '__visual-agent__',
+  handleHookEvent: (contextId: string, tabId: string, hookType: string) => h.hooks.push({ contextId, tabId, hookType }),
+}))
+
 import * as svc from '../../../src/main/services/visual-agent/visual-agent.service'
 import { writeClaudeHookSettings } from '../../../src/main/services/hook.service'
 import { seedPermissions, startWatching } from '../../../src/main/services/permission-sync.service'
@@ -89,6 +94,7 @@ beforeEach(() => {
   h.spawnCalls = []
   h.children = []
   h.frames = []
+  h.hooks = []
   h.userData = mkdtempSync(join(root, 'ud-'))
   vi.mocked(writeClaudeHookSettings).mockClear()
 })
@@ -106,7 +112,9 @@ describe('visual agent service', () => {
     expect(opts.env.CLAUDE_CONFIG_DIR).not.toMatch(/^~/)
     expect(opts.env.CLAUDE_CONFIG_DIR).toMatch(/\.claude-personal$/)
     expect(opts.env.CRUCIBLE_CONTEXT_ID).toBe('session-1')
-    expect(opts.env.CRUCIBLE_TAB_ID).toBe('agent-1')
+    // Hook calls from the process are tagged with the sentinel tab the
+    // notification server drops; status comes from the run state instead.
+    expect(opts.env.CRUCIBLE_TAB_ID).toBe('__visual-agent__')
     expect(writeClaudeHookSettings).toHaveBeenCalledWith('/wt', 'dark', 'session-1')
     expect(seedPermissions).toHaveBeenCalledWith('/repo', '/wt')
     expect(startWatching).toHaveBeenCalledWith('/repo', '/wt')
@@ -208,6 +216,41 @@ describe('visual agent service', () => {
     expect(events().at(-1)).toMatchObject({ kind: 'ask-result', id: 'req-9', decision: 'always' })
     expect(svc.getVisualAgentState('agent-1')!.state).toBe('running')
     expect(() => svc.answerVisualAgent('agent-1', 'req-9', 'allow')).toThrow(/no longer waiting/)
+  })
+
+  it('reports tab status for the workspace tab from the run state', async () => {
+    await svc.startVisualAgent(baseOpts({ agentId: 'session-1:visual-agent:2' }))
+    const c = lastChild()
+    c._emit('spawn')
+    expect(h.hooks).toEqual([])
+    svc.sendVisualAgentMessage('session-1:visual-agent:2', 'push')
+    c._line({
+      type: 'control_request',
+      request_id: 'req-1',
+      request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'git push' }, tool_use_id: 'tu-1' },
+    })
+    svc.answerVisualAgent('session-1:visual-agent:2', 'req-1', 'allow')
+    c._line(result)
+    expect(h.hooks).toEqual([
+      { contextId: 'session-1', tabId: 'visual-agent:2', hookType: 'prompt' },
+      { contextId: 'session-1', tabId: 'visual-agent:2', hookType: 'notification' },
+      { contextId: 'session-1', tabId: 'visual-agent:2', hookType: 'prompt' },
+      { contextId: 'session-1', tabId: 'visual-agent:2', hookType: 'stop' },
+    ])
+  })
+
+  it('maps run-state transitions to hook types', () => {
+    const t = svc.hookTypeForTransition
+    expect(t('idle', 'running')).toBe('prompt')
+    expect(t('needs-input', 'running')).toBe('prompt')
+    expect(t('running', 'needs-input')).toBe('notification')
+    expect(t('running', 'idle')).toBe('stop')
+    expect(t('needs-input', 'idle')).toBe('stop')
+    expect(t('starting', 'idle')).toBeNull()
+    expect(t('running', 'done')).toBeNull()
+    expect(t('idle', 'idle')).toBeNull()
+    expect(svc.workspaceTabId({ agentId: 's1:agent', sessionId: 's1' })).toBe('agent')
+    expect(svc.workspaceTabId({ agentId: 's1:visual-agent:3', sessionId: 's1' })).toBe('visual-agent:3')
   })
 
   it('AskUserQuestion is answered through updatedInput.answers', async () => {
