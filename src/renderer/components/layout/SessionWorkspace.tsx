@@ -461,15 +461,29 @@ export function SessionWorkspace() {
       {/* Core panel mounting — panels never unmount, just get portaled between columns */}
       {createPortal(
         <>
-          <TerminalPanel mode="claude" visible={agentVisible && agentView === 'terminal'} />
-          {liveVisualAgentSessions.map((id) => (
-            <VisualAgentHost
-              key={id}
-              sessionId={id}
-              tabKey="agent"
-              visible={agentVisible && id === activeSessionId && agentView === 'visual'}
-            />
-          ))}
+          {/* Stacked layers: the terminal stays mounted (xterm must never detach)
+              but takes no space while the visual agent is showing. */}
+          <div
+            className="absolute inset-0 flex flex-col min-h-0"
+            style={agentView === 'terminal' ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
+          >
+            <TerminalPanel mode="claude" visible={agentVisible && agentView === 'terminal'} />
+          </div>
+          {liveVisualAgentSessions.length > 0 && (
+            <div
+              className="absolute inset-0 flex flex-col min-h-0"
+              style={agentView === 'visual' ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
+            >
+              {liveVisualAgentSessions.map((id) => (
+                <VisualAgentHost
+                  key={id}
+                  sessionId={id}
+                  tabKey="agent"
+                  visible={agentVisible && id === activeSessionId && agentView === 'visual'}
+                />
+              ))}
+            </div>
+          )}
         </>,
         corePanelTargets.current.agent
       )}
