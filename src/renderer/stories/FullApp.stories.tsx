@@ -424,3 +424,35 @@ export const ClaudeWebSettings: Story = {
     },
   ],
 }
+
+// Visual agents (opt-in per project): the Agent tab switched to the chat
+// interface, seeded with the demo conversation — tool cards, a sub-agent and a
+// pending permission card.
+export const VisualAgent: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ visualAgent: {} })
+      return <Story />
+    },
+  ],
+}
+
+// The /btw side question sheet slid up over the composer.
+export const VisualAgentForkSheet: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ visualAgent: { openForkId: 'fork-demo-01' } })
+      return <Story />
+    },
+  ],
+}
+
+// Settings → Project Defaults with the Visual agents toggle on.
+export const VisualAgentSettings: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ settingsOpen: true, visualAgent: {} })
+      return <Story />
+    },
+  ],
+}

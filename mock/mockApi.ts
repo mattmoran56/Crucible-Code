@@ -44,6 +44,17 @@ let terminalCounter = 0
 
 function noop() { return () => {} }
 
+/**
+ * Per-story overrides for what `project.list` / `session.list` return, so a
+ * story can opt a project into a feature (e.g. visual agents) without changing
+ * the shared mock data every other story and visual baseline renders from.
+ * Cleared by the stories' `resetStores()`.
+ */
+export const mockOverrides: { projects: typeof mockProjects | null; sessions: typeof mockSessions | null } = {
+  projects: null,
+  sessions: null,
+}
+
 // Scheduler mock state. Mirrors src/main/services/scheduler.service.ts but
 // simpler: stores in-memory, broadcasts via callbacks, fires via setTimeout.
 // Exposed on window for Playwright assertions.
@@ -159,6 +170,12 @@ function vaStream(agentId: string, text: string, done: () => void) {
 }
 
 export const mockApi = {
+  /** Story-only helpers, reached through window.api so stories need no mock imports. */
+  __mock: {
+    overrides: mockOverrides,
+    demoVisualAgentSnapshot,
+  },
+
   git: {
     status: async () => ({ current: 'session/add-pr-review', tracking: 'origin/session/add-pr-review', files: [] }),
     log: async () => mockCommits,
@@ -238,7 +255,7 @@ export const mockApi = {
   },
 
   project: {
-    list: async () => mockProjects,
+    list: async () => mockOverrides.projects ?? mockProjects,
     add: async () => mockProjects,
     remove: async () => mockProjects,
     reorder: async () => mockProjects,
@@ -281,7 +298,7 @@ export const mockApi = {
   },
 
   session: {
-    list: async (projectId: string) => mockSessions[projectId] ?? [],
+    list: async (projectId: string) => (mockOverrides.sessions ?? mockSessions)[projectId] ?? [],
     save: async () => {},
     saveContext: async () => {},
     getContext: async () => null,
