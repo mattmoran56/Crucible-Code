@@ -158,6 +158,7 @@ function setState(held: LiveAgent, state: VisualAgentRunState): void {
   if (held.state === state) return
   const prev = held.state
   held.state = state
+  console.log(`[visual-agent] ${held.agentId}: ${prev} -> ${state}`)
   emit(held, { t: 'state', state, turnStartedAt: held.turnStartedAt })
   reportStatus(held, prev, state)
 }
@@ -350,6 +351,7 @@ function handleLine(held: LiveAgent, parsed: unknown, raw: string): void {
       // Always emit: turnStartedAt changed even if state did not.
       const prev = held.state
       held.state = 'idle'
+      console.log(`[visual-agent] ${held.agentId}: turn finished (${prev} -> idle)`)
       emit(held, { t: 'state', state: 'idle', turnStartedAt: null })
       reportStatus(held, prev, 'idle')
     }
@@ -377,6 +379,12 @@ function spawnMain(held: LiveAgent): void {
     }
   )
 
+  // Ready to type as soon as the process exists: with --input-format
+  // stream-json the CLI says nothing (no init) until the first message. A
+  // successful spawn has its pid synchronously, so the snapshot `start`
+  // returns is already idle; the 'spawn' event covers anything slower. A
+  // failed spawn (e.g. ENOENT) has no pid and lands in 'failed' via 'error'.
+  if (typeof child.pid === 'number') setState(held, 'idle')
   child.on('spawn', () => {
     if (held.child === child && held.state === 'starting') setState(held, 'idle')
   })

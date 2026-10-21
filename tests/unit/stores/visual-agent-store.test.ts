@@ -103,6 +103,15 @@ describe('mergeSnapshot / isAskPending', () => {
     expect(merged.state).toBe('idle')
   })
 
+  it('keeps a later state over a start reply that still says starting', () => {
+    // The process reported idle by frame before `start` resolved.
+    const held = snap({ state: 'idle' })
+    expect(mergeSnapshot(held, snap({ state: 'starting' })).state).toBe('idle')
+    // Any other incoming state still wins.
+    expect(mergeSnapshot(snap({ state: 'idle' }), snap({ state: 'running' })).state).toBe('running')
+    expect(mergeSnapshot(snap({ state: 'starting' }), snap({ state: 'starting' })).state).toBe('starting')
+  })
+
   it('treats an undecided ask on a waiting run as pending', () => {
     const ask: VisualAgentEvent = {
       uuid: 'a', seq: 0, threadId: 'main', at: 'T', kind: 'ask', id: 'q', tool: 'Bash', input: {}, toolUseId: 't',
@@ -242,6 +251,15 @@ describe('store wiring', () => {
     await useVisualAgentStore.getState().startWithPrompt({ agentId: 'a1', sessionId: 's', cwd: '/w', initialPrompt: 'next' })
     expect(api.start).not.toHaveBeenCalled()
     expect(api.send).toHaveBeenCalledWith('a1', 'next')
+  })
+
+  it('does not get stuck starting when the idle frame overtakes the start reply', async () => {
+    api.start.mockImplementationOnce(async () => {
+      emit('a1', { t: 'state', state: 'idle', turnStartedAt: null })
+      return snap({ agentId: 'a1', state: 'starting' })
+    })
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w' })
+    expect(useVisualAgentStore.getState().agents.a1.state).toBe('idle')
   })
 
   it('records an error when start fails', async () => {

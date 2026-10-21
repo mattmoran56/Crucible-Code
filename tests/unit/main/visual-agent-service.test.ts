@@ -10,7 +10,7 @@ const h = vi.hoisted(() => {
     const listeners: Record<string, Function[]> = {}
     const on = (key: string) => (e: string, cb: Function) => ((listeners[`${key}${e}`] ??= []).push(cb))
     const child: any = {
-      pid: 4242,
+      pid: s.nextPid === undefined ? 4242 : s.nextPid,
       killed: false,
       exitCode: null,
       signalCode: null,
@@ -90,6 +90,7 @@ beforeEach(() => {
   h.children = []
   h.frames = []
   h.hooks = []
+  h.nextPid = undefined
   h.userData = mkdtempSync(join(root, 'ud-'))
   vi.mocked(writeClaudeHookSettings).mockClear()
 })
@@ -97,7 +98,7 @@ beforeEach(() => {
 describe('visual agent service', () => {
   it('spawns claude with the stream-json argv, preps the worktree, and never sets a permission mode', async () => {
     const snap = await svc.startVisualAgent(baseOpts({ claudeConfigDir: '~/.claude-personal' }))
-    expect(snap).toMatchObject({ agentId: 'agent-1', model: 'claude-opus-5-5', state: 'starting', events: [] })
+    expect(snap).toMatchObject({ agentId: 'agent-1', model: 'claude-opus-5-5', state: 'idle', events: [] })
     const { file, args, opts } = h.spawnCalls[0]
     expect(file).toBe('claude')
     expect(args).toContain('--input-format')
@@ -111,6 +112,23 @@ describe('visual agent service', () => {
     // notification server drops; status comes from the run state instead.
     expect(opts.env.CRUCIBLE_TAB_ID).toBe('__visual-agent__')
     expect(writeClaudeHookSettings).toHaveBeenCalledWith('/wt', 'dark', 'session-1')
+  })
+
+  it('is ready to type straight away: idle without waiting for an init line, which only follows the first message', async () => {
+    const snap = await svc.startVisualAgent(baseOpts())
+    expect(snap.state).toBe('idle')
+    expect(frames('state').at(-1)).toMatchObject({ state: 'idle' })
+    // Nothing has been read from stdout and no 'spawn' event has fired.
+    expect(lastChild().stdin.write).not.toHaveBeenCalled()
+  })
+
+  it('a spawn that fails (no pid, then an error) ends failed with an error row, never stuck starting', async () => {
+    h.nextPid = null
+    const snap = await svc.startVisualAgent(baseOpts())
+    expect(snap.state).toBe('starting')
+    lastChild()._emit('error', new Error('spawn claude ENOENT'))
+    expect(frames('state').at(-1)).toMatchObject({ state: 'failed' })
+    expect(events().some((e: any) => /Could not start Claude Code: spawn claude ENOENT/.test(JSON.stringify(e)))).toBe(true)
   })
 
   it('drops CLAUDE_CONFIG_DIR when none is provided', async () => {

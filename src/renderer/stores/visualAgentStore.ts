@@ -155,8 +155,13 @@ export const reduceFrame = (snap: VisualAgentSnapshot, frame: VisualAgentFrame):
 /** A snapshot from `start`/`getState` merged over what frames already delivered. */
 export const mergeSnapshot = (held: VisualAgentSnapshot | undefined, incoming: VisualAgentSnapshot): VisualAgentSnapshot => {
   if (!held) return incoming
+  // A state frame can overtake the start reply (the process reports idle
+  // before `start` resolves with its earlier 'starting' snapshot). 'starting'
+  // is the least-informed state, so never let it overwrite a later one.
+  const keepHeldState = incoming.state === 'starting' && held.state !== 'starting'
   return {
     ...incoming,
+    ...(keepHeldState ? { state: held.state, turnStartedAt: held.turnStartedAt } : {}),
     events: mergeEvents(incoming.events, held.events),
     forks: mergeForks(held.forks, incoming.forks),
   }
