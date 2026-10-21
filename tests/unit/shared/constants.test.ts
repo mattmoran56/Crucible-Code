@@ -32,8 +32,8 @@ describe('IPC channel constants', () => {
 describe('IPC channel naming conventions', () => {
   const entries = Object.entries(IPC) as Array<[string, string]>
 
-  it('exposes exactly 190 channels (update this count when adding channels)', () => {
-    expect(entries.length).toBe(190)
+  it('exposes exactly 193 channels (update this count when adding channels)', () => {
+    expect(entries.length).toBe(193)
   })
 
   it('every key is SCREAMING_SNAKE_CASE', () => {
