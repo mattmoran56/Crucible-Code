@@ -110,6 +110,7 @@ export function awaitingInputIn(text: string): boolean {
 
 export interface StartTeleportOptions {
   sessionId: string
+  projectId?: string
   worktreePath: string
   cloudSessionId: string
   configDir?: string | null
@@ -277,7 +278,14 @@ export function startTeleport(window: BrowserWindow, opts: StartTeleportOptions)
     TELEPORT_PTY_TAB
   )
   const run: Run = {
-    state: { sessionId: opts.sessionId, terminalId, status: 'running', steps: [], startedAt },
+    state: {
+      sessionId: opts.sessionId,
+      ...(opts.projectId ? { projectId: opts.projectId } : {}),
+      terminalId,
+      status: 'running',
+      steps: [],
+      startedAt,
+    },
     opts,
     window,
     output: '',

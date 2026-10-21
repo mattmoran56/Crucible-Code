@@ -541,7 +541,7 @@ const api = {
     send: (opts: { worktreePath: string; cloudSessionId: string; message: string; configDir?: string | null }): Promise<CloudSessionResult> =>
       ipcRenderer.invoke(IPC.CLOUD_SESSION_SEND, opts),
     /** Check the worktree is clean, then spawn `claude --teleport <id>` in the Agent tab; progress arrives via onTeleportEvent. */
-    teleport: (opts: { sessionId: string; worktreePath: string; cloudSessionId: string; configDir?: string | null; repoPath?: string; claudeTheme?: string }): Promise<CloudTeleportResult> =>
+    teleport: (opts: { sessionId: string; projectId?: string; worktreePath: string; cloudSessionId: string; configDir?: string | null; repoPath?: string; claudeTheme?: string }): Promise<CloudTeleportResult> =>
       ipcRenderer.invoke(IPC.CLOUD_SESSION_TELEPORT, opts),
     /** The running/finished teleport run for an app session, if any (this app run only). */
     teleportState: (sessionId: string): Promise<CloudTeleportState | null> =>

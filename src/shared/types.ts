@@ -101,6 +101,8 @@ export type CloudTeleportStatus = 'running' | 'needs-input' | 'finishing' | 'don
 export interface CloudTeleportState {
   /** App session id. */
   sessionId: string
+  /** The app session's project (so a run finishing in another project still lands). */
+  projectId?: string
   /** The PTY running `claude --teleport …`. */
   terminalId: string
   status: CloudTeleportStatus

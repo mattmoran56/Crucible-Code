@@ -24,6 +24,7 @@ import {
 export interface CloudPtyOptions {
   /** App session id (the PTY's owner and hook context). */
   sessionId: string
+  projectId?: string
   worktreePath: string
   cloudSessionId: string
   configDir?: string | null
