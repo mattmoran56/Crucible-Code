@@ -28,6 +28,7 @@ import { useCloudCreateBootstrap } from './lib/cloudCreate'
 import { useSchedulerBootstrap } from './hooks/useSchedulerBootstrap'
 import { useNotionBootstrap } from './hooks/useNotionBootstrap'
 import { UsageLimitToast } from './components/usage/UsageLimitToast'
+import { CloudWebPool } from './components/cloud/CloudWebPool'
 
 const RIGHT_PANEL_LABELS = { notes: 'Notes', usage: 'Usage' } as const
 type RightPanelId = keyof typeof RIGHT_PANEL_LABELS
@@ -243,6 +244,8 @@ export default function App() {
           <RightActivityBar activePanel={activeRightPanel} onToggle={toggleRightPanel} />
         </div>
       </div>
+      {/* Embedded claude.ai pages: never unmounted, so they never reload. */}
+      <CloudWebPool />
       <UsageLimitToast />
       <ToastContainer />
     </div>
