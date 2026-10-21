@@ -20,6 +20,17 @@ const SESSION: Session = {
   },
 }
 
+/** A cloud session still being created: no cloud id yet. */
+const PENDING_SESSION: Session = {
+  ...SESSION,
+  cloud: undefined,
+  cloudPending: {
+    task: 'Rotate the refresh token on every use',
+    branch: 'session/fix-auth-refresh',
+    createdAt: '2026-10-21T08:30:00.000Z',
+  },
+}
+
 const TELEPORTED_SESSION: Session = {
   ...SESSION,
   location: 'local',
@@ -28,6 +39,19 @@ const TELEPORTED_SESSION: Session = {
 
 /** Canned terminal transcripts, printed by the mock bridge's fake PTY. */
 const TRANSCRIPTS = {
+  creating: [
+    "\x1b[90m$ claude --cloud 'Work on the git branch `session/fix-auth-refresh`…' --on-branch session/fix-auth-refresh\x1b[0m\r\n",
+    '\x1b[1mSetting up remote session…\x1b[0m\r\n',
+    '  \x1b[32m✓\x1b[0m Checked this checkout\r\n',
+    '  \x1b[33m⠋\x1b[0m Creating cloud session\r\n\r\n',
+    '\x1b[1mUse this machine\'s settings in cloud sessions?\x1b[0m\r\n',
+    '\x1b[36m❯ 1. Yes, send my settings\x1b[0m\r\n',
+    '  2. No, keep them on this machine\r\n',
+  ],
+  createFailed: [
+    "\x1b[90m$ claude --cloud 'Work on the git branch `session/fix-auth-refresh`…' --on-branch session/fix-auth-refresh\x1b[0m\r\n",
+    '\x1b[31mError: Cloud sessions need a claude.ai sign-in. Run `claude auth login`.\x1b[0m\r\n',
+  ],
   teleport: [
     '\x1b[90m$ claude --teleport session_01Hx7QmCloudDemo\x1b[0m\r\n',
     'Fetching branch from origin…\r\n',
@@ -60,10 +84,24 @@ interface StoryProps {
    */
   embedWebview?: boolean
   failLoad?: boolean
+  mayExist?: boolean
+  /** The create CLI is still attached after the session was created. */
+  cliAttached?: boolean
 }
 
 /** Spawns a fake PTY for the transcript (if any), then mounts the panel. */
-function Harness({ session = SESSION, phase, transcript, error, dirtyFiles, branchNotice, embedWebview, failLoad }: StoryProps) {
+function Harness({
+  session = SESSION,
+  phase,
+  transcript,
+  error,
+  dirtyFiles,
+  branchNotice,
+  embedWebview,
+  failLoad,
+  mayExist,
+  cliAttached,
+}: StoryProps) {
   const [terminalId, setTerminalId] = useState<string | null>(null)
   const [ready, setReady] = useState(!transcript)
   useLayoutEffect(() => {
@@ -97,6 +135,14 @@ function Harness({ session = SESSION, phase, transcript, error, dirtyFiles, bran
         branchNotice={branchNotice}
         onCleanupBranch={async (b) => `Deleted ${b} locally and on origin.`}
         embedWebview={embedWebview}
+        mayExist={mayExist}
+        onRetryCreate={noop}
+        onOpenCloudHome={noop}
+        onDeleteSession={noop}
+        cliAttached={cliAttached}
+        showingCli={false}
+        onToggleCli={noop}
+        onCloseCli={noop}
       />
     </div>
   )
@@ -114,6 +160,32 @@ type Story = StoryObj<typeof Harness>
 /** The claude.ai/code session page embedded in the tab (stubbed in Storybook). */
 export const Embedded: Story = {
   args: { phase: 'web' },
+}
+
+/** Creating: `claude --cloud` runs in the tab and may ask a question first. */
+export const Creating: Story = {
+  args: { session: PENDING_SESSION, phase: 'creating', transcript: 'creating' },
+}
+
+/** The CLI exited without creating a session: output, Retry, claude.ai/code, Delete. */
+export const CreateFailed: Story = {
+  args: {
+    session: PENDING_SESSION,
+    phase: 'create-failed',
+    transcript: 'createFailed',
+    error:
+      'Claude did not create a cloud session (exit 1):\nError: Cloud sessions need a claude.ai sign-in. Run `claude auth login`.',
+  },
+}
+
+/** The app closed mid-create: Retry start / Open claude.ai/code / Delete, never an automatic re-run. */
+export const CreateInterrupted: Story = {
+  args: { session: PENDING_SESSION, phase: 'create-interrupted' },
+}
+
+/** Created, with the local CLI still attached to the session. */
+export const CliStillAttached: Story = {
+  args: { phase: 'web', cliAttached: true },
 }
 
 /** The page is still loading. */
