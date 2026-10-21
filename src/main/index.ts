@@ -8,6 +8,7 @@ import {
 } from './services/notification-server'
 import { setNotificationWindow } from './services/notification.service'
 import { killAllTerminals } from './services/terminal.service'
+import { killAllVisualAgents } from './services/visual-agent/visual-agent.service'
 import { stopAllWatching as stopAllPermissionWatching } from './services/permission-sync.service'
 import { stopScheduler } from './services/scheduler.service'
 import { stopFoundryService } from './services/foundry.service'
@@ -87,6 +88,7 @@ app.on('before-quit', (event) => {
     void unregisterCloud().finally(() => app.quit())
   }
   killAllTerminals()
+  killAllVisualAgents()
   stopAllPermissionWatching()
   stopNotificationServer()
   stopScheduler()
@@ -98,6 +100,7 @@ app.on('before-quit', (event) => {
 
 app.on('window-all-closed', () => {
   killAllTerminals()
+  killAllVisualAgents()
   stopAllPermissionWatching()
   stopNotificationServer()
   stopScheduler()

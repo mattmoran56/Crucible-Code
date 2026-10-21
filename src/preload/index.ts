@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
+import type { VisualAgentAskDecision, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
 import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, FoundryConfig, FoundryFireTaskPayload, FoundryPipelineAction, FoundryRuntimeState, FoundryTaskStartedAck, FoundryWorkerPermissionMode, LocalPR, CreateLocalPRFromSessionInput, LocalPRUpdate } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
@@ -24,6 +25,7 @@ function makeMultiplex<Args extends unknown[]>(channel: string) {
 
 const onTerminalData = makeMultiplex<[string, string]>(IPC.TERMINAL_DATA)
 const onTerminalExit = makeMultiplex<[string, number]>(IPC.TERMINAL_EXIT)
+const onVisualAgentFrame = makeMultiplex<[string, VisualAgentFrame]>(IPC.VISUAL_AGENT_FRAME)
 
 const api = {
   git: {
@@ -488,6 +490,33 @@ const api = {
       ipcRenderer.invoke(IPC.STARTUP_PROMPT_LIST, projectId),
     save: (projectId: string, prompts: StartupPrompt[]): Promise<void> =>
       ipcRenderer.invoke(IPC.STARTUP_PROMPT_SAVE, projectId, prompts),
+  },
+
+  visualAgent: {
+    start: (opts: VisualAgentStartOptions): Promise<VisualAgentSnapshot> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_START, opts),
+    send: (agentId: string, text: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_SEND, agentId, text),
+    interrupt: (agentId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_INTERRUPT, agentId),
+    stop: (agentId: string): Promise<void> => ipcRenderer.invoke(IPC.VISUAL_AGENT_STOP, agentId),
+    answer: (
+      agentId: string,
+      requestId: string,
+      decision: VisualAgentAskDecision,
+      answers?: Record<string, string>
+    ): Promise<void> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_ANSWER, agentId, requestId, decision, answers),
+    setModel: (agentId: string, model: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_SET_MODEL, agentId, model),
+    fork: (agentId: string, question: string): Promise<{ forkId: string }> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_FORK, agentId, question),
+    forkStop: (agentId: string, forkId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_FORK_STOP, agentId, forkId),
+    getState: (agentId: string): Promise<VisualAgentSnapshot | null> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_GET_STATE, agentId),
+    onFrame: (cb: (agentId: string, frame: VisualAgentFrame) => void): (() => void) =>
+      onVisualAgentFrame(cb),
   },
 
   reviewLoop: {

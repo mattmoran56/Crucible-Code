@@ -254,4 +254,16 @@ export const IPC = {
   LOCAL_PR_PROMOTE: 'local-pr:promote',
   LOCAL_PR_SET_CAPTURE: 'local-pr:set-capture',
   LOCAL_PR_STATE_UPDATE: 'local-pr:state:update',
+
+  // Visual Agent — GUI chat over `claude -p --input-format stream-json`
+  VISUAL_AGENT_START: 'visualAgent:start',
+  VISUAL_AGENT_SEND: 'visualAgent:send',
+  VISUAL_AGENT_INTERRUPT: 'visualAgent:interrupt',
+  VISUAL_AGENT_STOP: 'visualAgent:stop',
+  VISUAL_AGENT_ANSWER: 'visualAgent:answer',
+  VISUAL_AGENT_SET_MODEL: 'visualAgent:setModel',
+  VISUAL_AGENT_FORK: 'visualAgent:fork',
+  VISUAL_AGENT_FORK_STOP: 'visualAgent:forkStop',
+  VISUAL_AGENT_GET_STATE: 'visualAgent:getState',
+  VISUAL_AGENT_FRAME: 'visualAgent:frame',
 } as const
