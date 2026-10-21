@@ -25,7 +25,7 @@
 - **Intervention alerts** — Desktop notifications and dock badge when Claude Code needs your input
 - **Usage tracking** — Rate limit bars and activity stats per session
 - **Code editor** — CodeMirror editor with file explorer for editing files in any worktree
-- **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
+- **Themes** — Dark (Tokyo Night), Tokyo Night Contrast, Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
 - **Remote access** — Pair a second device's browser to your desktop instance over the LAN, or over a hosted end-to-end encrypted Cloudflare Worker relay that works through VPNs and hotel Wi-Fi. View projects, sessions, settings, and live agent terminals from anywhere (full mobile layout, PWA-installable on iOS)
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that become the first message of a new session's agent
@@ -113,7 +113,7 @@ Four built-in themes with automatic terminal sync, account management, and prefe
 
 **Themes**
 
-Dark (Tokyo Night), Light, Soft Light, and Ultra Dark.
+Dark (Tokyo Night), Tokyo Night Contrast, Light, Soft Light, and Ultra Dark.
 
 ![Light theme](docs/screenshots/theme-light.png)
 
@@ -571,7 +571,7 @@ So long-running work — terminals, Claude sessions, review loops and the remote
 <details>
 <summary><strong>Theming</strong></summary>
 
-Four built-in themes: **Dark** (Tokyo Night, default), **Light**, **Soft Light**, and **Ultra Dark**.
+Five built-in themes: **Dark** (Tokyo Night, default), **Tokyo Night Contrast** (brighter text and borders on a darker base), **Light**, **Soft Light**, and **Ultra Dark**.
 
 Themes are defined as CSS custom properties in `src/renderer/styles/globals.css`. Tailwind utilities reference these properties via the `@theme` block, so switching themes is instant and all components respond automatically.
 

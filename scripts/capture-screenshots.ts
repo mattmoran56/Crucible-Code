@@ -498,6 +498,7 @@ async function captureScreenshots() {
   // the theme including proper store updates.
   const themeGlobals: Record<string, string> = {
     dark: 'Dark (Tokyo Night)',
+    'dark-contrast': 'Tokyo Night Contrast',
     light: 'Light',
     'soft-light': 'Soft Light',
     'ultra-dark': 'Ultra Dark',

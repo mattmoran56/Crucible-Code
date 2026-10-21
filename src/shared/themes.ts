@@ -1,4 +1,4 @@
-export type ThemeName = 'dark' | 'light' | 'soft-light' | 'ultra-dark'
+export type ThemeName = 'dark' | 'dark-contrast' | 'light' | 'soft-light' | 'ultra-dark'
 export type ClaudeTheme = 'dark' | 'light'
 
 export interface TerminalTheme {
@@ -69,6 +69,39 @@ export const THEMES: ThemeDefinition[] = [
       magenta: '#bb9af7',
       cyan: '#7dcfff',
       white: '#a9b1d6',
+    },
+  },
+  {
+    name: 'dark-contrast',
+    label: 'Tokyo Night Contrast',
+    isDark: true,
+    claudeTheme: 'dark',
+    colors: {
+      bg: '#16161e',
+      'bg-secondary': '#22253a',
+      'bg-tertiary': '#1c1e2c',
+      border: '#4a5280',
+      text: '#d5dcfb',
+      'text-muted': '#7580b0',
+      accent: '#89b4fa',
+      'accent-hover': '#a3c4fc',
+      success: '#a9dc76',
+      danger: '#ff8aa0',
+      warning: '#eebd78',
+    },
+    terminal: {
+      background: '#16161e',
+      foreground: '#d5dcfb',
+      cursor: '#d5dcfb',
+      selectionBackground: '#3a4f8c',
+      black: '#16161e',
+      red: '#ff8aa0',
+      green: '#a9dc76',
+      yellow: '#eebd78',
+      blue: '#89b4fa',
+      magenta: '#c7a9ff',
+      cyan: '#8ad8ff',
+      white: '#bcc4e6',
     },
   },
   {

@@ -28,6 +28,22 @@
   --color-merged: #bb9af7;
 }
 
+/* --- Tokyo Night Contrast (brighter text, darker base) --- */
+[data-theme="dark-contrast"] {
+  --color-bg: #16161e;
+  --color-bg-secondary: #22253a;
+  --color-bg-tertiary: #1c1e2c;
+  --color-border: #4a5280;
+  --color-text: #d5dcfb;
+  --color-text-muted: #7580b0;
+  --color-accent: #89b4fa;
+  --color-accent-hover: #a3c4fc;
+  --color-success: #a9dc76;
+  --color-danger: #ff8aa0;
+  --color-warning: #eebd78;
+  --color-merged: #c7a9ff;
+}
+
 /* --- Light --- */
 [data-theme="light"] {
   --color-bg: #f5f5f5;

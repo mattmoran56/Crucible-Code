@@ -20,6 +20,7 @@ const preview: Preview = {
     withThemeByDataAttribute({
       themes: {
         'Dark (Tokyo Night)': 'dark',
+        'Tokyo Night Contrast': 'dark-contrast',
         Light: 'light',
         'Soft Light': 'soft-light',
         'Ultra Dark': 'ultra-dark',
