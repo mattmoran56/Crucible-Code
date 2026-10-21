@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
 import type { VisualAgentAskDecision, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudCreateState } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -26,6 +26,7 @@ function makeMultiplex<Args extends unknown[]>(channel: string) {
 const onTerminalData = makeMultiplex<[string, string]>(IPC.TERMINAL_DATA)
 const onTerminalExit = makeMultiplex<[string, number]>(IPC.TERMINAL_EXIT)
 const onVisualAgentFrame = makeMultiplex<[string, VisualAgentFrame]>(IPC.VISUAL_AGENT_FRAME)
+const onCloudCreateEvent = makeMultiplex<[CloudCreateState]>(IPC.CLOUD_SESSION_CREATE_EVENT)
 
 const api = {
   git: {
@@ -517,9 +518,24 @@ const api = {
   },
 
   cloudSession: {
-    /** Push the session branch and start a Claude Code on the web session in the worktree. */
-    create: (opts: { worktreePath: string; branch: string; prompt: string; configDir?: string | null }): Promise<CloudSessionResult> =>
-      ipcRenderer.invoke(IPC.CLOUD_SESSION_CREATE, opts),
+    /**
+     * Push the session branch, then run the interactive `claude --cloud <task>`
+     * in a PTY in the session's Agent tab. Progress arrives via onCreateEvent.
+     */
+    start: (opts: {
+      sessionId: string
+      projectId: string
+      worktreePath: string
+      branch: string
+      task: string
+      configDir?: string | null
+      repoPath?: string
+      claudeTheme?: string
+    }): Promise<CloudCreateState> => ipcRenderer.invoke(IPC.CLOUD_SESSION_START, opts),
+    /** The running/finished create run for an app session, if any (this app run only). */
+    createState: (sessionId: string): Promise<CloudCreateState | null> =>
+      ipcRenderer.invoke(IPC.CLOUD_SESSION_CREATE_STATE, sessionId),
+    onCreateEvent: (cb: (state: CloudCreateState) => void): (() => void) => onCloudCreateEvent(cb),
     /** Queue a follow-up message to a cloud session (`claude -p --cloud <id>`). */
     send: (opts: { worktreePath: string; cloudSessionId: string; message: string; configDir?: string | null }): Promise<CloudSessionResult> =>
       ipcRenderer.invoke(IPC.CLOUD_SESSION_SEND, opts),

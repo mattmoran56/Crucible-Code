@@ -4,14 +4,18 @@
  * session's worktree when it is time to test locally.
  *
  * - create: push the session branch (the cloud VM clones the CURRENT branch of
- *   the cwd's GitHub remote, falling back to the default branch when it is not
- *   on GitHub), then `claude -p <prompt> --cloud --on-branch <branch>
- *   --output-format json`. `--on-branch` makes the cloud agent check out and
- *   push to that exact branch (the app owns the branch name) instead of a
- *   generated `claude/...` one; the prompt also says so, which is all that
- *   steers it on a CLI too old for `--on-branch` (we retry without the flag).
+ *   the cwd's GitHub remote), then run `claude --cloud <task> --on-branch
+ *   <branch>` INTERACTIVELY in a PTY shown in the session's Agent tab. Starting
+ *   a new cloud session is interactive-only (the CLI refuses `--cloud` with
+ *   `--print`, and refuses to start one without a TTY), and it may ask
+ *   questions (forward settings / MCP servers, re-register this machine, sign
+ *   in) — the user answers them in that terminal. We watch the PTY output for
+ *   the new session's claude.ai/code URL / id (`findCloudSessionInOutput`).
+ *   `--on-branch` makes the cloud agent check out and push to exactly the
+ *   app's branch; the task text also says so, which is all that steers it on
+ *   a CLI that rejects `--on-branch` (we retry without the flag).
  * - send: `claude -p <msg> --cloud <id> --output-format json` queues a
- *   follow-up (stream-json is not supported with --cloud).
+ *   follow-up to an EXISTING session (valid with --print).
  * - teleport: `claude --teleport <id>` in a PTY, in the worktree. Interactive
  *   only, needs a clean tree; afterwards it is a normal local Claude session.
  *
@@ -19,9 +23,11 @@
  * and never any `--permission-mode`. Every argv spreads
  * `AUTO_PERMISSION_MODE_ARGS` (empty) so the CLI inherits the user's default.
  *
- * Every process is spawned from an argv array — user prompts are never
- * interpolated into a shell. The PTY command (teleport) carries only a
- * validated session id, and is shell-quoted regardless.
+ * Headless processes are spawned from an argv array. PTY commands go through
+ * `sh -lc`, so every argv element is POSIX single-quoted (`shellQuote`) — the
+ * task text can contain anything and is never interpreted by the shell. (The
+ * task cannot go through a heredoc/stdin: `--cloud` takes it as its value and
+ * refuses piped stdin.)
  */
 import { execFile, spawn } from 'node:child_process'
 import { promises as fs } from 'node:fs'
@@ -31,7 +37,7 @@ import type { CloudSessionResult } from '../../shared/types'
 import { validateBranchName } from '../../shared/branch-name'
 import { AUTO_PERMISSION_MODE_ARGS, shellQuote } from './terminal.service'
 
-/** How long a `-p --cloud` call may take before we give up on it. */
+/** How long a `-p --cloud <id>` call may take before we give up on it. */
 export const CLOUD_CALL_TIMEOUT_MS = 5 * 60_000
 
 /** Cloud session ids look like `session_01AbC...`; be permissive but shell-safe. */
@@ -61,18 +67,16 @@ const assertBranch = (branch: string): void => {
   if (invalid) throw new Error(`Invalid branch name "${branch}": ${invalid}`)
 }
 
-/** `--on-branch <branch>` pins the cloud session to that branch (checkout + push). */
-export const cloudCreateArgv = (prompt: string, branch?: string): string[] => {
+/**
+ * Interactive create: `claude --cloud <task> [--on-branch <branch>]`. The task
+ * is `--cloud`'s value (a positional prompt is refused alongside it).
+ * `--on-branch` pins the cloud session to that branch (checkout + push).
+ */
+export const cloudStartArgv = (prompt: string, branch?: string): string[] => {
   if (branch !== undefined) assertBranch(branch)
-  return [
-    '-p',
-    promptArg(prompt),
-    '--cloud',
-    ...(branch ? ['--on-branch', branch] : []),
-    '--output-format',
-    'json',
-    ...AUTO_PERMISSION_MODE_ARGS,
-  ]
+  const task = promptArg(prompt)
+  if (!task.trim()) throw new Error('A cloud session needs a task description to start')
+  return ['--cloud', task, ...(branch ? ['--on-branch', branch] : []), ...AUTO_PERMISSION_MODE_ARGS]
 }
 
 /** Prepend an instruction telling the cloud agent to work on, and push to, exactly `branch`. */
@@ -152,6 +156,75 @@ export function parseCloudResult(stdout: string, stderr = ''): CloudSessionResul
   const detail = (stderr.trim() || stdout.trim()).split('\n').slice(-5).join('\n')
   throw new Error(detail ? `Claude did not return a cloud session: ${detail}` : 'Claude did not return a cloud session')
 }
+
+/* --- interactive create: reading the PTY (pure) ---------------------------- */
+
+/** A new cloud session id as the CLI prints it (`session_…`, or `cse_…`). */
+const NEW_CLOUD_ID = /^(?:session_|cse_)[A-Za-z0-9_-]{6,184}$/
+
+/** OSC 8 hyperlinks carry the full, unwrapped URL: ESC ] 8 ; params ; URL (BEL | ESC \\). */
+const OSC8_URL = /\x1b\]8;[^;\x07\x1b]*;([^\x07\x1b]+)(?:\x07|\x1b\\)/g
+
+/**
+ * Terminal output → plain text: drop OSC strings (titles, hyperlinks), CSI
+ * sequences (colours, cursor moves), other two-byte escapes and lone CRs.
+ * Cursor-forward moves become a space so words do not run together.
+ */
+export function stripAnsi(text: string): string {
+  return text
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-9;?]*C/g, ' ')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1b[@-Z\\-_]/g, '')
+    .replace(/\r(?!\n)/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
+}
+
+const fromId = (id: string | undefined | null): CloudSessionResult | null =>
+  id && NEW_CLOUD_ID.test(id) ? { sessionId: id, url: cloudUrlFor(id) } : null
+
+const idFromUrl = (url: string): string | null => {
+  const m = url.match(/^https:\/\/claude\.ai\/code\/((?:session_|cse_)[A-Za-z0-9_-]+)/)
+  return m ? m[1] : null
+}
+
+/**
+ * The new cloud session in the interactive `claude --cloud` output, or null.
+ * The CLI prints `View: https://claude.ai/code/session_…?from=cli&m=0` (and
+ * `Session ID:` / `Resume with: claude --teleport <id>`) when it creates the
+ * session and exits, or `Cloud session active · code here or at <url>` when it
+ * stays attached. Tolerates ANSI noise, OSC 8 links and a URL that the
+ * terminal wrapped across lines.
+ */
+export function findCloudSessionInOutput(raw: string): CloudSessionResult | null {
+  for (const m of raw.matchAll(OSC8_URL)) {
+    const hit = fromId(idFromUrl(m[1]))
+    if (hit) return hit
+  }
+  const text = stripAnsi(raw)
+  // A claude.ai/code URL, possibly wrapped: the CLI always ends it with ?from=.
+  const wrapped = text.match(/https:\/\/claude\.ai\/code\/((?:session_|cse_)[A-Za-z0-9_\-\s]*?)\?from=/)
+  const hit =
+    (wrapped && fromId(wrapped[1].replace(/\s+/g, ''))) ||
+    fromId(text.match(/https:\/\/claude\.ai\/code\/((?:session_|cse_)[A-Za-z0-9_-]+)/)?.[1]) ||
+    fromId(text.match(/Session ID:\s*((?:session_|cse_)[A-Za-z0-9_-]+)/)?.[1]) ||
+    fromId(text.match(/--teleport\s+((?:session_|cse_)[A-Za-z0-9_-]+)/)?.[1])
+  return hit || null
+}
+
+/** The last few meaningful lines of a failed create, for the error banner. */
+export function summarizeCreateFailure(raw: string, maxLines = 6): string {
+  const lines = stripAnsi(raw)
+    .split('\n')
+    .map((l) => l.replace(/\s+$/, ''))
+    .filter((l) => l.trim())
+  return lines.slice(-maxLines).join('\n').trim()
+}
+
+/** The CLI said the create request may have gone through before it was cancelled. */
+export const mayHaveCreatedSession = (raw: string): boolean =>
+  /a cloud session may still have been created/i.test(stripAnsi(raw))
 
 /* --- process plumbing ------------------------------------------------------ */
 
@@ -251,35 +324,6 @@ export async function worktreeDirtyFiles(worktreePath: string): Promise<string[]
 }
 
 /* --- public API ------------------------------------------------------------ */
-
-export interface CreateCloudSessionOptions {
-  worktreePath: string
-  branch: string
-  prompt: string
-  configDir?: string | null
-}
-
-export async function createCloudSession(opts: CreateCloudSessionOptions): Promise<CloudSessionResult> {
-  const prompt = opts.prompt?.trim()
-  if (!prompt) throw new Error('A cloud session needs a task description to start')
-  await pushSessionBranch(opts.worktreePath, opts.branch)
-  const fullPrompt = withBranchInstruction(prompt, opts.branch)
-  const env = cloudEnv(opts.configDir)
-  let run = await runClaude(cloudCreateArgv(fullPrompt, opts.branch), opts.worktreePath, env, CLOUD_CALL_TIMEOUT_MS)
-  if (run.code !== 0 && isUnknownOnBranchError(`${run.stderr}\n${run.stdout}`)) {
-    // Older CLI without --on-branch: the VM still clones the branch we just
-    // pushed (it is the worktree's current branch) and the prompt steers it.
-    run = await runClaude(cloudCreateArgv(fullPrompt), opts.worktreePath, env, CLOUD_CALL_TIMEOUT_MS)
-  }
-  try {
-    return { ...parseCloudResult(run.stdout, run.stderr), branch: opts.branch }
-  } catch (err) {
-    if (run.code !== 0 && run.code !== null) {
-      throw new Error(`${(err as Error).message} (claude exited with code ${run.code})`)
-    }
-    throw err
-  }
-}
 
 export interface SendCloudMessageOptions {
   worktreePath: string

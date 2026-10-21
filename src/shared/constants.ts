@@ -237,7 +237,12 @@ export const IPC = {
   VISUAL_AGENT_FRAME: 'visual-agent:frame',
 
   // Cloud sessions — Claude Code on the web, watched and teleported from here
-  CLOUD_SESSION_CREATE: 'cloud-session:create',
+  /** Push the branch and run the interactive `claude --cloud <task>` PTY in the Agent tab. */
+  CLOUD_SESSION_START: 'cloud-session:start',
+  /** The current create run for an app session (survives an Agent tab remount). */
+  CLOUD_SESSION_CREATE_STATE: 'cloud-session:create-state',
+  /** main → renderer: a create run changed (session found, failed, CLI detached). */
+  CLOUD_SESSION_CREATE_EVENT: 'cloud-session:create-event',
   CLOUD_SESSION_SEND: 'cloud-session:send',
   CLOUD_SESSION_TELEPORT: 'cloud-session:teleport',
   CLOUD_SESSION_DISCOVER_LOCAL: 'cloud-session:discover-local',

@@ -265,6 +265,48 @@ export function getAndClearRecoveryList(): PersistedTerminal[] {
 }
 
 /** Safely send IPC — no-op if the window is already destroyed. */
+/**
+ * In-process watchers of a PTY's output and exit (e.g. the cloud-session create
+ * flow reading the new session's URL off the CLI's screen). Keyed by
+ * terminal id; dropped once the terminal exits.
+ */
+export interface TerminalWatcher {
+  onData?: (data: string) => void
+  onExit?: (exitCode: number) => void
+}
+const watchers = new Map<string, Set<TerminalWatcher>>()
+
+export function watchTerminal(terminalId: string, watcher: TerminalWatcher): () => void {
+  let set = watchers.get(terminalId)
+  if (!set) {
+    set = new Set()
+    watchers.set(terminalId, set)
+  }
+  set.add(watcher)
+  return () => {
+    const current = watchers.get(terminalId)
+    current?.delete(watcher)
+    if (current && current.size === 0) watchers.delete(terminalId)
+  }
+}
+
+function notifyWatchersData(terminalId: string, data: string): void {
+  const set = watchers.get(terminalId)
+  if (!set) return
+  for (const w of set) {
+    try { w.onData?.(data) } catch { /* a watcher must not break the PTY */ }
+  }
+}
+
+function notifyWatchersExit(terminalId: string, exitCode: number): void {
+  const set = watchers.get(terminalId)
+  if (!set) return
+  watchers.delete(terminalId)
+  for (const w of set) {
+    try { w.onExit?.(exitCode) } catch { /* ignore */ }
+  }
+}
+
 function safeSend(window: BrowserWindow, channel: string, ...args: unknown[]): void {
   if (!window.isDestroyed()) {
     window.webContents.send(channel, ...args)
@@ -351,6 +393,7 @@ function spawnPty(
       appendToBuffer(current, data)
       detectAndEmitLimit(current, data)
     }
+    notifyWatchersData(terminalId, data)
     pendingChunks.push(data)
     if (!flushTimer) {
       flushTimer = setTimeout(flushPending, 16)
@@ -376,6 +419,7 @@ function spawnPty(
       safeSend(instance.window, IPC.TERMINAL_EXIT, terminalId, exitCode)
       terminals.delete(terminalId)
       unpersistTerminal(terminalId)
+      notifyWatchersExit(terminalId, exitCode)
       return
     }
 
@@ -427,6 +471,7 @@ function spawnPty(
       safeSend(instance.window, IPC.TERMINAL_EXIT, terminalId, exitCode)
       terminals.delete(terminalId)
       unpersistTerminal(terminalId)
+      notifyWatchersExit(terminalId, exitCode)
     }
   })
 

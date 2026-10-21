@@ -46,6 +46,42 @@ export interface CloudSessionResult {
   branch?: string
 }
 
+/**
+ * A cloud session whose cloud side has not been created yet. Creation is
+ * interactive (`claude --cloud <task>` in a PTY in the Agent tab), so the
+ * session is saved first and the Agent tab drives the CLI until it prints the
+ * new session's URL; then `cloud` is set and this is cleared.
+ */
+export interface CloudSessionPending {
+  /** The task the cloud session starts with (without the branch instruction). */
+  task: string
+  /** The branch the cloud agent is told to work on and push to. */
+  branch: string
+  /** ISO time the session was saved as pending. */
+  createdAt: string
+}
+
+/** Where an interactive cloud create run is. */
+export type CloudCreateStatus = 'running' | 'created' | 'failed'
+
+/** Snapshot of one interactive cloud create run (main process → renderer). */
+export interface CloudCreateState {
+  /** App session id. */
+  sessionId: string
+  projectId: string
+  /** The PTY running `claude --cloud …`; null before it starts. */
+  terminalId: string | null
+  status: CloudCreateStatus
+  /** Set once the CLI printed the new session. */
+  result?: CloudSessionResult
+  /** Why the run failed (CLI output tail, push error, …). */
+  error?: string
+  /** The CLI was cancelled after sending the create request: a session may exist on claude.ai/code. */
+  mayExist?: boolean
+  /** The local CLI process is still running. */
+  attached: boolean
+}
+
 /** Result of asking to teleport a cloud session down to its worktree. */
 export type CloudTeleportResult =
   | { ok: true; terminalId: string }
@@ -83,6 +119,8 @@ export interface Session {
   location?: SessionLocation
   /** The cloud session behind this session, kept after a teleport for reference. */
   cloud?: CloudSessionLink
+  /** Set while the cloud session is being created (location 'cloud', no `cloud` yet). */
+  cloudPending?: CloudSessionPending
   /**
    * True when the app created `branchName` (via createWorktree), so removing
    * the session may delete it even when it does not use the `session/` prefix.

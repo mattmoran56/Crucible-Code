@@ -1,18 +1,22 @@
 import { BrowserWindow, shell } from 'electron'
 import { handle } from './handle'
 import { IPC } from '../../shared/constants'
-import type { CloudSessionResult, CloudTeleportResult } from '../../shared/types'
+import type { CloudCreateState, CloudSessionResult, CloudTeleportResult } from '../../shared/types'
 import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
 import {
+  CLOUD_PTY_TAB,
+  getCloudCreateState,
+  startCloudCreate,
+  type StartCloudCreateOptions,
+} from '../services/cloud-create.service'
+import {
   claudeShellCommand,
-  createCloudSession,
   discoverTeleportedSession,
   isCloudSessionUrl,
   sendCloudMessage,
   teleportArgv,
   worktreeDirtyFiles,
-  type CreateCloudSessionOptions,
   type DiscoverOptions,
   type SendCloudMessageOptions,
 } from '../services/cloud-session.service'
@@ -28,8 +32,8 @@ export interface CloudPtyOptions {
   claudeTheme?: string
 }
 
-/** The Agent tab id the teleport PTY reports under, so tab status lands on Agent. */
-export const CLOUD_PTY_TAB = 'agent'
+/** The Agent tab id cloud PTYs report under, so tab status lands on Agent. */
+export { CLOUD_PTY_TAB }
 
 function spawnCloudPty(window: BrowserWindow, opts: CloudPtyOptions, argv: string[]): string {
   // Only one cloud PTY per session tab (a retried teleport replaces a dead
@@ -51,8 +55,14 @@ function spawnCloudPty(window: BrowserWindow, opts: CloudPtyOptions, argv: strin
 }
 
 export function registerCloudSessionHandlers(window: BrowserWindow): void {
-  handle(IPC.CLOUD_SESSION_CREATE, async (_e, opts: CreateCloudSessionOptions): Promise<CloudSessionResult> =>
-    createCloudSession(opts)
+  // Creating a cloud session is interactive: push the branch, then run
+  // `claude --cloud <task>` in a PTY in the Agent tab (see cloud-create.service).
+  handle(IPC.CLOUD_SESSION_START, async (_e, opts: StartCloudCreateOptions): Promise<CloudCreateState> =>
+    startCloudCreate(window, opts)
+  )
+
+  handle(IPC.CLOUD_SESSION_CREATE_STATE, async (_e, sessionId: string): Promise<CloudCreateState | null> =>
+    getCloudCreateState(sessionId)
   )
 
   handle(IPC.CLOUD_SESSION_SEND, async (_e, opts: SendCloudMessageOptions): Promise<CloudSessionResult> =>
