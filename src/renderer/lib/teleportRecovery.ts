@@ -4,7 +4,7 @@
 // transcript discovery knows where to look if the run is interrupted. But
 // interactive `claude --teleport` only writes a local transcript after the
 // user's first message, so a teleport abandoned before that (app quit, CLI
-// killed, timeout, "Open in Agent view" too early) leaves nothing local. Such
+// killed, timeout, "Cancel teleport") leaves nothing local. Such
 // a session is not local at all: it goes back to the cloud page with a notice
 // and a way to teleport again, rather than starting a fresh agent and losing
 // the cloud conversation.

@@ -230,7 +230,7 @@ describe('a teleport run', () => {
     expect(sent.at(-1)).toMatchObject({ status: 'done', claudeSessionId: 'local-7' })
   })
 
-  it('times out to the terminal when nothing moves, and Open in Agent view then hands over with no id', async () => {
+  it('times out to the terminal when nothing moves, and Cancel teleport then hands over with no id', async () => {
     startTeleport(win, opts)
     pty().onData!(frame(1))
     await tick(TELEPORT_STALL_MS + TELEPORT_POLL_MS)

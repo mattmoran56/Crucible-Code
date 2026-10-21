@@ -115,7 +115,8 @@ export type CloudTeleportStatus = 'running' | 'needs-input' | 'finishing' | 'don
  * - first-message: the REPL has the conversation loaded but Claude Code only
  *   saves a teleported conversation to disk once it changes (2.1.306), so
  *   there is no transcript to resume yet; the user can carry on in the
- *   terminal, after which "Open in Agent view" picks the transcript up
+ *   terminal; once a transcript exists "Open in Agent view" picks it up
+ *   (until then the only way out is "Cancel teleport", which abandons it)
  * - timeout: no progress for a long time; the terminal shows what is going on
  */
 export type CloudTeleportWaiting = 'prompt' | 'first-message' | 'timeout'
