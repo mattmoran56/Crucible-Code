@@ -226,10 +226,16 @@ export const mockApi = {
   },
 
   worktree: {
-    create: async () => ({ path: '/mock/worktree', branch: 'session/new' }),
+    create: async (_repoPath: string, sessionName: string, _baseBranch?: string, branchName?: string) => ({
+      path: '/mock/worktree',
+      branch: branchName || `session/${sessionName}`,
+    }),
     list: async () => [],
     remove: async () => {},
     createFromBranch: async () => ({ path: '/mock/worktree', branch: 'session/new' }),
+    currentBranch: async () => 'session/new',
+    deleteLocalBranch: async () => {},
+    deleteRemoteBranch: async () => {},
   },
 
   terminal: {
@@ -488,7 +494,7 @@ export const mockApi = {
   // Cloud sessions: nothing leaves the machine. The teleport "PTY" just
   // prints a canned transcript so stories and the mock app show the flow.
   cloudSession: {
-    create: async () => ({ sessionId: 'session_01MockCloudSession', url: 'https://claude.ai/code/session_01MockCloudSession' }),
+    create: async (opts: { branch: string }) => ({ sessionId: 'session_01MockCloudSession', url: 'https://claude.ai/code/session_01MockCloudSession', branch: opts.branch }),
     send: async (opts: { cloudSessionId: string }) => ({ sessionId: opts.cloudSessionId, url: `https://claude.ai/code/${opts.cloudSessionId}` }),
     teleport: async (opts: { cloudSessionId: string }) => ({ ok: true as const, terminalId: mockPty([
       `\x1b[90m$ claude --teleport ${opts.cloudSessionId}\x1b[0m\r\n`,
