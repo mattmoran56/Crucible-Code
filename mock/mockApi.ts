@@ -485,18 +485,11 @@ export const mockApi = {
     },
   },
 
-  // Cloud sessions: nothing leaves the machine. Attach/teleport "PTYs" just
-  // print a canned transcript so stories and the mock app show the flow.
+  // Cloud sessions: nothing leaves the machine. The teleport "PTY" just
+  // prints a canned transcript so stories and the mock app show the flow.
   cloudSession: {
     create: async () => ({ sessionId: 'session_01MockCloudSession', url: 'https://claude.ai/code/session_01MockCloudSession' }),
     send: async (opts: { cloudSessionId: string }) => ({ sessionId: opts.cloudSessionId, url: `https://claude.ai/code/${opts.cloudSessionId}` }),
-    attach: async (opts: { cloudSessionId: string }) => mockPty([
-      `\x1b[90m$ claude --cloud ${opts.cloudSessionId}\x1b[0m\r\n`,
-      '\x1b[36m☁ Attached to cloud session\x1b[0m — Claude is working in the cloud.\r\n\r\n',
-      '\x1b[1m●\x1b[0m Reading src/auth/session.ts\r\n',
-      '\x1b[1m●\x1b[0m Running npm test (in the cloud VM)\r\n',
-      '  \x1b[32m✓ 214 passed\x1b[0m\r\n\r\n> ',
-    ]),
     teleport: async (opts: { cloudSessionId: string }) => ({ ok: true as const, terminalId: mockPty([
       `\x1b[90m$ claude --teleport ${opts.cloudSessionId}\x1b[0m\r\n`,
       'Fetching branch from origin…\r\n',

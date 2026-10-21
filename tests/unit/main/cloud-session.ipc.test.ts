@@ -47,18 +47,8 @@ beforeEach(() => {
 const call = (channel: string, ...args: unknown[]) => h.handlers.get(channel)!(undefined, ...args)
 
 describe('cloud-session IPC', () => {
-  it('attach spawns `claude --cloud <id>` in the Agent tab, replacing any old PTY', async () => {
-    const id = await call(IPC.CLOUD_SESSION_ATTACH, opts)
-    expect(id).toBe('term-7')
-    expect(h.killTerminalsForTab).toHaveBeenCalledWith('app-session-1', 'agent')
-    const args = h.spawnTerminal.mock.calls[0]
-    expect(args[1]).toBe('app-session-1')
-    expect(args[2]).toBe('/wt/feat')
-    expect(args[3]).toBe('command')
-    expect(args[5]).toBe('/cfg')
-    expect(args[6]).toBe('claude --cloud session_01abc')
-    expect(args[10]).toBe('agent')
-    expect(String(args[6])).not.toMatch(/permission|dangerously/)
+  it('registers no attach handler (cloud sessions are watched in the embedded page)', () => {
+    expect([...h.handlers.keys()].some((k) => /attach/.test(k))).toBe(false)
   })
 
   it('teleport aborts on a dirty tree without spawning anything', async () => {
@@ -69,7 +59,7 @@ describe('cloud-session IPC', () => {
     expect(h.killTerminalsForTab).not.toHaveBeenCalled()
   })
 
-  it('teleport on a clean tree kills the attach PTY and runs `claude --teleport <id>`', async () => {
+  it('teleport on a clean tree replaces any old Agent-tab PTY and runs `claude --teleport <id>`', async () => {
     const result = await call(IPC.CLOUD_SESSION_TELEPORT, opts)
     expect(result).toEqual({ ok: true, terminalId: 'term-7' })
     expect(h.killTerminalsForTab).toHaveBeenCalledWith('app-session-1', 'agent')

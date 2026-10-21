@@ -6,7 +6,6 @@ import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
 import {
   claudeShellCommand,
-  cloudAttachArgv,
   createCloudSession,
   discoverTeleportedSession,
   isCloudSessionUrl,
@@ -29,12 +28,12 @@ export interface CloudPtyOptions {
   claudeTheme?: string
 }
 
-/** The Agent tab id both cloud PTYs report under, so tab status lands on Agent. */
+/** The Agent tab id the teleport PTY reports under, so tab status lands on Agent. */
 export const CLOUD_PTY_TAB = 'agent'
 
 function spawnCloudPty(window: BrowserWindow, opts: CloudPtyOptions, argv: string[]): string {
-  // Only one cloud PTY per session tab: attach makes way for teleport (and a
-  // re-attach replaces a dead attach). spawnTerminal is idempotent per tab.
+  // Only one cloud PTY per session tab (a retried teleport replaces a dead
+  // one). spawnTerminal is idempotent per tab.
   terminalService.killTerminalsForTab(opts.sessionId, CLOUD_PTY_TAB)
   return terminalService.spawnTerminal(
     window,
@@ -58,10 +57,6 @@ export function registerCloudSessionHandlers(window: BrowserWindow): void {
 
   handle(IPC.CLOUD_SESSION_SEND, async (_e, opts: SendCloudMessageOptions): Promise<CloudSessionResult> =>
     sendCloudMessage(opts)
-  )
-
-  handle(IPC.CLOUD_SESSION_ATTACH, async (_e, opts: CloudPtyOptions): Promise<string> =>
-    spawnCloudPty(window, opts, cloudAttachArgv(opts.cloudSessionId))
   )
 
   handle(IPC.CLOUD_SESSION_TELEPORT, async (_e, opts: CloudPtyOptions): Promise<CloudTeleportResult> => {

@@ -12,6 +12,7 @@ import { killAllVisualAgents } from './services/visual-agent/visual-agent.servic
 import { stopScheduler } from './services/scheduler.service'
 import { startKeepAwake, stopKeepAwake } from './services/keep-awake.service'
 import { eventBus } from './services/event-bus'
+import { installClaudeWebGuards } from './services/claude-web.service'
 import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
 import { unregisterCloud } from '../../remote/server/cloud-client'
 
@@ -35,8 +36,13 @@ async function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // For the embedded claude.ai/code page in cloud sessions' Agent tab.
+      // Every webview is hardened (and restricted to claude.ai on its own
+      // partition) by installClaudeWebGuards below.
+      webviewTag: true,
     },
   })
+  installClaudeWebGuards(mainWindow.webContents)
 
   mainWindow.once('ready-to-show', () => mainWindow!.show())
 
