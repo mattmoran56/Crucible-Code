@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   handlers: new Map<string, (...args: any[]) => any>(),
@@ -18,6 +18,9 @@ vi.mock('../../../src/main/services/terminal.service', () => ({
   shellQuote: (a: string) => a,
   spawnTerminal: h.spawnTerminal,
   killTerminalsForTab: h.killTerminalsForTab,
+  watchTerminal: vi.fn(() => () => {}),
+  writeTerminal: vi.fn(),
+  killTerminal: vi.fn(),
 }))
 vi.mock('../../../src/main/services/hook.service', () => ({ writeClaudeHookSettings: h.writeClaudeHookSettings }))
 vi.mock('../../../src/main/services/cloud-session.service', async (importOriginal) => {
@@ -27,6 +30,9 @@ vi.mock('../../../src/main/services/cloud-session.service', async (importOrigina
 
 import { registerCloudSessionHandlers } from '../../../src/main/ipc/cloud-session.ipc'
 import { IPC } from '../../../src/shared/constants'
+import { _resetTeleportRuns } from '../../../src/main/services/cloud-teleport.service'
+
+afterEach(() => _resetTeleportRuns())
 
 const opts = {
   sessionId: 'app-session-1',
@@ -67,7 +73,9 @@ describe('cloud-session IPC', () => {
 
   it('teleport on a clean tree replaces any old Agent-tab PTY and runs `claude --teleport <id>`', async () => {
     const result = await call(IPC.CLOUD_SESSION_TELEPORT, opts)
-    expect(result).toEqual({ ok: true, terminalId: 'term-7' })
+    expect(result).toMatchObject({ ok: true, terminalId: 'term-7', state: { sessionId: 'app-session-1', status: 'running', steps: [] } })
+    // The run is watched in the main process and can be asked for after a remount.
+    expect(await call(IPC.CLOUD_SESSION_TELEPORT_STATE, 'app-session-1')).toMatchObject({ terminalId: 'term-7' })
     expect(h.killTerminalsForTab).toHaveBeenCalledWith('app-session-1', 'agent')
     expect(h.writeClaudeHookSettings).toHaveBeenCalledWith('/wt/feat', 'dark', 'app-session-1')
     expect(h.spawnTerminal.mock.calls[0][6]).toBe('claude --teleport session_01abc')

@@ -61,6 +61,7 @@ import {
   cloudEnv,
   cloudSendArgv,
   discoverTeleportedSession,
+  findTeleportTranscript,
   encodeProjectDir,
   isUnknownOnBranchError,
   parseCloudResult,
@@ -308,6 +309,21 @@ describe('discoverTeleportedSession', () => {
     touch('bbbb-2222.jsonl', new Date('2026-10-21T10:02:00Z'))
     touch('notes.txt', new Date('2026-10-21T10:05:00Z'))
     expect(await discoverTeleportedSession({ worktreePath: worktree, configDir: root, since: since.toISOString() })).toBe('bbbb-2222')
+  })
+
+  it('prefers the transcript carrying a teleport marker over a newer unrelated one', async () => {
+    const since = new Date('2026-10-21T10:00:00Z')
+    const write = (name: string, body: string, at: Date) => {
+      const p = join(projectDir(), name)
+      writeFileSync(p, body)
+      utimesSync(p, at, at)
+    }
+    write('tele-1111.jsonl', '{"type":"user","remoteSourced":true,"message":{"role":"user","content":"hi"}}\n', new Date('2026-10-21T10:01:00Z'))
+    write('later-2222.jsonl', '{"type":"user","message":{"role":"user","content":"other"}}\n', new Date('2026-10-21T10:03:00Z'))
+    write('meta-3333.jsonl', '{"type":"user","isMeta":true,"message":{"role":"user","content":"This session is being continued from another machine."}}\n', new Date('2026-10-21T10:02:00Z'))
+    const found = await findTeleportTranscript({ worktreePath: worktree, configDir: root, since: since.toISOString() })
+    expect(found).toMatchObject({ id: 'meta-3333', marked: true })
+    expect(await discoverTeleportedSession({ worktreePath: worktree, configDir: root, since: since.toISOString() })).toBe('meta-3333')
   })
 
   it('returns null when nothing was written since', async () => {
