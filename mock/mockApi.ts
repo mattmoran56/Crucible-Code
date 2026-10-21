@@ -40,6 +40,19 @@ import { DEFAULT_VISUAL_AGENT_MODEL } from '../src/shared/visual-agent'
 
 // Collect terminal.onData callbacks so we can push fake output
 const terminalDataCallbacks: Array<(terminalId: string, data: string) => void> = []
+
+/** A fake PTY that prints `lines` and returns its terminal id. */
+function mockPty(lines: string[]): string {
+  const terminalId = `mock-term-${++terminalCounter}`
+  setTimeout(() => {
+    lines.forEach((line, i) =>
+      setTimeout(() => {
+        for (const cb of terminalDataCallbacks) cb(terminalId, line)
+      }, i * 80)
+    )
+  }, 200)
+  return terminalId
+}
 const terminalExitCallbacks: Array<(terminalId: string, exitCode: number) => void> = []
 let terminalCounter = 0
 
@@ -463,6 +476,27 @@ export const mockApi = {
         visualAgentListeners.delete(cb)
       }
     },
+  },
+
+  // Cloud sessions: nothing leaves the machine. Attach/teleport "PTYs" just
+  // print a canned transcript so stories and the mock app show the flow.
+  cloudSession: {
+    create: async () => ({ sessionId: 'session_01MockCloudSession', url: 'https://claude.ai/code/session_01MockCloudSession' }),
+    send: async (opts: { cloudSessionId: string }) => ({ sessionId: opts.cloudSessionId, url: `https://claude.ai/code/${opts.cloudSessionId}` }),
+    attach: async (opts: { cloudSessionId: string }) => mockPty([
+      `\x1b[90m$ claude --cloud ${opts.cloudSessionId}\x1b[0m\r\n`,
+      '\x1b[36m☁ Attached to cloud session\x1b[0m — Claude is working in the cloud.\r\n\r\n',
+      '\x1b[1m●\x1b[0m Reading src/auth/session.ts\r\n',
+      '\x1b[1m●\x1b[0m Running npm test (in the cloud VM)\r\n',
+      '  \x1b[32m✓ 214 passed\x1b[0m\r\n\r\n> ',
+    ]),
+    teleport: async (opts: { cloudSessionId: string }) => ({ ok: true as const, terminalId: mockPty([
+      `\x1b[90m$ claude --teleport ${opts.cloudSessionId}\x1b[0m\r\n`,
+      'Fetching branch from origin…\r\n',
+      'Checked out session branch. Loaded conversation history.\r\n\r\n> ',
+    ]) }),
+    discoverLocal: async () => null,
+    openUrl: async () => {},
   },
 
   reviewLoop: {

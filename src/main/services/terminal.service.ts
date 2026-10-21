@@ -140,7 +140,7 @@ export function buildClaudeCommand(opts: {
   return claudeWithArgs
 }
 
-function shellQuote(a: string): string {
+export function shellQuote(a: string): string {
   // Single-quote and escape any embedded single quotes for POSIX shells.
   if (/^[A-Za-z0-9_\-\/=:.,@+]+$/.test(a)) return a
   return `'${a.replace(/'/g, `'\\''`)}'`
@@ -594,6 +594,26 @@ export function killReviewLoopTerminals(sessionId: string): number {
   let killed = 0
   for (const [id, instance] of terminals) {
     if (instance.sessionId === sessionId && instance.tabId.startsWith('review-loop:')) {
+      instance.stopped = true
+      try { instance.pty.kill() } catch { /* already dead */ }
+      terminals.delete(id)
+      unpersistTerminal(id)
+      killed += 1
+    }
+  }
+  return killed
+}
+
+/**
+ * Kill the live terminal(s) bound to one workspace tab of a session. Used
+ * before re-spawning a tab's PTY with a different command (a cloud session's
+ * attach terminal making way for its teleport), since spawnTerminal is
+ * idempotent per (sessionId, tabId) and would otherwise hand back the old one.
+ */
+export function killTerminalsForTab(sessionId: string, tabId: string): number {
+  let killed = 0
+  for (const [id, instance] of terminals) {
+    if (instance.sessionId === sessionId && instance.tabId === tabId) {
       instance.stopped = true
       try { instance.pty.kill() } catch { /* already dead */ }
       terminals.delete(id)

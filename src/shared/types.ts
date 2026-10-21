@@ -9,7 +9,43 @@ export interface Project {
   name: string
   repoPath: string
   claudeAccountId?: string
+  /**
+   * Where new sessions run by default. `undefined` means CLOUD: the user wants
+   * Claude Code on the web to be the default so local CI/test load stays off
+   * their machine. This is a deliberate exception to the usual "optional
+   * features default off" rule — only an explicit 'local' opts out.
+   */
+  defaultSessionLocation?: SessionLocation
 }
+
+/** Where a session's agent runs: Claude Code on the web, or on this machine. */
+export type SessionLocation = 'cloud' | 'local'
+
+/** The Claude Code on the web session a cloud session is bound to. */
+export interface CloudSessionLink {
+  /** Cloud session id (e.g. `session_...`). */
+  sessionId: string
+  /** https://claude.ai/code/... URL for the session. */
+  url: string
+  /** ISO time the session was teleported down to the local worktree. */
+  teleportedAt?: string
+  /**
+   * Set once we have tried to find the local Claude session a teleport wrote,
+   * so a failed discovery is not retried (and re-noticed) on every launch.
+   */
+  localResumeResolved?: boolean
+}
+
+/** Result of creating a cloud session or queuing a message to one. */
+export interface CloudSessionResult {
+  sessionId: string
+  url: string
+}
+
+/** Result of asking to teleport a cloud session down to its worktree. */
+export type CloudTeleportResult =
+  | { ok: true; terminalId: string }
+  | { ok: false; reason: 'dirty'; files: string[] }
 
 export type SessionStatus = 'running' | 'attention' | 'completed'
 export type HookType = 'prompt' | 'notification' | 'stop'
@@ -39,6 +75,10 @@ export interface Session {
    * app resumes the same Claude conversation on the same model.
    */
   visualAgents?: Record<string, { claudeSessionId: string; model: string }>
+  /** Where the agent runs. Missing means local (every session before cloud sessions). */
+  location?: SessionLocation
+  /** The cloud session behind this session, kept after a teleport for reference. */
+  cloud?: CloudSessionLink
 }
 
 export interface Commit {

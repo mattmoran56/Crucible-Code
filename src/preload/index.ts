@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
 import type { VisualAgentAskDecision, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -504,6 +504,25 @@ const api = {
       ipcRenderer.invoke(IPC.VISUAL_AGENT_GET_STATE, agentId),
     onFrame: (cb: (agentId: string, frame: VisualAgentFrame) => void): (() => void) =>
       onVisualAgentFrame(cb),
+  },
+
+  cloudSession: {
+    /** Push the session branch and start a Claude Code on the web session in the worktree. */
+    create: (opts: { worktreePath: string; branch: string; prompt: string; configDir?: string | null }): Promise<CloudSessionResult> =>
+      ipcRenderer.invoke(IPC.CLOUD_SESSION_CREATE, opts),
+    /** Queue a follow-up message to a cloud session (`claude -p --cloud <id>`). */
+    send: (opts: { worktreePath: string; cloudSessionId: string; message: string; configDir?: string | null }): Promise<CloudSessionResult> =>
+      ipcRenderer.invoke(IPC.CLOUD_SESSION_SEND, opts),
+    /** Spawn the `claude --cloud <id>` attach PTY for a session's Agent tab. Returns its terminal id. */
+    attach: (opts: { sessionId: string; worktreePath: string; cloudSessionId: string; configDir?: string | null; repoPath?: string; claudeTheme?: string }): Promise<string> =>
+      ipcRenderer.invoke(IPC.CLOUD_SESSION_ATTACH, opts),
+    /** Check the worktree is clean, then spawn `claude --teleport <id>` in the Agent tab. */
+    teleport: (opts: { sessionId: string; worktreePath: string; cloudSessionId: string; configDir?: string | null; repoPath?: string; claudeTheme?: string }): Promise<CloudTeleportResult> =>
+      ipcRenderer.invoke(IPC.CLOUD_SESSION_TELEPORT, opts),
+    /** The local Claude session id a teleport wrote, or null. */
+    discoverLocal: (opts: { worktreePath: string; configDir?: string | null; since: string }): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.CLOUD_SESSION_DISCOVER_LOCAL, opts),
+    openUrl: (url: string): Promise<void> => ipcRenderer.invoke(IPC.CLOUD_SESSION_OPEN_URL, url),
   },
 
   reviewLoop: {
