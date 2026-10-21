@@ -438,14 +438,13 @@ describe('terminalStore.recoverTerminals', () => {
     expect(useTerminalStore.getState().terminals['s1:shell'].terminalId).toBe('new-1')
   })
 
-  it('respawns claude terminals with the resume flag set', async () => {
+  it('does not respawn claude terminals: the Agent tab is a visual agent that resumes itself', async () => {
     getRecoveryList.mockResolvedValue([
-      { terminalId: 'old-2', sessionId: 's1', mode: 'claude', cwd: '/old/cwd' },
+      { terminalId: 'old-2', sessionId: 's1', mode: 'claude', cwd: '/old/cwd', tabId: 'agent' },
     ])
-    spawn.mockResolvedValue('new-2')
     await useTerminalStore.getState().recoverTerminals([liveSession('s1')])
-    expect(spawn.mock.calls[0][2]).toBe('claude')
-    expect(spawn.mock.calls[0][6]).toBe(true)
+    expect(spawn).not.toHaveBeenCalled()
+    expect(useTerminalStore.getState().terminals).toEqual({})
   })
 
   it('skips review-mode terminals entirely', async () => {
@@ -497,15 +496,15 @@ describe('terminalStore.recoverTerminals', () => {
     expect(useTerminalStore.getState().terminals['s1:shell'].sessionName).toBe('Fancy Name')
   })
 
-  it('recovers both shell and claude terminals for the same session', async () => {
+  it('recovers the shell terminal but not the claude one for the same session', async () => {
     getRecoveryList.mockResolvedValue([
       { terminalId: 'old-sh', sessionId: 's1', mode: 'shell', cwd: '/wt/s1' },
       { terminalId: 'old-cl', sessionId: 's1', mode: 'claude', cwd: '/wt/s1' },
     ])
-    spawn.mockResolvedValueOnce('new-sh').mockResolvedValueOnce('new-cl')
+    spawn.mockResolvedValueOnce('new-sh')
     await useTerminalStore.getState().recoverTerminals([liveSession('s1')])
-    const keys = Object.keys(useTerminalStore.getState().terminals).sort()
-    expect(keys).toEqual(['s1:claude', 's1:shell'])
+    expect(spawn).toHaveBeenCalledTimes(1)
+    expect(Object.keys(useTerminalStore.getState().terminals)).toEqual(['s1:shell'])
   })
 })
 

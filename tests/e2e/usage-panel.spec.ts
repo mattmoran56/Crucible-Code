@@ -61,7 +61,7 @@ test.describe('Usage panel — weekly activity', () => {
     await openUsagePanel(page)
     await expect(page.getByText('Messages')).toBeVisible()
     await expect(page.getByText('Sessions', { exact: true }).last()).toBeVisible()
-    await expect(page.getByText('Tool calls')).toBeVisible()
+    await expect(page.getByText('Tool calls', { exact: true })).toBeVisible()
   })
 })
 

@@ -14,11 +14,11 @@ import { renderHook, act } from '@testing-library/react'
 import { useNotionBootstrap } from '../../../src/renderer/hooks/useNotionBootstrap'
 import { useProjectStore } from '../../../src/renderer/stores/projectStore'
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore'
-import { useTerminalStore } from '../../../src/renderer/stores/terminalStore'
+import { useVisualAgentStore } from '../../../src/renderer/stores/visualAgentStore'
 import { useToastStore } from '../../../src/renderer/stores/toastStore'
 import type { NotionFireTaskPayload, Session } from '../../../src/shared/types'
 
-const spawnTerminalMock = vi.fn(async () => 'terminal-1')
+const ensureStartedMock = vi.fn(async () => {})
 
 let fireListeners: Array<(payload: NotionFireTaskPayload) => void> = []
 const persisted: Record<string, Session[]> = {}
@@ -73,11 +73,10 @@ beforeEach(() => {
   worktreeApi.create.mockClear()
   applyWriteBackMock.mockClear()
   notionApi.onFireTask.mockClear()
-  spawnTerminalMock.mockClear()
-  // Stub spawnTerminal on the terminal store. The real implementation talks
-  // to the main process; we just need the new bootstrap path to be able to
-  // call it without crashing.
-  useTerminalStore.setState({ spawnTerminal: spawnTerminalMock as any })
+  ensureStartedMock.mockClear()
+  // Stub ensureStarted on the visual agent store. The real implementation
+  // talks to the main process; we just need to see what the bootstrap starts.
+  useVisualAgentStore.setState({ agents: {}, ensureStarted: ensureStartedMock as any })
 
   ;(window as any).api = {
     session: sessionApi,
@@ -134,7 +133,7 @@ describe('useNotionBootstrap', () => {
     expect(fireListeners).toHaveLength(0)
   })
 
-  it('on fire: creates a session and spawns the claude terminal so writeWhenReady can inject the prompt', async () => {
+  it('on fire: creates a session and starts its visual agent with the resolved prompt', async () => {
     renderHook(() => useNotionBootstrap())
     await act(async () => {
       await fireListeners[0](payload)
@@ -144,13 +143,14 @@ describe('useNotionBootstrap', () => {
     const saved = persisted['proj-A']
     expect(saved).toHaveLength(1)
     expect(saved[0].branchName).toBe('notion/hello-world')
-    // The bootstrap proactively spawns the terminal so the prompt can be
-    // injected via writeWhenReady (same approach as the review tab), instead
-    // of relying on sessionStore.pendingStartup which is a single slot.
-    expect(spawnTerminalMock).toHaveBeenCalledTimes(1)
-    const spawnArgs = spawnTerminalMock.mock.calls[0]
-    expect(spawnArgs[2]).toBe('/created/hello-world')
-    expect(spawnArgs[3]).toBe('claude')
+    // The bootstrap starts the Agent tab's visual agent up-front with the
+    // prompt, instead of relying on sessionStore.pendingStartup which is a
+    // single slot.
+    expect(ensureStartedMock).toHaveBeenCalledTimes(1)
+    const opts = (ensureStartedMock.mock.calls[0] as unknown[])[0] as Record<string, unknown>
+    expect(opts.agentId).toBe(`${saved[0].id}:agent`)
+    expect(opts.cwd).toBe('/created/hello-world')
+    expect(opts.initialPrompt).toBe('/notion-ticket https://notion.so/page-1')
   })
 
   it('calls applyWriteBack with the new branch and session id', async () => {

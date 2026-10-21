@@ -424,3 +424,24 @@ export const ClaudeWebSettings: Story = {
     },
   ],
 }
+
+// The Agent tab's visual agent seeded with the demo conversation — tool cards, a sub-agent and a
+// pending permission card.
+export const VisualAgent: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ visualAgent: {} })
+      return <Story />
+    },
+  ],
+}
+
+// The /btw side question sheet slid up over the composer.
+export const VisualAgentForkSheet: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ visualAgent: { openForkId: 'fork-demo-01' } })
+      return <Story />
+    },
+  ],
+}

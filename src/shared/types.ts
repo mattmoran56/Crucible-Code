@@ -41,6 +41,13 @@ export interface Session {
   prNumber?: number
   baseBranch?: string
   notionTicket?: NotionTicketLink
+  /**
+   * Visual agents in this session keyed by workspace tab id ('agent' for the
+   * core tab, 'agent:N' for dynamic ones, or 'visual-agent:N' for tabs opened
+   * before agents were always visual). Persisted so a restart of the
+   * app resumes the same Claude conversation on the same model.
+   */
+  visualAgents?: Record<string, { claudeSessionId: string; model: string }>
 }
 
 export interface Commit {

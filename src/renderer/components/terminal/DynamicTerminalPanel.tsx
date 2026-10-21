@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { TerminalView } from './TerminalView'
-import { getTabBaseType, type WorkspaceTab } from '../../stores/workspaceLayoutStore'
+import type { WorkspaceTab } from '../../stores/workspaceLayoutStore'
 
 interface Props {
   tabId: WorkspaceTab
@@ -16,7 +16,7 @@ interface Props {
 }
 
 /**
- * Renders a single terminal instance for a dynamic tab (agent:N or terminal:N).
+ * Renders a single terminal instance for a dynamic terminal:N tab.
  * Auto-spawns the terminal for the active session when it first becomes visible.
  * Renders all session terminals for this tab (so they persist across session switches).
  */
@@ -24,8 +24,9 @@ export function DynamicTerminalPanel({ tabId, visible, overrideCwd, overrideSess
   const { activeSessionId, sessions } = useSessionStore()
   const { terminals, spawnDynamicTerminal, getDynamicTerminal } = useTerminalStore()
 
-  const baseType = getTabBaseType(tabId)
-  const mode = baseType === 'agent' ? 'claude' as const : 'shell' as const
+  // Agent tabs are visual agents, so a dynamic terminal tab only ever spawns a
+  // shell (a claude custom button registers its own PTY here instead).
+  const mode = 'shell' as const
 
   // Determine effective session context
   const effectiveSessionId = overrideSessionId ?? activeSessionId

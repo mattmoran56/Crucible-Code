@@ -9,8 +9,8 @@
  *      "Scheduled" sidebar panel. (User's first concern: visibility.)
  *
  *   2) Programmatic addQueuedSession with a near-future scheduledFor →
- *      wait → the new session card appears in the regular sidebar AND the
- *      mock terminal received the prompt as a write call. (User's second
+ *      wait → the new session card appears in the regular sidebar AND its
+ *      Agent tab's visual agent started with the prompt. (User's second
  *      concern: prompt actually injects.)
  */
 import { test, expect, type Page } from '@playwright/test'
@@ -98,8 +98,8 @@ test.describe('Scheduled sessions — fire path', () => {
   test.beforeEach(async ({ page }) => bootApp(page))
 
   // This is the regression test for the user's exact bug: queued session
-  // fired but the prompt was never injected into the agent terminal.
-  test('queued session fires, becomes a real session, and the prompt is written to the agent terminal', async ({ page }) => {
+  // fired but the prompt was never injected into the agent.
+  test('queued session fires, becomes a real session, and its visual agent starts with the prompt', async ({ page }) => {
     // Use the active CodeCrucible project (already selected after boot).
     const projectId = await page.evaluate(async () => {
       const list = await (window as any).api.project.list()
@@ -146,29 +146,16 @@ test.describe('Scheduled sessions — fire path', () => {
       page.getByRole('button', { name: /^feat\/e2e-fire/ })
     ).toBeVisible({ timeout: 5_000 })
 
-    // The mock's emitted output contains a `>` (Claude's input-prompt
-    // marker), which writeWhenReady detects and writes the prompt. Give it
-    // a second to do so.
+    // The session's Agent tab visual agent started in the background with
+    // the prompt as its first message.
     await page.waitForFunction(
       (needle: string) => {
-        const writes = (window as any).__terminalWrites as Array<{
-          terminalId: string
-          data: string
-        }>
-        return writes.some((w) => w.data.includes(needle))
+        const starts = (window as any).__visualAgentStarts as Array<{ agentId: string; initialPrompt?: string | null }>
+        return starts.some((s) => s.initialPrompt === needle && s.agentId.endsWith(':agent'))
       },
       'INTEGRATION_TEST_PROMPT',
       { timeout: 12_000 }
     )
-
-    // Belt-and-braces: the data written must include the prompt + carriage
-    // return (so claude treats it as a submit, not a partial input).
-    const writes = await page.evaluate(
-      () => (window as any).__terminalWrites as Array<{ terminalId: string; data: string }>
-    )
-    const prompt = writes.find((w) => w.data.includes('INTEGRATION_TEST_PROMPT'))
-    expect(prompt).toBeDefined()
-    expect(prompt!.data.endsWith('\r')).toBe(true)
   })
 
   test('cancelling a queued session removes it from the panel and never fires', async ({ page }) => {
@@ -192,7 +179,7 @@ test.describe('Scheduled sessions — fire path', () => {
 
     await expect(page.getByText('feat/will-cancel')).toBeVisible({ timeout: 5_000 })
 
-    // Cancel via the IPC (the dropdown menu is finicky to drive in xterm
+    // Cancel via the IPC (the dropdown menu is finicky to drive in these
     // tests; we trust the unit tests for that path and target the IPC).
     await page.evaluate(() =>
       (window as any).api.scheduler.cancelQueuedSession('qs-cancel-test')
@@ -203,13 +190,10 @@ test.describe('Scheduled sessions — fire path', () => {
     // Wait long enough that, if the timer wasn't cleared, the prompt would
     // have been written.
     await page.waitForTimeout(1_000)
-    const wrote = await page.evaluate(() => {
-      const writes = (window as any).__terminalWrites as Array<{
-        terminalId: string
-        data: string
-      }>
-      return writes.some((w) => w.data.includes('should-never-write'))
+    const started = await page.evaluate(() => {
+      const starts = (window as any).__visualAgentStarts as Array<{ initialPrompt?: string | null }>
+      return starts.some((s) => s.initialPrompt === 'should-never-write')
     })
-    expect(wrote).toBe(false)
+    expect(started).toBe(false)
   })
 })

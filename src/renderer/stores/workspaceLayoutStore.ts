@@ -2,11 +2,21 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 export type CoreTab = 'agent' | 'git' | 'pr' | 'review' | 'review-loop' | 'code'
-export type WorkspaceTab = CoreTab | `agent:${string}` | `terminal:${string}`
+export type WorkspaceTab = CoreTab | `agent:${string}` | `terminal:${string}` | `visual-agent:${string}`
+export type DynamicTabType = 'agent' | 'terminal'
 
 /** Check if a tab is a dynamic (closable) instance */
 export function isDynamicTab(tab: WorkspaceTab): boolean {
-  return tab.startsWith('agent:') || tab.startsWith('terminal:')
+  return tab.startsWith('agent:') || tab.startsWith('terminal:') || tab.startsWith('visual-agent:')
+}
+
+/**
+ * Whether a tab is a dynamic agent tab. In a session workspace these always
+ * render as a Visual Agent. `visual-agent:N` is the id such tabs had before
+ * agents were always visual; layouts saved then still carry it.
+ */
+export function isAgentTab(tab: string): tab is `agent:${string}` | `visual-agent:${string}` {
+  return tab.startsWith('agent:') || tab.startsWith('visual-agent:')
 }
 
 /** Get the base type of a tab ('agent', 'git', 'terminal', etc.) */
@@ -25,6 +35,7 @@ export function getTabLabel(tab: WorkspaceTab): string {
   if (tab === 'code') return 'Code'
   if (tab.startsWith('agent:')) return `Agent ${tab.split(':')[1]}`
   if (tab.startsWith('terminal:')) return `Terminal ${tab.split(':')[1]}`
+  if (tab.startsWith('visual-agent:')) return `Agent ${tab.split(':')[1]}`
   return tab
 }
 
@@ -94,7 +105,7 @@ interface WorkspaceLayoutState {
   canSplit: () => boolean
 
   /** Add a dynamic agent or terminal tab to a column, returns the new tab ID */
-  addDynamicTab: (columnId: string, type: 'agent' | 'terminal') => WorkspaceTab
+  addDynamicTab: (columnId: string, type: DynamicTabType) => WorkspaceTab
 
   /** Remove a dynamic tab from all columns (and clean up empty columns) */
   removeDynamicTab: (tab: WorkspaceTab) => void
@@ -339,7 +350,7 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>()(
         dynamicAgentCounter,
         dynamicTerminalCounter,
       }),
-      onRehydrate: (_state) => {
+      onRehydrateStorage: () => {
         return (rehydratedState) => {
           if (rehydratedState) {
             const persisted = rehydratedState as unknown as { dynamicAgentCounter?: number; dynamicTerminalCounter?: number }

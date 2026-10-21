@@ -29,6 +29,14 @@ import {
   mockReviewLoopSettings,
   mockReviewLoopRunning,
 } from './mockData'
+import { demoVisualAgentSnapshot } from './visualAgentDemo'
+import type {
+  VisualAgentEvent,
+  VisualAgentFrame,
+  VisualAgentSnapshot,
+  VisualAgentStartOptions,
+} from '../src/shared/visual-agent'
+import { DEFAULT_VISUAL_AGENT_MODEL } from '../src/shared/visual-agent'
 
 // Collect terminal.onData callbacks so we can push fake output
 const terminalDataCallbacks: Array<(terminalId: string, data: string) => void> = []
@@ -113,7 +121,73 @@ const terminalWrites: Array<{ terminalId: string; data: string }> = []
 ;(window as any).__queuedMessages = queuedMessages
 
 // Build the mock window.api matching src/preload/index.ts
+// Visual Agent mock: an in-memory snapshot per agent plus frame listeners, so
+// the chat UI can be driven in Storybook / e2e without a real claude process.
+const visualAgentListeners = new Set<(agentId: string, frame: VisualAgentFrame) => void>()
+const visualAgentSnapshots = new Map<string, VisualAgentSnapshot>()
+function vaEmit(agentId: string, frame: VisualAgentFrame) {
+  const snap = visualAgentSnapshots.get(agentId)
+  if (snap) {
+    if (frame.t === 'event') snap.events.push(frame.event)
+    else if (frame.t === 'state') {
+      snap.state = frame.state
+      snap.turnStartedAt = frame.turnStartedAt
+    } else if (frame.t === 'session') snap.model = frame.model
+    else if (frame.t === 'forks') snap.forks = frame.forks
+    else if (frame.t === 'partial') snap.partial = frame.text ? { messageId: frame.messageId, threadId: frame.threadId, text: frame.text } : null
+  }
+  for (const cb of visualAgentListeners) cb(agentId, frame)
+}
+function vaEvent(agentId: string, body: Record<string, unknown>, threadId = 'main'): VisualAgentEvent {
+  const snap = visualAgentSnapshots.get(agentId)
+  const seq = snap ? snap.events.length : 0
+  return { uuid: `mock-${agentId}-${seq}-${Math.random().toString(36).slice(2, 8)}`, seq, threadId, at: new Date().toISOString(), ...body } as VisualAgentEvent
+}
+// Surface visual-agent starts and sent messages to Playwright, so e2e tests can
+// assert a startup prompt reached the Agent tab.
+const visualAgentStarts: VisualAgentStartOptions[] = []
+const visualAgentSends: Array<{ agentId: string; text: string }> = []
+;(window as any).__visualAgentStarts = visualAgentStarts
+;(window as any).__visualAgentSends = visualAgentSends
+
+/** A user turn plus a streamed mock reply. */
+function vaReply(agentId: string, text: string) {
+  const turnStartedAt = new Date().toISOString()
+  vaEmit(agentId, { t: 'event', event: vaEvent(agentId, { kind: 'text', role: 'user', text }) })
+  vaEmit(agentId, { t: 'state', state: 'running', turnStartedAt })
+  const reply = `This is a mock reply to: **${text.slice(0, 80)}**. In the real app Claude Code would answer here, streaming token by token.`
+  vaStream(agentId, reply, () => {
+    vaEmit(agentId, { t: 'event', event: vaEvent(agentId, { kind: 'text', role: 'assistant', text: reply }) })
+    vaEmit(agentId, {
+      t: 'event',
+      event: vaEvent(agentId, { kind: 'result', ok: true, costUsd: 0.0123, durationMs: 1800, usage: { input: 12, output: 48, cacheRead: 9000, cacheWrite: 0 }, text: reply }),
+    })
+    vaEmit(agentId, { t: 'state', state: 'idle', turnStartedAt: null })
+  })
+}
+
+function vaStream(agentId: string, text: string, done: () => void) {
+  const messageId = `msg_mock_${Date.now()}`
+  const words = text.split(/(?<= )/)
+  let acc = ''
+  words.forEach((w, i) => {
+    setTimeout(() => {
+      acc += w
+      vaEmit(agentId, { t: 'partial', messageId, threadId: 'main', text: acc })
+      if (i === words.length - 1) {
+        vaEmit(agentId, { t: 'partial', messageId, threadId: 'main', text: '' })
+        done()
+      }
+    }, 300 + i * 40)
+  })
+}
+
 export const mockApi = {
+  /** Story-only helpers, reached through window.api so stories need no mock imports. */
+  __mock: {
+    demoVisualAgentSnapshot,
+  },
+
   git: {
     status: async () => ({ current: 'session/add-pr-review', tracking: 'origin/session/add-pr-review', files: [] }),
     log: async () => mockCommits,
@@ -298,6 +372,97 @@ export const mockApi = {
   startupPrompt: {
     list: async (projectId: string) => mockStartupPrompts[projectId] ?? [],
     save: async () => {},
+  },
+
+  visualAgent: {
+    start: async (opts: VisualAgentStartOptions): Promise<VisualAgentSnapshot> => {
+      visualAgentStarts.push(opts)
+      let snap = visualAgentSnapshots.get(opts.agentId)
+      if (!snap) {
+        // A fresh agent idles on its empty state (deterministic for visual
+        // baselines); stories that want the demo conversation seed it.
+        snap = {
+          agentId: opts.agentId,
+          claudeSessionId: `mock-claude-${opts.agentId}`,
+          model: opts.model ?? DEFAULT_VISUAL_AGENT_MODEL,
+          state: 'idle',
+          events: [],
+          partial: null,
+          usage: null,
+          forks: [],
+          turnStartedAt: null,
+        }
+        visualAgentSnapshots.set(opts.agentId, snap)
+        const prompt = opts.initialPrompt
+        if (prompt) setTimeout(() => vaReply(opts.agentId, prompt), 50)
+      }
+      return { ...snap, events: [...snap.events], forks: [...snap.forks] }
+    },
+    send: async (agentId: string, text: string) => {
+      visualAgentSends.push({ agentId, text })
+      vaReply(agentId, text)
+    },
+    interrupt: async (agentId: string) => {
+      vaEmit(agentId, { t: 'event', event: vaEvent(agentId, { kind: 'note', source: 'interrupt', label: 'Interrupted', text: '[Request interrupted by user]' }) })
+      vaEmit(agentId, { t: 'state', state: 'idle', turnStartedAt: null })
+    },
+    stop: async (agentId: string) => {
+      vaEmit(agentId, { t: 'state', state: 'done', turnStartedAt: null })
+    },
+    answer: async (agentId: string, requestId: string, decision: 'allow' | 'always' | 'deny') => {
+      vaEmit(agentId, { t: 'event', event: vaEvent(agentId, { kind: 'ask-result', id: requestId, decision }) })
+      const snap = visualAgentSnapshots.get(agentId)
+      const ask = snap?.events.find((e) => e.kind === 'ask' && e.id === requestId)
+      const toolId = ask && ask.kind === 'ask' ? ask.toolUseId : ''
+      vaEmit(agentId, { t: 'state', state: 'running', turnStartedAt: new Date().toISOString() })
+      setTimeout(() => {
+        if (toolId) {
+          vaEmit(agentId, {
+            t: 'event',
+            event: vaEvent(agentId, decision === 'deny'
+              ? { kind: 'tool-result', id: toolId, ok: false, text: 'Denied from CodeCrucible.' }
+              : { kind: 'tool-result', id: toolId, ok: true, text: 'To github.com:acme/acme-web.git\n * [new branch]  fix/safari-signin -> fix/safari-signin' }),
+          })
+        }
+        const text = decision === 'deny' ? "OK, I won't push. The fix is committed locally." : 'Pushed `fix/safari-signin` to origin.'
+        vaEmit(agentId, { t: 'event', event: vaEvent(agentId, { kind: 'text', role: 'assistant', text }) })
+        vaEmit(agentId, { t: 'event', event: vaEvent(agentId, { kind: 'result', ok: true, costUsd: 0.02, durationMs: 2100, usage: null, text }) })
+        vaEmit(agentId, { t: 'state', state: 'idle', turnStartedAt: null })
+      }, 600)
+    },
+    setModel: async (agentId: string, model: string) => {
+      const snap = visualAgentSnapshots.get(agentId)
+      vaEmit(agentId, { t: 'session', claudeSessionId: snap?.claudeSessionId ?? '', model })
+    },
+    fork: async (agentId: string, question: string) => {
+      const snap = visualAgentSnapshots.get(agentId)
+      const forkId = `fork-mock-${Date.now()}`
+      const fork = { id: forkId, question, startedAt: new Date().toISOString(), afterSeq: snap?.events.length ?? 0, state: 'running' as const, events: [] as VisualAgentEvent[] }
+      const forks = () => visualAgentSnapshots.get(agentId)?.forks ?? []
+      vaEmit(agentId, { t: 'forks', forks: [...forks(), fork] })
+      setTimeout(() => {
+        const answer: VisualAgentEvent = { uuid: `${forkId}-0`, seq: 0, threadId: 'main', at: new Date().toISOString(), kind: 'text', role: 'assistant', text: `(mock side answer) Good question — "${question.slice(0, 60)}". From the conversation so far, I'd check the relevant file before changing anything.` }
+        const result: VisualAgentEvent = { uuid: `${forkId}-1`, seq: 1, threadId: 'main', at: new Date().toISOString(), kind: 'result', ok: true, costUsd: 0.004, durationMs: 1200, usage: null, text: '' }
+        vaEmit(agentId, { t: 'fork-event', forkId, event: answer })
+        vaEmit(agentId, { t: 'fork-event', forkId, event: result })
+        vaEmit(agentId, { t: 'forks', forks: forks().map((f) => (f.id === forkId ? { ...f, state: 'done' as const, events: [answer, result] } : f)) })
+      }, 900)
+      return { forkId }
+    },
+    forkStop: async (agentId: string, forkId: string) => {
+      const forks = visualAgentSnapshots.get(agentId)?.forks ?? []
+      vaEmit(agentId, { t: 'forks', forks: forks.map((f) => (f.id === forkId && f.state === 'running' ? { ...f, state: 'done' as const } : f)) })
+    },
+    getState: async (agentId: string): Promise<VisualAgentSnapshot | null> => {
+      const snap = visualAgentSnapshots.get(agentId)
+      return snap ? { ...snap, events: [...snap.events], forks: [...snap.forks] } : null
+    },
+    onFrame: (cb: (agentId: string, frame: VisualAgentFrame) => void) => {
+      visualAgentListeners.add(cb)
+      return () => {
+        visualAgentListeners.delete(cb)
+      }
+    },
   },
 
   reviewLoop: {

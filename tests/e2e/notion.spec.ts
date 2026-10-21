@@ -13,7 +13,7 @@
  * Tests:
  *   1) Settings panel renders and exposes its primary controls.
  *   2) Firing a NOTION_FIRE_TASK turns into a real session card with the
- *      resolved startup prompt typed into the agent terminal, and triggers a
+ *      resolved startup prompt sent to its Agent tab's visual agent, and triggers a
  *      write-back call to apply branch/sessionId-templated property updates.
  *   3) Notion MCP copy-prompt buttons exist and produce a prompt that
  *      contains the injected config file path + project id.
@@ -149,10 +149,8 @@ test.describe('Notion integration — fire path', () => {
       page.getByRole('button', { name: /^pick-me-up/ })
     ).toBeVisible({ timeout: 8_000 })
 
-    // The prompt eventually shows up in the terminal-write stream — the mock
-    // backend's terminal layer detects the `>` marker in the fake output and
-    // writes pendingStartup. The write-back happens before that (synchronously
-    // after createSession), so we wait on it directly.
+    // The write-back happens right after createSession, so we wait on it
+    // directly.
     await page.waitForFunction(
       () => {
         const calls = (window as any).__notionWriteBackCalls as Array<{
@@ -182,7 +180,7 @@ test.describe('Notion integration — fire path', () => {
     expect(call!.sessionId.length).toBeGreaterThan(0)
   })
 
-  test('the startup prompt is written into the agent terminal when claude prints its prompt marker', async ({ page }) => {
+  test("the startup prompt starts the new session's visual agent", async ({ page }) => {
     const projectId = await page.evaluate(async () => {
       const list = await (window as any).api.project.list()
       return list.find((p: any) => p.name === 'CodeCrucible')!.id
@@ -206,42 +204,26 @@ test.describe('Notion integration — fire path', () => {
       [projectId]
     )
 
+    // The new session's Agent tab visual agent gets the prompt: as its first
+    // message if the bootstrap starts it, or sent to it if the (now active)
+    // tab's panel started it first.
     await page.waitForFunction(
       (needle: string) => {
-        const writes = (window as any).__terminalWrites as Array<{
-          terminalId: string
-          data: string
-        }>
-        return writes.some((w) => w.data.includes(needle))
+        const starts = (window as any).__visualAgentStarts as Array<{ agentId: string; initialPrompt?: string | null }>
+        const sends = (window as any).__visualAgentSends as Array<{ agentId: string; text: string }>
+        return (
+          starts.some((s) => s.initialPrompt === needle && s.agentId.endsWith(':agent')) ||
+          sends.some((s) => s.text === needle && s.agentId.endsWith(':agent'))
+        )
       },
       'NOTION_E2E_PROMPT',
       { timeout: 12_000 }
     )
 
-    // writeWhenReady deliberately splits the injection into two writes — the
-    // prompt text first, then a separate `\r` keystroke ~250ms later — so
-    // claude's TUI registers Enter as a real keystroke rather than swallowing
-    // it as part of a bracketed-paste payload. Wait for the trailing `\r`.
-    await page.waitForFunction(
-      () => {
-        const writes = (window as any).__terminalWrites as Array<{
-          terminalId: string
-          data: string
-        }>
-        const promptIdx = writes.findIndex((w) => w.data.includes('NOTION_E2E_PROMPT'))
-        if (promptIdx < 0) return false
-        return writes.slice(promptIdx + 1).some((w) => w.data === '\r')
-      },
-      undefined,
-      { timeout: 5_000 }
-    )
-
+    // And nothing typed it into a terminal.
     const writes = await page.evaluate(
       () => (window as any).__terminalWrites as Array<{ terminalId: string; data: string }>
     )
-    const promptIdx = writes.findIndex((w) => w.data.includes('NOTION_E2E_PROMPT'))
-    expect(promptIdx).toBeGreaterThanOrEqual(0)
-    const followedByEnter = writes.slice(promptIdx + 1).some((w) => w.data === '\r')
-    expect(followedByEnter).toBe(true)
+    expect(writes.some((w) => w.data.includes('NOTION_E2E_PROMPT'))).toBe(false)
   })
 })

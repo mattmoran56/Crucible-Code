@@ -89,8 +89,15 @@ function findContextByWorktreePath(cwd: string): ContextMapping | undefined {
   return best
 }
 
+/**
+ * CRUCIBLE_TAB_ID for visual-agent processes. They report tab status from
+ * their run state (visual-agent.service), so their hook calls are dropped.
+ */
+export const VISUAL_AGENT_HOOK_TAB = '__visual-agent__'
+
 function tabDisplayLabel(tabId: string): string {
   if (tabId === 'agent') return 'Agent'
+  if (tabId.startsWith('visual-agent:')) return `Agent ${tabId.slice(13)}`
   if (tabId === 'review') return 'Review'
   if (tabId.startsWith('agent:')) return `Agent ${tabId.slice(6)}`
   if (tabId.startsWith('terminal:')) return `Terminal ${tabId.slice(9)}`
@@ -169,7 +176,7 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
               mapping = findContextByWorktreePath(cwd)
             }
 
-            if (mapping) {
+            if (mapping && tabParam !== VISUAL_AGENT_HOOK_TAB) {
               handleHookEvent(mapping.contextId, tabParam, hookType)
             }
 

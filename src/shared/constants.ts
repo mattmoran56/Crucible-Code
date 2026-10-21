@@ -223,4 +223,16 @@ export const IPC = {
   REMOTE_DENY_PAIRING: 'remote:deny-pairing',
   REMOTE_PAIRING_REQUESTED: 'remote:pairing-requested',
   REMOTE_SET_PAIRING_MODE: 'remote:set-pairing-mode',
+
+  // Visual Agent — GUI chat over `claude -p --input-format stream-json`
+  VISUAL_AGENT_START: 'visual-agent:start',
+  VISUAL_AGENT_SEND: 'visual-agent:send',
+  VISUAL_AGENT_INTERRUPT: 'visual-agent:interrupt',
+  VISUAL_AGENT_STOP: 'visual-agent:stop',
+  VISUAL_AGENT_ANSWER: 'visual-agent:answer',
+  VISUAL_AGENT_SET_MODEL: 'visual-agent:set-model',
+  VISUAL_AGENT_FORK: 'visual-agent:fork',
+  VISUAL_AGENT_FORK_STOP: 'visual-agent:fork-stop',
+  VISUAL_AGENT_GET_STATE: 'visual-agent:get-state',
+  VISUAL_AGENT_FRAME: 'visual-agent:frame',
 } as const

@@ -361,6 +361,22 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 420, height: 900 },
     delay: 800,
   },
+  {
+    name: 'visual-agent',
+    storyId: 'app-full-layout--visual-agent',
+    delay: 2500,
+  },
+  {
+    name: 'visual-agent-fork-sheet',
+    storyId: 'app-full-layout--visual-agent-fork-sheet',
+    delay: 2500,
+  },
+  {
+    name: 'visual-agent-add-tab',
+    storyId: 'app-full-layout--visual-agent',
+    delay: 2500,
+    clickSelector: 'button[aria-label="Add tab"]',
+  },
 ]
 
 async function captureScreenshots() {
@@ -487,7 +503,11 @@ async function captureScreenshots() {
     'ultra-dark': 'Ultra Dark',
   }
 
-  for (const [themeKey, themeLabel] of Object.entries(themeGlobals)) {
+  // With SCREENSHOT_ONLY set, theme variants are captured only when named.
+  const themeEntries = Object.entries(themeGlobals).filter(
+    ([key]) => onlyFilter.length === 0 || onlyFilter.includes(`theme-${key}`)
+  )
+  for (const [themeKey, themeLabel] of themeEntries) {
     const context = await browser.newContext({
       viewport: VIEWPORT,
       deviceScaleFactor: 2,

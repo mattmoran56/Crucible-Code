@@ -16,6 +16,15 @@ import { useButtonStore } from '../../stores/buttonStore'
 import { useStartupPromptStore } from '../../stores/startupPromptStore'
 import { useReviewLoopStore } from '../../stores/reviewLoopStore'
 import { useClaudeWebStore } from '../../stores/claudeWebStore'
+import { useVisualAgentStore } from '../../stores/visualAgentStore'
+import type { VisualAgentSnapshot } from '../../../shared/visual-agent'
+
+/** The mock bridge's story helpers (see mock/mockApi.ts `__mock`). */
+interface MockHelpers {
+  demoVisualAgentSnapshot: (agentId: string) => VisualAgentSnapshot
+}
+const mockHelpers = (): MockHelpers | null =>
+  (typeof window === 'undefined' ? null : (window as unknown as { api?: { __mock?: MockHelpers } }).api?.__mock) ?? null
 import type { ReviewLoopState, SessionStatus } from '../../../shared/types'
 
 import {
@@ -67,6 +76,11 @@ interface StorySetupOptions {
   didStash?: boolean
   /** Pre-populate the review-loop store for the active session */
   reviewLoopState?: ReviewLoopState
+  /**
+   * Seed the active session's Agent tab (and any agent:N tabs in
+   * `workspaceTabs`) with the demo conversation.
+   */
+  visualAgent?: { openForkId?: string | null }
 }
 
 export function setupStoresForStory(options: StorySetupOptions = {}) {
@@ -79,6 +93,19 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     activeProjectId: projectId,
     claudeAccounts: mockAccounts,
   })
+
+  // The Agent tab is always a visual agent. Stories that ask for one get the
+  // demo conversation seeded; the rest start on the empty state.
+  if (options.visualAgent) {
+    const helpers = mockHelpers()
+    const agentTabs = ['agent', ...(options.workspaceTabs ?? []).filter((t) => t.startsWith('agent:'))]
+    for (const tab of agentTabs) {
+      if (!helpers) break
+      useVisualAgentStore.getState().seed(helpers.demoVisualAgentSnapshot(`${sessionId}:${tab}`), {
+        openForkId: tab === 'agent' ? (options.visualAgent.openForkId ?? null) : null,
+      })
+    }
+  }
 
   // Session store
   const activeSessionForStore = options.activePRNumber ? null : sessionId
@@ -384,4 +411,5 @@ export function resetStores() {
   })
   useClaudeWebStore.setState({ sessions: [], loading: false })
   useWorkspaceLayoutStore.setState({ columns: [], savedLayouts: {} })
+  useVisualAgentStore.setState({ agents: {}, errors: {}, ui: {}, options: {} })
 }

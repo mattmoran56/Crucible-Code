@@ -8,6 +8,7 @@ import {
 } from './services/notification-server'
 import { setNotificationWindow } from './services/notification.service'
 import { killAllTerminals } from './services/terminal.service'
+import { killAllVisualAgents } from './services/visual-agent/visual-agent.service'
 import { stopScheduler } from './services/scheduler.service'
 import { startKeepAwake, stopKeepAwake } from './services/keep-awake.service'
 import { eventBus } from './services/event-bus'
@@ -84,6 +85,7 @@ app.on('before-quit', (event) => {
     void unregisterCloud().finally(() => app.quit())
   }
   killAllTerminals()
+  killAllVisualAgents()
   stopNotificationServer()
   stopScheduler()
   stopRelayServer()
@@ -92,6 +94,7 @@ app.on('before-quit', (event) => {
 
 app.on('window-all-closed', () => {
   killAllTerminals()
+  killAllVisualAgents()
   stopNotificationServer()
   stopScheduler()
   stopRelayServer()

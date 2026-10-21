@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { DynamicTerminalPanel } from '../terminal/DynamicTerminalPanel'
+import { VisualAgentPanel } from '../visual-agent/VisualAgentPanel'
+import { useVisualAgentStore } from '../../stores/visualAgentStore'
+import { projectConfigDir, visualAgentId, type VisualAgentTabKey } from '../../lib/visualAgents'
+import { DEFAULT_VISUAL_AGENT_MODEL, type VisualAgentStartOptions } from '../../../shared/visual-agent'
 import { EditorPanel } from './EditorPanel'
 import { GitPanelView } from '../git/GitPanelView'
 import { ResizeHandle } from '../ui'
@@ -11,7 +15,9 @@ import { useNotificationStore } from '../../stores/notificationStore'
 import {
   useWorkspaceLayoutStore,
   isDynamicTab,
+  isAgentTab,
   type WorkspaceTab,
+  type DynamicTabType,
   type CoreTab,
 } from '../../stores/workspaceLayoutStore'
 import { ColumnPanel } from '../layout/WorkspaceColumn'
@@ -29,7 +35,7 @@ export function editorSessionIdFor(projectId: string | null | undefined): string
 }
 
 export function EditorWorkspace() {
-  const { projects, activeProjectId } = useProjectStore()
+  const { projects, activeProjectId, claudeAccounts } = useProjectStore()
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const repoPath = activeProject?.repoPath ?? ''
 
@@ -171,7 +177,7 @@ export function EditorWorkspace() {
   const splitEnabled = canSplit()
 
   const handleAddDynamicTab = useCallback(
-    (columnId: string, type: 'agent' | 'terminal') => {
+    (columnId: string, type: DynamicTabType) => {
       addDynamicTab(columnId, type)
     },
     [addDynamicTab]
@@ -179,10 +185,11 @@ export function EditorWorkspace() {
 
   const handleCloseDynamicTab = useCallback(
     (tab: WorkspaceTab) => {
-      killDynamicTerminalAll(tab)
+      if (isAgentTab(tab)) void useVisualAgentStore.getState().release(visualAgentId(editorContextId, tab))
+      else killDynamicTerminalAll(tab)
       removeDynamicTab(tab)
     },
-    [killDynamicTerminalAll, removeDynamicTab]
+    [killDynamicTerminalAll, removeDynamicTab, editorContextId]
   )
 
   // Core panel portal target for the 'code' tab
@@ -216,16 +223,18 @@ export function EditorWorkspace() {
     return tabs
   }, [columns])
 
+  // Created during render so a new tab's panel portals in on the render that adds it.
+  for (const tab of allDynamicTabs) {
+    if (!dynamicPanelTargets.current.has(tab)) {
+      const div = document.createElement('div')
+      div.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;min-height:0'
+      div.dataset.panelTarget = tab
+      dynamicPanelTargets.current.set(tab, div)
+    }
+  }
+
   useEffect(() => {
     const targets = dynamicPanelTargets.current
-    for (const tab of allDynamicTabs) {
-      if (!targets.has(tab)) {
-        const div = document.createElement('div')
-        div.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;min-height:0'
-        div.dataset.panelTarget = tab
-        targets.set(tab, div)
-      }
-    }
     for (const [tab, div] of targets) {
       if (!allDynamicTabs.has(tab)) {
         div.remove()
@@ -335,11 +344,25 @@ export function EditorWorkspace() {
         />,
         gitPanelTarget.current
       )}
-      {/* Dynamic terminal panels */}
+      {/* Dynamic panels: agent tabs are visual agents in the repo root, the rest terminals */}
       {[...allDynamicTabs].map((tab) => {
         const target = dynamicPanelTargets.current.get(tab)
         if (!target) return null
         const isVisible = columns.some((c) => c.activeTab === tab)
+        if (isAgentTab(tab)) {
+          if (!activeProject) return null
+          return createPortal(
+            <EditorVisualAgent
+              key={`${editorContextId}:${tab}`}
+              contextId={editorContextId}
+              tabKey={tab}
+              repoPath={repoPath}
+              claudeConfigDir={projectConfigDir(activeProject, claudeAccounts)}
+              visible={isVisible}
+            />,
+            target
+          )
+        }
         return createPortal(
           <DynamicTerminalPanel
             key={tab}
@@ -354,4 +377,40 @@ export function EditorWorkspace() {
       })}
     </>
   )
+}
+
+/**
+ * An agent tab in the Code workspace: a visual agent running in the repo root.
+ * Its status is reported against the Code editor's notification context.
+ */
+function EditorVisualAgent({
+  contextId,
+  tabKey,
+  repoPath,
+  claudeConfigDir,
+  visible,
+}: {
+  contextId: string
+  tabKey: VisualAgentTabKey
+  repoPath: string
+  claudeConfigDir: string | null
+  visible: boolean
+}) {
+  const agentId = visualAgentId(contextId, tabKey)
+  // The panel only honours its first start options.
+  const startOptions = useMemo<VisualAgentStartOptions>(
+    () => ({
+      agentId,
+      sessionId: contextId,
+      cwd: repoPath,
+      repoPath,
+      model: DEFAULT_VISUAL_AGENT_MODEL,
+      resumeClaudeSessionId: null,
+      claudeConfigDir,
+      initialPrompt: null,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agentId]
+  )
+  return <VisualAgentPanel agentId={agentId} startOptions={startOptions} visible={visible} />
 }

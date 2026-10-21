@@ -812,3 +812,58 @@ describe('sessionStore.queuePendingStartup', () => {
     expect(useSessionStore.getState().consumePendingFocus('s1')).toBe(false)
   })
 })
+
+describe('sessionStore visual agents', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ currentProjectId: 'p1', sessions: [S('s1'), S('s2')] } as any)
+  })
+
+  it('createSession queues the startup prompt for the Agent tab without any view field', async () => {
+    worktreeApi.create.mockResolvedValue({ path: '/wt/new', branch: 'session/feat' })
+    await useSessionStore.getState().createSession('p1', '/repo', 'feat', undefined, 'go')
+    const created = useSessionStore.getState().sessions.find((s) => s.name === 'feat')!
+    expect('agentView' in created).toBe(false)
+    // The visual agent takes the startup prompt as its first message.
+    expect(useSessionStore.getState().pendingStartup).toEqual({ sessionId: created.id, command: 'go' })
+  })
+
+  it('setSessionVisualAgent saves, updates and forgets the resume record per tab', async () => {
+    const store = useSessionStore.getState()
+    await store.setSessionVisualAgent('p1', 's1', 'agent', { claudeSessionId: 'cs-1', model: 'claude-opus-5-5' })
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'visual-agent:2', { claudeSessionId: 'cs-2', model: 'claude-haiku-5-5' })
+    expect(useSessionStore.getState().sessions[0].visualAgents).toEqual({
+      agent: { claudeSessionId: 'cs-1', model: 'claude-opus-5-5' },
+      'visual-agent:2': { claudeSessionId: 'cs-2', model: 'claude-haiku-5-5' },
+    })
+    expect(sessionApi.save).toHaveBeenLastCalledWith('p1', useSessionStore.getState().sessions)
+
+    // Same values: nothing to save.
+    const saves = sessionApi.save.mock.calls.length
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'agent', { claudeSessionId: 'cs-1', model: 'claude-opus-5-5' })
+    expect(sessionApi.save.mock.calls.length).toBe(saves)
+
+    // A model change is recorded.
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'agent', { claudeSessionId: 'cs-1', model: 'claude-sonnet-5-5' })
+    expect(useSessionStore.getState().sessions[0].visualAgents?.agent.model).toBe('claude-sonnet-5-5')
+
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'visual-agent:2', null)
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'agent', null)
+    expect('visualAgents' in useSessionStore.getState().sessions[0]).toBe(false)
+    // The other session is untouched.
+    expect(useSessionStore.getState().sessions[1]).toEqual(S('s2'))
+  })
+
+  it('removeSession stops the session’s visual agents', async () => {
+    const { useVisualAgentStore } = await import('../../../src/renderer/stores/visualAgentStore')
+    const releaseSession = vi.fn().mockResolvedValue(undefined)
+    const original = useVisualAgentStore.getState().releaseSession
+    useVisualAgentStore.setState({ releaseSession } as any)
+    vi.spyOn(useTerminalStore.getState(), 'killAllForSession').mockResolvedValue(undefined)
+    try {
+      await useSessionStore.getState().removeSession('p1', '/repo', 's1')
+      expect(releaseSession).toHaveBeenCalledWith('s1')
+    } finally {
+      useVisualAgentStore.setState({ releaseSession: original } as any)
+    }
+  })
+})

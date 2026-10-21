@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // notification-server pulls in electron + a couple of services at module load;
 // stub them so the hook-event emitter can be tested in isolation. With no main
@@ -15,7 +15,16 @@ vi.mock('../../../src/main/services/event-bus', () => ({
   emitToRenderer: () => {},
 }))
 
-import { handleHookEvent, onHookEvent } from '../../../src/main/services/notification-server'
+import {
+  handleHookEvent,
+  onHookEvent,
+  startNotificationServer,
+  stopNotificationServer,
+  registerContextMapping,
+  removeContextMapping,
+  VISUAL_AGENT_HOOK_TAB,
+} from '../../../src/main/services/notification-server'
+import http from 'node:http'
 
 describe('notification-server onHookEvent', () => {
   it('fans a routed hook event out to subscribers', () => {
@@ -65,5 +74,45 @@ describe('notification-server onHookEvent', () => {
 
     expect(types).toEqual(['prompt', 'notification', 'stop'])
     off()
+  })
+})
+
+describe('notification-server /hook endpoint', () => {
+  let port = 0
+  const fakeWindow = { isDestroyed: () => false, webContents: { send: () => {} } } as any
+
+  function post(path: string, body: unknown): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const data = JSON.stringify(body)
+      const req = http.request(
+        { host: '127.0.0.1', port, path, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } },
+        (res) => {
+          res.resume()
+          res.on('end', () => resolve(res.statusCode ?? 0))
+        }
+      )
+      req.on('error', reject)
+      req.write(data)
+      req.end()
+    })
+  }
+
+  beforeEach(async () => {
+    port = await startNotificationServer(fakeWindow)
+    registerContextMapping({ contextId: 'ctx-1', name: 'sess', kind: 'session', projectId: 'p1', worktreePath: '/wt' })
+  })
+
+  afterEach(() => {
+    removeContextMapping('ctx-1')
+    stopNotificationServer()
+  })
+
+  it('routes /hook events to the tab, but drops ones from visual-agent processes', async () => {
+    const received: string[] = []
+    const off = onHookEvent((e) => received.push(`${e.contextId}|${e.tabId}|${e.hookType}`))
+    await post('/hook?type=stop&context=ctx-1&tab=agent:2', { cwd: '/wt' })
+    await post(`/hook?type=stop&context=ctx-1&tab=${VISUAL_AGENT_HOOK_TAB}`, { cwd: '/wt' })
+    off()
+    expect(received).toEqual(['ctx-1|agent:2|stop'])
   })
 })

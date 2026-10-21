@@ -7,6 +7,7 @@ import {
   isDynamicTab,
   getTabBaseType,
   getTabLabel,
+  type DynamicTabType,
   type WorkspaceColumn as WorkspaceColumnType,
   type WorkspaceTab,
 } from '../../stores/workspaceLayoutStore'
@@ -89,16 +90,22 @@ export const CodeIcon = () => (
   </svg>
 )
 
+export const ChatIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+)
+
 /** Get the icon for a tab */
 export function getTabIcon(tab: WorkspaceTab): React.ReactNode {
-  if (tab === 'agent') return <TerminalIcon />
+  if (tab === 'agent') return <ChatIcon />
   if (tab === 'git') return <GitIcon />
   if (tab === 'pr') return <PRIcon />
   if (tab === 'review') return <ReviewIcon />
   if (tab === 'review-loop') return <ReviewLoopIcon />
   if (tab === 'code') return <CodeIcon />
   const base = getTabBaseType(tab)
-  if (base === 'agent') return <TerminalIcon />
+  if (base === 'agent' || base === 'visual-agent') return <ChatIcon />
   if (base === 'terminal') return <ShellIcon />
   return <TerminalIcon />
 }
@@ -137,7 +144,7 @@ export function ColumnPanel({
   disabledTooltip?: string
   dragOverInfo: { columnId: string; index: number } | null
   setDragOverInfo: (info: { columnId: string; index: number } | null) => void
-  onAddDynamicTab: (columnId: string, type: 'agent' | 'terminal') => void
+  onAddDynamicTab: (columnId: string, type: DynamicTabType) => void
   onCloseDynamicTab: (tab: WorkspaceTab) => void
   badge?: { tab: WorkspaceTab; count: number }
   /** Per-tab status (attention/completed) for agent/review tabs. */
@@ -356,7 +363,7 @@ export function AddTabMenu({
   onAdd,
 }: {
   columnId: string
-  onAdd: (columnId: string, type: 'agent' | 'terminal') => void
+  onAdd: (columnId: string, type: DynamicTabType) => void
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -390,7 +397,7 @@ export function AddTabMenu({
               setOpen(false)
             }}
           >
-            <TerminalIcon />
+            <ChatIcon />
             New Agent
           </button>
           <button

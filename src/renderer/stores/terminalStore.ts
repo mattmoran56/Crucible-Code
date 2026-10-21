@@ -327,17 +327,18 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       const session = sessionMap.get(entry.sessionId)
       if (!session) continue // Session was deleted, skip recovery
 
-      // Only recover claude and shell terminals (review terminals are ephemeral)
-      if (entry.mode === 'review') continue
+      // Only recover shell terminals. Review terminals are ephemeral, and claude
+      // terminals were recovered into the Agent tab, which is now a visual
+      // agent that resumes its own conversation.
+      if (entry.mode !== 'shell') continue
 
-      const resume = entry.mode === 'claude'
       try {
         await get().spawnTerminal(
           session.id,
           session.name,
           entry.cwd,
           entry.mode,
-          resume,
+          false,
           entry.contextId,
           entry.tabId
         )

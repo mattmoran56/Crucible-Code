@@ -17,6 +17,7 @@ import { registerClaudeWebHandlers } from './claudeWeb.ipc'
 import { registerSchedulerHandlers } from './scheduler.ipc'
 import { registerNotionHandlers } from './notion.ipc'
 import { registerRemoteHandlers } from './remote.ipc'
+import { registerVisualAgentHandlers } from './visual-agent.ipc'
 import {
   registerContextMapping,
   removeContextMapping,
@@ -41,6 +42,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerSchedulerHandlers(window)
   registerNotionHandlers(window)
   registerRemoteHandlers(window)
+  registerVisualAgentHandlers(window)
 
   // Context mapping management for notification routing.
   // The renderer registers sessions, the Code editor (per-project) and individual
