@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useCloudSessionStore } from '../../../src/renderer/stores/cloudSessionStore'
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore'
 
 const sessionApi = {
@@ -919,34 +920,29 @@ describe('sessionStore visual agents', () => {
 })
 
 describe('sessionStore.createSession — cloud', () => {
-  const cloudApi = { create: vi.fn() }
+  const cloudApi = { start: vi.fn(), create: vi.fn() }
   beforeEach(() => {
+    cloudApi.start.mockReset()
     cloudApi.create.mockReset()
     ;(window as any).api.cloudSession = cloudApi
     worktreeApi.create.mockResolvedValue({ path: '/wt/fix', branch: 'session/fix' })
     useSessionStore.setState({ currentProjectId: 'p1' } as any)
+    useCloudSessionStore.setState({ autoStart: {}, creates: {} })
   })
 
-  it('starts a cloud session in the new worktree and records it, without queuing a local prompt', async () => {
-    cloudApi.create.mockResolvedValue({ sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc', branch: 'session/fix' })
-    await useSessionStore
-      .getState()
-      .createSession('p1', '/repo', 'fix', 'main', 'fix the bug', undefined, { location: 'cloud', configDir: '/cfg' })
-    expect(cloudApi.create).toHaveBeenCalledWith({
-      worktreePath: '/wt/fix',
-      branch: 'session/fix',
-      prompt: 'fix the bug',
-      configDir: '/cfg',
-    })
+  it('saves the session as pending (no cloud id yet) and leaves creation to its Agent tab', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', 'fix', 'main', ' fix the bug ', undefined, { location: 'cloud' })
     const [session] = useSessionStore.getState().sessions
     expect(session.location).toBe('cloud')
-    expect(session.cloud).toEqual({
-      sessionId: 'session_01abc',
-      url: 'https://claude.ai/code/session_01abc',
-      branch: 'session/fix',
-    })
-    expect(useSessionStore.getState().pendingStartup).toBeNull()
+    expect(session.cloud).toBeUndefined()
+    expect(session.cloudPending).toEqual({ task: 'fix the bug', branch: 'session/fix', createdAt: expect.any(String) })
+    // The dialog no longer waits on the CLI: nothing cloud-side ran yet.
+    expect(cloudApi.start).not.toHaveBeenCalled()
+    expect(cloudApi.create).not.toHaveBeenCalled()
     expect(sessionApi.save).toHaveBeenCalled()
+    expect(useSessionStore.getState().pendingStartup).toBeNull()
+    expect(useCloudSessionStore.getState().consumeAutoStart(session.id)).toBe(true)
+    expect(useCloudSessionStore.getState().consumeAutoStart(session.id)).toBe(false)
   })
 
   it('requires a task before creating anything', async () => {
@@ -956,20 +952,13 @@ describe('sessionStore.createSession — cloud', () => {
     expect(worktreeApi.create).not.toHaveBeenCalled()
   })
 
-  it('removes the worktree and saves nothing when the cloud session fails to start', async () => {
-    cloudApi.create.mockRejectedValue(new Error('Not logged in'))
-    await expect(
-      useSessionStore.getState().createSession('p1', '/repo', 'fix', 'main', 'go', undefined, { location: 'cloud' })
-    ).rejects.toThrow(/Couldn't start the cloud session: Not logged in/)
-    expect(worktreeApi.remove).toHaveBeenCalledWith('/repo', '/wt/fix', { deleteBranch: 'session/fix' })
-    expect(sessionApi.save).not.toHaveBeenCalled()
-    expect(useSessionStore.getState().sessions).toEqual([])
-  })
-
   it('a local create never touches the cloud API', async () => {
     await useSessionStore.getState().createSession('p1', '/repo', 'fix', 'main', 'go')
-    expect(cloudApi.create).not.toHaveBeenCalled()
-    expect(useSessionStore.getState().sessions[0].location).toBeUndefined()
+    expect(cloudApi.start).not.toHaveBeenCalled()
+    const [session] = useSessionStore.getState().sessions
+    expect(session.location).toBeUndefined()
+    expect(session.cloudPending).toBeUndefined()
+    expect(useCloudSessionStore.getState().autoStart).toEqual({})
     expect(useSessionStore.getState().pendingStartup).toEqual({ sessionId: expect.any(String), command: 'go' })
   })
 })

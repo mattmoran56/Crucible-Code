@@ -363,6 +363,26 @@ describe('fireQueuedMessage', () => {
     expect(useToastStore.getState().toasts.some((t) => /cloud session/.test(t.message))).toBe(true)
   })
 
+  it('a cloud session still being created gets neither a cloud send nor a local agent', async () => {
+    const cloudSend = vi.fn()
+    ;(window as any).api.cloudSession = { send: cloudSend }
+    const sess = session({
+      id: 'sess-p',
+      projectId: 'proj-A',
+      location: 'cloud',
+      cloudPending: { task: 'go', branch: 'session/p', createdAt: '2026-10-21T00:00:00Z' },
+    } as any)
+    persisted['proj-A'] = [sess]
+    useProjectStore.setState({ projects: [project()], activeProjectId: 'proj-A' } as any)
+    useSessionStore.setState({ sessions: [sess], currentProjectId: 'proj-A' } as any)
+
+    await fireQueuedMessage(queuedMessage({ sessionId: 'sess-p', message: 'continue' }))
+
+    expect(cloudSend).not.toHaveBeenCalled()
+    expect(visualAgentApi.start).not.toHaveBeenCalled()
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'error' && /hasn't started yet/.test(t.message))).toBe(true)
+  })
+
   it('a teleported (now local) session goes to the local visual agent again', async () => {
     const cloudSend = vi.fn()
     ;(window as any).api.cloudSession = { send: cloudSend }

@@ -53,10 +53,13 @@ vi.mock('../../../src/main/services/terminal.service', () => ({
 
 import {
   claudeShellCommand,
-  cloudCreateArgv,
+  cloudStartArgv,
+  findCloudSessionInOutput,
+  mayHaveCreatedSession,
+  stripAnsi,
+  summarizeCreateFailure,
   cloudEnv,
   cloudSendArgv,
-  createCloudSession,
   discoverTeleportedSession,
   encodeProjectDir,
   isUnknownOnBranchError,
@@ -82,22 +85,32 @@ beforeEach(() => {
 })
 
 describe('argv builders', () => {
-  it('create: -p <prompt> --cloud --output-format json, no permission flags', () => {
-    const argv = cloudCreateArgv('  fix the login bug  ')
-    expect(argv).toEqual(['-p', 'fix the login bug', '--cloud', '--output-format', 'json'])
+  it('start: claude --cloud <task> — interactive, never -p, no permission flags', () => {
+    const argv = cloudStartArgv('  fix the login bug  ')
+    expect(argv).toEqual(['--cloud', 'fix the login bug'])
+    expect(argv).not.toContain('-p')
+    expect(argv).not.toContain('--print')
+    expect(argv).not.toContain('--output-format')
     assertNoPermissionFlags(argv)
   })
 
-  it('create: --on-branch <branch> when a branch is given', () => {
-    const argv = cloudCreateArgv('go', 'session/feat')
-    expect(argv).toEqual(['-p', 'go', '--cloud', '--on-branch', 'session/feat', '--output-format', 'json'])
+  it('start: --on-branch <branch> when a branch is given', () => {
+    const argv = cloudStartArgv('go', 'session/feat')
+    expect(argv).toEqual(['--cloud', 'go', '--on-branch', 'session/feat'])
     assertNoPermissionFlags(argv)
-    expect(() => cloudCreateArgv('go', '--force')).toThrow(/Invalid branch name/)
-    expect(() => cloudCreateArgv('go', '')).toThrow(/Invalid branch name/)
+    expect(() => cloudStartArgv('go', '--force')).toThrow(/Invalid branch name/)
+    expect(() => cloudStartArgv('go', '')).toThrow(/Invalid branch name/)
+    expect(() => cloudStartArgv('   ')).toThrow(/task/)
   })
 
-  it('create: a prompt starting with "-" cannot be read as a flag', () => {
-    expect(cloudCreateArgv('--help me')[1]).toBe(' --help me')
+  it('start: a task starting with "-" cannot be read as a flag', () => {
+    expect(cloudStartArgv('--help me')[1]).toBe(' --help me')
+  })
+
+  it('start: the task is single-quoted for the PTY shell, so it is never interpreted', () => {
+    const task = "it's $(rm -rf ~) `x` \"q\"\nline two; echo $HOME"
+    const cmd = claudeShellCommand(cloudStartArgv(task, 'session/x'))
+    expect(cmd).toBe(`claude --cloud '${task.replace(/'/g, `'\\''`)}' --on-branch session/x`)
   })
 
   it('send: -p <msg> --cloud <id> --output-format json', () => {
@@ -153,76 +166,64 @@ describe('parseCloudResult', () => {
   })
 })
 
-describe('createCloudSession', () => {
-  it('pushes the branch, then runs claude in the worktree with the config dir', async () => {
-    h.state.claudeOut = {
-      stdout: JSON.stringify({ ok: true, session_id: 'session_05', url: 'https://claude.ai/code/session_05' }),
-      stderr: '',
-      code: 0,
-    }
-    const result = await createCloudSession({
-      worktreePath: '/wt/feat',
-      branch: 'session/feat',
-      prompt: 'do the thing',
-      configDir: '/cfg/personal',
-    })
-    expect(result).toEqual({ sessionId: 'session_05', url: 'https://claude.ai/code/session_05', branch: 'session/feat' })
-    expect(h.state.gitCalls).toEqual([{ args: ['push', '-u', 'origin', 'session/feat'], cwd: '/wt/feat' }])
-    expect(h.state.spawnCalls).toHaveLength(1)
-    const call = h.state.spawnCalls[0]
-    expect(call.file).toBe('claude')
-    expect(call.args).toEqual([
-      '-p',
-      withBranchInstruction('do the thing', 'session/feat'),
-      '--cloud',
-      '--on-branch',
-      'session/feat',
-      '--output-format',
-      'json',
-    ])
-    assertNoPermissionFlags(call.args)
-    expect(call.opts.cwd).toBe('/wt/feat')
-    expect(call.opts.env.CLAUDE_CONFIG_DIR).toBe('/cfg/personal')
-    expect(call.opts.shell).toBeUndefined()
+describe('reading the interactive create PTY', () => {
+  const ID = 'session_01AbCdEfGhIjKlMnOpQrStUv'
+
+  it('finds the "View:" URL the CLI prints when it creates the session and exits', () => {
+    const out = [
+      '\x1b[2mCreating remote session…\x1b[22m\r\n',
+      `Created cloud session: Fix login\r\nView: \x1b[36mhttps://claude.ai/code/${ID}?from=cli&m=0\x1b[39m\r\n`,
+      `Resume with: claude --teleport ${ID}\r\n`,
+    ].join('')
+    expect(findCloudSessionInOutput(out)).toEqual({ sessionId: ID, url: `https://claude.ai/code/${ID}` })
   })
 
-  it('refuses without a prompt and never pushes', async () => {
-    await expect(createCloudSession({ worktreePath: '/wt', branch: 'b', prompt: '  ' })).rejects.toThrow(/task description/)
-    expect(h.state.gitCalls).toHaveLength(0)
+  it('finds the attached REPL line through spinner redraws and colours', () => {
+    const out =
+      '\x1b[?25l\x1b[2K\x1b[1A\x1b[2K\x1b[G⠋ Setting up remote session…\r' +
+      '\x1b[2K\x1b[1A\x1b[32m✓\x1b[39m Created cloud session\r\n' +
+      `\x1b[1mCloud session active\x1b[22m · code here or at \x1b[4mhttps://claude.ai/code/${ID}?from=cli&m=0\x1b[24m\r\n> `
+    expect(findCloudSessionInOutput(out)?.sessionId).toBe(ID)
   })
 
-  it('stops if the push fails', async () => {
-    h.state.gitResult.push = { err: new Error('exit 128'), stderr: 'fatal: no remote origin' }
-    await expect(createCloudSession({ worktreePath: '/wt', branch: 'session/x', prompt: 'go' })).rejects.toThrow(
-      /Could not push session\/x to GitHub: fatal: no remote origin/
-    )
-    expect(h.state.spawnCalls).toHaveLength(0)
+  it('rejoins a URL the terminal wrapped across lines', () => {
+    const out = `code here or at https://claude.ai/code/session_01AbCdEfGh\r\n  IjKlMnOpQrStUv?from=cli&m=0\r\n`
+    expect(findCloudSessionInOutput(out)?.sessionId).toBe(ID)
   })
 
-  it('retries once without --on-branch when the CLI does not know the flag', async () => {
-    h.state.claudeOutQueue = [
-      { stdout: '', stderr: "error: unknown option '--on-branch'", code: 1 },
-      { stdout: '{"ok":true,"session_id":"session_07"}', stderr: '', code: 0 },
-    ]
-    const result = await createCloudSession({ worktreePath: '/wt', branch: 'feature/x', prompt: 'go' })
-    expect(result).toEqual({ sessionId: 'session_07', url: 'https://claude.ai/code/session_07', branch: 'feature/x' })
-    expect(h.state.spawnCalls).toHaveLength(2)
-    expect(h.state.spawnCalls[0].args).toContain('--on-branch')
-    expect(h.state.spawnCalls[1].args).not.toContain('--on-branch')
-    expect(h.state.spawnCalls[1].args[1]).toBe(withBranchInstruction('go', 'feature/x'))
+  it('prefers the unwrapped URL of an OSC 8 hyperlink', () => {
+    const out = `\x1b]8;;https://claude.ai/code/${ID}?from=cli&m=0\x07https://claude.ai/code/sess…\x1b]8;;\x07`
+    expect(findCloudSessionInOutput(out)?.sessionId).toBe(ID)
   })
 
-  it('does not retry on other failures', async () => {
-    h.state.claudeOut = { stdout: '', stderr: 'Not logged in', code: 1 }
-    await expect(createCloudSession({ worktreePath: '/wt', branch: 'b', prompt: 'go' })).rejects.toThrow(/Not logged in/)
-    expect(h.state.spawnCalls).toHaveLength(1)
+  it('accepts cse_ ids and the Session ID / --teleport lines', () => {
+    expect(findCloudSessionInOutput('Session ID: cse_01abcdefgh\r\n')?.sessionId).toBe('cse_01abcdefgh')
+    expect(findCloudSessionInOutput('Resume with: claude --teleport session_01xyz123\n')?.sessionId).toBe('session_01xyz123')
   })
 
-  it('includes the exit code when claude fails', async () => {
-    h.state.claudeOut = { stdout: '', stderr: 'Not logged in', code: 1 }
-    await expect(createCloudSession({ worktreePath: '/wt', branch: 'b', prompt: 'go' })).rejects.toThrow(
-      /Not logged in.*exited with code 1/
-    )
+  it('returns null for provisioning noise and the CLI usage text', () => {
+    expect(findCloudSessionInOutput('Setting up remote session…\r\n  Checking this checkout\r\n')).toBeNull()
+    expect(
+      findCloudSessionInOutput('pass its ID: `claude -p "message" --cloud <session-id>` (find IDs at claude.ai/code).')
+    ).toBeNull()
+    expect(findCloudSessionInOutput('https://claude.ai/code/session_x')).toBeNull()
+  })
+
+  it('stripAnsi leaves plain text', () => {
+    expect(stripAnsi('\x1b[31mred\x1b[0m a\x1b[3Cb\r\nc\x1b]0;title\x07')).toBe('red a b\nc')
+  })
+
+  it('summarises a failure from the last meaningful lines', () => {
+    const out = '\x1b[31mError: --cloud requires an interactive terminal.\x1b[0m\r\n\r\n'
+    expect(summarizeCreateFailure(out)).toBe('Error: --cloud requires an interactive terminal.')
+    expect(summarizeCreateFailure('a\nb\nc\nd', 2)).toBe('c\nd')
+  })
+
+  it('notices a create cancelled after the request was sent', () => {
+    expect(
+      mayHaveCreatedSession('Cancelled after the create request was sent, so a cloud session may still have been created')
+    ).toBe(true)
+    expect(mayHaveCreatedSession('Cancelled before a cloud session was created')).toBe(false)
   })
 })
 

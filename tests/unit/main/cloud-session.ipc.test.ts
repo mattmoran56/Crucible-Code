@@ -51,6 +51,12 @@ describe('cloud-session IPC', () => {
     expect([...h.handlers.keys()].some((k) => /attach/.test(k))).toBe(false)
   })
 
+  it('creates interactively: a start + create-state pair, no headless create channel', async () => {
+    expect(h.handlers.has(IPC.CLOUD_SESSION_START)).toBe(true)
+    expect([...h.handlers.keys()]).not.toContain('cloud-session:create')
+    expect(await call(IPC.CLOUD_SESSION_CREATE_STATE, 'no-such-session')).toBeNull()
+  })
+
   it('teleport aborts on a dirty tree without spawning anything', async () => {
     h.dirty = ['src/a.ts']
     const result = await call(IPC.CLOUD_SESSION_TELEPORT, opts)

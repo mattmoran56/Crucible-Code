@@ -34,6 +34,7 @@ vi.mock('../../../../src/renderer/components/layout/WorkspaceColumn', () => ({
 import { SessionWorkspace } from '../../../../src/renderer/components/layout/SessionWorkspace'
 import { CloudWebView } from '../../../../src/renderer/components/cloud/CloudWebView'
 import { useCloudSessionStore } from '../../../../src/renderer/stores/cloudSessionStore'
+import { cloudCreatedPatch, useCloudCreateBootstrap } from '../../../../src/renderer/lib/cloudCreate'
 import { useSessionStore } from '../../../../src/renderer/stores/sessionStore'
 import { useProjectStore } from '../../../../src/renderer/stores/projectStore'
 import { useWorkspaceLayoutStore } from '../../../../src/renderer/stores/workspaceLayoutStore'
@@ -330,5 +331,140 @@ describe('session teleported in an earlier run', () => {
     await waitFor(() => expect(screen.getByTestId('visual-agent').dataset.resume).toBe(''))
     expect(useSessionStore.getState().sessions[0].cloud?.localResumeResolved).toBe(true)
     expect(api.discoverLocal).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('creating a cloud session in the Agent tab', () => {
+  const pendingSession = {
+    ...cloudSession,
+    id: 's2',
+    cloud: undefined,
+    cloudPending: { task: 'fix the bug', branch: 'session/feat', createdAt: '2026-10-21T00:00:00Z' },
+  }
+  const ID = 'session_01NewCloudSess'
+  let createListeners: Array<(state: any) => void>
+  const running = { sessionId: 's2', projectId: 'p1', terminalId: 'term-c1', status: 'running', attached: true }
+  const emit = (state: any) => act(() => createListeners.forEach((cb) => cb(state)))
+
+  function Boot() {
+    useCloudCreateBootstrap()
+    return <SessionWorkspace />
+  }
+
+  beforeEach(() => {
+    createListeners = []
+    const w = (window as any).api
+    w.cloudSession = {
+      ...api,
+      start: vi.fn(async () => running),
+      createState: vi.fn(async () => null),
+      onCreateEvent: (cb: (s: any) => void) => {
+        createListeners.push(cb)
+        return () => (createListeners = createListeners.filter((x) => x !== cb))
+      },
+    }
+    w.terminal.kill = vi.fn(async () => {})
+    useSessionStore.setState({ sessions: [pendingSession], activeSessionId: 's2' } as any)
+    useCloudSessionStore.setState({ creates: {}, autoStart: {} })
+  })
+
+  it('a just-created session starts the interactive CLI in a visible terminal, then switches to claude.ai', async () => {
+    useCloudSessionStore.getState().requestAutoStart('s2')
+    render(<Boot />)
+    const w = (window as any).api
+    await waitFor(() => expect(w.cloudSession.start).toHaveBeenCalledTimes(1))
+    expect(w.cloudSession.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 's2',
+        projectId: 'p1',
+        worktreePath: '/wt/feat',
+        branch: 'session/feat',
+        task: 'fix the bug',
+        configDir: '/cfg/work',
+        repoPath: '/repo',
+      })
+    )
+    await waitFor(() => expect(screen.getByTestId('terminal').getAttribute('data-terminal')).toBe('term-c1'))
+    expect(screen.getByText(/Answer anything Claude asks/)).toBeTruthy()
+    expect(screen.queryByTestId('cloud-web-stub')).toBeNull()
+
+    emit({ ...running, status: 'created', result: { sessionId: ID, url: `https://claude.ai/code/${ID}`, branch: 'session/feat' } })
+    await waitFor(() => expect(screen.getByTestId('cloud-web-stub').textContent).toMatch(ID))
+    const saved = useSessionStore.getState().sessions[0]
+    expect(saved.cloud).toEqual({ sessionId: ID, url: `https://claude.ai/code/${ID}`, branch: 'session/feat' })
+    expect(saved.cloudPending).toBeUndefined()
+    expect(save).toHaveBeenCalled()
+
+    // The CLI stayed attached: it can be shown, and closed (never killed for the user).
+    expect(screen.getByTestId('cloud-cli-attached')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Show terminal' }))
+    expect(screen.getByTestId('terminal').getAttribute('data-terminal')).toBe('term-c1')
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(w.terminal.kill).toHaveBeenCalledWith('term-c1')
+    emit({ ...running, status: 'created', attached: false, result: { sessionId: ID, url: `https://claude.ai/code/${ID}` } })
+    await waitFor(() => expect(screen.queryByTestId('cloud-cli-attached')).toBeNull())
+  })
+
+  it('a failed create keeps the worktree and offers Retry, claude.ai/code and Delete', async () => {
+    useCloudSessionStore.getState().requestAutoStart('s2')
+    const removeSession = vi.fn(async () => {})
+    useSessionStore.setState({ removeSession } as any)
+    render(<Boot />)
+    const w = (window as any).api
+    await waitFor(() => expect(w.cloudSession.start).toHaveBeenCalled())
+    emit({ ...running, status: 'failed', attached: false, error: 'Claude did not create a cloud session (exit 1):\nError: not signed in' })
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/not signed in/))
+    expect(screen.getByRole('alert').textContent).toMatch(/worktree and branch are kept/)
+    // The terminal scrollback stays visible under the error.
+    expect(screen.getByTestId('terminal')).toBeTruthy()
+    expect(useSessionStore.getState().sessions[0].cloudPending).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Open claude.ai\/code/ }))
+    expect(w.cloudSession.openUrl).toHaveBeenCalledWith('https://claude.ai/code')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(w.cloudSession.start).toHaveBeenCalledTimes(2))
+
+    emit({ ...running, status: 'failed', attached: false, error: 'boom' })
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete session…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(removeSession).toHaveBeenCalledWith('p1', '/repo', 's2', { deleteRemoteBranch: true }))
+  })
+
+  it('after an app restart a pending session waits for the user instead of re-running the CLI', async () => {
+    render(<Boot />)
+    const w = (window as any).api
+    await waitFor(() => expect(w.cloudSession.createState).toHaveBeenCalledWith('s2'))
+    expect(await screen.findByText(/never confirmed/)).toBeTruthy()
+    expect(w.cloudSession.start).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry start' }))
+    await waitFor(() => expect(w.cloudSession.start).toHaveBeenCalledTimes(1))
+  })
+
+  it('picks up a run still going in the main process when the tab remounts', async () => {
+    const w = (window as any).api
+    w.cloudSession.createState.mockResolvedValue(running)
+    render(<Boot />)
+    await waitFor(() => expect(screen.getByTestId('terminal').getAttribute('data-terminal')).toBe('term-c1'))
+    expect(w.cloudSession.start).not.toHaveBeenCalled()
+  })
+})
+
+describe('cloudCreatedPatch', () => {
+  const base = { id: 's', name: 'n', branchName: 'session/n', worktreePath: '/w', projectId: 'p', createdAt: '' }
+  const created = { sessionId: 's', projectId: 'p', terminalId: 't', status: 'created' as const, attached: false, result: { sessionId: 'session_01x', url: 'https://claude.ai/code/session_01x' } }
+
+  it('turns pending into ready', () => {
+    const patch = cloudCreatedPatch({ ...base, location: 'cloud', cloudPending: { task: 't', branch: 'session/n', createdAt: '' } }, created)
+    expect(patch).toEqual({
+      location: 'cloud',
+      cloud: { sessionId: 'session_01x', url: 'https://claude.ai/code/session_01x', branch: 'session/n' },
+      cloudPending: undefined,
+    })
+  })
+
+  it('does nothing for runs that are not created, or sessions already bound', () => {
+    expect(cloudCreatedPatch(base, { ...created, status: 'running' })).toBeNull()
+    expect(cloudCreatedPatch({ ...base, cloud: { sessionId: 'session_other', url: 'u' } }, created)).toBeNull()
   })
 })

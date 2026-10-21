@@ -68,5 +68,8 @@ describe('session branch helpers', () => {
     expect(renameMovesBranch({ name: 'a', branchName: 'session/a' })).toBe(true)
     expect(renameMovesBranch({ name: 'a', branchName: 'feat/a' })).toBe(false)
     expect(renameMovesBranch({ name: 'a', branchName: 'session/a', cloud: { sessionId: 's', url: 'u' } })).toBe(false)
+    expect(
+      renameMovesBranch({ name: 'a', branchName: 'session/a', cloudPending: { task: 't', branch: 'session/a', createdAt: '' } })
+    ).toBe(false)
   })
 })
