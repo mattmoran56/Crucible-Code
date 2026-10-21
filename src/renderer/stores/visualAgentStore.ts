@@ -191,6 +191,13 @@ interface VisualAgentStoreState {
   options: Record<string, VisualAgentStartOptions>
 
   ensureStarted: (opts: VisualAgentStartOptions) => Promise<void>
+  /**
+   * Make sure the agent runs and gets `opts.initialPrompt` as a turn: as its
+   * first message when this starts it, or sent once a running (or starting)
+   * agent is ready — so a prompt is never dropped because the tab's panel
+   * happened to start the agent first.
+   */
+  startWithPrompt: (opts: VisualAgentStartOptions) => Promise<void>
   /** Fold one frame into the matching agent. Exposed for tests and stories. */
   applyFrame: (agentId: string, frame: VisualAgentFrame) => void
   /** Replace an agent's snapshot outright (stories, tests). */
@@ -287,6 +294,21 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
       const run = startFresh(opts).finally(() => inFlight.delete(opts.agentId))
       inFlight.set(opts.agentId, run)
       return run
+    },
+
+    startWithPrompt: async (opts) => {
+      const id = opts.agentId
+      const snap = get().agents[id]
+      const ended = snap?.state === 'done' || snap?.state === 'failed'
+      if (started.has(id) && ended) {
+        // Ended agent: respawn it on its conversation, prompt first.
+        started.delete(id)
+        released.add(id)
+      }
+      const live = inFlight.has(id) || started.has(id)
+      if (!live) return get().ensureStarted(opts)
+      await get().ensureStarted({ ...opts, initialPrompt: null })
+      if (opts.initialPrompt) await get().send(id, opts.initialPrompt)
     },
 
     applyFrame: (agentId, frame) => {

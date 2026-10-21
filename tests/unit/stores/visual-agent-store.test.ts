@@ -214,6 +214,36 @@ describe('store wiring', () => {
     expect(api.stop.mock.calls.map((c) => c[0]).sort()).toEqual(['s1:agent', 's1:visual-agent:2'])
   })
 
+  it('startWithPrompt starts an idle agent with the prompt as its first message', async () => {
+    await useVisualAgentStore.getState().startWithPrompt({ agentId: 'a1', sessionId: 's', cwd: '/w', initialPrompt: 'go' })
+    expect(api.start).toHaveBeenCalledTimes(1)
+    expect(api.start.mock.calls[0][0]).toMatchObject({ initialPrompt: 'go' })
+    expect(api.send).not.toHaveBeenCalled()
+  })
+
+  it('startWithPrompt sends the prompt once an agent another caller is already starting is ready', async () => {
+    let resolveStart!: (s: VisualAgentSnapshot) => void
+    api.start.mockImplementationOnce(() => new Promise<VisualAgentSnapshot>((r) => (resolveStart = r)))
+    // The tab's panel starts the agent first, with no prompt…
+    const panel = useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w' })
+    await Promise.resolve()
+    // …then a background flow (Notion pickup) asks for its prompt.
+    const flow = useVisualAgentStore.getState().startWithPrompt({ agentId: 'a1', sessionId: 's', cwd: '/w', initialPrompt: 'go' })
+    await Promise.resolve()
+    expect(api.send).not.toHaveBeenCalled()
+    resolveStart(snap({ agentId: 'a1', state: 'idle', claudeSessionId: 'sid' }))
+    await Promise.all([panel, flow])
+    expect(api.start).toHaveBeenCalledTimes(1)
+    expect(api.send).toHaveBeenCalledWith('a1', 'go')
+  })
+
+  it('startWithPrompt sends to a running agent rather than starting another', async () => {
+    useVisualAgentStore.getState().seed(snap({ agentId: 'a1', state: 'idle', claudeSessionId: 'sid' }))
+    await useVisualAgentStore.getState().startWithPrompt({ agentId: 'a1', sessionId: 's', cwd: '/w', initialPrompt: 'next' })
+    expect(api.start).not.toHaveBeenCalled()
+    expect(api.send).toHaveBeenCalledWith('a1', 'next')
+  })
+
   it('records an error when start fails', async () => {
     api.start.mockRejectedValueOnce(new Error('no claude'))
     await useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w' })

@@ -1,19 +1,17 @@
 import { useEffect } from 'react'
 import { useProjectStore } from '../stores/projectStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { useTerminalStore } from '../stores/terminalStore'
 import { useToastStore } from '../stores/toastStore'
-import { writeWhenReady } from '../lib/writeWhenReady'
+import { startSessionVisualAgent } from '../lib/startVisualAgent'
 
 /**
  * Subscribes to NOTION_FIRE_TASK events from the main-process poller. For each
- * fired task, creates a session and proactively spawns its claude terminal
- * with the startup prompt injected via writeWhenReady — the same mechanism
- * the Review tab uses. Going through writeWhenReady directly (rather than
- * relying on sessionStore.pendingStartup) is what keeps multiple tasks fired
- * in a single poll tick from clobbering each other: pendingStartup is a
- * single slot, so back-to-back createSession calls would lose all but the
- * last command.
+ * fired task, creates a session and proactively starts its Agent tab's visual
+ * agent with the startup prompt as its first message. Starting it directly
+ * (rather than relying on sessionStore.pendingStartup) is what keeps multiple
+ * tasks fired in a single poll tick from clobbering each other:
+ * pendingStartup is a single slot, so back-to-back createSession calls would
+ * lose all but the last prompt.
  *
  * Mount once at the top of the component tree (sibling of useSchedulerBootstrap).
  */
@@ -43,23 +41,10 @@ export function useNotionBootstrap(): void {
         const newSession = useSessionStore.getState().sessions.find((s) => s.id === newId)
         if (!newSession) return
 
-        // Spawn the claude terminal up-front (same pattern as ReviewTerminalPanel)
-        // and arm writeWhenReady against it. If this session never becomes the
+        // Start the visual agent up-front. If this session never becomes the
         // active one (because a later fire overwrites activeSessionId), the
-        // terminal still exists and the command still gets injected once the
-        // PTY shows a prompt.
-        const terminalId = await useTerminalStore
-          .getState()
-          .spawnTerminal(
-            newSession.id,
-            newSession.name,
-            newSession.worktreePath,
-            'claude',
-            false,
-            newSession.id,
-            'agent'
-          )
-        writeWhenReady(terminalId, payload.resolvedStartupPrompt)
+        // agent still runs, and its Agent tab attaches to it when opened.
+        await startSessionVisualAgent(newSession, project, payload.resolvedStartupPrompt)
 
         await window.api.notion.applyWriteBack(
           payload.projectId,

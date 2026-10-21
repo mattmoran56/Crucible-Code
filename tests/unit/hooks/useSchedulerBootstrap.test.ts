@@ -12,7 +12,7 @@ import { fireQueuedSession, fireQueuedMessage } from '../../../src/renderer/hook
 import { useProjectStore } from '../../../src/renderer/stores/projectStore'
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore'
 import { useToastStore } from '../../../src/renderer/stores/toastStore'
-import { useTerminalStore } from '../../../src/renderer/stores/terminalStore'
+import { useVisualAgentStore, __resetVisualAgentSubscription } from '../../../src/renderer/stores/visualAgentStore'
 import type { QueuedSession, QueuedMessage, Session } from '../../../src/shared/types'
 
 const project = (overrides: Partial<{ id: string; name: string; repoPath: string }> = {}) => ({
@@ -78,15 +78,7 @@ const gitApi = {
   isMerged: vi.fn(async () => false),
 }
 
-// Drive any registered onData listeners — used by the inject helper's prompt
-// detection. Tests can call emitTerminalData('term-x', '> ') to simulate
-// claude printing a prompt.
 const dataListeners = new Set<(terminalId: string, data: string) => void>()
-function emitTerminalData(terminalId: string, data: string): void {
-  for (const cb of dataListeners) cb(terminalId, data)
-}
-
-let nextTerminalId = 1
 
 const terminalApi = {
   write: vi.fn(async (terminalId: string, data: string) => {
@@ -99,10 +91,25 @@ const terminalApi = {
   }),
 }
 
-// Mocks the bulletproof IPC the queued-session fire handler now uses:
-// claude is spawned with the prompt piped via heredoc, claude consumes it,
-// exits, and the mode='claude' onExit handler auto-restarts with --resume.
-// The renderer never has to inject keystrokes via `>`-detection.
+// The fire handlers start (or message) the session's Agent tab visual agent.
+const visualAgentApi = {
+  start: vi.fn(async (opts: { agentId: string; model: string }) => ({
+    agentId: opts.agentId,
+    claudeSessionId: `cs-${opts.agentId}`,
+    model: opts.model,
+    state: 'idle',
+    events: [],
+    partial: null,
+    usage: null,
+    forks: [],
+    turnStartedAt: null,
+  })),
+  getState: vi.fn(async () => null),
+  send: vi.fn(async () => {}),
+  stop: vi.fn(async () => {}),
+  onFrame: vi.fn(() => () => {}),
+}
+
 const schedulerApi = {
   listQueuedSessions: vi.fn(async () => []),
   addQueuedSession: vi.fn(async () => []),
@@ -116,7 +123,6 @@ const schedulerApi = {
   cancelQueuedMessage: vi.fn(async () => []),
   onQueuedMessagesUpdate: vi.fn(() => () => {}),
   onFireQueuedMessage: vi.fn(() => () => {}),
-  spawnAgentWithPrompt: vi.fn(async (sessionId: string) => `term-${nextTerminalId++}-${sessionId}`),
 }
 
 beforeEach(() => {
@@ -124,14 +130,16 @@ beforeEach(() => {
   for (const k of Object.keys(persisted)) delete persisted[k]
   writeCalls.length = 0
   dataListeners.clear()
-  nextTerminalId = 1
 
   sessionApi.list.mockClear()
   sessionApi.save.mockClear()
   worktreeApi.create.mockClear()
   terminalApi.write.mockClear()
   terminalApi.onData.mockClear()
-  schedulerApi.spawnAgentWithPrompt.mockClear()
+  visualAgentApi.start.mockClear()
+  visualAgentApi.send.mockClear()
+  __resetVisualAgentSubscription()
+  useVisualAgentStore.setState({ agents: {}, errors: {}, ui: {}, options: {} })
 
   ;(window as any).api = {
     session: sessionApi,
@@ -139,6 +147,7 @@ beforeEach(() => {
     git: gitApi,
     terminal: terminalApi,
     scheduler: schedulerApi,
+    visualAgent: visualAgentApi,
   }
 
   // Reset stores
@@ -161,11 +170,12 @@ beforeEach(() => {
     pendingFocusSessionId: null,
   } as any)
   useToastStore.setState({ toasts: [] })
-  useTerminalStore.setState({ terminals: {} } as any)
 })
 
+const startCall = (i = 0) => visualAgentApi.start.mock.calls[i][0] as unknown as Record<string, unknown>
+
 describe('fireQueuedSession', () => {
-  it('creates the worktree, persists the session, and spawns claude with the prompt piped via heredoc', async () => {
+  it('creates the worktree, persists the session, and starts its visual agent with the prompt', async () => {
     useProjectStore.setState({ projects: [project()], activeProjectId: 'proj-A' } as any)
     useSessionStore.setState({ currentProjectId: 'proj-A', sessions: [] } as any)
     persisted['proj-A'] = []
@@ -188,26 +198,27 @@ describe('fireQueuedSession', () => {
     // We do NOT activate the new session — user keeps their current view.
     expect(state.activeSessionId).toBeNull()
 
-    // Spawned via the heredoc-pipe IPC — the prompt arrives as claude's
-    // stdin, no key-by-key injection needed.
-    expect(schedulerApi.spawnAgentWithPrompt).toHaveBeenCalledTimes(1)
-    const [sessionId, cwd, prompt] = schedulerApi.spawnAgentWithPrompt.mock.calls[0]
-    expect(sessionId).toBe(state.sessions[0].id)
-    expect(cwd).toBe(state.sessions[0].worktreePath)
-    expect(prompt).toBe('go')
+    // The Agent tab's visual agent starts in the background with the prompt
+    // as its first message.
+    expect(visualAgentApi.start).toHaveBeenCalledTimes(1)
+    expect(startCall()).toMatchObject({
+      agentId: `${state.sessions[0].id}:agent`,
+      sessionId: state.sessions[0].id,
+      cwd: state.sessions[0].worktreePath,
+      initialPrompt: 'go',
+    })
 
-    // The spawned terminal is registered in the terminalStore so a later
-    // TerminalPanel mount reuses this PTY rather than spawning a new one.
-    const registered = useTerminalStore.getState().getTerminal(state.sessions[0].id, 'claude')
-    expect(registered).toBeDefined()
+    // The agent is held in the store, so opening the session later attaches
+    // to it rather than starting another.
+    expect(useVisualAgentStore.getState().agents[`${state.sessions[0].id}:agent`]).toBeDefined()
   })
 
-  it('skips the heredoc spawn when the queued session has no prompt', async () => {
+  it('starts no agent when the queued session has no prompt', async () => {
     useProjectStore.setState({ projects: [project()], activeProjectId: 'proj-A' } as any)
     useSessionStore.setState({ currentProjectId: 'proj-A', sessions: [] } as any)
     persisted['proj-A'] = []
     await fireQueuedSession(queuedSession({ startupPrompt: '' }))
-    expect(schedulerApi.spawnAgentWithPrompt).not.toHaveBeenCalled()
+    expect(visualAgentApi.start).not.toHaveBeenCalled()
   })
 
   it('does not corrupt other projects when firing for a non-active project', async () => {
@@ -242,9 +253,10 @@ describe('fireQueuedSession', () => {
     expect(useProjectStore.getState().activeProjectId).toBe('proj-A')
     const fired = useSessionStore.getState()
     expect(fired.currentProjectId).toBe('proj-A')
-    // The new session did spawn a terminal under its own ID though.
-    expect(schedulerApi.spawnAgentWithPrompt).toHaveBeenCalledTimes(1)
-    expect(schedulerApi.spawnAgentWithPrompt.mock.calls[0][1]).toBe('/created/b-new') // cwd = worktreePath
+    // The new session did start its agent though.
+    expect(visualAgentApi.start).toHaveBeenCalledTimes(1)
+    expect(startCall().cwd).toBe('/created/b-new') // cwd = worktreePath
+    expect(startCall().repoPath).toBe('/repo/B')
   })
 
   it('shows a toast when the project no longer exists', async () => {
@@ -261,47 +273,45 @@ describe('fireQueuedSession', () => {
 })
 
 describe('fireQueuedMessage', () => {
-  it('spawns a claude terminal with the message piped via heredoc when no terminal exists yet', async () => {
-    const sess = session({ id: 'sess-1', projectId: 'proj-A' })
+  it('starts the visual agent (resuming its saved conversation) with the message when none is running', async () => {
+    const sess = session({
+      id: 'sess-1',
+      projectId: 'proj-A',
+      visualAgents: { agent: { claudeSessionId: 'cs-old', model: 'claude-opus-5-5' } },
+    })
     persisted['proj-A'] = [sess]
     useProjectStore.setState({ projects: [project()], activeProjectId: 'proj-A' } as any)
     useSessionStore.setState({ sessions: [sess], currentProjectId: 'proj-A' } as any)
 
     await fireQueuedMessage(queuedMessage({ sessionId: 'sess-1', message: 'continue' }))
 
-    expect(schedulerApi.spawnAgentWithPrompt).toHaveBeenCalledTimes(1)
-    const terminalId = await schedulerApi.spawnAgentWithPrompt.mock.results[0].value
-    const registered = useTerminalStore.getState().getTerminal('sess-1', 'claude')
-    expect(registered?.terminalId).toBe(terminalId)
-    expect(schedulerApi.spawnAgentWithPrompt.mock.calls[0][2]).toBe('continue')
+    expect(visualAgentApi.start).toHaveBeenCalledTimes(1)
+    expect(startCall()).toMatchObject({ agentId: 'sess-1:agent', resumeClaudeSessionId: 'cs-old', initialPrompt: 'continue' })
+    expect(visualAgentApi.send).not.toHaveBeenCalled()
   })
 
-  it('writes directly to PTY when a claude terminal already exists', async () => {
+  it('sends the message to the running visual agent when there is one', async () => {
     const sess = session({ id: 'sess-1', projectId: 'proj-A' })
     persisted['proj-A'] = [sess]
     useProjectStore.setState({ projects: [project()], activeProjectId: 'proj-A' } as any)
     useSessionStore.setState({ sessions: [sess], currentProjectId: 'proj-A' } as any)
-    useTerminalStore.setState({
-      terminals: {
-        'sess-1:claude': {
-          terminalId: 'term-7',
-          sessionId: 'sess-1',
-          sessionName: 'x',
-          mode: 'claude',
-          contextId: 'sess-1',
-          tabId: 'agent',
-        },
-      },
-    } as any)
+    useVisualAgentStore.getState().seed({
+      agentId: 'sess-1:agent',
+      claudeSessionId: 'cs-live',
+      model: 'claude-opus-5-5',
+      state: 'idle',
+      events: [],
+      partial: null,
+      usage: null,
+      forks: [],
+      turnStartedAt: null,
+    })
 
     await fireQueuedMessage(queuedMessage({ sessionId: 'sess-1', message: 'continue' }))
 
-    // The handler delays the write by 200ms — advance the clock to flush it.
-    await vi.advanceTimersByTimeAsync(250)
-
-    expect(terminalApi.write).toHaveBeenCalledWith('term-7', 'continue\r')
-    // No second spawn when a live PTY already exists.
-    expect(schedulerApi.spawnAgentWithPrompt).not.toHaveBeenCalled()
+    expect(visualAgentApi.send).toHaveBeenCalledWith('sess-1:agent', 'continue')
+    // No second agent when one is already running.
+    expect(visualAgentApi.start).not.toHaveBeenCalled()
   })
 
   it('locates the session via electron-store when not in current project', async () => {
@@ -317,10 +327,10 @@ describe('fireQueuedMessage', () => {
     await fireQueuedMessage(queuedMessage({ sessionId: 'on-B', message: 'continue' }))
 
     // Project switched to B and sessions populated from disk
-    // We don't yank the user's view to project B — but we do spawn the
-    // claude terminal for the right session.
-    expect(schedulerApi.spawnAgentWithPrompt).toHaveBeenCalledTimes(1)
-    expect(schedulerApi.spawnAgentWithPrompt.mock.calls[0][0]).toBe('on-B')
+    // We don't yank the user's view to project B — but we do start the
+    // visual agent for the right session.
+    expect(visualAgentApi.start).toHaveBeenCalledTimes(1)
+    expect(startCall().sessionId).toBe('on-B')
   })
 
   it('shows a toast when the session no longer exists', async () => {

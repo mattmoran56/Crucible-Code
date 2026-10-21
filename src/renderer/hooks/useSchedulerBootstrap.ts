@@ -2,10 +2,10 @@ import { useEffect } from 'react'
 import { useSchedulerStore } from '../stores/schedulerStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useProjectStore } from '../stores/projectStore'
-import { useTerminalStore } from '../stores/terminalStore'
 import { useToastStore } from '../stores/toastStore'
 import type { QueuedSession, QueuedMessage, Session } from '../../shared/types'
 import { formatClockTime } from '../lib/scheduleTime'
+import { startSessionVisualAgent } from '../lib/startVisualAgent'
 
 function sortByCreatedAtDesc(sessions: Session[]): Session[] {
   return [...sessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -15,18 +15,13 @@ function sortByCreatedAtDesc(sessions: Session[]): Session[] {
 /**
  * Fire a queued session. Exported for integration tests.
  *
- * Strategy — match the custom-button flow because that path is proven:
+ * Strategy:
  *
  *   1. Create the worktree and persist the new session (so the sidebar
  *      reflects it next time the user looks at this project).
- *   2. Spawn claude via `window.api.button.execute(..., 'claude', 'terminal')`.
- *      This is the *exact* IPC handler the custom-button "claude / Terminal"
- *      flow uses — same spawn, same PTY shape, same hooks-free path.
- *   3. Inject the prompt via the button's `>`-detection-then-write helper
- *      (with MCP auto-confirm bolted on for any first-run permission prompts).
- *   4. Register the resulting terminal in `terminalStore` so when the user
- *      eventually clicks the session, `TerminalPanel` reuses this PTY rather
- *      than spawning a new claude.
+ *   2. Start the session's Agent tab visual agent with the startup prompt as
+ *      its first message. When the user eventually clicks the session, the
+ *      Agent tab attaches to this running agent rather than starting another.
  *
  * Notably this does NOT activate the new session in the workspace — the
  * user explicitly asked for queued sessions to run quietly in the
@@ -93,42 +88,8 @@ export async function fireQueuedSession(item: QueuedSession): Promise<void> {
       return
     }
 
-    // Look up the project's claude account (if any) so the scheduled session
-    // runs under the same login the user picked for this project.
-    const account = useProjectStore
-      .getState()
-      .claudeAccounts.find((a) => a.id === project.claudeAccountId)
-
-    // Spawn claude with the prompt piped via heredoc. Bulletproof — claude
-    // reads the prompt from stdin before binding raw-mode TTY, processes it,
-    // exits, and the mode='claude' auto-restart kicks in with --resume.
-    const terminalId = await window.api.scheduler.spawnAgentWithPrompt(
-      newSession.id,
-      newSession.worktreePath,
-      item.startupPrompt,
-      'dark',
-      account?.configDir,
-      project.repoPath,
-      newSession.id,
-      'agent'
-    )
-
-    // Register the spawned terminal in the renderer's terminalStore so
-    // `TerminalPanel`'s useEffect reuses this PTY when the user clicks
-    // into the session, instead of spawning a second claude.
-    useTerminalStore.setState((state) => ({
-      terminals: {
-        ...state.terminals,
-        [`${newSession.id}:claude`]: {
-          terminalId,
-          sessionId: newSession.id,
-          sessionName: newSession.name,
-          mode: 'claude',
-          contextId: newSession.id,
-          tabId: 'agent',
-        },
-      },
-    }))
+    // Runs under the project's claude account, like every visual agent.
+    await startSessionVisualAgent(newSession, project, item.startupPrompt)
 
     useToastStore.getState().addToast('success', `Started scheduled session "${item.name}"`)
   } catch (err) {
@@ -190,8 +151,6 @@ export async function fireQueuedMessage(item: QueuedMessage): Promise<void> {
         : await window.api.session.list(project.id)
   }
 
-  const existingTerminal = useTerminalStore.getState().getTerminal(item.sessionId, 'claude')
-
   // Make sure the project's sessions list is in sync (so the user sees the
   // session if they navigate to that project), but don't switch their
   // active view.
@@ -199,48 +158,16 @@ export async function fireQueuedMessage(item: QueuedMessage): Promise<void> {
     useSessionStore.setState({ sessions: projectSessions })
   }
 
-  if (existingTerminal) {
-    // Live PTY — give xterm a tick to focus, then write directly.
-    setTimeout(() => {
-      window.api.terminal.write(existingTerminal.terminalId, item.message + '\r')
-    }, 200)
-  } else {
-    // No terminal yet — spawn one with the message piped in via heredoc.
-    // Same bulletproof path the queued-session fire flow uses.
-    try {
-      const account = useProjectStore
-        .getState()
-        .claudeAccounts.find((a) => a.id === project!.claudeAccountId)
-      const terminalId = await window.api.scheduler.spawnAgentWithPrompt(
-        item.sessionId,
-        session.worktreePath,
-        item.message,
-        'dark',
-        account?.configDir,
-        project!.repoPath,
-        item.sessionId,
-        'agent'
-      )
-      useTerminalStore.setState((state) => ({
-        terminals: {
-          ...state.terminals,
-          [`${item.sessionId}:claude`]: {
-            terminalId,
-            sessionId: item.sessionId,
-            sessionName: session.name,
-            mode: 'claude',
-            contextId: item.sessionId,
-            tabId: 'agent',
-          },
-        },
-      }))
-    } catch (err) {
-      useToastStore.getState().addToast(
-        'error',
-        `Failed to inject queued message: ${err instanceof Error ? err.message : String(err)}`
-      )
-      return
-    }
+  try {
+    // Sent to the Agent tab's visual agent: as its next turn if it is running,
+    // else it starts (resuming the saved conversation) with the message.
+    await startSessionVisualAgent(session, project, item.message)
+  } catch (err) {
+    useToastStore.getState().addToast(
+      'error',
+      `Failed to inject queued message: ${err instanceof Error ? err.message : String(err)}`
+    )
+    return
   }
 
   useToastStore.getState().addToast('info', `Sent queued message to "${session.name}"`)
