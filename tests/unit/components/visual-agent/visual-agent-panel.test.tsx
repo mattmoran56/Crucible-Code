@@ -66,4 +66,20 @@ describe('<VisualAgentPanel>', () => {
     expect(useVisualAgentStore.getState().ui.p1.openForkId).toBe('fork-demo-01')
     expect(screen.getByText(/Forked from the conversation as it stood/)).toBeInTheDocument()
   })
+
+  it('stays pinned to the bottom through browser scroll resets, and lets go on a wheel', () => {
+    mount()
+    const log = screen.getByRole('log', { name: 'Conversation' })
+    Object.defineProperty(log, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(log, 'clientHeight', { configurable: true, value: 400 })
+    // The browser resets scrollTop (re-layout, node moved): re-pinned.
+    log.scrollTop = 0
+    fireEvent.scroll(log)
+    expect(log.scrollTop).toBe(1000)
+    // The reader scrolls up: let go.
+    fireEvent.wheel(log)
+    log.scrollTop = 100
+    fireEvent.scroll(log)
+    expect(log.scrollTop).toBe(100)
+  })
 })

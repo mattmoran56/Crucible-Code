@@ -190,6 +190,8 @@ function TurnStatus({ snap }: { snap: VisualAgentSnapshot }) {
 /* --- the panel -------------------------------------------------------------- */
 
 const STICK_PX = 40
+/** How long after a wheel/touch/key/pointer on the log a scroll counts as the reader's. */
+const USER_INTENT_MS = 1000
 
 export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgentPanelProps) {
   const stored = useVisualAgentStore((s) => s.agents[agentId])
@@ -222,6 +224,7 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
   const root = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const log = useRef<HTMLDivElement>(null)
+  const logContent = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [behind, setBehind] = useState(false)
 
@@ -250,11 +253,40 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [visible])
 
+  // Content also grows after it mounts (code highlighting, markdown, an ask
+  // card) and the log shrinks when the tray or composer grows: keep the
+  // bottom in view through those too while the reader is following.
+  useEffect(() => {
+    const el = log.current
+    const content = logContent.current
+    if (!el || !content || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight
+    })
+    observer.observe(el)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
+
+  // Only the reader lets go of the bottom. Scroll events also come from the
+  // browser (the log is re-laid out, moved or shown again and its scrollTop
+  // resets), and those must not unpin it.
+  const userIntentAt = useRef(0)
+  const noteUserIntent = (): void => {
+    userIntentAt.current = Date.now()
+  }
   const onScroll = (): void => {
     const el = log.current
     if (!el) return
-    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_PX
-    if (stick.current) setBehind(false)
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_PX
+    if (atBottom) {
+      stick.current = true
+      setBehind(false)
+    } else if (stick.current && Date.now() - userIntentAt.current > USER_INTENT_MS) {
+      el.scrollTop = el.scrollHeight
+    } else {
+      stick.current = false
+    }
   }
 
   const jumpToLatest = (): void => {
@@ -322,9 +354,13 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
           aria-label="Conversation"
           aria-busy={running}
           onScroll={onScroll}
+          onWheel={noteUserIntent}
+          onTouchMove={noteUserIntent}
+          onKeyDown={noteUserIntent}
+          onPointerDown={noteUserIntent}
           className="min-h-0 flex-1 overflow-y-auto"
         >
-          <div className="mx-auto! flex min-h-full w-full max-w-[920px] flex-col px-5! py-4!">
+          <div ref={logContent} className="mx-auto! flex min-h-full w-full max-w-[920px] flex-col px-5! py-4!">
             {empty ? (
               <EmptyState snap={snap} cwd={startOptions.cwd} />
             ) : (
