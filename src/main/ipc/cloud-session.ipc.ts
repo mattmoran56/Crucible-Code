@@ -1,8 +1,7 @@
 import { BrowserWindow, shell } from 'electron'
 import { handle } from './handle'
 import { IPC } from '../../shared/constants'
-import type { CloudCreateState, CloudSessionResult, CloudTeleportResult } from '../../shared/types'
-import * as terminalService from '../services/terminal.service'
+import type { CloudCreateState, CloudSessionResult, CloudTeleportResult, CloudTeleportState } from '../../shared/types'
 import { writeClaudeHookSettings } from '../services/hook.service'
 import {
   CLOUD_PTY_TAB,
@@ -10,8 +9,8 @@ import {
   startCloudCreate,
   type StartCloudCreateOptions,
 } from '../services/cloud-create.service'
+import { finishTeleport, getTeleportState, startTeleport } from '../services/cloud-teleport.service'
 import {
-  claudeShellCommand,
   discoverTeleportedSession,
   isCloudSessionUrl,
   sendCloudMessage,
@@ -35,25 +34,6 @@ export interface CloudPtyOptions {
 /** The Agent tab id cloud PTYs report under, so tab status lands on Agent. */
 export { CLOUD_PTY_TAB }
 
-function spawnCloudPty(window: BrowserWindow, opts: CloudPtyOptions, argv: string[]): string {
-  // Only one cloud PTY per session tab (a retried teleport replaces a dead
-  // one). spawnTerminal is idempotent per tab.
-  terminalService.killTerminalsForTab(opts.sessionId, CLOUD_PTY_TAB)
-  return terminalService.spawnTerminal(
-    window,
-    opts.sessionId,
-    opts.worktreePath,
-    'command',
-    opts.claudeTheme ?? 'dark',
-    opts.configDir ?? undefined,
-    claudeShellCommand(argv),
-    opts.repoPath,
-    false,
-    opts.sessionId,
-    CLOUD_PTY_TAB
-  )
-}
-
 export function registerCloudSessionHandlers(window: BrowserWindow): void {
   // Creating a cloud session is interactive: push the branch, then run
   // `claude --cloud <task>` in a PTY in the Agent tab (see cloud-create.service).
@@ -71,7 +51,7 @@ export function registerCloudSessionHandlers(window: BrowserWindow): void {
 
   handle(IPC.CLOUD_SESSION_TELEPORT, async (_e, opts: CloudPtyOptions): Promise<CloudTeleportResult> => {
     // Validate the id before touching anything.
-    const argv = teleportArgv(opts.cloudSessionId)
+    teleportArgv(opts.cloudSessionId)
     // Teleport needs a clean tree. Never stash on the user's behalf — report
     // what is in the way and let them decide.
     const files = await worktreeDirtyFiles(opts.worktreePath)
@@ -79,8 +59,19 @@ export function registerCloudSessionHandlers(window: BrowserWindow): void {
     // The teleported session is a normal local Claude session from here on,
     // so give it the same hook settings every local agent gets.
     writeClaudeHookSettings(opts.worktreePath, opts.claudeTheme ?? 'dark', opts.sessionId)
-    return { ok: true, terminalId: spawnCloudPty(window, opts, argv) }
+    // The PTY is watched until the conversation is local, then closed so the
+    // Agent tab can resume it as a visual agent (see cloud-teleport.service).
+    const state = startTeleport(window, opts)
+    return { ok: true, terminalId: state.terminalId, state }
   })
+
+  handle(IPC.CLOUD_SESSION_TELEPORT_STATE, async (_e, sessionId: string): Promise<CloudTeleportState | null> =>
+    getTeleportState(sessionId)
+  )
+
+  handle(IPC.CLOUD_SESSION_TELEPORT_FINISH, async (_e, sessionId: string): Promise<CloudTeleportState | null> =>
+    finishTeleport(sessionId)
+  )
 
   handle(IPC.CLOUD_SESSION_DISCOVER_LOCAL, async (_e, opts: DiscoverOptions): Promise<string | null> =>
     discoverTeleportedSession(opts)

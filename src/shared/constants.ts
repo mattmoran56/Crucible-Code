@@ -245,6 +245,12 @@ export const IPC = {
   CLOUD_SESSION_CREATE_EVENT: 'cloud-session:create-event',
   CLOUD_SESSION_SEND: 'cloud-session:send',
   CLOUD_SESSION_TELEPORT: 'cloud-session:teleport',
+  /** The current teleport run for an app session (survives an Agent tab remount). */
+  CLOUD_SESSION_TELEPORT_STATE: 'cloud-session:teleport-state',
+  /** main → renderer: a teleport run changed (step, needs input, done, failed). */
+  CLOUD_SESSION_TELEPORT_EVENT: 'cloud-session:teleport-event',
+  /** Close the teleport PTY now and hand the session to the visual agent. */
+  CLOUD_SESSION_TELEPORT_FINISH: 'cloud-session:teleport-finish',
   CLOUD_SESSION_DISCOVER_LOCAL: 'cloud-session:discover-local',
   CLOUD_SESSION_OPEN_URL: 'cloud-session:open-url',
 } as const

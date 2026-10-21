@@ -84,8 +84,34 @@ export interface CloudCreateState {
 
 /** Result of asking to teleport a cloud session down to its worktree. */
 export type CloudTeleportResult =
-  | { ok: true; terminalId: string }
+  | { ok: true; terminalId: string; state: CloudTeleportState }
   | { ok: false; reason: 'dirty'; files: string[] }
+
+/**
+ * Where a teleport run is:
+ * - running: `claude --teleport <id>` is pulling the session down (PTY)
+ * - needs-input: the CLI is asking something; the user answers in the terminal
+ * - finishing: the conversation is local; the PTY is being closed
+ * - done: `claudeSessionId` is the local Claude session to resume visually
+ * - failed: see `error` (the PTY's scrollback stays available)
+ */
+export type CloudTeleportStatus = 'running' | 'needs-input' | 'finishing' | 'done' | 'failed'
+
+/** Snapshot of one teleport run (main process → renderer). */
+export interface CloudTeleportState {
+  /** App session id. */
+  sessionId: string
+  /** The PTY running `claude --teleport …`. */
+  terminalId: string
+  status: CloudTeleportStatus
+  /** Progress lines the CLI printed, oldest first (e.g. "Fetching session logs"). */
+  steps: string[]
+  /** ISO time the teleport started (transcript discovery looks from here). */
+  startedAt: string
+  /** The local Claude session the teleport wrote, once found. */
+  claudeSessionId?: string
+  error?: string
+}
 
 export type SessionStatus = 'running' | 'attention' | 'completed'
 export type HookType = 'prompt' | 'notification' | 'stop'
