@@ -19,7 +19,7 @@
 
 - **Multi-project management** — Open multiple git repos, switch with draggable tabs, per-project notifications
 - **Session isolation** — Each session gets its own git worktree and branch — no conflicts between parallel agents
-- **Embedded terminals** — Full xterm.js terminal per session with dynamic shell and Claude terminals
+- **Embedded terminals** — Full xterm.js shell terminals per session, opened from the workspace tab bar
 - **Git integration** — Commit log, changed files, and a GitHub-style syntax-highlighted diff viewer (Shiki) with full-file syntax context, click-anywhere context expansion, per-hunk collapse, and side-by-side or unified modes
 - **PR review panel** — Review pull requests without leaving the IDE: conversation, checks, file tree, inline comments, merge
 - **Intervention alerts** — Desktop notifications and dock badge when Claude Code needs your input
@@ -28,9 +28,9 @@
 - **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
 - **Remote access** — Pair a second device's browser to your desktop instance over the LAN, or over a hosted end-to-end encrypted Cloudflare Worker relay that works through VPNs and hotel Wi-Fi. View projects, sessions, settings, and live agent terminals from anywhere (full mobile layout, PWA-installable on iOS)
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
-- **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
+- **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that become the first message of a new session's agent
 - **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Pick a variant per project: **Lite**/**Pro** (three fresh sessions per round) or **Efficient** (fresh stacked reviews + one persistent worker that keeps context across rounds — cheaper). Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
-- **Visual agents** — Opt-in per project: run Claude Code as a chat interface instead of a terminal — rich tool cards with diffs, inline permission and question cards, a sub-agent tray, `/btw` side questions in a fork, a model picker, and conversations that resume across app restarts
+- **Visual agents** — Every agent tab is a chat interface to Claude Code rather than a terminal — rich tool cards with diffs, inline permission and question cards, a sub-agent tray, `/btw` side questions in a fork, a model picker, and conversations that resume across app restarts
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
@@ -138,7 +138,7 @@ npm run dev
 
 1. Click **Add Project** and select a folder containing a git repository.
 2. Create a session from the sidebar — this creates a new branch and worktree.
-3. Use the terminal to run `claude` or any other commands in the isolated worktree.
+3. Tell the session's agent what to work on in its Agent tab, or open a terminal from the **+** menu to run commands in the isolated worktree.
 4. View commits and diffs in the git panel as your agent works.
 5. Open PRs directly from the git panel toolbar.
 
@@ -227,7 +227,7 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 
 - **Create from scratch** — New branch from any base branch
 - **Cmd+N shortcut** — Opens the New Session dialog from anywhere in the app
-- **Auto-focus the new agent** — Once the session is created, the agent terminal grabs focus so you can start typing immediately
+- **Agent tab** — Every session opens on its Agent tab, a visual agent (see **Visual agents** below) running in the worktree
 - **Import existing worktree** — Bring in worktrees created outside CodeCrucible
 - **Open remote branch** — Create a session from a remote branch with autocomplete
 - **Open as main branch** — Temporarily check out a session's branch on the main repo (useful for builds that need the real repo path)
@@ -240,7 +240,7 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 <details>
 <summary><strong>Session startup prompts</strong></summary>
 
-Configure per-project prompts that can be optionally auto-run in a new session's agent terminal. Pick one when creating a session — it's typed into the agent as soon as Claude is ready.
+Configure per-project prompts that can optionally auto-run in a new session's agent. Pick one when creating a session — it becomes the Agent tab's first message.
 
 - **Per-project list** — Each project gets its own set of prompts, configured in Settings → Session Startup Prompts
 - **Slash commands or freeform** — Use Claude slash commands (`/notion-ticket`, `/run-tests`) or any freeform prompt
@@ -257,10 +257,10 @@ Configure per-project prompts that can be optionally auto-run in a new session's
 <details>
 <summary><strong>Terminal management</strong></summary>
 
-Every session gets an embedded terminal (xterm.js + node-pty) that opens in the worktree directory.
+Sessions can open embedded terminals (xterm.js + node-pty) in the worktree directory. The Agent tab itself is a visual agent (see **Visual agents** below), not a terminal.
 
-- **Auto-spawn** — A Claude terminal spawns automatically when you select a session
-- **Dynamic terminals** — Add extra shell or Claude terminals from the workspace tab bar
+- **New Terminal** — Add shell terminals from the workspace tab bar's **+** menu
+- **Claude terminals elsewhere** — Foreground Claude custom buttons and the interactive review loop still run Claude Code in a terminal you can watch and type into
 - **Theme sync** — Terminal colors update when you change the app theme
 - **Claude Code theme** — Separately configurable light/dark theme for the Claude Code CLI
 - **Intervention detection** — Terminal output is scanned for permission prompts and questions, triggering notifications
@@ -272,11 +272,10 @@ Every session gets an embedded terminal (xterm.js + node-pty) that opens in the 
 
 ![Visual agent](docs/screenshots/visual-agent.png)
 
-An optional chat interface to Claude Code, driven over `claude -p --input-format stream-json` instead of a terminal. It is **off by default** and enabled per project in **Settings → Project Defaults → Visual agents**; with it off, nothing renders and no process is spawned.
+The agent interface: a chat UI for Claude Code, driven over `claude -p --input-format stream-json` instead of a terminal. There is no setting — every session's **Agent** tab is a visual agent, and no Claude terminal is spawned for it.
 
-![Visual agents toggle](docs/screenshots/visual-agent-settings.png)
-
-- **Opening one** — Pick **New Visual Agent** from the workspace tab bar's **+** menu, flip the **Terminal | Visual** switch on a session's Agent tab, or tick **Open agent as visual interface** when creating a session (its startup prompt becomes the first message). A visual Agent tab never spawns the Claude terminal; switching back to Terminal stops the visual agent
+- **Opening one** — Each session's Agent tab starts one (a startup prompt becomes its first message). **New Agent** in the workspace tab bar's **+** menu opens another, labelled **Agent N**; **New Terminal** still opens a plain shell. Agent tabs from layouts saved before this change open as visual agents too
+- **Background sessions** — Notion task pickups and scheduled sessions start the new session's visual agent with their prompt, and queued messages are sent to it, without opening the session
 - **Model picker** — Choose Opus, Fable, Sonnet or Haiku below the composer (or with `/model`); switching mid-conversation keeps the conversation
 - **Tool cards** — Each tool call is a card: edits render as syntax-highlighted diffs, Bash shows the command and its output, reads and searches collapse into a one-line summary you can expand
 - **Permission and question cards** — When Claude needs approval (or asks a question with options) the card appears inline with Allow / Always allow / Deny, and the status bar switches to **Needs you**
@@ -400,7 +399,7 @@ Poll a Notion database for new tasks and auto-spawn a session per task. Sessions
 <details>
 <summary><strong>Notifications & intervention detection</strong></summary>
 
-Detects when Claude Code needs user input by scanning terminal output for permission prompts and questions.
+Detects when Claude Code needs user input: visual agents report it from their run state (a permission or question card is waiting), and Claude terminals by scanning their output for permission prompts and questions.
 
 - **Desktop notifications** — OS-level notifications when Claude needs attention
 - **Dock badge** — macOS dock badge shows count of sessions needing input
@@ -419,7 +418,7 @@ Monitor Claude Code usage and rate limits from the right panel.
 - **Session stats** — Cost, duration, lines added/removed per session
 - **Activity chart** — Daily activity over the past week (messages, sessions, tool calls)
 - **Subscription info** — Shows your current plan and rate limit tier
-- **Auto-continue on limit** — When a session or agent actually hits its usage limit, a popup offers to queue a follow-up prompt that fires automatically once the window resets. The trigger watches the terminal for Claude's real "usage limit reached" banner — the message that genuinely blocks a conversation — not a usage percentage, so accounts with no hard limit (overage/extra usage) never mis-fire. Opt into Settings → Usage Limits to skip the popup and auto-queue `continue` for you
+- **Auto-continue on limit** — When a session or agent actually hits its usage limit, a popup offers to queue a follow-up prompt that fires automatically once the window resets. The trigger watches terminal output for Claude's real "usage limit reached" banner (so for now it covers Claude terminals, not visual agents) — the message that genuinely blocks a conversation — not a usage percentage, so accounts with no hard limit (overage/extra usage) never mis-fire. Opt into Settings → Usage Limits to skip the popup and auto-queue `continue` for you
 
 </details>
 
@@ -534,7 +533,7 @@ src/
 │   │   ├── layout/       # App shell (ProjectTabs, SessionSidebar, SessionWorkspace)
 │   │   ├── sessions/     # Session management (SessionCard, CreateSessionDialog)
 │   │   ├── git/          # Git viewer (CommitList, ChangedFiles, DiffViewer)
-│   │   ├── terminal/     # Terminal (TerminalPanel, DynamicTerminalPanel)
+│   │   ├── terminal/     # Terminals (DynamicTerminalPanel, ReviewTerminalPanel)
 │   │   ├── editor/       # Code editor (CodeEditorPanel, FileExplorer)
 │   │   ├── buttons/      # Custom buttons (CustomButtonBar, ButtonRenderer, IconPicker)
 │   │   ├── pullrequests/ # PR review (PRReviewPanel, PRConversationTab, FileTree)
