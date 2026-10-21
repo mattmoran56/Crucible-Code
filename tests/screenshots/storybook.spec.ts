@@ -24,6 +24,8 @@ const THEMES: { key: string; label: string }[] = [
   { key: 'light', label: 'Light' },
   { key: 'soft-light', label: 'Soft Light' },
   { key: 'ultra-dark', label: 'Ultra Dark' },
+  { key: 'forest-dark', label: 'Forest Night' },
+  { key: 'forest-light', label: 'Forest Day' },
 ]
 
 function buttonTargets(): Target[] {

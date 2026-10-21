@@ -126,6 +126,8 @@ function themeSweepTargets(): Target[] {
     { key: 'light', label: 'Light' },
     { key: 'soft-light', label: 'Soft Light' },
     { key: 'ultra-dark', label: 'Ultra Dark' },
+    { key: 'forest-dark', label: 'Forest Night' },
+    { key: 'forest-light', label: 'Forest Day' },
   ]
   const subjects = [
     { name: 'button-primary', storyId: 'ui-button--primary', viewport: { width: 320, height: 120 } },

@@ -20,8 +20,8 @@ Roughly:
   and a representative slice of feature components (PR card, suggestion block,
   CI indicator, label chip, session card).
 - **Screenshot tests (~55 baselines)** — every Storybook story is captured at
-  a tuned viewport, plus a representative full-app shot in each of the four
-  themes (Tokyo Night, Light, Soft Light, Ultra Dark).
+  a tuned viewport, plus a representative full-app shot in each of the six
+  themes (Tokyo Night, Light, Soft Light, Ultra Dark, Forest Night, Forest Day).
 - **E2E tests (~25 tests)** — project tabs, session sidebar, settings page,
   right activity-bar panels, and a boot-health check, all against the mock
   Vite app.

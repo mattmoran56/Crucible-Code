@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createHighlighter, type Highlighter, type ThemedToken } from 'shiki'
+import { THEMES as APP_THEMES } from '../../shared/themes'
 
 // --- Singleton highlighter ---
 
@@ -63,7 +64,8 @@ function langFromPath(filePath: string): string | null {
 
 function getShikiTheme(): 'tokyo-night' | 'github-light' {
   const theme = document.documentElement.getAttribute('data-theme') || 'dark'
-  return theme === 'light' || theme === 'soft-light' ? 'github-light' : 'tokyo-night'
+  const isLight = APP_THEMES.find((t) => t.name === theme)?.isDark === false
+  return isLight ? 'github-light' : 'tokyo-night'
 }
 
 // --- Core highlighting ---

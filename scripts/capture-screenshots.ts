@@ -501,6 +501,8 @@ async function captureScreenshots() {
     light: 'Light',
     'soft-light': 'Soft Light',
     'ultra-dark': 'Ultra Dark',
+    'forest-dark': 'Forest Night',
+    'forest-light': 'Forest Day',
   }
 
   // With SCREENSHOT_ONLY set, theme variants are captured only when named.

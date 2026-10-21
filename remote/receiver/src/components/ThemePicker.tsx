@@ -5,6 +5,8 @@ const THEMES = [
   { id: 'ultra-dark', label: 'Ultra Dark' },
   { id: 'light', label: 'Light' },
   { id: 'soft-light', label: 'Soft Light' },
+  { id: 'forest-dark', label: 'Forest Night' },
+  { id: 'forest-light', label: 'Forest Day' },
 ] as const
 
 type ThemeId = (typeof THEMES)[number]['id']

@@ -107,11 +107,11 @@ describe('receiver/ThemeRadioList', () => {
     document.documentElement.removeAttribute('data-theme')
   })
 
-  it('shows the four themes as radio buttons and applies the chosen one to <html>', async () => {
+  it('shows the six themes as radio buttons and applies the chosen one to <html>', async () => {
     const user = userEvent.setup()
     render(<ThemeRadioList />)
     const radios = screen.getAllByRole('radio')
-    expect(radios).toHaveLength(4)
+    expect(radios).toHaveLength(6)
     await user.click(screen.getByRole('radio', { name: 'Light' }))
     expect(document.documentElement.getAttribute('data-theme')).toBe('light')
   })

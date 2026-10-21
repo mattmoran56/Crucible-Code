@@ -76,6 +76,38 @@
   --color-merged: #a78bfa;
 }
 
+/* --- Forest Night (pine green / copper) --- */
+[data-theme="forest-dark"] {
+  --color-bg: #14201b;
+  --color-bg-secondary: #1c2b24;
+  --color-bg-tertiary: #18261f;
+  --color-border: #2d4238;
+  --color-text: #d8e4d6;
+  --color-text-muted: #6f8a7c;
+  --color-accent: #e8a55c;
+  --color-accent-hover: #f0b673;
+  --color-success: #8fc97a;
+  --color-danger: #e5787a;
+  --color-warning: #e5c76b;
+  --color-merged: #c39ad8;
+}
+
+/* --- Forest Day (sage paper / copper) --- */
+[data-theme="forest-light"] {
+  --color-bg: #eef2ea;
+  --color-bg-secondary: #e2e8dc;
+  --color-bg-tertiary: #e8ede3;
+  --color-border: #c8d2c0;
+  --color-text: #1f2d26;
+  --color-text-muted: #5f7368;
+  --color-accent: #b8612a;
+  --color-accent-hover: #9d4f1f;
+  --color-success: #3f8a4a;
+  --color-danger: #c2453f;
+  --color-warning: #b8860b;
+  --color-merged: #8456a8;
+}
+
 /* Tailwind theme tokens — reference the CSS custom properties */
 @theme {
   --color-bg: var(--color-bg);

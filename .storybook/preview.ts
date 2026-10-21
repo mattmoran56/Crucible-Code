@@ -23,6 +23,8 @@ const preview: Preview = {
         Light: 'light',
         'Soft Light': 'soft-light',
         'Ultra Dark': 'ultra-dark',
+        'Forest Night': 'forest-dark',
+        'Forest Day': 'forest-light',
       },
       defaultTheme: 'Dark (Tokyo Night)',
       attributeName: 'data-theme',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { THEMES, type ThemeName } from '../../../src/shared/themes'
 
-const EXPECTED_NAMES: ThemeName[] = ['dark', 'light', 'soft-light', 'ultra-dark']
+const EXPECTED_NAMES: ThemeName[] = ['dark', 'light', 'soft-light', 'ultra-dark', 'forest-dark', 'forest-light']
 
 describe('THEMES', () => {
   it('includes every expected theme exactly once', () => {
@@ -51,12 +51,12 @@ function hexBrightness(hex: string): number {
 }
 
 describe('THEMES — ordering and labels', () => {
-  it('lists exactly four themes in declaration order (dark first = app default)', () => {
-    expect(THEMES.map((t) => t.name)).toEqual(['dark', 'light', 'soft-light', 'ultra-dark'])
+  it('lists exactly six themes in declaration order (dark first = app default)', () => {
+    expect(THEMES.map((t) => t.name)).toEqual(EXPECTED_NAMES)
   })
 
   it('uses the expected human labels', () => {
-    expect(THEMES.map((t) => t.label)).toEqual(['Tokyo Night', 'Light', 'Soft Light', 'Ultra Dark'])
+    expect(THEMES.map((t) => t.label)).toEqual(['Tokyo Night', 'Light', 'Soft Light', 'Ultra Dark', 'Forest Night', 'Forest Day'])
   })
 
   it('labels are unique and trimmed', () => {
@@ -65,9 +65,9 @@ describe('THEMES — ordering and labels', () => {
     for (const l of labels) expect(l).toBe(l.trim())
   })
 
-  it('splits evenly into two dark and two light themes', () => {
-    expect(THEMES.filter((t) => t.isDark).map((t) => t.name)).toEqual(['dark', 'ultra-dark'])
-    expect(THEMES.filter((t) => !t.isDark).map((t) => t.name)).toEqual(['light', 'soft-light'])
+  it('splits evenly into three dark and three light themes', () => {
+    expect(THEMES.filter((t) => t.isDark).map((t) => t.name)).toEqual(['dark', 'ultra-dark', 'forest-dark'])
+    expect(THEMES.filter((t) => !t.isDark).map((t) => t.name)).toEqual(['light', 'soft-light', 'forest-light'])
   })
 
   it('claudeTheme only ever takes the two supported values', () => {
