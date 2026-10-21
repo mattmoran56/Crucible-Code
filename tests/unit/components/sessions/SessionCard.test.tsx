@@ -73,4 +73,23 @@ describe('SessionCard', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }))
     expect(onDelete).toHaveBeenCalled()
   })
+
+  it('shows a Cloud indicator for cloud sessions', () => {
+    render(
+      <SessionCard
+        {...baseProps}
+        session={{ ...session, location: 'cloud', cloud: { sessionId: 'cs1', url: 'https://claude.ai/code/cs1' } }}
+      />
+    )
+    const badge = screen.getByTitle('Running in Claude Code on the web')
+    expect(badge).toHaveTextContent('Cloud')
+  })
+
+  it('does not show the Cloud indicator for local sessions', () => {
+    const { rerender } = render(<SessionCard {...baseProps} />)
+    expect(screen.queryByTitle('Running in Claude Code on the web')).not.toBeInTheDocument()
+    rerender(<SessionCard {...baseProps} session={{ ...session, location: 'local' }} />)
+    expect(screen.queryByTitle('Running in Claude Code on the web')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cloud')).not.toBeInTheDocument()
+  })
 })

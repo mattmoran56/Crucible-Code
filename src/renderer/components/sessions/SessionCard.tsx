@@ -47,6 +47,23 @@ const TicketIcon = () => (
   </svg>
 )
 
+const CloudIcon = () => (
+  <svg
+    aria-hidden="true"
+    className="shrink-0"
+    width="10"
+    height="10"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z" />
+  </svg>
+)
+
 function StatusIndicator({ status }: { status: SessionStatus | null }) {
   if (!status) return null
 
@@ -119,6 +136,15 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
         </div>
         <div className="text-text-muted text-[10px] mt-1 flex items-center gap-1.5 pr-5">
           <span className="truncate">{session.branchName}</span>
+          {session.location === 'cloud' && (
+            <span
+              title="Running in Claude Code on the web"
+              className="shrink-0 inline-flex items-center gap-0.5 rounded border border-border px-1 text-[9px] font-semibold uppercase tracking-wide text-text-muted"
+            >
+              <CloudIcon />
+              Cloud
+            </span>
+          )}
           {isOpenedAsMain && (
             <span className="shrink-0 inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide bg-accent/20 text-accent">
               Open
