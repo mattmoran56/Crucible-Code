@@ -425,14 +425,14 @@ describe('buttonStore.executeButton (shell/claude commands)', () => {
     expect(inst).toMatchObject({ terminalId: 't5', sessionId: 's1', sessionName: 'feat-work', mode: 'shell' })
   })
 
-  it('foreground claude run opens an agent tab and registers a claude-mode terminal', async () => {
+  it('foreground claude run opens a terminal tab (agent tabs are visual agents) holding its claude-mode PTY', async () => {
     buttonApi.execute.mockResolvedValue('t6')
     useButtonStore.setState({
       buttons: [B({ id: 'b1', actionType: 'claude' as any, executionMode: 'terminal' as any } as any)],
     } as any)
     await useButtonStore.getState().executeButton('b1')
     const newTab = useWorkspaceLayoutStore.getState().columns[0].activeTab as string
-    expect(newTab.startsWith('agent:')).toBe(true)
+    expect(newTab.startsWith('terminal:')).toBe(true)
     expect(useTerminalStore.getState().getDynamicTerminal(newTab, 's1')!.mode).toBe('claude')
   })
 

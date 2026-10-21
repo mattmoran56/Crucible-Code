@@ -308,12 +308,13 @@ export const useButtonStore = create<ButtonState>()((set, get) => ({
           }
         })
       } else {
-        // Terminal (foreground) mode: open a dynamic terminal tab in the workspace
+        // Terminal (foreground) mode: open a dynamic terminal tab in the workspace.
+        // Always a terminal tab, even for claude buttons: agent tabs are visual
+        // agents, and this one shows the PTY the button already spawned.
         const { columns, addDynamicTab } = useWorkspaceLayoutStore.getState()
         const targetColumnId = columns[0]?.id
         if (targetColumnId) {
-          const tabType = button.actionType === 'claude' ? 'agent' : 'terminal'
-          const newTab = addDynamicTab(targetColumnId, tabType)
+          const newTab = addDynamicTab(targetColumnId, 'terminal')
           // Register the already-spawned terminal so DynamicTerminalPanel uses it
           const sessionName = activeSession?.name ?? 'button'
           useTerminalStore.getState().registerDynamicTerminal(
@@ -351,8 +352,8 @@ export const useButtonStore = create<ButtonState>()((set, get) => ({
     const { columns, addDynamicTab } = useWorkspaceLayoutStore.getState()
     const targetColumnId = columns[0]?.id
     if (targetColumnId) {
-      const tabType = button?.actionType === 'claude' ? 'agent' : 'terminal'
-      const newTab = addDynamicTab(targetColumnId, tabType)
+      // A terminal tab even for claude buttons: it shows the button's PTY.
+      const newTab = addDynamicTab(targetColumnId, 'terminal')
       useTerminalStore.getState().registerDynamicTerminal(
         newTab, runState.terminalId, sessionId, sessionName,
         button?.actionType === 'claude' ? 'claude' : 'shell'
