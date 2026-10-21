@@ -7,6 +7,7 @@ import {
   isDynamicTab,
   getTabBaseType,
   getTabLabel,
+  type DynamicTabType,
   type WorkspaceColumn as WorkspaceColumnType,
   type WorkspaceTab,
 } from '../../stores/workspaceLayoutStore'
@@ -89,6 +90,12 @@ export const CodeIcon = () => (
   </svg>
 )
 
+export const ChatIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+)
+
 /** Get the icon for a tab */
 export function getTabIcon(tab: WorkspaceTab): React.ReactNode {
   if (tab === 'agent') return <TerminalIcon />
@@ -100,6 +107,7 @@ export function getTabIcon(tab: WorkspaceTab): React.ReactNode {
   const base = getTabBaseType(tab)
   if (base === 'agent') return <TerminalIcon />
   if (base === 'terminal') return <ShellIcon />
+  if (base === 'visual-agent') return <ChatIcon />
   return <TerminalIcon />
 }
 
@@ -128,6 +136,9 @@ export function ColumnPanel({
   badge,
   tabStatus,
   onTabStatusClear,
+  visualAgentsEnabled = false,
+  agentView,
+  onAgentViewChange,
 }: {
   column: WorkspaceColumnType
   canClose: boolean
@@ -137,8 +148,13 @@ export function ColumnPanel({
   disabledTooltip?: string
   dragOverInfo: { columnId: string; index: number } | null
   setDragOverInfo: (info: { columnId: string; index: number } | null) => void
-  onAddDynamicTab: (columnId: string, type: 'agent' | 'terminal') => void
+  onAddDynamicTab: (columnId: string, type: DynamicTabType) => void
   onCloseDynamicTab: (tab: WorkspaceTab) => void
+  /** The project opted in to visual agents: offer "New Visual Agent" and the Agent tab view switch. */
+  visualAgentsEnabled?: boolean
+  /** How the core Agent tab renders for the active session. */
+  agentView?: 'terminal' | 'visual'
+  onAgentViewChange?: (view: 'terminal' | 'visual') => void
   badge?: { tab: WorkspaceTab; count: number }
   /** Per-tab status (attention/completed) for agent/review tabs. */
   tabStatus?: (tab: WorkspaceTab) => 'attention' | 'completed' | undefined
@@ -308,7 +324,10 @@ export function ColumnPanel({
           )}
         </div>
         <div className="flex items-center flex-shrink-0 gap-0.5" style={{ marginLeft: '4px' }}>
-          <AddTabMenu columnId={column.id} onAdd={onAddDynamicTab} />
+          {visualAgentsEnabled && column.activeTab === 'agent' && agentView && onAgentViewChange && (
+            <AgentViewSwitch view={agentView} onChange={onAgentViewChange} />
+          )}
+          <AddTabMenu columnId={column.id} onAdd={onAddDynamicTab} visualAgentsEnabled={visualAgentsEnabled} />
           <IconButton label="Split editor" size="sm" onClick={onSplit} disabled={!canSplit}>
             <SplitIcon />
           </IconButton>
@@ -351,12 +370,51 @@ export function ColumnPanel({
 
 /* ── Add Tab Menu ─────────────────────────────────────── */
 
+/* ── Agent view switch (Terminal | Visual) ─────────────── */
+
+export function AgentViewSwitch({
+  view,
+  onChange,
+}: {
+  view: 'terminal' | 'visual'
+  onChange: (view: 'terminal' | 'visual') => void
+}) {
+  const option = (value: 'terminal' | 'visual', label: string) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={view === value}
+      onClick={() => view !== value && onChange(value)}
+      className={`text-[11px] rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        view === value ? 'bg-bg-secondary text-text shadow-sm' : 'text-text-muted hover:text-text'
+      }`}
+      style={{ padding: '2px 8px' }}
+    >
+      {label}
+    </button>
+  )
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Agent view"
+      data-testid="agent-view-switch"
+      className="flex items-center rounded-md border border-border bg-bg"
+      style={{ padding: 2, marginRight: 4 }}
+    >
+      {option('terminal', 'Terminal')}
+      {option('visual', 'Visual')}
+    </div>
+  )
+}
+
 export function AddTabMenu({
   columnId,
   onAdd,
+  visualAgentsEnabled = false,
 }: {
   columnId: string
-  onAdd: (columnId: string, type: 'agent' | 'terminal') => void
+  onAdd: (columnId: string, type: DynamicTabType) => void
+  visualAgentsEnabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -393,6 +451,19 @@ export function AddTabMenu({
             <TerminalIcon />
             New Agent
           </button>
+          {visualAgentsEnabled && (
+            <button
+              className="flex items-center gap-2 w-full text-left text-xs text-text hover:bg-bg-tertiary transition-colors"
+              style={{ padding: '6px 10px' }}
+              onClick={() => {
+                onAdd(columnId, 'visual-agent')
+                setOpen(false)
+              }}
+            >
+              <ChatIcon />
+              New Visual Agent
+            </button>
+          )}
           <button
             className="flex items-center gap-2 w-full text-left text-xs text-text hover:bg-bg-tertiary transition-colors"
             style={{ padding: '6px 10px' }}

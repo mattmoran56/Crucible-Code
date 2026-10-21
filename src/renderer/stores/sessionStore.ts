@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Session, PullRequest, WorktreeInfo, NotionTicketLink } from '../../shared/types'
 import { useToastStore } from './toastStore'
 import { useTerminalStore } from './terminalStore'
+import { useVisualAgentStore } from './visualAgentStore'
 
 type WorkspaceTab = 'agent' | 'git' | 'pr'
 
@@ -47,11 +48,23 @@ interface SessionState {
   /** A session whose agent xterm should auto-focus on first attach, consumed by useTerminal. */
   pendingFocusSessionId: string | null
   loadSessions: (projectId: string) => Promise<void>
-  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string, notionTicket?: NotionTicketLink) => Promise<void>
+  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string, notionTicket?: NotionTicketLink, agentView?: 'terminal' | 'visual') => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
   renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
   /** Toggle whether this session's terminals capture `gh pr create` into a local PR. */
   setSessionCaptureLocalPr: (projectId: string, sessionId: string, enabled: boolean) => Promise<void>
+  /** Switch the core Agent tab between the claude terminal and the Visual Agent UI. */
+  setSessionAgentView: (projectId: string, sessionId: string, view: 'terminal' | 'visual') => Promise<void>
+  /**
+   * Record (or with `null`, forget) the Claude session + model a visual agent
+   * tab is on, so the next app launch resumes the same conversation.
+   */
+  setSessionVisualAgent: (
+    projectId: string,
+    sessionId: string,
+    tabKey: string,
+    entry: { claudeSessionId: string; model: string } | null
+  ) => Promise<void>
   setActiveSession: (id: string, repoPath?: string) => Promise<void>
   setActiveWorkspaceTab: (tab: WorkspaceTab) => void
   openPR: (repoPath: string, pr: PullRequest) => Promise<void>
@@ -181,7 +194,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  createSession: async (projectId, repoPath, name, baseBranch, startupCommand, notionTicket) => {
+  createSession: async (projectId, repoPath, name, baseBranch, startupCommand, notionTicket, agentView) => {
     const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch)
     const session: Session = {
       id: crypto.randomUUID(),
@@ -193,6 +206,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       lastActiveAt: new Date().toISOString(),
       baseBranch,
       notionTicket,
+      ...(agentView === 'visual' ? { agentView } : {}),
     }
 
     const sessions = sortByCreatedAtDesc([...get().sessions, session])
@@ -242,6 +256,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // Clean up all terminals for this session (both renderer xterm instances and main PTY processes)
     await useTerminalStore.getState().killAllForSession(sessionId)
     await window.api.terminal.killSession(sessionId)
+    await useVisualAgentStore.getState().releaseSession(sessionId)
 
     const sessions = get().sessions.filter((s) => s.id !== sessionId)
     await window.api.session.save(projectId, sessions)
@@ -293,6 +308,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (get().currentProjectId === projectId) set({ sessions })
     // Capture is keyed by contextId, which is the session id for sessions.
     await window.api.localPr.setCapture(sessionId, enabled)
+  },
+
+  setSessionAgentView: async (projectId, sessionId, view) => {
+    const current = get().sessions.find((s) => s.id === sessionId)
+    if (!current || (current.agentView ?? 'terminal') === view) return
+    const sessions = get().sessions.map((s) => {
+      if (s.id !== sessionId) return s
+      const next = { ...s }
+      if (view === 'visual') next.agentView = 'visual'
+      else delete next.agentView
+      return next
+    })
+    await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId === projectId) set({ sessions })
+  },
+
+  setSessionVisualAgent: async (projectId, sessionId, tabKey, entry) => {
+    const current = get().sessions.find((s) => s.id === sessionId)
+    if (!current) return
+    const held = current.visualAgents?.[tabKey]
+    if (entry === null ? !held : held?.claudeSessionId === entry.claudeSessionId && held?.model === entry.model) return
+    const sessions = get().sessions.map((s) => {
+      if (s.id !== sessionId) return s
+      const visualAgents = { ...s.visualAgents }
+      if (entry === null) delete visualAgents[tabKey]
+      else visualAgents[tabKey] = { claudeSessionId: entry.claudeSessionId, model: entry.model }
+      const next: Session = { ...s, visualAgents }
+      if (Object.keys(visualAgents).length === 0) delete next.visualAgents
+      return next
+    })
+    await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId === projectId) set({ sessions })
   },
 
   openBranch: async (projectId, repoPath, branch, sessionName) => {

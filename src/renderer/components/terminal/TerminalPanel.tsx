@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react'
 import { useTerminalStore } from '../../stores/terminalStore'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useProjectStore } from '../../stores/projectStore'
+import { effectiveAgentView } from '../../lib/visualAgents'
 import { writeWhenReady } from '../../lib/writeWhenReady'
 import { TerminalView } from './TerminalView'
 import { QueuedMessageChip } from '../sessions/QueuedMessageChip'
@@ -13,11 +15,19 @@ interface Props {
 export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
   const { activeSessionId, sessions } = useSessionStore()
   const { terminals, spawnTerminal, getTerminal } = useTerminalStore()
+  const projects = useProjectStore((s) => s.projects)
 
   // Ensure every session gets a terminal spawned when it becomes active
   useEffect(() => {
     const activeSession = sessions.find((s) => s.id === activeSessionId)
     if (!activeSession) return
+    // A session whose Agent tab is the Visual Agent never gets a claude PTY.
+    if (
+      mode === 'claude' &&
+      effectiveAgentView(activeSession, projects.find((p) => p.id === activeSession.projectId)) === 'visual'
+    ) {
+      return
+    }
 
     const existing = getTerminal(activeSession.id, mode)
     if (existing) return
@@ -36,7 +46,7 @@ export function TerminalPanel({ mode = 'shell', visible = true }: Props) {
       const command = useSessionStore.getState().consumePendingStartup(sessionId)
       if (command) writeWhenReady(terminalId, command)
     })
-  }, [activeSessionId, mode, sessions, getTerminal, spawnTerminal])
+  }, [activeSessionId, mode, sessions, projects, getTerminal, spawnTerminal])
 
   // Render only PRIMARY (non-dynamic) terminals of this mode across all projects
   // so they never unmount during project switches. Dynamic terminals are rendered
