@@ -81,16 +81,20 @@ async function findSession(sessionId: string, projectId?: string): Promise<Sessi
   return list.find((s) => s.id === sessionId) ?? null
 }
 
-/** A finished teleport run → resume it in the Agent tab (once per run). */
+/**
+ * A finished teleport run → resume it in the Agent tab (once per run). A run
+ * the user ended from the terminal before Claude saved anything is `done`
+ * with no id: the Agent tab starts fresh (resumeTeleportedSession says so).
+ */
 const applied = new Set<string>()
 export async function applyTeleportState(state: CloudTeleportState): Promise<void> {
-  if (state.status !== 'done' || !state.claudeSessionId) return
+  if (state.status !== 'done') return
   const key = `${state.sessionId}|${state.terminalId}`
   if (applied.has(key)) return
   applied.add(key)
   const session = await findSession(state.sessionId, state.projectId)
   if (!session) return
-  await resumeTeleportedSession(session, state.claudeSessionId)
+  await resumeTeleportedSession(session, state.claudeSessionId ?? null)
   // The teleport PTY has exited; drop its xterm instance.
   destroyTerminal(state.terminalId)
 }

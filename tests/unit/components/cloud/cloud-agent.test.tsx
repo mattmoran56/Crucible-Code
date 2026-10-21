@@ -251,6 +251,31 @@ describe('cloud session Agent tab', () => {
     expect(api.finishTeleport).toHaveBeenCalledWith('s1')
   })
 
+  it('hands over when Claude has the conversation but has not saved it: terminal shown, Open in Agent view warns, then a fresh agent', async () => {
+    await startTeleport()
+    emitTeleport({ status: 'needs-input', waiting: 'first-message', steps: ['Validating session', 'Session resumed'] })
+    expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(/saves it locally after your first message/)).toBeTruthy()
+    expect(screen.getByTestId('teleport-finish').getAttribute('title')).toMatch(/starts a fresh agent/)
+    // After the first message Claude saved it: the button just opens it.
+    emitTeleport({ status: 'needs-input', waiting: 'first-message', claudeSessionId: 'local-claude-5', steps: ['Session resumed'] })
+    expect(screen.getByText(/Saved locally/)).toBeTruthy()
+    expect(screen.getByTestId('teleport-finish').getAttribute('title')).not.toMatch(/fresh/)
+  })
+
+  it('a stalled teleport says so, with the terminal and a way out', async () => {
+    await startTeleport()
+    emitTeleport({ status: 'needs-input', waiting: 'timeout', steps: ['Validating session'] })
+    expect(screen.getByText(/taking longer than expected/)).toBeTruthy()
+    expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Agent view' }))
+    expect(api.finishTeleport).toHaveBeenCalledWith('s1')
+    // Ended with nothing saved: the tab starts a fresh visual agent.
+    emitTeleport({ status: 'done', steps: ['Validating session'] })
+    await waitFor(() => expect(screen.getByTestId('visual-agent').dataset.resume).toBe(''))
+    expect(useSessionStore.getState().sessions[0].cloud?.localResumeResolved).toBe(true)
+  })
+
   it('a teleport that ends early shows why, and can continue as a local agent', async () => {
     await startTeleport()
     emitTeleport({ status: 'failed', error: 'Teleport ended (exit 1) before the conversation came down:\nnope' })

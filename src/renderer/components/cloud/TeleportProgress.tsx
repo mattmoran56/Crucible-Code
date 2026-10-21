@@ -1,8 +1,10 @@
 // The Agent tab while a teleport runs: the steps `claude --teleport` reports,
 // over the PTY it runs in. The terminal stays mounted (hidden) so nothing it
 // prints is lost; it is revealed on demand, and on its own when the CLI asks
-// something or the teleport fails. When the conversation is local the tab
-// switches to the visual agent (lib/cloudTeleport) — this view goes away.
+// something, when it is handed over (the REPL has the conversation but Claude
+// has not saved it yet) or stalls, and when the teleport fails. When the
+// conversation is local the tab switches to the visual agent
+// (lib/cloudTeleport) — this view goes away.
 
 import React, { useEffect, useState } from 'react'
 import type { CloudTeleportState } from '../../../shared/types'
@@ -43,6 +45,12 @@ export function teleportStepStates(run: CloudTeleportState | null): Array<{ labe
 const headline = (run: CloudTeleportState | null): string => {
   switch (run?.status) {
     case 'needs-input':
+      if (run.waiting === 'first-message') {
+        return run.claudeSessionId
+          ? 'Saved locally — open it in the Agent view when this turn is done'
+          : 'The conversation is loaded in the terminal. Claude saves it locally after your first message — send one below, then open it in the Agent view'
+      }
+      if (run.waiting === 'timeout') return 'This is taking longer than expected — check the terminal below'
       return 'Claude needs your input — answer in the terminal below'
     case 'finishing':
     case 'done':
@@ -70,14 +78,21 @@ export interface TeleportProgressProps {
 export function TeleportProgress({ run, terminalId, sessionId, sessionName, visible, onFinish }: TeleportProgressProps) {
   const [showTerminal, setShowTerminal] = useState(false)
   const status = run?.status ?? 'running'
-  // Reveal the terminal when the CLI waits on the user or the run failed.
+  // Reveal the terminal when the CLI waits on the user (for any reason —
+  // re-reveal when the reason changes) or the run failed.
+  const waiting = run?.waiting
   useEffect(() => {
     if (status === 'needs-input' || status === 'failed') setShowTerminal(true)
-  }, [status])
+  }, [status, waiting])
 
   const busy = status === 'running' || status === 'finishing' || status === 'done'
   const resumed = run?.steps.includes('Session resumed') ?? false
   const canFinish = !!onFinish && (status === 'needs-input' || (status === 'running' && resumed))
+  // Leaving before Claude saved the conversation starts a fresh agent.
+  const finishTitle =
+    run?.claudeSessionId || !run?.waiting || run.waiting === 'prompt'
+      ? 'Close the terminal and continue in the Agent view'
+      : 'Close the terminal and open the Agent view. Nothing is saved locally yet, so it starts a fresh agent (the conversation stays in the cloud).'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="teleport-progress">
@@ -95,7 +110,7 @@ export function TeleportProgress({ run, terminalId, sessionId, sessionName, visi
         {busy ? <Spinner className="text-accent" /> : <TeleportIcon size={12} className="text-accent" />}
         <span className="min-w-0 flex-1">{headline(run)}</span>
         {canFinish ? (
-          <button type="button" onClick={onFinish} className={BTN} title="Close the terminal and continue in the Agent view">
+          <button type="button" onClick={onFinish} className={BTN} title={finishTitle} data-testid="teleport-finish">
             Open in Agent view
           </button>
         ) : null}
