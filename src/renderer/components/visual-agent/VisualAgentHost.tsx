@@ -35,8 +35,10 @@ export function VisualAgentHost({
   const startOptions = useMemo(() => {
     if (!session) return null
     if (!consumedPrompts.has(agentId)) {
-      const prompt = tabKey === 'agent' ? useSessionStore.getState().consumePendingStartup(sessionId) : null
-      consumedPrompts.set(agentId, prompt)
+      // Peek here; the slot is cleared in an effect, since setting store state
+      // during render would update the workspace mid-render.
+      const pending = useSessionStore.getState().pendingStartup
+      consumedPrompts.set(agentId, tabKey === 'agent' && pending?.sessionId === sessionId ? pending.command : null)
     }
     return buildVisualAgentStartOptions({
       session,
@@ -47,6 +49,10 @@ export function VisualAgentHost({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, !!session])
+
+  useEffect(() => {
+    if (tabKey === 'agent' && consumedPrompts.get(agentId)) useSessionStore.getState().consumePendingStartup(sessionId)
+  }, [agentId, sessionId, tabKey])
 
   const claudeSessionId = useVisualAgentStore((s) => s.agents[agentId]?.claudeSessionId ?? null)
   const model = useVisualAgentStore((s) => s.agents[agentId]?.model ?? null)

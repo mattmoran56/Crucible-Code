@@ -1,23 +1,14 @@
 // Glue between workspace tabs / sessions and the Visual Agent feature.
 //
-// Visual agents are an opt-in, per-project feature (Project.visualAgentsEnabled,
-// off by default). Everything that renders a visual agent or spawns its
-// process goes through these helpers so the gate lives in one place.
+// Every agent tab in a session workspace is a visual agent: the core Agent tab
+// and every dynamic `agent:N` tab (plus `visual-agent:N` tabs saved before
+// agents were always visual).
 
 import type { ClaudeAccount, Project, Session } from '../../shared/types'
 import { DEFAULT_VISUAL_AGENT_MODEL, type VisualAgentStartOptions } from '../../shared/visual-agent'
 
 /** Key a visual agent is persisted under on the Session: 'agent' for the core tab, else the dynamic tab id. */
-export type VisualAgentTabKey = 'agent' | `visual-agent:${string}`
-
-export const visualAgentsEnabled = (project: Pick<Project, 'visualAgentsEnabled'> | null | undefined): boolean =>
-  !!project?.visualAgentsEnabled
-
-/** How the core Agent tab renders for this session, honouring the project gate. */
-export const effectiveAgentView = (
-  session: Pick<Session, 'agentView'> | null | undefined,
-  project: Pick<Project, 'visualAgentsEnabled'> | null | undefined,
-): 'terminal' | 'visual' => (visualAgentsEnabled(project) && session?.agentView === 'visual' ? 'visual' : 'terminal')
+export type VisualAgentTabKey = 'agent' | `agent:${string}` | `visual-agent:${string}`
 
 export const visualAgentId = (sessionId: string, tabKey: VisualAgentTabKey): string => `${sessionId}:${tabKey}`
 

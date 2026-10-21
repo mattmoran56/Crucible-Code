@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { GitPanel } from '../git/GitPanel'
-import { TerminalPanel } from '../terminal/TerminalPanel'
 import { ReviewTerminalPanel } from '../terminal/ReviewTerminalPanel'
 import { ReviewLoopPanel } from '../review-loop/ReviewLoopPanel'
 import { DynamicTerminalPanel } from '../terminal/DynamicTerminalPanel'
 import { PRReviewPanel } from '../pullrequests/PRReviewPanel'
 import { VisualAgentHost } from '../visual-agent/VisualAgentHost'
+import { QueuedMessageChip } from '../sessions/QueuedMessageChip'
 import { ResizeHandle } from '../ui'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
@@ -19,12 +19,12 @@ import { useVisualAgentStore } from '../../stores/visualAgentStore'
 import {
   useWorkspaceLayoutStore,
   isDynamicTab,
-  isVisualAgentTab,
+  isAgentTab,
   type DynamicTabType,
   type WorkspaceTab,
   type CoreTab,
 } from '../../stores/workspaceLayoutStore'
-import { effectiveAgentView, visualAgentId, visualAgentsEnabled } from '../../lib/visualAgents'
+import { visualAgentId } from '../../lib/visualAgents'
 import { ColumnPanel } from './WorkspaceColumn'
 
 /** Tabs that require an active PR to be enabled */
@@ -38,14 +38,12 @@ export function SessionWorkspace() {
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const { columns, resetLayout, saveLayout, splitRight, addAvailableTab, removeAvailableTab, canSplit, addDynamicTab, removeDynamicTab } =
     useWorkspaceLayoutStore()
-  const { killDynamicTerminalAll, getTerminal, killTerminal } = useTerminalStore()
+  const { killDynamicTerminalAll } = useTerminalStore()
   const workingFileCount = useGitStore((s) => s.workingFiles.length)
   // Subscribe to all notification state so per-tab statuses re-render the tab bar.
   const { getTabStatus, clearTabStatus } = useNotificationStore()
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
-  const visualEnabled = visualAgentsEnabled(activeProject)
-  const agentView = effectiveAgentView(activeSession, activeProject)
   const { pullRequests } = usePRStore()
   // Match session branch to a PR in the list
   const sessionPR = activeSession
@@ -205,20 +203,18 @@ export function SessionWorkspace() {
 
   const splitEnabled = canSplit()
 
-  // Handle adding a dynamic tab
+  // Handle adding a dynamic tab ("New Agent" opens a visual agent, "New Terminal" a shell)
   const handleAddDynamicTab = useCallback(
     (columnId: string, type: DynamicTabType) => {
-      // Visual agents are opt-in per project; never open one when it's off.
-      if (type === 'visual-agent' && !visualEnabled) return
       addDynamicTab(columnId, type)
     },
-    [addDynamicTab, visualEnabled]
+    [addDynamicTab]
   )
 
   // Handle closing a dynamic tab (kill terminal / stop visual agent + remove from layout)
   const handleCloseDynamicTab = useCallback(
     (tab: WorkspaceTab) => {
-      if (isVisualAgentTab(tab)) {
+      if (isAgentTab(tab)) {
         if (activeSessionId) {
           void useVisualAgentStore.getState().release(visualAgentId(activeSessionId, tab))
           if (activeProject) {
@@ -233,41 +229,14 @@ export function SessionWorkspace() {
     [killDynamicTerminalAll, removeDynamicTab, activeSessionId, activeProject]
   )
 
-  // Switch the core Agent tab between the claude terminal and the Visual Agent.
-  // Only one of them runs for a session: switching ends the other's process
-  // (the visual conversation is resumable; the terminal one via `claude --resume`).
-  const handleAgentViewChange = useCallback(
-    async (view: 'terminal' | 'visual') => {
-      if (!activeSession || !activeProject) return
-      const sessionId = activeSession.id
-      if (view === 'visual') {
-        if (getTerminal(sessionId, 'claude')) {
-          const ok = window.confirm(
-            'Switching to the visual interface ends the agent running in the terminal for this session. Continue?'
-          )
-          if (!ok) return
-          await killTerminal(sessionId, 'claude')
-        }
-      } else {
-        await useVisualAgentStore.getState().release(visualAgentId(sessionId, 'agent'))
-      }
-      await useSessionStore.getState().setSessionAgentView(activeProject.id, sessionId, view)
-    },
-    [activeSession, activeProject, getTerminal, killTerminal]
-  )
-
-  // Sessions whose core Agent tab has rendered as a Visual Agent — kept mounted
-  // (hidden) across session switches, like the agent terminals, so scroll
-  // position and composer focus survive.
+  // Sessions whose Agent tab has been shown — their visual agents stay mounted
+  // (hidden) across session switches so scroll position and composer focus survive.
   const [visualAgentSessions, setVisualAgentSessions] = useState<string[]>([])
   useEffect(() => {
-    if (!activeSessionId || agentView !== 'visual') return
+    if (!activeSessionId) return
     setVisualAgentSessions((held) => (held.includes(activeSessionId) ? held : [...held, activeSessionId]))
-  }, [activeSessionId, agentView])
-  const liveVisualAgentSessions = visualAgentSessions.filter((id) => {
-    const session = sessions.find((s) => s.id === id)
-    return !!session && effectiveAgentView(session, projects.find((p) => p.id === session.projectId)) === 'visual'
-  })
+  }, [activeSessionId])
+  const liveVisualAgentSessions = visualAgentSessions.filter((id) => sessions.some((s) => s.id === id))
 
   // Stable portal target elements for core tabs — created once, never destroyed.
   const corePanelTargets = useRef<Record<CoreTab, HTMLDivElement> | null>(null)
@@ -296,19 +265,21 @@ export function SessionWorkspace() {
     return tabs
   }, [columns])
 
-  // Create/cleanup dynamic portal targets when dynamic tabs change
+  // Create targets for new dynamic tabs during render, so a new tab's panel
+  // portals in on the same render that adds the tab (rather than waiting for
+  // some unrelated re-render after an effect creates the target).
+  for (const tab of allDynamicTabs) {
+    if (!dynamicPanelTargets.current.has(tab)) {
+      const div = document.createElement('div')
+      div.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;min-height:0'
+      div.dataset.panelTarget = tab
+      dynamicPanelTargets.current.set(tab, div)
+    }
+  }
+
+  // Clean up targets when dynamic tabs leave the layout
   useEffect(() => {
     const targets = dynamicPanelTargets.current
-
-    // Create targets for new dynamic tabs
-    for (const tab of allDynamicTabs) {
-      if (!targets.has(tab)) {
-        const div = document.createElement('div')
-        div.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;min-height:0'
-        div.dataset.panelTarget = tab
-        targets.set(tab, div)
-      }
-    }
 
     // Remove targets for tabs no longer in layout
     for (const [tab, div] of targets) {
@@ -436,9 +407,6 @@ export function SessionWorkspace() {
                 setDragOverInfo={setDragOverInfo}
                 onAddDynamicTab={handleAddDynamicTab}
                 onCloseDynamicTab={handleCloseDynamicTab}
-                visualAgentsEnabled={visualEnabled && !!activeSessionId}
-                agentView={agentView}
-                onAgentViewChange={(view) => void handleAgentViewChange(view)}
                 badge={workingFileCount > 0 ? { tab: 'git', count: workingFileCount } : undefined}
                 tabStatus={(tab) => {
                   if (!currentContextId) return undefined
@@ -460,31 +428,12 @@ export function SessionWorkspace() {
       )}
       {/* Core panel mounting — panels never unmount, just get portaled between columns */}
       {createPortal(
-        <>
-          {/* Stacked layers: the terminal stays mounted (xterm must never detach)
-              but takes no space while the visual agent is showing. */}
-          <div
-            className="absolute inset-0 flex flex-col min-h-0"
-            style={agentView === 'terminal' ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
-          >
-            <TerminalPanel mode="claude" visible={agentVisible && agentView === 'terminal'} />
-          </div>
-          {liveVisualAgentSessions.length > 0 && (
-            <div
-              className="absolute inset-0 flex flex-col min-h-0"
-              style={agentView === 'visual' ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
-            >
-              {liveVisualAgentSessions.map((id) => (
-                <VisualAgentHost
-                  key={id}
-                  sessionId={id}
-                  tabKey="agent"
-                  visible={agentVisible && id === activeSessionId && agentView === 'visual'}
-                />
-              ))}
-            </div>
-          )}
-        </>,
+        <div className="absolute inset-0 flex flex-col min-h-0">
+          {agentVisible && <QueuedMessageChip />}
+          {liveVisualAgentSessions.map((id) => (
+            <VisualAgentHost key={id} sessionId={id} tabKey="agent" visible={agentVisible && id === activeSessionId} />
+          ))}
+        </div>,
         corePanelTargets.current.agent
       )}
       {createPortal(<ReviewTerminalPanel visible={reviewVisible} />, corePanelTargets.current.review)}
@@ -496,9 +445,8 @@ export function SessionWorkspace() {
         const target = dynamicPanelTargets.current.get(tab)
         if (!target) return null
         const isVisible = columns.some((c) => c.activeTab === tab)
-        if (isVisualAgentTab(tab)) {
-          // Gated on the project toggle: with it off, a leftover tab renders nothing and spawns nothing.
-          if (!activeSessionId || !visualEnabled) return null
+        if (isAgentTab(tab)) {
+          if (!activeSessionId) return null
           return createPortal(
             <VisualAgentHost key={`${activeSessionId}:${tab}`} sessionId={activeSessionId} tabKey={tab} visible={isVisible} />,
             target

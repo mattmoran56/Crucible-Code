@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildVisualAgentStartOptions,
-  effectiveAgentView,
   projectConfigDir,
   visualAgentId,
-  visualAgentsEnabled,
 } from '../../../src/renderer/lib/visualAgents'
 import { DEFAULT_VISUAL_AGENT_MODEL } from '../../../src/shared/visual-agent'
 import type { ClaudeAccount, Project, Session } from '../../../src/shared/types'
 
-const project: Project = { id: 'p1', name: 'acme', repoPath: '/repo', claudeAccountId: 'a2', visualAgentsEnabled: true }
+const project: Project = { id: 'p1', name: 'acme', repoPath: '/repo', claudeAccountId: 'a2' }
 const accounts: ClaudeAccount[] = [
   { id: 'a1', label: 'Personal', configDir: '/cfg/one' },
   { id: 'a2', label: 'Work', configDir: '/cfg/two' },
@@ -22,21 +20,6 @@ const session: Session = {
   projectId: 'p1',
   createdAt: '2026-10-21T00:00:00Z',
 }
-
-describe('visual agent gating', () => {
-  it('is off unless the project opts in', () => {
-    expect(visualAgentsEnabled(undefined)).toBe(false)
-    expect(visualAgentsEnabled({})).toBe(false)
-    expect(visualAgentsEnabled({ visualAgentsEnabled: true })).toBe(true)
-  })
-
-  it('renders the Agent tab as visual only when both the session asks and the project allows', () => {
-    expect(effectiveAgentView({ agentView: 'visual' }, { visualAgentsEnabled: true })).toBe('visual')
-    expect(effectiveAgentView({ agentView: 'visual' }, { visualAgentsEnabled: false })).toBe('terminal')
-    expect(effectiveAgentView({ agentView: 'visual' }, undefined)).toBe('terminal')
-    expect(effectiveAgentView({}, { visualAgentsEnabled: true })).toBe('terminal')
-  })
-})
 
 describe('buildVisualAgentStartOptions', () => {
   it('starts a fresh agent on the default model in the session worktree', () => {
@@ -63,6 +46,16 @@ describe('buildVisualAgentStartOptions', () => {
     expect(opts.resumeClaudeSessionId).toBe('cs-9')
     expect(opts.model).toBe('claude-sonnet-5-5')
     expect(opts.initialPrompt).toBeNull()
+  })
+
+  it('resumes a dynamic agent:N tab under its own key', () => {
+    const withSaved: Session = {
+      ...session,
+      visualAgents: { 'agent:2': { claudeSessionId: 'cs-2', model: 'claude-opus-5-5' } },
+    }
+    const opts = buildVisualAgentStartOptions({ session: withSaved, project, accounts, tabKey: 'agent:2' })
+    expect(opts.agentId).toBe('s1:agent:2')
+    expect(opts.resumeClaudeSessionId).toBe('cs-2')
   })
 
   it('resolves the config dir like the terminal store', () => {
