@@ -1,8 +1,7 @@
-import React, { useLayoutEffect, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import type { Session } from '../../../shared/types'
-import { ATTACH_NOT_ENABLED } from '../../../shared/cloud-session'
-import { CloudAgentPanel, type CloudAgentPhase } from './CloudAgentPanel'
+import { CloudAgentPanel, type BranchNotice, type CloudAgentPhase } from './CloudAgentPanel'
 
 /** A fixed cloud session — no clock-dependent fields, so baselines stay stable. */
 const SESSION: Session = {
@@ -29,17 +28,6 @@ const TELEPORTED_SESSION: Session = {
 
 /** Canned terminal transcripts, printed by the mock bridge's fake PTY. */
 const TRANSCRIPTS = {
-  attach: [
-    '\x1b[90m$ claude --cloud session_01Hx7QmCloudDemo\x1b[0m\r\n',
-    '\x1b[36m☁ Attached to cloud session\x1b[0m — Claude is working in the cloud.\r\n\r\n',
-    '\x1b[1m●\x1b[0m Reading src/auth/session.ts\r\n',
-    '\x1b[1m●\x1b[0m Running npm test (in the cloud VM)\r\n',
-    '  \x1b[32m✓ 214 passed\x1b[0m\r\n\r\n> ',
-  ],
-  unavailable: [
-    '\x1b[90m$ claude --cloud session_01Hx7QmCloudDemo\x1b[0m\r\n',
-    `\x1b[31m${ATTACH_NOT_ENABLED}.\x1b[0m\r\n`,
-  ],
   teleport: [
     '\x1b[90m$ claude --teleport session_01Hx7QmCloudDemo\x1b[0m\r\n',
     'Fetching branch from origin…\r\n',
@@ -64,10 +52,18 @@ interface StoryProps {
   transcript?: keyof typeof TRANSCRIPTS
   error?: string | null
   dirtyFiles?: string[]
+  branchNotice?: BranchNotice | null
+  /**
+   * Storybook has no Electron <webview>: by default the page is stubbed. Set
+   * to render the (inert) <webview> element so the loading / failed overlays
+   * show; `failLoad` then fires a did-fail-load at it.
+   */
+  embedWebview?: boolean
+  failLoad?: boolean
 }
 
 /** Spawns a fake PTY for the transcript (if any), then mounts the panel. */
-function Harness({ session = SESSION, phase, transcript, error, dirtyFiles }: StoryProps) {
+function Harness({ session = SESSION, phase, transcript, error, dirtyFiles, branchNotice, embedWebview, failLoad }: StoryProps) {
   const [terminalId, setTerminalId] = useState<string | null>(null)
   const [ready, setReady] = useState(!transcript)
   useLayoutEffect(() => {
@@ -76,6 +72,13 @@ function Harness({ session = SESSION, phase, transcript, error, dirtyFiles }: St
     setTerminalId(pty ? pty(TRANSCRIPTS[transcript]) : null)
     setReady(true)
   }, [transcript])
+  useEffect(() => {
+    if (!failLoad) return
+    const view = document.querySelector('[data-testid="cloud-webview"]')
+    view?.dispatchEvent(
+      Object.assign(new Event('did-fail-load'), { errorCode: -106, errorDescription: 'ERR_INTERNET_DISCONNECTED', isMainFrame: true })
+    )
+  }, [failLoad, ready])
   if (!ready) return null
   const noop = () => {}
   return (
@@ -89,9 +92,11 @@ function Harness({ session = SESSION, phase, transcript, error, dirtyFiles }: St
         dirtyFiles={dirtyFiles}
         onOpenInBrowser={noop}
         onTeleport={noop}
-        onReattach={noop}
-        onSendFollowUp={async () => {}}
+        onDismissError={noop}
         onOpenLocally={noop}
+        branchNotice={branchNotice}
+        onCleanupBranch={async (b) => `Deleted ${b} locally and on origin.`}
+        embedWebview={embedWebview}
       />
     </div>
   )
@@ -106,31 +111,25 @@ export default meta
 
 type Story = StoryObj<typeof Harness>
 
-/** Spawning the attach terminal. */
-export const Attaching: Story = {
-  args: { phase: 'attaching' },
+/** The claude.ai/code session page embedded in the tab (stubbed in Storybook). */
+export const Embedded: Story = {
+  args: { phase: 'web' },
 }
 
-/** Watching the cloud session through `claude --cloud <id>`. */
-export const Attached: Story = {
-  args: { phase: 'attached', transcript: 'attach' },
+/** The page is still loading. */
+export const PageLoading: Story = {
+  args: { phase: 'web', embedWebview: true },
 }
 
-/** Attaching isn't enabled for the account: banner plus the follow-up box. */
-export const AttachUnavailable: Story = {
-  args: { phase: 'attach-unavailable', transcript: 'unavailable' },
-}
-
-/** The attach terminal exited; the cloud session keeps running. */
-export const AttachEnded: Story = {
-  args: { phase: 'attach-ended', transcript: 'attach' },
+/** The page failed to load: Retry or Open in browser. */
+export const PageLoadFailed: Story = {
+  args: { phase: 'web', embedWebview: true, failLoad: true },
 }
 
 /** Teleport refused because the worktree has uncommitted changes. */
 export const TeleportBlocked: Story = {
   args: {
     phase: 'teleport-blocked',
-    transcript: 'attach',
     dirtyFiles: [
       'src/auth/session.ts',
       'src/auth/refresh.ts',
@@ -153,11 +152,21 @@ export const TeleportEnded: Story = {
   args: { session: TELEPORTED_SESSION, phase: 'teleport-ended', transcript: 'teleportEnded' },
 }
 
-/** Something failed (here: the attach). */
+/** The teleport checked out another branch: the session follows it; cleanup is offered. */
+export const TeleportBranchChanged: Story = {
+  args: {
+    session: { ...TELEPORTED_SESSION, branchName: 'claude/fix-auth-refresh-x7Qm' },
+    phase: 'teleported',
+    transcript: 'teleport',
+    branchNotice: { expected: 'session/fix-auth-refresh', actual: 'claude/fix-auth-refresh-x7Qm' },
+  },
+}
+
+/** Something failed (here: the teleport). */
 export const ErrorState: Story = {
   name: 'Error',
   args: {
     phase: 'error',
-    error: "Couldn't attach to the cloud session: claude exited with code 1",
+    error: 'Teleport failed: claude exited with code 1',
   },
 }

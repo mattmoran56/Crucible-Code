@@ -94,8 +94,9 @@ function cloudSessionTargets(): Target[] {
   const app = { width: 1280, height: 800 }
   const dialog = { width: 900, height: 760 }
   return [
-    { name: 'cloud-panel-attached', storyId: 'cloud-cloudagentpanel--attached', viewport: panel, delay: 1200 },
-    { name: 'cloud-panel-attach-unavailable', storyId: 'cloud-cloudagentpanel--attach-unavailable', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-embedded', storyId: 'cloud-cloudagentpanel--embedded', viewport: panel, delay: 300 },
+    { name: 'cloud-panel-page-load-failed', storyId: 'cloud-cloudagentpanel--page-load-failed', viewport: panel, delay: 300 },
+    { name: 'cloud-panel-teleport-branch-changed', storyId: 'cloud-cloudagentpanel--teleport-branch-changed', viewport: panel, delay: 1200 },
     { name: 'cloud-panel-teleport-blocked', storyId: 'cloud-cloudagentpanel--teleport-blocked', viewport: panel, delay: 1200 },
     { name: 'cloud-panel-teleported', storyId: 'cloud-cloudagentpanel--teleported', viewport: panel, delay: 1200 },
     { name: 'cloud-panel-teleport-ended', storyId: 'cloud-cloudagentpanel--teleport-ended', viewport: panel, delay: 1200 },

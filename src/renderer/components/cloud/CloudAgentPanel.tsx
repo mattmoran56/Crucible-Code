@@ -1,7 +1,6 @@
 // The Agent tab for a cloud session: a slim toolbar (styled like the visual
-// agent's session bar) over an embedded terminal that is attached to the
-// Claude Code on the web session — and, once teleported, the terminal the
-// session came down into.
+// agent's session bar) over the embedded claude.ai/code session page — and,
+// once teleported, the terminal the session came down into.
 
 import React, { useState } from 'react'
 import type { Session } from '../../../shared/types'
@@ -9,17 +8,20 @@ import { shortCloudId } from '../../../shared/cloud-session'
 import { cn } from '../../lib/cn'
 import { TerminalView } from '../terminal/TerminalView'
 import { Spinner } from '../visual-agent/icons'
-import { CloudIcon, ExternalIcon, TeleportIcon } from './icons'
+import { CloudWebView } from './CloudWebView'
+import { BranchIcon, CloudIcon, ExternalIcon, TeleportIcon } from './icons'
+
+/** Teleport checked out a different branch than the one the app created. */
+export interface BranchNotice {
+  /** The branch the app created for the cloud session. */
+  expected: string
+  /** The branch the worktree is on after the teleport (now session.branchName). */
+  actual: string
+}
 
 export type CloudAgentPhase =
-  /** Spawning the attach terminal. */
-  | 'attaching'
-  /** `claude --cloud <id>` is running in the terminal. */
-  | 'attached'
-  /** Claude Code says attaching is not enabled for this account. */
-  | 'attach-unavailable'
-  /** The attach terminal exited. */
-  | 'attach-ended'
+  /** The embedded claude.ai/code page is shown. */
+  | 'web'
   /** Checking the worktree before a teleport. */
   | 'teleport-checking'
   /** The worktree has changes; teleport refused. */
@@ -41,18 +43,22 @@ export interface CloudAgentPanelProps {
   session: Session
   visible: boolean
   phase: CloudAgentPhase
-  /** The PTY shown below the bar (attach or teleport), if any. */
+  /** The teleport PTY, once a teleport is running. */
   terminalId: string | null
   error?: string | null
   dirtyFiles?: string[]
   onOpenInBrowser: () => void
   /** Called once the user has confirmed. */
   onTeleport: () => void
-  onReattach: () => void
-  /** Queue a follow-up via `claude -p --cloud <id>` (fallback when attach is unavailable). */
-  onSendFollowUp?: (message: string) => Promise<void>
+  /** Dismiss an error and go back to the embedded page. */
+  onDismissError: () => void
   /** After the teleported session ends: reopen the Agent tab as a local visual agent. */
   onOpenLocally?: () => void
+  branchNotice?: BranchNotice | null
+  /** Delete the now-unused branch the app created (local + origin). Resolves to a status line. */
+  onCleanupBranch?: (branch: string) => Promise<string>
+  /** Force the real <webview> (tests) or its stub (stories). */
+  embedWebview?: boolean
 }
 
 export function CloudAgentPanel({
@@ -64,9 +70,11 @@ export function CloudAgentPanel({
   dirtyFiles,
   onOpenInBrowser,
   onTeleport,
-  onReattach,
-  onSendFollowUp,
+  onDismissError,
   onOpenLocally,
+  branchNotice,
+  onCleanupBranch,
+  embedWebview,
 }: CloudAgentPanelProps) {
   const [confirming, setConfirming] = useState(false)
   const cloud = session.cloud
@@ -96,6 +104,16 @@ export function CloudAgentPanel({
               {shortCloudId(cloud.sessionId)}
             </code>
           </>
+        ) : null}
+        {session.branchName ? (
+          <span
+            className="flex min-w-0 items-center gap-1 text-text-muted"
+            title={`The cloud agent commits and pushes to ${session.branchName}`}
+            data-testid="cloud-branch"
+          >
+            <BranchIcon size={11} />
+            <code className="truncate font-mono text-[10.5px]">{session.branchName}</code>
+          </span>
         ) : null}
         <PhaseLabel phase={phase} />
 
@@ -145,22 +163,72 @@ export function CloudAgentPanel({
         error={error}
         dirtyFiles={dirtyFiles}
         onOpenInBrowser={cloud ? onOpenInBrowser : undefined}
-        onReattach={onReattach}
+        onDismissError={onDismissError}
         onOpenLocally={onOpenLocally}
       />
+      {branchNotice ? <BranchNoticeBar notice={branchNotice} onCleanup={onCleanupBranch} /> : null}
 
-      <div className="relative min-h-0 flex-1">
-        {terminalId ? (
+      {terminalId ? (
+        <div className="relative min-h-0 flex-1">
           <TerminalView terminalId={terminalId} sessionId={session.id} sessionName={session.name} visible={visible} />
-        ) : phase === 'attaching' ? (
-          <p className="absolute inset-0 m-auto! flex items-center justify-center gap-2 text-[12.5px] text-text-muted">
-            <Spinner className="text-accent" /> Attaching to the cloud session…
-          </p>
-        ) : null}
-      </div>
+        </div>
+      ) : cloud && !teleported ? (
+        // The page goes away (and its guest is torn down) once teleported.
+        <CloudWebView url={cloud.url} visible={visible} onOpenInBrowser={onOpenInBrowser} embed={embedWebview} />
+      ) : (
+        <div className="relative min-h-0 flex-1" />
+      )}
+    </div>
+  )
+}
 
-      {onSendFollowUp && (phase === 'attach-unavailable' || phase === 'attach-ended') ? (
-        <FollowUp onSend={onSendFollowUp} />
+/**
+ * Teleport put the worktree on a different branch than the app created. The
+ * session now follows the real branch; cleanup of the old one is offered,
+ * never run on its own.
+ */
+function BranchNoticeBar({ notice, onCleanup }: { notice: BranchNotice; onCleanup?: (branch: string) => Promise<string> }) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
+  const run = async () => {
+    if (!onCleanup) return
+    setBusy(true)
+    try {
+      setStatus(await onCleanup(notice.expected))
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+      setConfirming(false)
+    }
+  }
+  return (
+    <div role="status" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-bg-secondary px-3! py-1.5! text-[11.5px] text-text">
+      <span className="min-w-0 flex-1">
+        Teleport checked out <code className="font-mono text-[10.5px]">{notice.actual}</code>, not{' '}
+        <code className="font-mono text-[10.5px]">{notice.expected}</code>. This session now follows{' '}
+        <code className="font-mono text-[10.5px]">{notice.actual}</code>.
+      </span>
+      {status ? <span className="text-text-muted">{status}</span> : null}
+      {onCleanup && !status ? (
+        confirming ? (
+          <span className="flex items-center gap-1" role="group" aria-label="Confirm branch cleanup">
+            <span>
+              Delete <code className="font-mono text-[10.5px]">{notice.expected}</code> locally and on origin?
+            </span>
+            <button type="button" onClick={() => void run()} disabled={busy} className={TELEPORT_BTN}>
+              {busy ? <Spinner /> : null} Delete
+            </button>
+            <button type="button" onClick={() => setConfirming(false)} disabled={busy} className={BAR_BTN}>
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button type="button" onClick={() => setConfirming(true)} className={BAR_BTN}>
+            Delete unused branch…
+          </button>
+        )
       ) : null}
     </div>
   )
@@ -168,9 +236,6 @@ export function CloudAgentPanel({
 
 function PhaseLabel({ phase }: { phase: CloudAgentPhase }) {
   const text: Partial<Record<CloudAgentPhase, string>> = {
-    attaching: 'attaching…',
-    attached: 'watching',
-    'attach-ended': 'detached',
     'teleport-checking': 'checking worktree…',
     teleported: 'running locally',
     'teleport-ended': 'local session ended',
@@ -189,14 +254,14 @@ function Banner({
   error,
   dirtyFiles,
   onOpenInBrowser,
-  onReattach,
+  onDismissError,
   onOpenLocally,
 }: {
   phase: CloudAgentPhase
   error?: string | null
   dirtyFiles?: string[]
   onOpenInBrowser?: () => void
-  onReattach: () => void
+  onDismissError: () => void
   onOpenLocally?: () => void
 }) {
   let tone: 'danger' | 'info' = 'info'
@@ -209,22 +274,6 @@ function Banner({
   ) : null
 
   switch (phase) {
-    case 'attach-unavailable':
-      tone = 'danger'
-      body = 'Attaching to a running cloud session is not enabled for your account. Watch it in the browser, or send follow-ups below.'
-      actions = openBtn
-      break
-    case 'attach-ended':
-      body = 'The attach terminal exited. The cloud session keeps running.'
-      actions = (
-        <>
-          <button type="button" onClick={onReattach} className={BAR_BTN}>
-            Reattach
-          </button>
-          {openBtn}
-        </>
-      )
-      break
     case 'teleport-blocked':
       tone = 'danger'
       body = (
@@ -257,8 +306,8 @@ function Banner({
       body = error ?? 'Something went wrong with the cloud session.'
       actions = (
         <>
-          <button type="button" onClick={onReattach} className={BAR_BTN}>
-            Retry
+          <button type="button" onClick={onDismissError} className={BAR_BTN}>
+            Dismiss
           </button>
           {openBtn}
         </>
@@ -279,44 +328,5 @@ function Banner({
       <span className="min-w-0 flex-1">{body}</span>
       {actions}
     </div>
-  )
-}
-
-function FollowUp({ onSend }: { onSend: (message: string) => Promise<void> }) {
-  const [text, setText] = useState('')
-  const [sending, setSending] = useState(false)
-  const [note, setNote] = useState<string | null>(null)
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const message = text.trim()
-    if (!message || sending) return
-    setSending(true)
-    setNote(null)
-    try {
-      await onSend(message)
-      setText('')
-      setNote('Sent to the cloud session.')
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="flex shrink-0 items-center gap-2 border-t border-border bg-bg-secondary px-3! py-2!">
-      <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Send a follow-up to the cloud session…"
-        aria-label="Follow-up message"
-        className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2! py-1! text-[12px] text-text focus:border-accent focus:outline-none"
-      />
-      <button type="submit" disabled={!text.trim() || sending} className={TELEPORT_BTN}>
-        {sending ? <Spinner /> : null} Send
-      </button>
-      {note ? <span className="text-[11px] text-text-muted">{note}</span> : null}
-    </form>
   )
 }

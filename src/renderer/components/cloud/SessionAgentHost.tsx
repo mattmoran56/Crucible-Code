@@ -8,6 +8,7 @@ import React, { useEffect, useRef } from 'react'
 import type { Session } from '../../../shared/types'
 import { DEFAULT_VISUAL_AGENT_MODEL } from '../../../shared/visual-agent'
 import { projectConfigDir } from '../../lib/visualAgents'
+import { branchMismatchToast, reconcileTeleportBranch } from '../../lib/teleportBranch'
 import { useCloudSessionStore } from '../../stores/cloudSessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -57,6 +58,10 @@ function TeleportResume({ session, visible }: { session: Session; visible: boole
       } catch {
         claudeSessionId = null
       }
+      // Teleported in an earlier run: make sure the session follows the
+      // branch the teleport actually checked out.
+      const mismatch = await reconcileTeleportBranch(session)
+      if (mismatch) useToastStore.getState().addToast('info', branchMismatchToast(session.name, mismatch))
       if (!claudeSessionId) {
         useToastStore
           .getState()
@@ -64,6 +69,7 @@ function TeleportResume({ session, visible }: { session: Session; visible: boole
       }
       // One write, so the switch to the visual agent sees both at once.
       await useSessionStore.getState().patchSession(session.projectId, session.id, {
+        ...(mismatch ? { branchName: mismatch.actual } : {}),
         cloud: { ...cloud, localResumeResolved: true },
         ...(claudeSessionId
           ? {

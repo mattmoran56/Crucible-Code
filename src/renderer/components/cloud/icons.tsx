@@ -37,3 +37,14 @@ export const ExternalIcon = ({ size = 12, className }: IconProps) => (
     <path d="M9 3h4v4M13 3 7.5 8.5M11.5 9.5V13H3V4.5h3.5" />
   </svg>
 )
+
+export function BranchIcon({ size = 12, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <circle cx="5" cy="3.5" r="1.5" />
+      <circle cx="5" cy="12.5" r="1.5" />
+      <circle cx="11" cy="5.5" r="1.5" />
+      <path d="M5 5v6M11 7c0 2.5-6 1.5-6 4" />
+    </svg>
+  )
+}
