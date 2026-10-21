@@ -1,0 +1,360 @@
+// @vitest-environment node
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const h = vi.hoisted(() => {
+  const s: any = { spawnCalls: [], children: [], frames: [], userData: '' }
+  s.makeChild = () => {
+    const listeners: Record<string, Function[]> = {}
+    const on = (key: string) => (e: string, cb: Function) => ((listeners[`${key}${e}`] ??= []).push(cb))
+    const child: any = {
+      pid: 4242,
+      killed: false,
+      exitCode: null,
+      signalCode: null,
+      stdout: { on: on('stdout:') },
+      stderr: { on: on('stderr:') },
+      stdin: { write: vi.fn(), end: vi.fn(), on: vi.fn() },
+      on: on(''),
+      kill: vi.fn(),
+      writes: () => child.stdin.write.mock.calls.map((c: any[]) => JSON.parse(c[0])),
+      _line: (obj: unknown) => (listeners['stdout:data'] ?? []).forEach((f) => f(Buffer.from(`${JSON.stringify(obj)}\n`))),
+      _stderr: (text: string) => (listeners['stderr:data'] ?? []).forEach((f) => f(Buffer.from(text))),
+      _emit: (e: string, ...args: unknown[]) => (listeners[e] ?? []).forEach((f) => f(...args)),
+      _exit: (code: number | null, signal: string | null = null) => {
+        child.exitCode = code
+        child.signalCode = signal
+        ;(listeners['exit'] ?? []).forEach((f) => f(code, signal))
+      },
+    }
+    return child
+  }
+  return s
+})
+
+vi.mock('node:child_process', () => {
+  const spawn = (file: string, args: string[], opts: any) => {
+    h.spawnCalls.push({ file, args, opts })
+    const child = h.makeChild()
+    h.children.push(child)
+    return child
+  }
+  return { spawn, default: { spawn } }
+})
+vi.mock('electron', () => {
+  const app = { getPath: () => h.userData }
+  return { app, default: { app } }
+})
+vi.mock('../../../src/main/services/terminal.service', () => ({ AUTO_PERMISSION_MODE_ARGS: [] }))
+vi.mock('../../../src/main/services/claude-headless.service', () => ({
+  killChildTree: vi.fn((child: any) => child._exit(null, 'SIGTERM')),
+}))
+vi.mock('../../../src/main/services/hook.service', () => ({ writeClaudeHookSettings: vi.fn() }))
+vi.mock('../../../src/main/services/permission-sync.service', () => ({
+  seedPermissions: vi.fn(),
+  startWatching: vi.fn(),
+}))
+vi.mock('../../../src/main/services/event-bus', () => ({
+  emitToRenderer: (_w: unknown, channel: string, agentId: string, frame: unknown) =>
+    h.frames.push({ channel, agentId, frame }),
+}))
+
+import * as svc from '../../../src/main/services/visual-agent/visual-agent.service'
+import { writeClaudeHookSettings } from '../../../src/main/services/hook.service'
+import { seedPermissions, startWatching } from '../../../src/main/services/permission-sync.service'
+
+const SID = '14b03bfe-3bf5-4a09-adb1-896839d8a45d'
+const root = mkdtempSync(join(tmpdir(), 'va-test-'))
+afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+const baseOpts = (over: Record<string, unknown> = {}) => ({
+  agentId: 'agent-1',
+  sessionId: 'session-1',
+  cwd: '/wt',
+  repoPath: '/repo',
+  ...over,
+})
+const frames = (t?: string) => h.frames.map((f: any) => f.frame).filter((f: any) => !t || f.t === t)
+const events = () => frames('event').map((f: any) => f.event)
+const lastChild = () => h.children[h.children.length - 1]
+const flush = () => new Promise((r) => setTimeout(r, 20))
+
+const init = (model = 'claude-opus-5-5') => ({ type: 'system', subtype: 'init', session_id: SID, model, cwd: '/wt', tools: [], mcp_servers: [] })
+const result = { type: 'result', subtype: 'success', is_error: false, session_id: SID, total_cost_usd: 0.01, duration_ms: 5 }
+
+beforeEach(() => {
+  svc.__resetVisualAgentsForTest()
+  h.spawnCalls = []
+  h.children = []
+  h.frames = []
+  h.userData = mkdtempSync(join(root, 'ud-'))
+  vi.mocked(writeClaudeHookSettings).mockClear()
+})
+
+describe('visual agent service', () => {
+  it('spawns claude with the stream-json argv, preps the worktree, and never sets a permission mode', async () => {
+    const snap = await svc.startVisualAgent(baseOpts({ claudeConfigDir: '~/.claude-personal' }))
+    expect(snap).toMatchObject({ agentId: 'agent-1', model: 'claude-opus-5-5', state: 'starting', events: [] })
+    const { file, args, opts } = h.spawnCalls[0]
+    expect(file).toBe('claude')
+    expect(args).toContain('--input-format')
+    expect(args).toContain('--include-partial-messages')
+    expect(args.join(' ')).not.toMatch(/--permission-mode|--dangerously-skip-permissions|acceptEdits|bypassPermissions/)
+    expect(opts.cwd).toBe('/wt')
+    expect(opts.env.CLAUDE_CONFIG_DIR).not.toMatch(/^~/)
+    expect(opts.env.CLAUDE_CONFIG_DIR).toMatch(/\.claude-personal$/)
+    expect(opts.env.CRUCIBLE_CONTEXT_ID).toBe('session-1')
+    expect(opts.env.CRUCIBLE_TAB_ID).toBe('agent-1')
+    expect(writeClaudeHookSettings).toHaveBeenCalledWith('/wt', 'dark', 'session-1')
+    expect(seedPermissions).toHaveBeenCalledWith('/repo', '/wt')
+    expect(startWatching).toHaveBeenCalledWith('/repo', '/wt')
+  })
+
+  it('drops CLAUDE_CONFIG_DIR when none is provided', async () => {
+    process.env.CLAUDE_CONFIG_DIR = '/elsewhere'
+    await svc.startVisualAgent(baseOpts())
+    expect('CLAUDE_CONFIG_DIR' in h.spawnCalls[0].opts.env).toBe(false)
+    delete process.env.CLAUDE_CONFIG_DIR
+  })
+
+  it('is idempotent per agentId while the process is alive', async () => {
+    await svc.startVisualAgent(baseOpts())
+    await svc.startVisualAgent(baseOpts())
+    expect(h.spawnCalls).toHaveLength(1)
+  })
+
+  it('send writes a user frame, emits an optimistic user event and goes running', async () => {
+    await svc.startVisualAgent(baseOpts())
+    lastChild()._emit('spawn')
+    svc.sendVisualAgentMessage('agent-1', 'say hi')
+    expect(lastChild().writes()[0]).toEqual({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: 'say hi' }] },
+      parent_tool_use_id: null,
+    })
+    expect(events()).toEqual([expect.objectContaining({ kind: 'text', role: 'user', text: 'say hi' })])
+    expect(frames('state').at(-1)).toMatchObject({ state: 'running', turnStartedAt: expect.any(String) })
+  })
+
+  it('streams partials, latches the session id from init (not commands_changed), and goes idle on result', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    c._line({ type: 'system', subtype: 'commands_changed', session_id: 'bogus', commands: [] })
+    expect(svc.getVisualAgentState('agent-1')!.claudeSessionId).toBeNull()
+    svc.sendVisualAgentMessage('agent-1', 'hi')
+    c._line(init())
+    expect(svc.getVisualAgentState('agent-1')!.claudeSessionId).toBe(SID)
+    expect(frames('session')[0]).toEqual({ t: 'session', claudeSessionId: SID, model: 'claude-opus-5-5' })
+    const delta = (text: string) => ({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
+      parent_tool_use_id: null,
+      api_message_id: 'msg_1',
+    })
+    c._line(delta('Hi'))
+    c._line(delta(' there'))
+    expect(frames('partial').map((f: any) => f.text)).toEqual(['Hi', 'Hi there'])
+    expect(svc.getVisualAgentState('agent-1')!.partial).toEqual({ messageId: 'msg_1', threadId: 'main', text: 'Hi there' })
+    c._line({
+      type: 'assistant',
+      session_id: SID,
+      parent_tool_use_id: null,
+      message: { id: 'msg_1', role: 'assistant', content: [{ type: 'text', text: 'Hi there' }], usage: { input_tokens: 1, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4 } },
+    })
+    expect(frames('partial').at(-1)).toMatchObject({ messageId: 'msg_1', text: '' })
+    expect(frames('usage').at(-1)).toEqual({ t: 'usage', usage: { input: 1, output: 2, total: 10 } })
+    c._line(result)
+    const snap = svc.getVisualAgentState('agent-1')!
+    expect(snap.state).toBe('idle')
+    expect(snap.turnStartedAt).toBeNull()
+    expect(snap.partial).toBeNull()
+    expect(snap.events.map((e) => e.kind)).toEqual(['text', 'session', 'text', 'result'])
+  })
+
+  it('permission ask → needs-input; answer writes the control_response and resumes', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    svc.sendVisualAgentMessage('agent-1', 'push')
+    c._line({
+      type: 'control_request',
+      request_id: 'req-9',
+      request: {
+        subtype: 'can_use_tool',
+        tool_name: 'Bash',
+        input: { command: 'git push' },
+        tool_use_id: 'tu-1',
+        permission_suggestions: [{ type: 'addRules', behavior: 'allow', destination: 'localSettings', rules: [{ toolName: 'Bash', ruleContent: 'git push:*' }] }],
+      },
+    })
+    expect(svc.getVisualAgentState('agent-1')!.state).toBe('needs-input')
+    expect(events().at(-1)).toMatchObject({ kind: 'ask', id: 'req-9', canAlwaysAllow: true })
+
+    svc.answerVisualAgent('agent-1', 'req-9', 'always')
+    const frame = c.writes().at(-1)
+    expect(frame).toEqual({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: 'req-9',
+        response: {
+          behavior: 'allow',
+          updatedInput: { command: 'git push' },
+          updatedPermissions: [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'git push:*' }], behavior: 'allow', destination: 'session' }],
+        },
+      },
+    })
+    expect(events().at(-1)).toMatchObject({ kind: 'ask-result', id: 'req-9', decision: 'always' })
+    expect(svc.getVisualAgentState('agent-1')!.state).toBe('running')
+    expect(() => svc.answerVisualAgent('agent-1', 'req-9', 'allow')).toThrow(/no longer waiting/)
+  })
+
+  it('AskUserQuestion is answered through updatedInput.answers', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    const input = { questions: [{ question: 'Which DB?', options: [] }] }
+    c._line({ type: 'control_request', request_id: 'q1', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input } })
+    svc.answerVisualAgent('agent-1', 'q1', 'allow', { 'Which DB?': 'Postgres' })
+    expect(c.writes().at(-1).response.response).toEqual({ behavior: 'allow', updatedInput: { ...input, answers: { 'Which DB?': 'Postgres' } } })
+  })
+
+  it('interrupt sends a control_request and falls back to SIGINT on error', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    svc.interruptVisualAgent('agent-1')
+    const req = c.writes().at(-1)
+    expect(req).toMatchObject({ type: 'control_request', request: { subtype: 'interrupt' } })
+    c._line({ type: 'control_response', response: { subtype: 'success', request_id: req.request_id } })
+    expect(c.kill).not.toHaveBeenCalled()
+    svc.interruptVisualAgent('agent-1')
+    const req2 = c.writes().at(-1)
+    c._line({ type: 'control_response', response: { subtype: 'error', request_id: req2.request_id, error: 'unsupported' } })
+    expect(c.kill).toHaveBeenCalledWith('SIGINT')
+  })
+
+  it('setModel uses set_model and restarts with --resume when the CLI refuses', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    c._line(init())
+    await svc.setVisualAgentModel('agent-1', 'claude-sonnet-5-5')
+    const req = c.writes().at(-1)
+    expect(req).toMatchObject({ type: 'control_request', request: { subtype: 'set_model', model: 'claude-sonnet-5-5' } })
+    c._line({ type: 'control_response', response: { subtype: 'success', request_id: req.request_id } })
+    expect(svc.getVisualAgentState('agent-1')!.model).toBe('claude-sonnet-5-5')
+    expect(h.spawnCalls).toHaveLength(1)
+
+    await svc.setVisualAgentModel('agent-1', 'claude-haiku-5-5')
+    const req2 = c.writes().at(-1)
+    c._line({ type: 'control_response', response: { subtype: 'error', request_id: req2.request_id, error: 'nope' } })
+    await flush()
+    expect(h.spawnCalls).toHaveLength(2)
+    const args = h.spawnCalls[1].args
+    expect(args[args.indexOf('--resume') + 1]).toBe(SID)
+    expect(args[args.indexOf('--model') + 1]).toBe('claude-haiku-5-5')
+    // The killed old process must not mark the agent failed.
+    expect(svc.getVisualAgentState('agent-1')!.state).not.toBe('failed')
+    await expect(svc.setVisualAgentModel('agent-1', 'gpt-4')).rejects.toThrow(/Invalid model/)
+  })
+
+  it('unexpected exit → failed with the first non-JSON output as an error event', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    c._stderr('Error: not logged in\nRun /login\n')
+    c._exit(1)
+    const snap = svc.getVisualAgentState('agent-1')!
+    expect(snap.state).toBe('failed')
+    expect(snap.events.at(-1)).toMatchObject({ kind: 'error', message: expect.stringContaining('not logged in') })
+  })
+
+  it('stop kills the process and ends in done; send afterwards respawns with --resume', async () => {
+    await svc.startVisualAgent(baseOpts())
+    lastChild()._line(init())
+    svc.stopVisualAgent('agent-1')
+    expect(svc.getVisualAgentState('agent-1')!.state).toBe('done')
+    svc.sendVisualAgentMessage('agent-1', 'again')
+    expect(h.spawnCalls).toHaveLength(2)
+    expect(h.spawnCalls[1].args).toContain('--resume')
+  })
+
+  it('fork spawns a no-tools resume+fork process, streams fork-events and ends on result', async () => {
+    await svc.startVisualAgent(baseOpts())
+    expect(() => svc.forkVisualAgent('agent-1', 'why?')).toThrow(/send a message first/)
+    lastChild()._line(init())
+    expect(() => svc.forkVisualAgent('agent-1', '   ')).toThrow(/needs a question/)
+    const { forkId } = svc.forkVisualAgent('agent-1', 'why?')
+    const fork = lastChild()
+    const args = h.spawnCalls[1].args
+    expect(args[args.indexOf('--resume') + 1]).toBe(SID)
+    expect(args).toContain('--fork-session')
+    expect(args[args.indexOf('--session-id') + 1]).toBe(forkId)
+    expect(args[args.indexOf('--tools') + 1]).toBe('')
+    expect(args).toContain('--strict-mcp-config')
+    expect(args.join(' ')).not.toMatch(/--permission-mode|--dangerously-skip-permissions|--permission-prompt-tool/)
+    const sent = fork.writes()[0]
+    expect(sent.message.content[0].text).toMatch(/side question[\s\S]*why\?$/)
+    expect(frames('forks').at(-1).forks[0]).toMatchObject({ id: forkId, question: 'why?', state: 'running' })
+
+    fork._line({ type: 'assistant', session_id: forkId, parent_tool_use_id: null, message: { id: 'm', role: 'assistant', content: [{ type: 'text', text: 'because' }] } })
+    fork._line({ ...result, session_id: forkId })
+    expect(frames('fork-event').map((f: any) => f.event.kind)).toEqual(['text', 'result'])
+    const snap = svc.getVisualAgentState('agent-1')!
+    expect(snap.forks[0]).toMatchObject({ state: 'done', events: [expect.objectContaining({ text: 'because' }), expect.anything()] })
+    // The main conversation is untouched by the fork.
+    expect(snap.events.every((e) => e.kind !== 'text' || e.text !== 'because')).toBe(true)
+  })
+
+  it('caps live forks at 3', async () => {
+    await svc.startVisualAgent(baseOpts())
+    lastChild()._line(init())
+    svc.forkVisualAgent('agent-1', 'a')
+    svc.forkVisualAgent('agent-1', 'b')
+    svc.forkVisualAgent('agent-1', 'c')
+    expect(() => svc.forkVisualAgent('agent-1', 'd')).toThrow(/At most 3/)
+  })
+
+  it('persists both directions and replays them (flagged replayed) on resume', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    svc.sendVisualAgentMessage('agent-1', 'remember me')
+    c._line(init())
+    c._line({ type: 'assistant', session_id: SID, parent_tool_use_id: null, message: { id: 'm', role: 'assistant', content: [{ type: 'text', text: 'noted' }] } })
+    c._line(result)
+    await flush()
+    const file = join(h.userData, 'visual-agents', `${SID}.jsonl`)
+    const lines = readFileSync(file, 'utf-8').trim().split('\n').map((l) => JSON.parse(l))
+    expect(lines[0]).toMatchObject({ dir: 'out' })
+    expect(lines.some((l) => l.dir === 'in')).toBe(true)
+
+    svc.__resetVisualAgentsForTest()
+    const snap = await svc.startVisualAgent(baseOpts({ agentId: 'agent-2', resumeClaudeSessionId: SID }))
+    expect(snap.claudeSessionId).toBe(SID)
+    expect(snap.events.map((e) => [e.kind, (e as any).text])).toEqual([
+      ['text', 'remember me'],
+      ['session', undefined],
+      ['text', 'noted'],
+      ['result', ''],
+    ])
+    expect(snap.events.every((e) => e.replayed)).toBe(true)
+    const args = h.spawnCalls.at(-1).args
+    expect(args[args.indexOf('--resume') + 1]).toBe(SID)
+  })
+
+  it('a corrupt transcript never stops the session from starting', async () => {
+    mkdirSync(join(h.userData, 'visual-agents'), { recursive: true })
+    writeFileSync(join(h.userData, 'visual-agents', `${SID}.jsonl`), 'not json\n{"dir":"in","line":"{"}\n')
+    const snap = await svc.startVisualAgent(baseOpts({ resumeClaudeSessionId: SID }))
+    expect(snap.events).toEqual([])
+    expect(h.spawnCalls).toHaveLength(1)
+  })
+
+  it('killAllVisualAgents kills main processes and forks', async () => {
+    const { killChildTree } = await import('../../../src/main/services/claude-headless.service')
+    vi.mocked(killChildTree).mockClear()
+    await svc.startVisualAgent(baseOpts())
+    lastChild()._line(init())
+    svc.forkVisualAgent('agent-1', 'q')
+    svc.killAllVisualAgents()
+    expect(vi.mocked(killChildTree)).toHaveBeenCalledTimes(2)
+  })
+})

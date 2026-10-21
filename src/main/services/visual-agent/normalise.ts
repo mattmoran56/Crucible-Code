@@ -528,14 +528,18 @@ export const lineReader = (
       held += chunk
       let index = held.indexOf('\n')
       while (index !== -1) {
-        take(held.slice(0, index))
+        // Consume before dispatching: a handler may re-enter via flush()
+        // (e.g. killing a fork on `result` fires its exit handler).
+        const one = held.slice(0, index)
         held = held.slice(index + 1)
+        take(one)
         index = held.indexOf('\n')
       }
     },
     flush() {
-      take(held)
+      const rest = held
       held = ''
+      take(rest)
     },
   }
 }
