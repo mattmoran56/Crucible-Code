@@ -41,9 +41,6 @@ export const isValidCloudSessionId = (id: unknown): id is string =>
 export const isCloudSessionUrl = (url: unknown): url is string =>
   typeof url === 'string' && /^https:\/\/claude\.ai\//.test(url)
 
-/** The message Claude Code prints when attaching is not enabled for the account. */
-export const ATTACH_NOT_ENABLED = 'Attaching to an existing cloud session is not enabled for your account'
-
 /**
  * A prompt as a single argv element. A leading `-` would be parsed as a flag,
  * so it gets a leading space (harmless to the model).

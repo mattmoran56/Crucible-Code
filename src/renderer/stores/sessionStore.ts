@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, PullRequest, WorktreeInfo, NotionTicketLink } from '../../shared/types'
+import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation } from '../../shared/types'
 import { useToastStore } from './toastStore'
 import { useTerminalStore } from './terminalStore'
 import { useVisualAgentStore } from './visualAgentStore'
@@ -48,7 +48,17 @@ interface SessionState {
   /** A session whose agent xterm should auto-focus on first attach, consumed by useTerminal. */
   pendingFocusSessionId: string | null
   loadSessions: (projectId: string) => Promise<void>
-  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string, notionTicket?: NotionTicketLink) => Promise<void>
+  createSession: (
+    projectId: string,
+    repoPath: string,
+    name: string,
+    baseBranch?: string,
+    startupCommand?: string,
+    notionTicket?: NotionTicketLink,
+    options?: CreateSessionOptions
+  ) => Promise<void>
+  /** Merge `patch` into one session and persist it (location, cloud link, …). */
+  patchSession: (projectId: string, sessionId: string, patch: Partial<Omit<Session, 'id' | 'projectId'>>) => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
   renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
   /**
@@ -75,6 +85,17 @@ interface SessionState {
   consumePendingStartup: (sessionId: string) => string | null
   consumePendingFocus: (sessionId: string) => boolean
   queuePendingStartup: (sessionId: string, command: string) => void
+}
+
+export interface CreateSessionOptions {
+  /**
+   * 'cloud' starts the agent in Claude Code on the web: the worktree is
+   * created as usual, its branch pushed, and a cloud session started with the
+   * startup command as its task (required). Default/omitted is 'local'.
+   */
+  location?: SessionLocation
+  /** Claude config dir for the project's account (cloud only). */
+  configDir?: string | null
 }
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
@@ -190,7 +211,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  createSession: async (projectId, repoPath, name, baseBranch, startupCommand, notionTicket) => {
+  createSession: async (projectId, repoPath, name, baseBranch, startupCommand, notionTicket, options) => {
+    const cloud = options?.location === 'cloud'
+    if (cloud && !startupCommand?.trim()) {
+      throw new Error('A cloud session needs a task — pick a startup prompt or describe the task')
+    }
     const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch)
     const session: Session = {
       id: crypto.randomUUID(),
@@ -204,6 +229,28 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       notionTicket,
     }
 
+    if (cloud) {
+      try {
+        const created = await window.api.cloudSession.create({
+          worktreePath: worktreeInfo.path,
+          branch: worktreeInfo.branch,
+          prompt: startupCommand!.trim(),
+          configDir: options?.configDir ?? null,
+        })
+        session.location = 'cloud'
+        session.cloud = { sessionId: created.sessionId, url: created.url }
+      } catch (err) {
+        // Don't leave a half-made session behind: the user can retry, or
+        // switch the dialog to Local. (A pushed branch stays on origin.)
+        try {
+          await window.api.worktree.remove(repoPath, worktreeInfo.path)
+        } catch {
+          // Best effort.
+        }
+        throw new Error(`Couldn't start the cloud session: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
     const sessions = sortByCreatedAtDesc([...get().sessions, session])
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
@@ -215,10 +262,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       activePRWorktreePath: null,
       activeWorkspaceTab: 'agent',
       detachedWorktree: null,
-      pendingStartup: startupCommand ? { sessionId: session.id, command: startupCommand } : null,
+      // A cloud session already has its task; only a local agent consumes the prompt.
+      pendingStartup: startupCommand && !cloud ? { sessionId: session.id, command: startupCommand } : null,
       pendingFocusSessionId: session.id,
     })
     saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+  },
+
+  patchSession: async (projectId, sessionId, patch) => {
+    if (!get().sessions.some((s) => s.id === sessionId)) return
+    const sessions = get().sessions.map((s) => (s.id === sessionId ? { ...s, ...patch } : s))
+    await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId === projectId) set({ sessions })
   },
 
   consumePendingStartup: (sessionId: string) => {

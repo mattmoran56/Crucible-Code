@@ -8,7 +8,11 @@ import {
   resolveStartupCommand,
   useStartupPromptStore,
 } from '../../stores/startupPromptStore'
-import type { Project, QueuedSession } from '../../../shared/types'
+import type { Project, QueuedSession, SessionLocation } from '../../../shared/types'
+import { resolveDefaultSessionLocation } from '../../../shared/cloud-session'
+import { useProjectStore } from '../../stores/projectStore'
+import { projectConfigDir } from '../../lib/visualAgents'
+import { ToggleGroup } from '../ui/ToggleGroup'
 import { Dialog } from '../ui/Dialog'
 import { Input } from '../ui/Input'
 import { BranchCombobox } from '../ui/BranchCombobox'
@@ -38,6 +42,11 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   // Custom-prompt textarea content. Only used when schedule mode is on —
   // chip-driven prompts cover the non-scheduled path.
   const [customPrompt, setCustomPrompt] = useState('')
+  // Cloud (Claude Code on the web) unless the project opted into local.
+  const [location, setLocation] = useState<SessionLocation>(() => resolveDefaultSessionLocation(project))
+  // The cloud session's task when no startup prompt is picked.
+  const [cloudTask, setCloudTask] = useState('')
+  const claudeAccounts = useProjectStore((s) => s.claudeAccounts)
   const { createSession } = useSessionStore()
   const addQueuedSession = useSchedulerStore((s) => s.addQueuedSession)
   const usageResetDelayMinutes = useSettingsStore((s) => s.usageResetDelayMinutes)
@@ -68,6 +77,8 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
     setScheduleEnabled(false)
     setScheduledForInput('')
     setCustomPrompt('')
+    setLocation(resolveDefaultSessionLocation(project))
+    setCloudTask('')
     setBranchesLoading(true)
     Promise.all([
       window.api.git.defaultBranch(project.repoPath),
@@ -108,9 +119,14 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
 
   const scheduleInPast = scheduleEnabled && scheduledForMs != null && scheduledForMs < Date.now() + 30_000
   const scheduleNeedsPrompt = scheduleEnabled && !customPrompt.trim()
+  // Scheduled sessions always start locally (the scheduler spawns a local agent).
+  const cloud = location === 'cloud' && !scheduleEnabled
+  // A cloud session must start with a task: the picked prompt, or a typed one.
+  const cloudNeedsTask = cloud && !selectedPrompt && !cloudTask.trim()
   const canSubmit =
     !!name.trim() &&
     !inputMissing &&
+    !cloudNeedsTask &&
     !creating &&
     !scheduleInPast &&
     !scheduleNeedsPrompt &&
@@ -160,13 +176,17 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
       } else {
         const startupCommand = selectedPrompt
           ? resolveStartupCommand(selectedPrompt.command, promptInput.trim())
-          : undefined
+          : cloud
+            ? cloudTask.trim()
+            : undefined
         await createSession(
           project.id,
           project.repoPath,
           name.trim(),
           baseBranch || undefined,
-          startupCommand
+          startupCommand,
+          undefined,
+          cloud ? { location: 'cloud', configDir: projectConfigDir(project, claudeAccounts) } : undefined
         )
       }
       setName('')
@@ -176,6 +196,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
       setScheduleEnabled(false)
       setScheduledForInput('')
       setCustomPrompt('')
+      setCloudTask('')
       onClose()
     } catch (err: any) {
       setError(err.message || 'Failed to create session')
@@ -195,6 +216,25 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           placeholder="e.g. fix-auth-bug"
           error={error || undefined}
         />
+
+        {!scheduleEnabled && (
+          <div>
+            <label className="block text-xs text-text-muted mb-2">Run in</label>
+            <ToggleGroup<SessionLocation>
+              options={[
+                { value: 'cloud', label: 'Cloud' },
+                { value: 'local', label: 'Local' },
+              ]}
+              value={location}
+              onChange={setLocation}
+            />
+            <p className="text-[10px] text-text-muted mt-2">
+              {location === 'cloud'
+                ? 'Runs in Claude Code on the web. The branch is pushed to GitHub; teleport it down from the Agent tab to test locally.'
+                : 'Runs on this machine in the session worktree.'}
+            </p>
+          </div>
+        )}
 
         <BranchCombobox
           label="Base branch"
@@ -239,7 +279,9 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
             <p className="text-[10px] text-text-muted mt-2">
               {scheduleEnabled
                 ? 'Pick a template to populate the prompt below — or skip and write your own.'
-                : 'Runs in the agent terminal once Claude is ready.'}
+                : cloud
+                  ? 'Becomes the cloud session’s task.'
+                  : 'Runs in the agent terminal once Claude is ready.'}
             </p>
           </div>
         )}
@@ -255,6 +297,32 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
             placeholder={selectedPrompt.inputPlaceholder}
             error={showInputError ? 'This prompt requires an input' : undefined}
           />
+        )}
+
+        {cloud && !selectedPrompt && (
+          <div>
+            <label htmlFor="cloud-task" className="block text-[11px] text-text-muted" style={{ marginBottom: 4 }}>
+              Task
+            </label>
+            <textarea
+              id="cloud-task"
+              value={cloudTask}
+              onChange={(e) => setCloudTask(e.target.value)}
+              placeholder="What should Claude do in the cloud?"
+              rows={3}
+              className="w-full bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent font-mono resize-y"
+              style={{ padding: '6px 10px' }}
+            />
+            <p className="text-[10px] text-text-muted mt-1">
+              A cloud session starts with a task{prompts.length > 0 ? ' — type one, or pick a startup prompt above' : ''}.
+            </p>
+          </div>
+        )}
+
+        {creating && cloud && (
+          <p className="text-[11px] text-text-muted" role="status">
+            Pushing the branch and starting the cloud session…
+          </p>
         )}
 
         <div>
@@ -339,7 +407,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
             disabled={!canSubmit}
             loading={creating}
           >
-            {scheduleEnabled ? 'Schedule' : 'Create'}
+            {scheduleEnabled ? 'Schedule' : cloud ? 'Start in cloud' : 'Create'}
           </Button>
         </div>
       </form>
