@@ -21,12 +21,11 @@ import type { VisualAgentSnapshot } from '../../../shared/visual-agent'
 
 /** The mock bridge's story helpers (see mock/mockApi.ts `__mock`). */
 interface MockHelpers {
-  overrides: { projects: Project[] | null; sessions: Record<string, Session[]> | null }
   demoVisualAgentSnapshot: (agentId: string) => VisualAgentSnapshot
 }
 const mockHelpers = (): MockHelpers | null =>
   (typeof window === 'undefined' ? null : (window as unknown as { api?: { __mock?: MockHelpers } }).api?.__mock) ?? null
-import type { Project, ReviewLoopState, Session, SessionStatus } from '../../../shared/types'
+import type { ReviewLoopState, SessionStatus } from '../../../shared/types'
 
 import {
   mockProjects,
@@ -78,9 +77,8 @@ interface StorySetupOptions {
   /** Pre-populate the review-loop store for the active session */
   reviewLoopState?: ReviewLoopState
   /**
-   * Opt the active project into visual agents, switch the active session's
-   * Agent tab to the visual interface, and seed it (and any visual-agent:N
-   * tabs in `workspaceTabs`) with the demo conversation.
+   * Seed the active session's Agent tab (and any agent:N tabs in
+   * `workspaceTabs`) with the demo conversation.
    */
   visualAgent?: { openForkId?: string | null }
 }
@@ -96,21 +94,11 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
     claudeAccounts: mockAccounts,
   })
 
-  // Visual agents are opt-in per project: only stories that ask see them.
-  let projects = mockProjects
-  let sessionsByProject = mockSessions
+  // The Agent tab is always a visual agent. Stories that ask for one get the
+  // demo conversation seeded; the rest start on the empty state.
   if (options.visualAgent) {
-    projects = mockProjects.map((p: Project) => (p.id === projectId ? { ...p, visualAgentsEnabled: true } : p))
-    sessionsByProject = {
-      ...mockSessions,
-      [projectId]: (mockSessions[projectId] ?? []).map((s: Session) => (s.id === sessionId ? { ...s, agentView: 'visual' as const } : s)),
-    }
     const helpers = mockHelpers()
-    if (helpers) {
-      helpers.overrides.projects = projects
-      helpers.overrides.sessions = sessionsByProject
-    }
-    const agentTabs = ['agent', ...(options.workspaceTabs ?? []).filter((t) => t.startsWith('visual-agent:'))]
+    const agentTabs = ['agent', ...(options.workspaceTabs ?? []).filter((t) => t.startsWith('agent:'))]
     for (const tab of agentTabs) {
       if (!helpers) break
       useVisualAgentStore.getState().seed(helpers.demoVisualAgentSnapshot(`${sessionId}:${tab}`), {
@@ -118,12 +106,11 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
       })
     }
   }
-  useProjectStore.setState({ projects })
 
   // Session store
   const activeSessionForStore = options.activePRNumber ? null : sessionId
   useSessionStore.setState({
-    sessions: sessionsByProject[projectId] ?? [],
+    sessions: mockSessions[projectId] ?? [],
     currentProjectId: projectId,
     activeSessionId: activeSessionForStore,
     activePRNumber: options.activePRNumber ?? null,
@@ -425,9 +412,4 @@ export function resetStores() {
   useClaudeWebStore.setState({ sessions: [], loading: false })
   useWorkspaceLayoutStore.setState({ columns: [], savedLayouts: {} })
   useVisualAgentStore.setState({ agents: {}, errors: {}, ui: {}, options: {} })
-  const helpers = mockHelpers()
-  if (helpers) {
-    helpers.overrides.projects = null
-    helpers.overrides.sessions = null
-  }
 }

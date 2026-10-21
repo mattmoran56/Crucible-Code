@@ -377,12 +377,6 @@ const targets: ScreenshotTarget[] = [
     delay: 2500,
     clickSelector: 'button[aria-label="Add tab"]',
   },
-  {
-    name: 'visual-agent-settings',
-    storyId: 'app-full-layout--visual-agent-settings',
-    delay: 1500,
-    clickNav: 'Project Defaults',
-  },
 ]
 
 async function captureScreenshots() {

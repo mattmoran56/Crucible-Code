@@ -1,7 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
 
 /**
- * E2E coverage for the smart-scroll behaviour in the agent terminal.
+ * E2E coverage for the smart-scroll behaviour in workspace terminals. The
+ * Agent tab is a visual agent now, so this drives a "New Terminal" tab.
  *
  * Bug: while a session's pty streams output, the xterm viewport followed the
  * cursor on every write — so a user who scrolled up to read past content was
@@ -21,16 +22,18 @@ async function bootApp(page: Page) {
 }
 
 async function openTerminalSession(page: Page) {
-  // Activating a session card auto-spawns a terminal (TerminalPanel useEffect).
   const card = page.getByText('fix-terminal-resize').first()
   await card.click()
+  // Opening a terminal tab spawns a shell, which the mock streams output into.
+  await page.getByRole('button', { name: 'Add tab' }).first().click()
+  await page.getByText('New Terminal').click()
 }
 
 async function viewport(page: Page) {
-  return page.locator('.xterm-viewport').first()
+  return page.locator('.xterm-viewport').filter({ visible: true }).first()
 }
 
-test.describe('Agent terminal — smart scroll', () => {
+test.describe('Workspace terminal — smart scroll', () => {
   test.beforeEach(async ({ page }) => bootApp(page))
 
   test('scrolling up while data streams keeps the user at their position', async ({ page }) => {
