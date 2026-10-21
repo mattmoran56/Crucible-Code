@@ -702,7 +702,7 @@ export function SettingsPage() {
             <Panel visible={activeSection === 'project-defaults'}>
               <SectionHeader
                 title="Project Defaults"
-                description="Per-project Claude account, Claude Web session and Visual Agent settings."
+                description="Per-project Claude account and Claude Web session settings."
               />
 
               {hasProjects && (
