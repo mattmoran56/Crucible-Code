@@ -30,8 +30,6 @@
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that auto-run in a new session's agent terminal
 - **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Pick a variant per project: **Lite**/**Pro** (three fresh sessions per round) or **Efficient** (fresh stacked reviews + one persistent worker that keeps context across rounds — cheaper). Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
-- **Foundry** — Run a whole Notion backlog on autopilot. An interactive foreman Claude plans dependencies; multiple worker sessions run in parallel; each pipeline goes implement → draft PR → review loop → ready. Human reviews code and tests; everything else is automated. See [docs/FOUNDRY.md](docs/FOUNDRY.md)
-- **Local PRs** — A staging stage between a draft branch and an open GitHub PR. Snapshot any session into a viewable, reviewable local PR (or let capture mode intercept the agent's `gh pr create`), then **Promote** it to a real PR. In local-PR mode Foundry builds a chained stack overnight that you publish in one click with **Create PRs** (open → optional local CI → fix-on-failure → ready, in order)
 - **Claude Web sessions** — Surface your own `claude/*` branches from Claude Code on the web in the sidebar; click to open them locally as worktrees
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
@@ -340,30 +338,6 @@ Full pull request review without leaving the IDE — comparable to GitHub's web 
 </details>
 
 <details>
-<summary><strong>Local PRs</strong></summary>
-
-A **local PR** is a tracked record of a would-be pull request — title, body, branch, base, diff — that lives on your machine *between* a draft branch and an open GitHub PR. You can view and review it like a PR, then **promote** it to a real GitHub PR that pushes those exact details up.
-
-**Producing one (any session)**
-- **Create local PR** — from a session's action menu, snapshots its branch/base into a local PR (title/body default from the last commit). The branch is pushed to origin so it's always promotable.
-- **Capture mode** — toggle **Capture PRs locally** on a session and the gh shim on its PATH intercepts the agent's `gh pr create`, turning it into a local PR instead of opening a real one. Every other `gh` command passes straight through.
-
-Local PRs appear in the normal PR list with a **Local** badge and a **Promote to PR** button. Promote pushes the branch, opens a real draft PR from the approved title/body/base, and the entry becomes the real PR. Promoting also drops the gh shim for that session (capture mode turns off), so the agent's later `gh` commands act on the real PR instead of being captured into a new local one.
-
-**Foundry overnight stacks.** Turn on **Local PR mode** in a Foundry's settings and an overnight run builds a *chained stack*: the first PR targets the integration branch, each subsequent one targets its predecessor. In the morning, **Create PRs** walks the stack in order — open each real PR, run optional [local CI](#review-loop) in Docker (`act`), fix-on-failure by resuming the worker, mark ready, then the next. The walk is resumable across restarts. The review loop runs against local PRs too, storing its findings on the record instead of posting a gh comment.
-
-See [docs/LOCAL_PRS.md](docs/LOCAL_PRS.md) for the full lifecycle, the captured `gh` commands, and the publish flow.
-
-<table>
-<tr>
-<td><img src="docs/screenshots/local-pr-card.png" alt="A local PR in the PR list — Local badge, LOCAL-1 number, branch → base, Promote / Discard actions" /></td>
-<td><img src="docs/screenshots/local-pr-panel.png" alt="The local PR review tab — rendered body with review checklist, plus the local diff — and a Promote to PR button" /></td>
-</tr>
-</table>
-
-</details>
-
-<details>
 <summary><strong>Claude Web sessions</strong></summary>
 
 If you also drive Claude Code from [claude.ai/code](https://claude.com/product/claude-code), this surfaces **your** active web sessions in the sidebar so you can pull them down locally without scrolling through every `claude/*` branch in the repo.
@@ -517,67 +491,6 @@ The Review Loop tab in the session workspace shows live progress: an overall sta
 </details>
 
 <details>
-<summary><strong>Foundry — autopilot over a Notion backlog</strong></summary>
-
-The next layer above the [single-ticket Notion integration](#notion-task-integration). Where the Notion poller turns one Notion row into one Claude session, the **Foundry** turns an *entire backlog* into a planned, dependency-aware stream of work — sessions, draft PRs, review loops, finalisation, all coordinated. The human reviews code and tests. Foundry does everything else.
-
-**The two-brains design.** Every Foundry runs two distinct decision-makers against the same budget:
-
-- **Foreman** — a real, interactive Claude session you can watch and nudge. Reads the entire task set + your codebase, infers dependencies between tickets, picks which tickets to start *next and in what order*. It doesn't write code; it writes a `decision.json` that the pipeline FSM executes.
-- **Pipeline FSM** — pure TypeScript in the main process. Validates the foreman's decision (drops unknown page ids, caps concurrency, sanitises branch names), then drives each picked task through `spawn-requested → implementing → reviewing → finalizing → done`. Doesn't make decisions; just executes them.
-
-The LLM can suggest anything (start 50 tasks! re-document the same plan!). The validation layer is the safety boundary. The LLM's authority over real-world side effects is exactly zero — it writes a file; the FSM decides what's executable.
-
-**Pipeline phases.**
-
-- `spawn-requested` — apply Notion pickup updates (e.g. `Status: Not Started → In Progress`), ensure the base branch exists (auto-create + push off the repo default if not), tell the renderer to materialise a worktree + Claude session.
-- `implementing` — poll `gh pr list --head <branch>` every 15s. Worker session is responsible for committing, pushing, and opening its own draft PR. Stop-hook hints opportunistically check on each turn-completion. Timeout (default 60m) parks the pipeline as attention.
-- `reviewing` — kick off the [Lite Review Loop](#review-loop) against the freshly-opened draft PR. Foundry subscribes to its state-update bus and advances when it converges.
-- `finalizing` — inject your ready-for-review prompt into the worker's **existing** PTY (bracketed-paste escape sequences so multi-line content goes in as one paste), wait for verified completion (PTY buffer must grow by ≥200 bytes to filter stale stop events), then `verifyPRReady` against `gh`. If your prompt didn't mark the PR ready, the pipeline parks with attention rather than silently overriding you.
-- `done` — slot frees → another foreman pass fires automatically.
-
-**Trigger ladder.** A foreman pass fires on snapshot-diff transitions (20s tick + 5s debounce), slot-freed events, manual "Run pass" clicks, the off→on toggle, app startup, and a 10-minute safety-net cron regardless. Snapshot detection is actor-agnostic — a human moving the ticket, a Notion automation, a Linear sync, whatever — we just notice the value changed.
-
-**Optimistic continue.** A per-foundry toggle (default off) for when human PR review is the bottleneck. Normally a dependency only unblocks the next ticket once it's merged to trunk (a *completed status* like `Done`/`Testing`). Turn this on and dependencies in an **optimistic status** (default `In review` — PR open, not yet merged) also count: the foreman picks up the next ticket they unblock, and the FSM prepends a deterministic `git merge origin/<dep-branch>` preamble to the worker's prompt so the prerequisite code is merged in before implementation starts. If a dependency's branch can't be resolved, the pipeline parks for attention instead of starting work that's missing code. Safe to toggle while running — it takes effect on the next pass. See [docs/FOUNDRY.md](docs/FOUNDRY.md#optimistic-continue).
-
-**Switching between foundries.** A project can run more than one foundry at once. When it does, the foundry name in the panel header becomes a dropdown switcher — open it to see every foundry with a live status dot (running / pass-in-flight / needs-attention / paused / off), a one-word status, and a badge counting its in-flight pipelines. Pick one and its pipelines and foreman pane fill the panel below. With a single foundry the header is just the name.
-
-**Live foreman PTY in the panel.** The Foundry side panel pins a real `claude` PTY in its bottom 320 px while a pass is running. You watch the foreman think in real time; type into it to nudge it; when it writes `decision.json` the PTY closes automatically. Between passes the pane falls back to the previous pass's transcript (read-only).
-
-**Reset.** The card has a Reset button when the foundry is off — wipes pipelines, pass history, snapshot, documented hashes; keeps the config. Useful when state has drifted from reality.
-
-<table>
-<tr>
-<td><img src="docs/screenshots/foundry-panel-pass-running.png" alt="Foundry panel with a foreman pass running — pulsing live indicator and streaming transcript" /></td>
-<td><img src="docs/screenshots/foundry-panel-active-pipelines.png" alt="Foundry panel with three active pipelines including one parked for attention" /></td>
-</tr>
-<tr>
-<td><img src="docs/screenshots/foundry-settings-configured.png" alt="Foundry settings card with on/off toggle, Edit, Reset, Delete actions" /></td>
-<td><img src="docs/screenshots/foundry-panel-off.png" alt="Foundry panel when the foundry is disabled" /></td>
-</tr>
-<tr>
-<td colspan="2"><img src="docs/screenshots/foundry-panel-multiple.png" alt="Foundry panel with the multi-foundry dropdown switcher open — each foundry listed with a status dot, status label, and active-pipeline count" /></td>
-</tr>
-<tr>
-<td colspan="2"><img src="docs/screenshots/foundry-settings-editor.png" alt="Foundry editor with multi-line implement and ready-for-review prompts, task-set filter, eligibility filter, completion transition, pickup updates" /></td>
-</tr>
-</table>
-
-Full architecture, the foreman decision contract, validation rules, every failure mode, and source pointers are in [docs/FOUNDRY.md](docs/FOUNDRY.md).
-
-</details>
-
-<details>
-<summary><strong>Permissions sync</strong></summary>
-
-View and edit Claude Code permissions (allow/deny lists) from the right panel.
-
-- Changes sync across all worktrees for the project
-- See which tools and commands are allowed or denied at a glance
-
-</details>
-
-<details>
 <summary><strong>Architecture</strong></summary>
 
 Three-layer Electron architecture with strict process isolation:
@@ -599,8 +512,7 @@ src/
 │   │   ├── buttons/      # Custom buttons (CustomButtonBar, ButtonRenderer, IconPicker)
 │   │   ├── pullrequests/ # PR review (PRReviewPanel, PRConversationTab, FileTree)
 │   │   ├── notes/        # Notes panel
-│   │   ├── usage/        # Usage tracking panel
-│   │   └── permissions/  # Permissions panel
+│   │   └── usage/        # Usage tracking panel
 │   ├── stores/      # Zustand state (14 stores)
 │   ├── hooks/       # Shared hooks (useResizable, useFocusTrap, useRovingIndex)
 │   └── styles/      # Tailwind + CSS custom property themes
@@ -625,7 +537,7 @@ All communication between renderer and main process goes through typed IPC chann
 
 ### Stays awake while running
 
-So long-running work — terminals, Claude sessions, review loops, the [Foundry](#foundry--autopilot-over-a-notion-backlog) and the remote relay — keeps running when you lock the screen and walk away, the app prevents the Mac from sleeping for its entire lifetime. It holds an Electron `powerSaveBlocker` of type `prevent-app-suspension` (started on launch, released on quit, re-armed after a forced sleep/resume), so the *system* stays awake while the *display* is still free to turn off when the screen locks. See `src/main/services/keep-awake.service.ts`. No setting — it's always on while the app is open.
+So long-running work — terminals, Claude sessions, review loops and the remote relay — keeps running when you lock the screen and walk away, the app prevents the Mac from sleeping for its entire lifetime. It holds an Electron `powerSaveBlocker` of type `prevent-app-suspension` (started on launch, released on quit, re-armed after a forced sleep/resume), so the *system* stays awake while the *display* is still free to turn off when the screen locks. See `src/main/services/keep-awake.service.ts`. No setting — it's always on while the app is open.
 
 </details>
 

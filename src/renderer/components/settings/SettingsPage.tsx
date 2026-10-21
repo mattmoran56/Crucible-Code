@@ -15,7 +15,6 @@ import { PRListDisplaySettings } from './PRListDisplaySettings'
 import { StartupPromptSettings } from './StartupPromptSettings'
 import { ReviewLoopSettings } from './ReviewLoopSettings'
 import { NotionIntegrationSettings } from './NotionIntegrationSettings'
-import { FoundrySettings } from './FoundrySettings'
 import { SettingsSidebar, type SettingsSection } from './SettingsSidebar'
 import { ProjectPicker } from './ProjectPicker'
 
@@ -61,7 +60,6 @@ export function SettingsPage() {
   const [notionProjectId, setNotionProjectId] = useState(initialProjectId)
   const [reviewProjectId, setReviewProjectId] = useState(initialProjectId)
   const [defaultsProjectId, setDefaultsProjectId] = useState(initialProjectId)
-  const [foundryProjectId, setFoundryProjectId] = useState(initialProjectId)
 
   // Account management state
   const [showAccountManager, setShowAccountManager] = useState(false)
@@ -833,18 +831,6 @@ export function SettingsPage() {
                 />
               )}
               <NotionIntegrationSettings projects={filterProject(notionProjectId || initialProjectId)} />
-            </Panel>
-
-            {/* Foundry */}
-            <Panel visible={activeSection === 'foundry'}>
-              {hasProjects && (
-                <ProjectPicker
-                  projects={projects}
-                  value={foundryProjectId || initialProjectId}
-                  onChange={setFoundryProjectId}
-                />
-              )}
-              <FoundrySettings projects={filterProject(foundryProjectId || initialProjectId)} />
             </Panel>
 
             {/* Review Loop */}

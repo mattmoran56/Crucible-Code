@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, FoundryConfig, FoundryFireTaskPayload, FoundryPipelineAction, FoundryRuntimeState, FoundryTaskStartedAck, FoundryWorkerPermissionMode, LocalPR, CreateLocalPRFromSessionInput, LocalPRUpdate } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, ClaudeWebSession, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -436,19 +436,6 @@ const api = {
     },
   },
 
-  permissions: {
-    get: (repoPath: string): Promise<{ allow: string[]; deny: string[] }> =>
-      ipcRenderer.invoke(IPC.PERMISSIONS_GET, repoPath),
-    update: (repoPath: string, permissions: { allow: string[]; deny: string[] }): Promise<void> =>
-      ipcRenderer.invoke(IPC.PERMISSIONS_UPDATE, repoPath, permissions),
-    onChanged: (callback: (repoPath: string, permissions: { allow: string[]; deny: string[] }) => void) => {
-      const listener = (_e: unknown, repoPath: string, permissions: { allow: string[]; deny: string[] }) =>
-        callback(repoPath, permissions)
-      ipcRenderer.on(IPC.PERMISSIONS_CHANGED, listener)
-      return () => ipcRenderer.removeListener(IPC.PERMISSIONS_CHANGED, listener)
-    },
-  },
-
   update: {
     onStatus: (callback: (status: UpdateStatus) => void) => {
       const listener = (_e: any, status: UpdateStatus) => callback(status)
@@ -557,87 +544,6 @@ const api = {
       const listener = (_e: unknown, payload: NotionFireTaskPayload) => callback(payload)
       ipcRenderer.on(IPC.NOTION_FIRE_TASK, listener)
       return () => ipcRenderer.removeListener(IPC.NOTION_FIRE_TASK, listener)
-    },
-  },
-
-  foundry: {
-    list: (): Promise<FoundryConfig[]> => ipcRenderer.invoke(IPC.FOUNDRY_LIST),
-    save: (cfg: FoundryConfig): Promise<FoundryConfig[]> => ipcRenderer.invoke(IPC.FOUNDRY_SAVE, cfg),
-    delete: (foundryId: string): Promise<FoundryConfig[]> => ipcRenderer.invoke(IPC.FOUNDRY_DELETE, foundryId),
-    setPaused: (foundryId: string, paused: boolean): Promise<void> =>
-      ipcRenderer.invoke(IPC.FOUNDRY_SET_PAUSED, foundryId, paused),
-    runNow: (foundryId: string): Promise<void> => ipcRenderer.invoke(IPC.FOUNDRY_RUN_NOW, foundryId),
-    publishPRs: (foundryId: string): Promise<void> => ipcRenderer.invoke(IPC.FOUNDRY_PUBLISH_PRS, foundryId),
-    resetState: (foundryId: string): Promise<{ ok: boolean; reason?: string }> =>
-      ipcRenderer.invoke(IPC.FOUNDRY_RESET_STATE, foundryId),
-    getState: (foundryId: string): Promise<FoundryRuntimeState | null> =>
-      ipcRenderer.invoke(IPC.FOUNDRY_STATE_GET, foundryId),
-    taskStarted: (foundryId: string, ack: FoundryTaskStartedAck): Promise<void> =>
-      ipcRenderer.invoke(IPC.FOUNDRY_TASK_STARTED, foundryId, ack),
-    pipelineAction: (
-      foundryId: string,
-      pipelineId: string,
-      action: FoundryPipelineAction
-    ): Promise<void> =>
-      ipcRenderer.invoke(IPC.FOUNDRY_PIPELINE_ACTION, foundryId, pipelineId, action),
-    spawnWorker: (
-      sessionId: string,
-      cwd: string,
-      prompt: string,
-      claudeTheme: string,
-      claudeConfigDir: string | undefined,
-      repoPath: string | undefined,
-      contextId: string,
-      tabId: string,
-      permissionMode: FoundryWorkerPermissionMode,
-      localPrCapture?: { foundryId: string; pipelineId: string; order: number }
-    ): Promise<string> =>
-      ipcRenderer.invoke(
-        IPC.FOUNDRY_SPAWN_WORKER,
-        sessionId,
-        cwd,
-        prompt,
-        claudeTheme,
-        claudeConfigDir,
-        repoPath,
-        contextId,
-        tabId,
-        permissionMode,
-        localPrCapture
-      ),
-    openForeman: (foundryId: string): Promise<{ terminalId: string; contextId: string } | null> =>
-      ipcRenderer.invoke(IPC.FOUNDRY_OPEN_FOREMAN, foundryId),
-    onFireTask: (callback: (payload: FoundryFireTaskPayload) => void) => {
-      const listener = (_e: unknown, payload: FoundryFireTaskPayload) => callback(payload)
-      ipcRenderer.on(IPC.FOUNDRY_FIRE_TASK, listener)
-      return () => ipcRenderer.removeListener(IPC.FOUNDRY_FIRE_TASK, listener)
-    },
-    onStateUpdate: (callback: (foundryId: string, state: FoundryRuntimeState) => void) => {
-      const listener = (_e: unknown, foundryId: string, state: FoundryRuntimeState) =>
-        callback(foundryId, state)
-      ipcRenderer.on(IPC.FOUNDRY_STATE_UPDATE, listener)
-      return () => ipcRenderer.removeListener(IPC.FOUNDRY_STATE_UPDATE, listener)
-    },
-  },
-
-  localPr: {
-    list: (projectId: string): Promise<LocalPR[]> =>
-      ipcRenderer.invoke(IPC.LOCAL_PR_LIST, projectId),
-    create: (input: CreateLocalPRFromSessionInput): Promise<LocalPR> =>
-      ipcRenderer.invoke(IPC.LOCAL_PR_CREATE, input),
-    update: (id: string, update: LocalPRUpdate): Promise<LocalPR | null> =>
-      ipcRenderer.invoke(IPC.LOCAL_PR_UPDATE, id, update),
-    discard: (id: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.LOCAL_PR_DISCARD, id),
-    promote: (id: string): Promise<LocalPR | null> =>
-      ipcRenderer.invoke(IPC.LOCAL_PR_PROMOTE, id),
-    setCapture: (contextId: string, enabled: boolean): Promise<void> =>
-      ipcRenderer.invoke(IPC.LOCAL_PR_SET_CAPTURE, contextId, enabled),
-    onStateUpdate: (callback: (projectId: string, list: LocalPR[]) => void) => {
-      const listener = (_e: unknown, projectId: string, list: LocalPR[]) =>
-        callback(projectId, list)
-      ipcRenderer.on(IPC.LOCAL_PR_STATE_UPDATE, listener)
-      return () => ipcRenderer.removeListener(IPC.LOCAL_PR_STATE_UPDATE, listener)
     },
   },
 

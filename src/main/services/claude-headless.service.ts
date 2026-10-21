@@ -5,8 +5,7 @@
  * Runs `claude --print --output-format stream-json --verbose` (plus the shared
  * AUTO_PERMISSION_MODE_ARGS — currently empty, so the run inherits the user's
  * auto default). It NEVER passes `--dangerously-skip-permissions` or
- * `--permission-mode acceptEdits`; the caller seeds the worktree permission
- * allowlist + hooks so an auto-mode run isn't starved. Pipes the prompt on
+ * `--permission-mode acceptEdits`; the caller writes the worktree hooks. Pipes the prompt on
  * stdin, parses NDJSON into human-readable transcript lines, captures
  * session_id + total cost, kills the process tree on timeout/cancel.
  */
@@ -167,8 +166,7 @@ export function runHeadlessClaude(opts: HeadlessClaudeOptions): Promise<Headless
 
     // No `--dangerously-skip-permissions` / `--permission-mode acceptEdits`:
     // AUTO_PERMISSION_MODE_ARGS is empty so we inherit the user's auto default,
-    // matching the foreground path. The caller seeds the worktree allowlist so
-    // the run can still act on pre-approved tools.
+    // matching the foreground path.
     const args = [
       '--print',
       '--output-format',

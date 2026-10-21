@@ -92,9 +92,6 @@ vi.mock('../../../src/main/services/notification-server', () => ({
 vi.mock('../../../src/main/services/hook.service', () => ({
   writeClaudeHookSettings: vi.fn(),
 }))
-vi.mock('../../../src/main/services/permission-sync.service', () => ({
-  seedPermissions: vi.fn(),
-}))
 
 vi.mock('child_process', () => ({
   default: { execFile: h.execFileMock },

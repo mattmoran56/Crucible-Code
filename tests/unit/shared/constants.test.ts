@@ -32,8 +32,8 @@ describe('IPC channel constants', () => {
 describe('IPC channel naming conventions', () => {
   const entries = Object.entries(IPC) as Array<[string, string]>
 
-  it('exposes exactly 196 channels (update this count when adding channels)', () => {
-    expect(entries.length).toBe(196)
+  it('exposes exactly 171 channels (update this count when adding channels)', () => {
+    expect(entries.length).toBe(171)
   })
 
   it('every key is SCREAMING_SNAKE_CASE', () => {
@@ -65,8 +65,8 @@ describe('IPC channel naming conventions', () => {
   it('uses exactly the known set of namespaces', () => {
     const namespaces = [...new Set(entries.map(([, v]) => v.split(':')[0]))].sort()
     expect(namespaces).toEqual([
-      'account', 'button', 'button-group', 'claude-web', 'file', 'foundry',
-      'git', 'local-pr', 'notes', 'notification', 'notion', 'permissions', 'pr', 'project',
+      'account', 'button', 'button-group', 'claude-web', 'file',
+      'git', 'notes', 'notification', 'notion', 'pr', 'project',
       'remote', 'review-loop', 'scheduler', 'session', 'startup-prompt',
       'terminal', 'update', 'usage', 'worktree',
     ])
@@ -131,7 +131,6 @@ describe('IPC well-known channel spot checks', () => {
     ['REVIEW_LOOP_STATE_UPDATE', 'review-loop:state:update'],
     ['CLAUDE_WEB_LIST_SESSIONS', 'claude-web:list-sessions'],
     ['FILE_READ_BASE64', 'file:read-base64'],
-    ['PERMISSIONS_CHANGED', 'permissions:changed'],
   ])('%s maps to %s', (key, value) => {
     expect(IPC[key as keyof typeof IPC]).toBe(value)
   })
