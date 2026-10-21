@@ -5,8 +5,8 @@ import * as worktreeService from '../services/worktree.service'
 export function registerWorktreeHandlers() {
   handle(
     IPC.WORKTREE_CREATE,
-    async (_e, repoPath: string, sessionName: string, baseBranch?: string) => {
-      return worktreeService.createWorktree(repoPath, sessionName, baseBranch)
+    async (_e, repoPath: string, sessionName: string, baseBranch?: string, branchName?: string) => {
+      return worktreeService.createWorktree(repoPath, sessionName, baseBranch, branchName)
     }
   )
 
@@ -14,8 +14,23 @@ export function registerWorktreeHandlers() {
     return worktreeService.listWorktrees(repoPath)
   })
 
-  handle(IPC.WORKTREE_REMOVE, async (_e, repoPath: string, worktreePath: string) => {
-    return worktreeService.removeWorktree(repoPath, worktreePath)
+  handle(
+    IPC.WORKTREE_REMOVE,
+    async (_e, repoPath: string, worktreePath: string, opts?: worktreeService.RemoveWorktreeOptions) => {
+      return worktreeService.removeWorktree(repoPath, worktreePath, opts)
+    }
+  )
+
+  handle(IPC.WORKTREE_CURRENT_BRANCH, async (_e, worktreePath: string) => {
+    return worktreeService.currentBranch(worktreePath)
+  })
+
+  handle(IPC.WORKTREE_DELETE_LOCAL_BRANCH, async (_e, repoPath: string, branch: string) => {
+    return worktreeService.deleteLocalBranch(repoPath, branch)
+  })
+
+  handle(IPC.WORKTREE_DELETE_REMOTE_BRANCH, async (_e, repoPath: string, branch: string) => {
+    return worktreeService.deleteRemoteBranch(repoPath, branch)
   })
 
   handle(

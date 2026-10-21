@@ -5,6 +5,9 @@ import { join } from 'path'
 import simpleGit from 'simple-git'
 import {
   createWorktree,
+  currentBranch,
+  deleteLocalBranch,
+  deleteRemoteBranch,
   listWorktrees,
   removeWorktree,
 } from '../../../src/main/services/worktree.service'
@@ -140,5 +143,63 @@ describe('worktree.service', () => {
 
     const branches = await g.branch()
     expect(Object.keys(branches.branches)).toContain('keepme')
+  })
+
+  it('createWorktree uses a custom branch name when given', async () => {
+    const info = await createWorktree(repoPath, 'custom', 'main', 'feature/my-branch')
+    expect(info.branch).toBe('feature/my-branch')
+    expect(await currentBranch(info.path)).toBe('feature/my-branch')
+  })
+
+  it('createWorktree refuses an invalid or existing branch name', async () => {
+    await expect(createWorktree(repoPath, 'bad', 'main', 'has space')).rejects.toThrow(/Invalid branch name/)
+    await simpleGit(repoPath).raw(['branch', 'taken', 'main'])
+    await expect(createWorktree(repoPath, 'dup', 'main', 'taken')).rejects.toThrow(/already exists/)
+  })
+
+  it('removeWorktree deletes a custom branch only when asked to', async () => {
+    const g = simpleGit(repoPath)
+    const a = await createWorktree(repoPath, 'a', 'main', 'feature/a')
+    await removeWorktree(repoPath, a.path)
+    expect(Object.keys((await g.branch()).branches)).toContain('feature/a')
+
+    const b = await createWorktree(repoPath, 'b', 'main', 'feature/b')
+    await removeWorktree(repoPath, b.path, { deleteBranch: 'feature/b' })
+    expect(Object.keys((await g.branch()).branches)).not.toContain('feature/b')
+  })
+
+  it('currentBranch is null on a detached HEAD', async () => {
+    const info = await createWorktree(repoPath, 'det', 'main')
+    await simpleGit(info.path).raw(['checkout', '--detach'])
+    expect(await currentBranch(info.path)).toBeNull()
+  })
+
+  it('deleteLocalBranch deletes a free branch but refuses checked-out and default branches', async () => {
+    const g = simpleGit(repoPath)
+    await g.raw(['branch', 'free', 'main'])
+    await deleteLocalBranch(repoPath, 'free')
+    expect(Object.keys((await g.branch()).branches)).not.toContain('free')
+
+    await createWorktree(repoPath, 'busy', 'main')
+    await expect(deleteLocalBranch(repoPath, 'session/busy')).rejects.toThrow(/checked out/)
+    await expect(deleteLocalBranch(repoPath, 'main')).rejects.toThrow(/default branch/)
+    await expect(deleteLocalBranch(repoPath, '-rf')).rejects.toThrow(/Invalid branch name/)
+  })
+
+  it('deleteRemoteBranch deletes the branch on origin and refuses the default branch', async () => {
+    const remotePath = join(tmpRoot, 'remote.git')
+    await mkdir(remotePath)
+    await simpleGit(remotePath).raw(['init', '--bare'])
+    const g = simpleGit(repoPath)
+    await g.addRemote('origin', remotePath)
+    await g.raw(['push', 'origin', 'main'])
+    await g.raw(['branch', 'gone', 'main'])
+    await g.raw(['push', 'origin', 'gone'])
+
+    await deleteRemoteBranch(repoPath, 'gone')
+    const remoteBranches = await simpleGit(remotePath).raw(['branch', '--list'])
+    expect(remoteBranches).not.toMatch(/gone/)
+
+    await expect(deleteRemoteBranch(repoPath, 'main')).rejects.toThrow(/default branch/)
   })
 })

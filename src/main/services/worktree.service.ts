@@ -5,6 +5,7 @@ import { join, dirname, basename, resolve as resolvePath } from 'path'
 import { mkdir, access, realpath } from 'fs/promises'
 import type { WorktreeInfo } from '../../shared/types'
 import { getDefaultBranch } from './git.service'
+import { validateBranchName } from '../../shared/branch-name'
 
 const execFileAsync = promisify(execFile)
 
@@ -65,15 +66,50 @@ async function detachConflictingWorktree(
   return null
 }
 
+async function localBranchExists(repoPath: string, branch: string): Promise<boolean> {
+  try {
+    // execFile, not simple-git: `--quiet` exits 1 with no stderr, which
+    // simple-git does not treat as a failure.
+    await execFileAsync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: repoPath })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Branches currently checked out in any worktree of the repo (main included). */
+async function checkedOutBranches(repoPath: string): Promise<Set<string>> {
+  const out = await simpleGit(repoPath).raw(['worktree', 'list', '--porcelain'])
+  const branches = new Set<string>()
+  for (const line of out.split('\n')) {
+    if (line.startsWith('branch refs/heads/')) branches.add(line.slice('branch refs/heads/'.length))
+  }
+  return branches
+}
+
+function assertDeletableBranch(branch: string): void {
+  const invalid = validateBranchName(branch)
+  if (invalid) throw new Error(`Invalid branch name "${branch}": ${invalid}`)
+}
+
 export async function createWorktree(
   repoPath: string,
   sessionName: string,
-  baseBranch?: string
+  baseBranch?: string,
+  requestedBranch?: string
 ): Promise<WorktreeInfo> {
   const g = simpleGit(repoPath)
-  const branchName = `session/${sessionName}`
+  const branchName = requestedBranch?.trim() || `session/${sessionName}`
+  const invalid = validateBranchName(branchName)
+  if (invalid) throw new Error(`Invalid branch name "${branchName}": ${invalid}`)
   const wtBase = worktreeDir(repoPath)
   const wtPath = join(wtBase, sessionName)
+
+  // The new branch is created with `-b`; refuse up front with a clear message
+  // rather than git's terse "a branch named ... already exists".
+  if (await localBranchExists(repoPath, branchName)) {
+    throw new Error(`A branch named "${branchName}" already exists. Pick a different branch name.`)
+  }
 
   await mkdir(wtBase, { recursive: true })
   await pruneWorktrees(repoPath)
@@ -265,7 +301,19 @@ export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
   return worktrees
 }
 
-export async function removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
+export interface RemoveWorktreeOptions {
+  /**
+   * Also delete the worktree's branch when it is exactly this name (for
+   * app-created branches that do not use the `session/` prefix).
+   */
+  deleteBranch?: string
+}
+
+export async function removeWorktree(
+  repoPath: string,
+  worktreePath: string,
+  opts?: RemoveWorktreeOptions
+): Promise<void> {
   const g = simpleGit(repoPath)
 
   // Look up the branch attached to this worktree before we remove it, so we
@@ -340,12 +388,55 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
     removed = true
   }
 
-  if (removed && attachedBranch && attachedBranch.startsWith('session/')) {
+  const deletable =
+    !!attachedBranch &&
+    (attachedBranch.startsWith('session/') || (!!opts?.deleteBranch && attachedBranch === opts.deleteBranch))
+  if (removed && attachedBranch && deletable) {
     try {
       await g.raw(['branch', '-D', attachedBranch])
     } catch {
       // Branch may not exist or may be checked out elsewhere
     }
+  }
+}
+
+/** `git branch --show-current` in the worktree; null when HEAD is detached. */
+export async function currentBranch(worktreePath: string): Promise<string | null> {
+  const out = (await simpleGit(worktreePath).raw(['branch', '--show-current'])).trim()
+  return out || null
+}
+
+/**
+ * Delete a local branch (`git branch -D`). Refuses the repo's default branch
+ * and any branch checked out in a worktree.
+ */
+export async function deleteLocalBranch(repoPath: string, branch: string): Promise<void> {
+  assertDeletableBranch(branch)
+  await pruneWorktrees(repoPath)
+  if (branch === (await getDefaultBranch(repoPath))) {
+    throw new Error(`Refusing to delete the default branch "${branch}"`)
+  }
+  if ((await checkedOutBranches(repoPath)).has(branch)) {
+    throw new Error(`Branch "${branch}" is checked out in a worktree`)
+  }
+  await simpleGit(repoPath).raw(['branch', '-D', branch])
+}
+
+/**
+ * Delete a branch on origin (`git push origin --delete`). Refuses the repo's
+ * default branch.
+ */
+export async function deleteRemoteBranch(repoPath: string, branch: string): Promise<void> {
+  assertDeletableBranch(branch)
+  if (branch === (await getDefaultBranch(repoPath))) {
+    throw new Error(`Refusing to delete the default branch "${branch}"`)
+  }
+  try {
+    await execFileAsync('git', ['push', 'origin', '--delete', branch], { cwd: repoPath })
+  } catch (err) {
+    const e = err as { stderr?: string; message?: string }
+    const detail = String(e.stderr || '').trim() || e.message || String(err)
+    throw new Error(`Could not delete origin/${branch}: ${detail}`)
   }
 }
 

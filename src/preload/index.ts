@@ -91,11 +91,21 @@ const api = {
   },
 
   worktree: {
-    create: (repoPath: string, sessionName: string, baseBranch?: string) =>
-      ipcRenderer.invoke(IPC.WORKTREE_CREATE, repoPath, sessionName, baseBranch),
+    create: (repoPath: string, sessionName: string, baseBranch?: string, branchName?: string) =>
+      ipcRenderer.invoke(IPC.WORKTREE_CREATE, repoPath, sessionName, baseBranch, branchName),
     list: (repoPath: string) => ipcRenderer.invoke(IPC.WORKTREE_LIST, repoPath),
-    remove: (repoPath: string, worktreePath: string) =>
-      ipcRenderer.invoke(IPC.WORKTREE_REMOVE, repoPath, worktreePath),
+    /** `opts.deleteBranch`: also delete the worktree's branch when it has exactly this name. */
+    remove: (repoPath: string, worktreePath: string, opts?: { deleteBranch?: string }) =>
+      ipcRenderer.invoke(IPC.WORKTREE_REMOVE, repoPath, worktreePath, opts),
+    /** `git branch --show-current` in the worktree; null when detached. */
+    currentBranch: (worktreePath: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.WORKTREE_CURRENT_BRANCH, worktreePath),
+    /** `git branch -D`; refuses the default branch and branches checked out in a worktree. */
+    deleteLocalBranch: (repoPath: string, branch: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.WORKTREE_DELETE_LOCAL_BRANCH, repoPath, branch),
+    /** `git push origin --delete`; refuses the default branch. */
+    deleteRemoteBranch: (repoPath: string, branch: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.WORKTREE_DELETE_REMOTE_BRANCH, repoPath, branch),
     createFromBranch: (
       repoPath: string,
       sessionName: string,

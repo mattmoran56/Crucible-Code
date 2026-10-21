@@ -35,6 +35,9 @@ export const IPC = {
   WORKTREE_CREATE_FOR_PR: 'worktree:create-for-pr',
   WORKTREE_LIST_PR: 'worktree:list-pr',
   WORKTREE_REMOVE_PR: 'worktree:remove-pr',
+  WORKTREE_CURRENT_BRANCH: 'worktree:current-branch',
+  WORKTREE_DELETE_LOCAL_BRANCH: 'worktree:delete-local-branch',
+  WORKTREE_DELETE_REMOTE_BRANCH: 'worktree:delete-remote-branch',
 
   // Terminal
   TERMINAL_SPAWN: 'terminal:spawn',
