@@ -275,6 +275,7 @@ Sessions can open embedded terminals (xterm.js + node-pty) in the worktree direc
 The agent interface: a chat UI for Claude Code, driven over `claude -p --input-format stream-json` instead of a terminal. There is no setting — every session's **Agent** tab is a visual agent, and no Claude terminal is spawned for it.
 
 - **Opening one** — Each session's Agent tab starts one (a startup prompt becomes its first message). **New Agent** in the workspace tab bar's **+** menu opens another, labelled **Agent N**; **New Terminal** still opens a plain shell. Agent tabs from layouts saved before this change open as visual agents too
+- **Code workspace** — **New Agent** in the Code (editor) view opens a visual agent in the repo root too. These aren't tied to a session, so they start a fresh conversation after an app restart
 - **Background sessions** — Notion task pickups and scheduled sessions start the new session's visual agent with their prompt, and queued messages are sent to it, without opening the session
 - **Model picker** — Choose Opus, Fable, Sonnet or Haiku below the composer (or with `/model`); switching mid-conversation keeps the conversation
 - **Tool cards** — Each tool call is a card: edits render as syntax-highlighted diffs, Bash shows the command and its output, reads and searches collapse into a one-line summary you can expand
