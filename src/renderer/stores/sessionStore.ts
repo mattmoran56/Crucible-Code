@@ -5,6 +5,9 @@ import { renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name
 import { useTerminalStore } from './terminalStore'
 import { useCloudSessionStore } from './cloudSessionStore'
 import { useVisualAgentStore } from './visualAgentStore'
+import { useProjectStore } from './projectStore'
+import { projectConfigDir } from '../lib/visualAgents'
+import { recoverAbandonedTeleports } from '../lib/teleportRecovery'
 
 type WorkspaceTab = 'agent' | 'git' | 'pr'
 
@@ -159,8 +162,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
 
     const thisRequestId = ++loadSessionsRequestId
-    const sessions = sortByCreatedAtDesc(await window.api.session.list(projectId))
+    const listed = await window.api.session.list(projectId)
     if (thisRequestId !== loadSessionsRequestId) return  // stale response, discard
+    // Teleports abandoned before anything was saved locally go back to the cloud.
+    const project = useProjectStore.getState().projects.find((p) => p.id === projectId)
+    const recovered = await recoverAbandonedTeleports(listed, {
+      configDir: projectConfigDir(project, useProjectStore.getState().claudeAccounts),
+      liveTeleports: useCloudSessionStore.getState().teleports,
+    })
+    if (thisRequestId !== loadSessionsRequestId) return
+    if (recovered !== listed) await window.api.session.save(projectId, recovered)
+    const sessions = sortByCreatedAtDesc(recovered)
     const currentId = get().activeSessionId
     const stillExists = currentId && sessions.some((s) => s.id === currentId)
 
