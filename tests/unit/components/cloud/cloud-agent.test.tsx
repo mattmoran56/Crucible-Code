@@ -1,9 +1,10 @@
 // Cloud sessions in the session workspace: the core Agent tab shows the cloud
 // panel (embedded claude.ai page + Teleport) for cloud sessions, teleport
-// refuses a dirty tree and otherwise swaps the page for the teleport PTY and
-// switches the session local, a branch change made by the teleport is
-// followed (and cleanup only offered), and a session teleported in an
-// earlier run resumes its discovered conversation as a visual agent.
+// refuses a dirty tree and otherwise swaps the page for the "Teleporting…"
+// view over the teleport PTY and switches the session local; once the run is
+// done the tab resumes the local conversation as a visual agent. A branch
+// change made by the teleport is followed (and cleanup only offered), and a
+// session teleported in an earlier run resumes its discovered conversation.
 import React from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -37,6 +38,7 @@ import { CloudWebPool } from '../../../../src/renderer/components/cloud/CloudWeb
 import { useCloudWebPoolStore } from '../../../../src/renderer/stores/cloudWebPoolStore'
 import { useCloudSessionStore } from '../../../../src/renderer/stores/cloudSessionStore'
 import { cloudCreatedPatch, useCloudCreateBootstrap } from '../../../../src/renderer/lib/cloudCreate'
+import { _resetAppliedTeleports } from '../../../../src/renderer/lib/cloudTeleport'
 import { useSessionStore } from '../../../../src/renderer/stores/sessionStore'
 import { useProjectStore } from '../../../../src/renderer/stores/projectStore'
 import { useWorkspaceLayoutStore } from '../../../../src/renderer/stores/workspaceLayoutStore'
@@ -54,8 +56,15 @@ const cloudSession = {
 
 let dataListeners: Array<(id: string, data: string) => void>
 let exitListeners: Array<(id: string, code: number) => void>
+let teleportListeners: Array<(state: any) => void>
 const api = {
   teleport: vi.fn(),
+  teleportState: vi.fn(async (): Promise<any> => null),
+  finishTeleport: vi.fn(async (): Promise<any> => null),
+  onTeleportEvent: vi.fn((cb: (state: any) => void) => {
+    teleportListeners.push(cb)
+    return () => (teleportListeners = teleportListeners.filter((x) => x !== cb))
+  }),
   discoverLocal: vi.fn(),
   send: vi.fn(async () => ({ sessionId: 'session_01abcdefgh', url: '' })),
   openUrl: vi.fn(async () => {}),
@@ -77,6 +86,8 @@ beforeEach(() => {
   worktree.currentBranch.mockResolvedValue('session/feat')
   dataListeners = []
   exitListeners = []
+  teleportListeners = []
+  _resetAppliedTeleports()
   ;(window as any).api = {
     terminal: {
       spawn: terminalSpawn,
@@ -108,7 +119,7 @@ beforeEach(() => {
     didStash: false,
     pendingStartup: null,
   } as any)
-  useCloudSessionStore.setState({ teleports: {}, branchNotices: {} })
+  useCloudSessionStore.setState({ teleports: {}, teleportRuns: {}, branchNotices: {} })
   useCloudWebPoolStore.setState({ entries: {}, claims: {} })
   useWorkspaceLayoutStore.setState({ columns: [], savedLayouts: {} })
 })
@@ -177,39 +188,96 @@ describe('cloud session Agent tab', () => {
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('teleport on a clean tree replaces the page with the teleport PTY and marks the session local', async () => {
-    api.teleport.mockResolvedValue({ ok: true, terminalId: 'term-teleport' })
-    render(<SessionWorkspace />)
+  const teleportRun = (patch: Record<string, unknown> = {}) => ({
+    sessionId: 's1',
+    projectId: 'p1',
+    terminalId: 'term-teleport',
+    status: 'running',
+    steps: [],
+    startedAt: '2026-10-21T10:00:00.000Z',
+    ...patch,
+  })
+  const emitTeleport = (patch: Record<string, unknown>) =>
+    act(() => teleportListeners.forEach((cb) => cb(teleportRun(patch))))
+  function Boot() {
+    useCloudCreateBootstrap()
+    return <SessionWorkspace />
+  }
+  const startTeleport = async () => {
+    api.teleport.mockResolvedValue({ ok: true, terminalId: 'term-teleport', state: teleportRun() })
+    render(<Boot />)
     fireEvent.click(screen.getByRole('button', { name: /Teleport/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Teleport' }))
-    await waitFor(() => expect(screen.getByTestId('terminal').dataset.terminal).toBe('term-teleport'))
+    await waitFor(() => expect(screen.getByTestId('teleport-progress')).toBeTruthy())
+  }
+
+  it('teleport on a clean tree shows progress over the PTY, then resumes the conversation as a visual agent', async () => {
+    await startTeleport()
+    expect(screen.getByTestId('terminal').dataset.terminal).toBe('term-teleport')
     expect(screen.queryByTestId('cloud-web-view')).toBeNull()
-    expect(api.teleport).toHaveBeenCalledWith(expect.objectContaining({ cloudSessionId: 'session_01abcdefgh', worktreePath: '/wt/feat' }))
+    expect(api.teleport).toHaveBeenCalledWith(
+      expect.objectContaining({ cloudSessionId: 'session_01abcdefgh', worktreePath: '/wt/feat', projectId: 'p1' })
+    )
     const s = useSessionStore.getState().sessions[0]
     expect(s.location).toBe('local')
-    expect(s.cloud?.teleportedAt).toMatch(/^\d{4}-\d\d-\d\dT/)
+    expect(s.cloud?.teleportedAt).toBe('2026-10-21T10:00:00.000Z')
     expect(s.cloud?.sessionId).toBe('session_01abcdefgh')
-    // Still the teleport PTY this run, not a visual agent.
-    expect(panel()).not.toBeNull()
-    expect(screen.queryByTestId('visual-agent')).toBeNull()
     expect(screen.getByText('Teleported · Local')).toBeTruthy()
-    expect(save).toHaveBeenCalled()
+    // The terminal is there but collapsed behind the step list.
+    expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('false')
 
-    // When the local session exits, the user can switch to a visual agent.
-    api.discoverLocal.mockResolvedValue('local-claude-1')
-    act(() => {
-      for (const cb of exitListeners) cb('term-teleport', 0)
-    })
-    await waitFor(() => expect(worktree.currentBranch).toHaveBeenCalledWith('/wt/feat'))
-    // Same branch: no notice, nothing renamed.
-    expect(screen.queryByText(/Teleport checked out/)).toBeNull()
-    expect(useSessionStore.getState().sessions[0].branchName).toBe('session/feat')
-    fireEvent.click(screen.getByRole('button', { name: 'Continue as local agent' }))
+    emitTeleport({ steps: ['Validating session', 'Fetching session logs'] })
+    const steps = () =>
+      [...screen.getByRole('list', { name: 'Teleport progress' }).querySelectorAll('li')].map((li) => li.dataset.state)
+    expect(steps()).toEqual(['done', 'done', 'active', 'todo', 'todo', 'todo'])
+
+    // The CLI is done: the tab becomes the visual agent on the local conversation.
+    emitTeleport({ status: 'done', claudeSessionId: 'local-claude-1', steps: ['Session resumed'] })
     await waitFor(() => expect(screen.getByTestId('visual-agent').dataset.resume).toBe('local-claude-1'))
+    expect(screen.queryByTestId('teleport-progress')).toBeNull()
+    const after = useSessionStore.getState().sessions[0]
+    expect(after.visualAgents?.agent?.claudeSessionId).toBe('local-claude-1')
+    expect(after.cloud?.localResumeResolved).toBe(true)
+    expect(useCloudSessionStore.getState().teleports).toEqual({})
+    expect(api.discoverLocal).not.toHaveBeenCalled()
+  })
+
+  it('reveals the terminal when the CLI asks something, and offers to open the Agent view', async () => {
+    await startTeleport()
+    emitTeleport({ status: 'needs-input', steps: ['Validating session'] })
+    expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(/Claude needs your input/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Agent view' }))
+    expect(api.finishTeleport).toHaveBeenCalledWith('s1')
+  })
+
+  it('a teleport that ends early shows why, and can continue as a local agent', async () => {
+    await startTeleport()
+    emitTeleport({ status: 'failed', error: 'Teleport ended (exit 1) before the conversation came down:\nnope' })
+    expect(screen.getByRole('alert').textContent).toMatch(/before the conversation came down/)
+    api.discoverLocal.mockResolvedValue('local-claude-2')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue as local agent' }))
+    await waitFor(() => expect(screen.getByTestId('visual-agent').dataset.resume).toBe('local-claude-2'))
+    expect(api.discoverLocal).toHaveBeenCalledWith(expect.objectContaining({ since: '2026-10-21T10:00:00.000Z' }))
+  })
+
+  it('picks the run back up from the main process after a remount', async () => {
+    useSessionStore.setState({
+      sessions: [{ ...cloudSession, location: 'local', cloud: { ...cloudSession.cloud, teleportedAt: '2026-10-21T10:00:00.000Z' } }],
+    } as any)
+    useCloudSessionStore.getState().setTeleport('s1', 'term-teleport')
+    api.teleportState.mockResolvedValue(teleportRun({ steps: ['Validating session', 'Fetching session logs', 'Getting branch info'] }))
+    render(<Boot />)
+    await waitFor(() =>
+      expect(
+        [...screen.getByRole('list', { name: 'Teleport progress' }).querySelectorAll('li')].map((li) => li.dataset.state)
+      ).toEqual(['done', 'done', 'done', 'active', 'todo', 'todo'])
+    )
+    expect(api.teleportState).toHaveBeenCalledWith('s1')
   })
 
   it('follows a different branch checked out by the teleport, and only offers cleanup', async () => {
-    api.teleport.mockResolvedValue({ ok: true, terminalId: 'term-teleport' })
+    api.teleport.mockResolvedValue({ ok: true, terminalId: 'term-teleport', state: teleportRun() })
     worktree.currentBranch.mockResolvedValue('claude/feat-xyz')
     render(<SessionWorkspace />)
     fireEvent.click(screen.getByRole('button', { name: /Teleport/ }))
