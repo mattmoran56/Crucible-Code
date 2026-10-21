@@ -378,12 +378,12 @@ describe('sessionStore.removeSession', () => {
     expect(worktreeApi.remove).toHaveBeenCalledWith('/repo', '/wt/s1', { deleteBranch: 'feature/x' })
   })
 
-  it('deletes the remote branch when asked, preferring the cloud branch', async () => {
+  it('deletes the remote branch when asked, following the session branch (reality after a teleport)', async () => {
     useSessionStore.setState({
-      sessions: [S('s1', { branchName: 'session/s1', cloud: { sessionId: 'session_1', url: 'u', branch: 'session/cloudy' } })],
+      sessions: [S('s1', { branchName: 'claude/s1-x', cloud: { sessionId: 'session_1', url: 'u', branch: 'session/s1' } })],
     } as any)
     await useSessionStore.getState().removeSession('p1', '/repo', 's1', { deleteRemoteBranch: true })
-    expect(worktreeApi.deleteRemoteBranch).toHaveBeenCalledWith('/repo', 'session/cloudy')
+    expect(worktreeApi.deleteRemoteBranch).toHaveBeenCalledWith('/repo', 'claude/s1-x')
   })
 
   it('toasts but still removes the session when the remote delete fails', async () => {

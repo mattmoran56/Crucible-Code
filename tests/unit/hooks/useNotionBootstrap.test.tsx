@@ -138,7 +138,7 @@ describe('useNotionBootstrap', () => {
     await act(async () => {
       await fireListeners[0](payload)
     })
-    expect(worktreeApi.create).toHaveBeenCalledWith('/repo/A', 'hello-world', undefined)
+    expect(worktreeApi.create).toHaveBeenCalledWith('/repo/A', 'hello-world', undefined, undefined)
     expect(sessionApi.save).toHaveBeenCalledTimes(1)
     const saved = persisted['proj-A']
     expect(saved).toHaveLength(1)
