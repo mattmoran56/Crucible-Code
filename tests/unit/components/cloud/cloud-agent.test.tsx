@@ -33,6 +33,8 @@ vi.mock('../../../../src/renderer/components/layout/WorkspaceColumn', () => ({
 
 import { SessionWorkspace } from '../../../../src/renderer/components/layout/SessionWorkspace'
 import { CloudWebView } from '../../../../src/renderer/components/cloud/CloudWebView'
+import { CloudWebPool } from '../../../../src/renderer/components/cloud/CloudWebPool'
+import { useCloudWebPoolStore } from '../../../../src/renderer/stores/cloudWebPoolStore'
 import { useCloudSessionStore } from '../../../../src/renderer/stores/cloudSessionStore'
 import { cloudCreatedPatch, useCloudCreateBootstrap } from '../../../../src/renderer/lib/cloudCreate'
 import { useSessionStore } from '../../../../src/renderer/stores/sessionStore'
@@ -107,6 +109,7 @@ beforeEach(() => {
     pendingStartup: null,
   } as any)
   useCloudSessionStore.setState({ teleports: {}, branchNotices: {} })
+  useCloudWebPoolStore.setState({ entries: {}, claims: {} })
   useWorkspaceLayoutStore.setState({ columns: [], savedLayouts: {} })
 })
 
@@ -132,7 +135,13 @@ describe('cloud session Agent tab', () => {
   it('embeds a real <webview> on the claude-web partition inside Electron', () => {
     const ua = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Chrome/130 Electron/33.4.11')
     try {
-      render(<SessionWorkspace />)
+      // The page itself lives in the app-root pool, laid over the Agent tab.
+      render(
+        <>
+          <CloudWebPool />
+          <SessionWorkspace />
+        </>
+      )
       const view = screen.getByTestId('cloud-webview')
       expect(view.tagName.toLowerCase()).toBe('webview')
       expect(view.getAttribute('src')).toBe('https://claude.ai/code/session_01abcdefgh')
@@ -247,48 +256,33 @@ describe('cloud session Agent tab', () => {
 })
 
 describe('CloudWebView', () => {
-  const renderView = (visible = true) => {
-    const onOpen = vi.fn()
-    const utils = render(<CloudWebView url="https://claude.ai/code/session_01abc" visible={visible} onOpenInBrowser={onOpen} embed />)
-    return { ...utils, onOpen, view: () => screen.getByTestId('cloud-webview') }
-  }
-  const fire = (el: Element, type: string, props: Record<string, unknown> = {}) =>
+  // The page's states (spinner, failure, retry, switching) are covered in
+  // cloud-web-pool.test.tsx; here, the placeholder side.
+  const view = (visible: boolean) => (
+    <>
+      <CloudWebPool />
+      <CloudWebView sessionId="s1" url="https://claude.ai/code/x" visible={visible} embed />
+    </>
+  )
+
+  it('opens Open in browser through the app when the page fails', () => {
+    render(view(true))
     act(() => {
-      el.dispatchEvent(Object.assign(new Event(type), props))
+      screen.getByTestId('cloud-webview').dispatchEvent(Object.assign(new Event('did-fail-load'), { errorCode: -106, errorDescription: 'ERR_INTERNET_DISCONNECTED', isMainFrame: true }))
     })
-
-  it('shows a spinner until the page has loaded', () => {
-    const { view } = renderView()
-    expect(screen.getByRole('status').textContent).toMatch(/Loading claude\.ai/)
-    fire(view(), 'did-stop-loading')
-    expect(screen.queryByRole('status')).toBeNull()
-  })
-
-  it('shows Retry and Open in browser when the main frame fails, ignoring aborted and sub-frame loads', () => {
-    const { view, onOpen } = renderView()
-    fire(view(), 'did-fail-load', { errorCode: -3, errorDescription: 'ERR_ABORTED', isMainFrame: true })
-    fire(view(), 'did-fail-load', { errorCode: -105, errorDescription: 'ERR_NAME_NOT_RESOLVED', isMainFrame: false })
-    expect(screen.queryByRole('alert')).toBeNull()
-    fire(view(), 'did-fail-load', { errorCode: -106, errorDescription: 'ERR_INTERNET_DISCONNECTED', isMainFrame: true })
-    expect(screen.getByRole('alert').textContent).toMatch(/ERR_INTERNET_DISCONNECTED/)
-    fireEvent.click(screen.getByRole('button', { name: /Open in browser/ }))
-    expect(onOpen).toHaveBeenCalled()
-    const before = view()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(screen.queryByRole('alert')).toBeNull()
-    // A fresh webview is created for the retry.
-    expect(view()).not.toBe(before)
-    expect(screen.getByRole('status')).toBeTruthy()
+    // (jsdom has no layout, so the page counts as off screen: query by text.)
+    fireEvent.click(screen.getByText(/Open in browser/))
+    expect(api.openUrl).toHaveBeenCalledWith('https://claude.ai/code/x')
   })
 
   it('is not created until first shown, then stays (hidden) while switching away', () => {
-    const { rerender } = render(<CloudWebView url="https://claude.ai/code/x" visible={false} onOpenInBrowser={() => {}} embed />)
+    const { rerender } = render(view(false))
     expect(screen.queryByTestId('cloud-webview')).toBeNull()
-    rerender(<CloudWebView url="https://claude.ai/code/x" visible onOpenInBrowser={() => {}} embed />)
-    const view = screen.getByTestId('cloud-webview')
-    rerender(<CloudWebView url="https://claude.ai/code/x" visible={false} onOpenInBrowser={() => {}} embed />)
-    expect(screen.getByTestId('cloud-webview')).toBe(view)
-    expect(screen.getByTestId('cloud-web-view').className).toMatch(/hidden/)
+    rerender(view(true))
+    const page = screen.getByTestId('cloud-webview')
+    rerender(view(false))
+    expect(screen.getByTestId('cloud-webview')).toBe(page)
+    expect(screen.getByTestId('cloud-web-slot').style.visibility).toBe('hidden')
   })
 })
 
