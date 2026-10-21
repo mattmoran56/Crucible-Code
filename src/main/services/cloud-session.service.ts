@@ -366,23 +366,64 @@ export interface DiscoverOptions {
 }
 
 /**
- * The local Claude session a teleport created: the newest transcript `.jsonl`
- * under `<config>/projects/<encoded worktree>/` written at/after `since`.
- * Returns null when nothing qualifies.
+ * What Claude Code writes into a teleported conversation's local transcript:
+ * the pulled rows are flagged `remoteSourced`, and the CLI adds an `isMeta`
+ * note that the session continues from another machine (strings verified in
+ * the 2.1.306 binary). Either one marks the transcript as the teleport's.
  */
-export async function discoverTeleportedSession(opts: DiscoverOptions): Promise<string | null> {
-  const sinceMs = Date.parse(opts.since)
-  if (!Number.isFinite(sinceMs)) return null
-  const root = join(claudeConfigRoot(opts.configDir), 'projects')
-  const cwds = new Set([opts.worktreePath])
+export const TELEPORT_MARKERS = ['"remoteSourced":true', 'This session is being continued from another machine']
+
+/** How much of a transcript to scan for a marker (the pulled rows come first). */
+const MARKER_SCAN_BYTES = 2 * 1024 * 1024
+
+export async function hasTeleportMarker(path: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof fs.open>> | null = null
   try {
-    cwds.add(await fs.realpath(opts.worktreePath))
+    handle = await fs.open(path, 'r')
+    const buffer = Buffer.alloc(MARKER_SCAN_BYTES)
+    const { bytesRead } = await handle.read(buffer, 0, MARKER_SCAN_BYTES, 0)
+    const text = buffer.subarray(0, bytesRead).toString('utf-8')
+    return TELEPORT_MARKERS.some((m) => text.includes(m))
+  } catch {
+    return false
+  } finally {
+    await handle?.close().catch(() => {})
+  }
+}
+
+/** The project directories Claude Code may have used for a cwd (raw and real path). */
+export async function projectDirsFor(cwd: string, configDir?: string | null): Promise<string[]> {
+  const root = join(claudeConfigRoot(configDir), 'projects')
+  const cwds = new Set([cwd])
+  try {
+    cwds.add(await fs.realpath(cwd))
   } catch {
     // Worktree gone; the raw path is all we have.
   }
-  let best: { id: string; mtime: number } | null = null
-  for (const cwd of cwds) {
-    const dir = join(root, encodeProjectDir(cwd))
+  return [...cwds].map((c) => join(root, encodeProjectDir(c)))
+}
+
+export interface TeleportTranscript {
+  /** The local Claude session id (the file name). */
+  id: string
+  path: string
+  size: number
+  mtime: number
+  /** Whether the file carries a teleport marker. */
+  marked: boolean
+}
+
+/**
+ * The transcript a teleport wrote: among `.jsonl` files under
+ * `<config>/projects/<encoded worktree>/` written at/after `since`, the newest
+ * one carrying a teleport marker — or, failing that, the newest one (older
+ * CLIs may not mark it). Null when nothing qualifies.
+ */
+export async function findTeleportTranscript(opts: DiscoverOptions): Promise<TeleportTranscript | null> {
+  const sinceMs = Date.parse(opts.since)
+  if (!Number.isFinite(sinceMs)) return null
+  const candidates: Omit<TeleportTranscript, 'marked'>[] = []
+  for (const dir of await projectDirsFor(opts.worktreePath, opts.configDir)) {
     let names: string[]
     try {
       names = await fs.readdir(dir)
@@ -393,15 +434,27 @@ export async function discoverTeleportedSession(opts: DiscoverOptions): Promise<
       if (!name.endsWith('.jsonl')) continue
       const id = name.slice(0, -'.jsonl'.length)
       if (!LOCAL_SESSION_ID.test(id)) continue
-      let mtime: number
+      const path = join(dir, name)
+      let stat: { mtimeMs: number; size: number }
       try {
-        mtime = (await fs.stat(join(dir, name))).mtimeMs
+        stat = await fs.stat(path)
       } catch {
         continue
       }
-      if (mtime < sinceMs - DISCOVERY_SLACK_MS) continue
-      if (!best || mtime > best.mtime) best = { id, mtime }
+      if (stat.mtimeMs < sinceMs - DISCOVERY_SLACK_MS) continue
+      if (candidates.some((c) => c.id === id)) continue
+      candidates.push({ id, path, size: stat.size, mtime: stat.mtimeMs })
     }
   }
-  return best?.id ?? null
+  if (candidates.length === 0) return null
+  candidates.sort((a, b) => b.mtime - a.mtime)
+  for (const c of candidates) {
+    if (await hasTeleportMarker(c.path)) return { ...c, marked: true }
+  }
+  return { ...candidates[0], marked: false }
+}
+
+/** The local Claude session id a teleport created, or null (see findTeleportTranscript). */
+export async function discoverTeleportedSession(opts: DiscoverOptions): Promise<string | null> {
+  return (await findTeleportTranscript(opts))?.id ?? null
 }
