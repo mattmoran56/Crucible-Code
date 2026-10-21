@@ -59,7 +59,17 @@ interface SessionState {
   ) => Promise<void>
   /** Merge `patch` into one session and persist it (location, cloud link, …). */
   patchSession: (projectId: string, sessionId: string, patch: Partial<Omit<Session, 'id' | 'projectId'>>) => Promise<void>
-  removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
+  /**
+   * Remove the session's worktree (and its app-created branch), its terminals
+   * and the session itself. `opts.deleteRemoteBranch` also deletes the branch
+   * on origin, best effort.
+   */
+  removeSession: (
+    projectId: string,
+    repoPath: string,
+    sessionId: string,
+    opts?: { deleteRemoteBranch?: boolean }
+  ) => Promise<void>
   renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
   /**
    * Record (or with `null`, forget) the Claude session + model a visual agent
@@ -96,7 +106,13 @@ export interface CreateSessionOptions {
   location?: SessionLocation
   /** Claude config dir for the project's account (cloud only). */
   configDir?: string | null
+  /** Branch to create for the session. Defaults to `session/<name>`. */
+  branchName?: string
 }
+
+/** The branch a session's remote copy lives on: the cloud agent's, else the local one. */
+export const sessionRemoteBranch = (session: Session): string | undefined =>
+  session.cloud?.branch || session.branchName || undefined
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
   if (!info) return
@@ -216,7 +232,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (cloud && !startupCommand?.trim()) {
       throw new Error('A cloud session needs a task — pick a startup prompt or describe the task')
     }
-    const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch)
+    const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch, options?.branchName)
     const session: Session = {
       id: crypto.randomUUID(),
       name,
@@ -227,6 +243,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       lastActiveAt: new Date().toISOString(),
       baseBranch,
       notionTicket,
+      ownsBranch: true,
     }
 
     if (cloud) {
@@ -238,12 +255,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           configDir: options?.configDir ?? null,
         })
         session.location = 'cloud'
-        session.cloud = { sessionId: created.sessionId, url: created.url }
+        session.cloud = {
+          sessionId: created.sessionId,
+          url: created.url,
+          branch: created.branch ?? worktreeInfo.branch,
+        }
       } catch (err) {
         // Don't leave a half-made session behind: the user can retry, or
         // switch the dialog to Local. (A pushed branch stays on origin.)
         try {
-          await window.api.worktree.remove(repoPath, worktreeInfo.path)
+          await window.api.worktree.remove(repoPath, worktreeInfo.path, { deleteBranch: worktreeInfo.branch })
         } catch {
           // Best effort.
         }
@@ -293,13 +314,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ pendingStartup: { sessionId, command } })
   },
 
-  removeSession: async (projectId, repoPath, sessionId) => {
+  removeSession: async (projectId, repoPath, sessionId, opts) => {
     const session = get().sessions.find((s) => s.id === sessionId)
     if (session) {
       try {
-        await window.api.worktree.remove(repoPath, session.worktreePath)
+        // session/* branches are always cleaned up by the main process; a
+        // custom-named branch only when the app created it.
+        await window.api.worktree.remove(
+          repoPath,
+          session.worktreePath,
+          session.ownsBranch && session.branchName ? { deleteBranch: session.branchName } : undefined
+        )
       } catch {
         // Worktree may already be removed
+      }
+      const remoteBranch = sessionRemoteBranch(session)
+      if (opts?.deleteRemoteBranch && remoteBranch) {
+        try {
+          await window.api.worktree.deleteRemoteBranch(repoPath, remoteBranch)
+        } catch (err) {
+          useToastStore
+            .getState()
+            .addToast('error', `Couldn't delete origin/${remoteBranch}: ${err instanceof Error ? err.message : String(err)}`)
+        }
       }
     }
 
@@ -334,13 +371,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       throw new Error('Another session already uses this name')
     }
 
-    const desiredBranch = `session/${trimmed}`
-    const { newBranch } = await window.api.worktree.renameBranch(
-      repoPath,
-      session.worktreePath,
-      session.branchName,
-      desiredBranch
-    )
+    // A cloud (or teleported) session's branch is bound to the cloud session
+    // on origin, and a custom branch is the user's choice: only the display
+    // name changes. A local session still on its default `session/<name>`
+    // branch follows the new name.
+    let newBranch = session.branchName
+    if (!session.cloud && session.branchName === `session/${session.name}`) {
+      ;({ newBranch } = await window.api.worktree.renameBranch(
+        repoPath,
+        session.worktreePath,
+        session.branchName,
+        `session/${trimmed}`
+      ))
+    }
 
     const sessions = get().sessions.map((s) =>
       s.id === sessionId ? { ...s, name: trimmed, branchName: newBranch } : s

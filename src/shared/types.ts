@@ -83,6 +83,11 @@ export interface Session {
   location?: SessionLocation
   /** The cloud session behind this session, kept after a teleport for reference. */
   cloud?: CloudSessionLink
+  /**
+   * True when the app created `branchName` (via createWorktree), so removing
+   * the session may delete it even when it does not use the `session/` prefix.
+   */
+  ownsBranch?: boolean
 }
 
 export interface Commit {

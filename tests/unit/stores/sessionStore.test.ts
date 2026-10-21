@@ -15,6 +15,7 @@ const gitApi = {
 const worktreeApi = {
   create: vi.fn(),
   remove: vi.fn(),
+  deleteRemoteBranch: vi.fn(),
   createFromBranch: vi.fn(),
   createForPR: vi.fn(),
   listPR: vi.fn(),
@@ -269,18 +270,26 @@ describe('sessionStore.createSession', () => {
   it('creates a worktree, appends the session and makes it active on the agent tab', async () => {
     await useSessionStore.getState().createSession('p1', '/repo', 'feat')
     const s = useSessionStore.getState()
-    expect(worktreeApi.create).toHaveBeenCalledWith('/repo', 'feat', undefined)
+    expect(worktreeApi.create).toHaveBeenCalledWith('/repo', 'feat', undefined, undefined)
     expect(s.sessions).toHaveLength(1)
     expect(s.sessions[0]).toMatchObject({
       name: 'feat',
       branchName: 'session/feat',
       worktreePath: '/wt/new',
       projectId: 'p1',
+      ownsBranch: true,
     })
     expect(s.activeSessionId).toBe(s.sessions[0].id)
     expect(s.activePRNumber).toBeNull()
     expect(s.activeWorkspaceTab).toBe('agent')
     expect(sessionApi.save).toHaveBeenCalledWith('p1', s.sessions)
+  })
+
+  it('passes a custom branch name through to the worktree', async () => {
+    worktreeApi.create.mockResolvedValue({ path: '/wt/new', branch: 'feature/login' })
+    await useSessionStore.getState().createSession('p1', '/repo', 'feat', 'main', undefined, undefined, { branchName: 'feature/login' })
+    expect(worktreeApi.create).toHaveBeenCalledWith('/repo', 'feat', 'main', 'feature/login')
+    expect(useSessionStore.getState().sessions[0]).toMatchObject({ branchName: 'feature/login', ownsBranch: true })
   })
 
   it('sorts the new session ahead of older ones', async () => {
@@ -356,9 +365,33 @@ describe('sessionStore.removeSession', () => {
 
   it('removes the worktree, kills session terminals and persists the filtered list', async () => {
     await useSessionStore.getState().removeSession('p1', '/repo', 's1')
-    expect(worktreeApi.remove).toHaveBeenCalledWith('/repo', '/wt/s1')
+    expect(worktreeApi.remove).toHaveBeenCalledWith('/repo', '/wt/s1', undefined)
+    expect(worktreeApi.deleteRemoteBranch).not.toHaveBeenCalled()
     expect(terminalApi.killSession).toHaveBeenCalledWith('s1')
     expect(sessionApi.save).toHaveBeenCalledWith('p1', [expect.objectContaining({ id: 's2' })])
+    expect(useSessionStore.getState().sessions.map((x) => x.id)).toEqual(['s2'])
+  })
+
+  it('asks the worktree removal to delete an app-created custom branch', async () => {
+    useSessionStore.setState({ sessions: [S('s1', { branchName: 'feature/x', ownsBranch: true })] } as any)
+    await useSessionStore.getState().removeSession('p1', '/repo', 's1')
+    expect(worktreeApi.remove).toHaveBeenCalledWith('/repo', '/wt/s1', { deleteBranch: 'feature/x' })
+  })
+
+  it('deletes the remote branch when asked, preferring the cloud branch', async () => {
+    useSessionStore.setState({
+      sessions: [S('s1', { branchName: 'session/s1', cloud: { sessionId: 'session_1', url: 'u', branch: 'session/cloudy' } })],
+    } as any)
+    await useSessionStore.getState().removeSession('p1', '/repo', 's1', { deleteRemoteBranch: true })
+    expect(worktreeApi.deleteRemoteBranch).toHaveBeenCalledWith('/repo', 'session/cloudy')
+  })
+
+  it('toasts but still removes the session when the remote delete fails', async () => {
+    worktreeApi.deleteRemoteBranch.mockRejectedValue(new Error('no such ref'))
+    useToastStore.setState({ toasts: [] })
+    await useSessionStore.getState().removeSession('p1', '/repo', 's1', { deleteRemoteBranch: true })
+    expect(worktreeApi.deleteRemoteBranch).toHaveBeenCalledWith('/repo', 'session/name-s1')
+    expect(useToastStore.getState().toasts[0].message).toMatch(/origin\/session\/name-s1.*no such ref/)
     expect(useSessionStore.getState().sessions.map((x) => x.id)).toEqual(['s2'])
   })
 
@@ -456,6 +489,23 @@ describe('sessionStore.renameSession', () => {
     expect(renamed.name).toBe('gamma')
     expect(renamed.branchName).toBe('session/gamma')
     expect(sessionApi.save).toHaveBeenCalled()
+  })
+
+  it('keeps a custom branch on a local session and only renames the session', async () => {
+    useSessionStore.setState({ sessions: [S('s1', { name: 'alpha', branchName: 'feature/mine' })] } as any)
+    await useSessionStore.getState().renameSession('p1', '/repo', 's1', 'gamma')
+    expect(worktreeApi.renameBranch).not.toHaveBeenCalled()
+    expect(useSessionStore.getState().sessions[0]).toMatchObject({ name: 'gamma', branchName: 'feature/mine' })
+    expect(sessionApi.save).toHaveBeenCalled()
+  })
+
+  it('never renames the branch of a cloud (or teleported) session', async () => {
+    useSessionStore.setState({
+      sessions: [S('s1', { name: 'alpha', branchName: 'session/alpha', cloud: { sessionId: 'session_1', url: 'u' } })],
+    } as any)
+    await useSessionStore.getState().renameSession('p1', '/repo', 's1', 'gamma')
+    expect(worktreeApi.renameBranch).not.toHaveBeenCalled()
+    expect(useSessionStore.getState().sessions[0]).toMatchObject({ name: 'gamma', branchName: 'session/alpha' })
   })
 
   it('trims surrounding whitespace before validating and renaming', async () => {
@@ -878,7 +928,7 @@ describe('sessionStore.createSession — cloud', () => {
   })
 
   it('starts a cloud session in the new worktree and records it, without queuing a local prompt', async () => {
-    cloudApi.create.mockResolvedValue({ sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc' })
+    cloudApi.create.mockResolvedValue({ sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc', branch: 'session/fix' })
     await useSessionStore
       .getState()
       .createSession('p1', '/repo', 'fix', 'main', 'fix the bug', undefined, { location: 'cloud', configDir: '/cfg' })
@@ -890,7 +940,11 @@ describe('sessionStore.createSession — cloud', () => {
     })
     const [session] = useSessionStore.getState().sessions
     expect(session.location).toBe('cloud')
-    expect(session.cloud).toEqual({ sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc' })
+    expect(session.cloud).toEqual({
+      sessionId: 'session_01abc',
+      url: 'https://claude.ai/code/session_01abc',
+      branch: 'session/fix',
+    })
     expect(useSessionStore.getState().pendingStartup).toBeNull()
     expect(sessionApi.save).toHaveBeenCalled()
   })
@@ -907,7 +961,7 @@ describe('sessionStore.createSession — cloud', () => {
     await expect(
       useSessionStore.getState().createSession('p1', '/repo', 'fix', 'main', 'go', undefined, { location: 'cloud' })
     ).rejects.toThrow(/Couldn't start the cloud session: Not logged in/)
-    expect(worktreeApi.remove).toHaveBeenCalledWith('/repo', '/wt/fix')
+    expect(worktreeApi.remove).toHaveBeenCalledWith('/repo', '/wt/fix', { deleteBranch: 'session/fix' })
     expect(sessionApi.save).not.toHaveBeenCalled()
     expect(useSessionStore.getState().sessions).toEqual([])
   })
