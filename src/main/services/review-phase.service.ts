@@ -19,7 +19,6 @@ import {
 } from './terminal.service'
 import { onHookEvent } from './notification-server'
 import { writeClaudeHookSettings } from './hook.service'
-import { seedPermissions } from './permission-sync.service'
 import { runHeadlessClaude, killChildTree } from './claude-headless.service'
 
 export const DEFAULT_PHASE_TIMEOUT_MS = 30 * 60 * 1000
@@ -29,7 +28,7 @@ export interface ForegroundPhaseOptions {
   /** Used as the hook-routing contextId — must be a registered session/context id. */
   sessionId: string
   worktreePath: string
-  /** Source repo for permission seeding (optional). */
+  /** Source repo, forwarded to the spawned terminal (optional). */
   repoPath?: string
   claudeTheme?: string
   claudeConfigDir?: string
@@ -63,11 +62,9 @@ export interface ForegroundPhaseResult {
 }
 
 export interface HeadlessPhaseOptions {
-  /** Hook-routing not needed (no PTY/Stop hook); used only for permission seeding. */
+  /** Hook-routing not needed (no PTY/Stop hook); used for the worktree hook settings. */
   sessionId: string
   worktreePath: string
-  /** Source repo for permission seeding (optional). */
-  repoPath?: string
   claudeTheme?: string
   claudeConfigDir?: string
   /** Prompt piped to `claude -p` on stdin. */
@@ -80,27 +77,18 @@ export interface HeadlessPhaseOptions {
 }
 
 /**
- * Run one review-loop phase headlessly via `claude -p` (no PTY). Seeds the same
- * worktree hooks + permission allowlist as the foreground path so an auto-mode
- * run isn't starved, streams the transcript through `onTranscript`, and resolves
+ * Run one review-loop phase headlessly via `claude -p` (no PTY). Writes the same
+ * worktree hooks as the foreground path, streams the transcript through `onTranscript`, and resolves
  * with a {@link ForegroundPhaseResult} (terminalId is empty — there is no PTY).
  */
 export async function runHeadlessPhase(
   opts: HeadlessPhaseOptions
 ): Promise<ForegroundPhaseResult> {
-  // Same worktree prep as the foreground path: hooks (harmless here) + the
-  // inherited permission allowlist so a non-bypass run can act on approved tools.
+  // Same worktree prep as the foreground path: hooks (harmless here).
   try {
     writeClaudeHookSettings(opts.worktreePath, opts.claudeTheme ?? 'dark', opts.sessionId)
   } catch {
     // Non-fatal.
-  }
-  if (opts.repoPath) {
-    try {
-      seedPermissions(opts.repoPath, opts.worktreePath)
-    } catch {
-      // Non-fatal.
-    }
   }
 
   if (opts.signal?.aborted) {
@@ -157,19 +145,11 @@ export function runForegroundPhase(
   return new Promise((resolve) => {
     const timeoutMs = opts.timeoutMs ?? DEFAULT_PHASE_TIMEOUT_MS
 
-    // Make sure the worktree has our hooks (so Stop fires) and the inherited
-    // permission allowlist (so a skip-permissions-less run isn't starved).
+    // Make sure the worktree has our hooks (so Stop fires).
     try {
       writeClaudeHookSettings(opts.worktreePath, opts.claudeTheme ?? 'dark', opts.sessionId)
     } catch {
       // Non-fatal — a missing Stop hook only means we fall back to the timeout.
-    }
-    if (opts.repoPath) {
-      try {
-        seedPermissions(opts.repoPath, opts.worktreePath)
-      } catch {
-        // Non-fatal.
-      }
     }
 
     const claudeArgs = opts.autoAcceptEdits ? AUTO_PERMISSION_MODE_ARGS : undefined

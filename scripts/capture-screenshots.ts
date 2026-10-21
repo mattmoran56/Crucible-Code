@@ -361,45 +361,6 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 420, height: 900 },
     delay: 800,
   },
-  // ── Foundry ────────────────────────────────────────────────────────────
-  {
-    name: 'foundry-panel-pass-running',
-    storyId: 'foundry-panel--pass-running',
-    viewport: { width: 460, height: 860 },
-    delay: 800,
-  },
-  {
-    name: 'foundry-panel-active-pipelines',
-    storyId: 'foundry-panel--active-pipelines',
-    viewport: { width: 460, height: 860 },
-    delay: 800,
-  },
-  {
-    name: 'foundry-panel-multiple',
-    storyId: 'foundry-panel--multiple-foundries',
-    viewport: { width: 460, height: 860 },
-    delay: 800,
-    // Open the foundry switcher dropdown so the screenshot shows it.
-    clickSelector: 'button[title="Switch foundry"]',
-  },
-  {
-    name: 'foundry-panel-off',
-    storyId: 'foundry-panel--off',
-    viewport: { width: 460, height: 860 },
-    delay: 600,
-  },
-  {
-    name: 'foundry-settings-configured',
-    storyId: 'settings-foundrysettings--configured',
-    viewport: { width: 880, height: 900 },
-    delay: 700,
-  },
-  {
-    name: 'foundry-settings-editor',
-    storyId: 'settings-foundrysettings--editor',
-    viewport: { width: 880, height: 2640 },
-    delay: 1200,
-  },
   {
     name: 'visual-agent',
     storyId: 'app-full-layout--visual-agent',
@@ -421,17 +382,6 @@ const targets: ScreenshotTarget[] = [
     storyId: 'app-full-layout--visual-agent-settings',
     delay: 1500,
     clickNav: 'Project Defaults',
-  },
-  {
-    name: 'local-pr-card',
-    storyId: 'pr-prcard--local',
-    viewport: { width: 340, height: 220 },
-  },
-  {
-    name: 'local-pr-panel',
-    storyId: 'pr-localprreviewpanel--default',
-    viewport: { width: 760, height: 640 },
-    delay: 600,
   },
 ]
 

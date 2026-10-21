@@ -231,16 +231,6 @@ export function getAppActions(): AppActionDef[] {
         window.dispatchEvent(new CustomEvent('app:toggle-panel', { detail: { panel: 'usage' } }))
       },
     },
-    {
-      id: 'app:toggle-permissions',
-      label: 'Toggle Permissions Panel',
-      group: 'App',
-      icon: 'Star',
-      validPlacements: ['session-toolbar', 'project-tabs', 'right-activity-bar'],
-      execute: () => {
-        window.dispatchEvent(new CustomEvent('app:toggle-panel', { detail: { panel: 'permissions' } }))
-      },
-    },
 
     // ── Review Loop ──────────────────────────────────────────
     {

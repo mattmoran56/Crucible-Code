@@ -398,11 +398,4 @@ describe('appActions metadata invariants', () => {
     getAppAction('app:toggle-usage')!.execute()
     expect(detail).toEqual({ panel: 'usage' })
   })
-
-  it('app:toggle-permissions dispatches the permissions panel toggle event', () => {
-    let detail: any = null
-    window.addEventListener('app:toggle-panel', (e) => { detail = (e as CustomEvent).detail }, { once: true })
-    getAppAction('app:toggle-permissions')!.execute()
-    expect(detail).toEqual({ panel: 'permissions' })
-  })
 })

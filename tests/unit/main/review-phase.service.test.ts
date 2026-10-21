@@ -7,7 +7,6 @@ const h = vi.hoisted(() => ({
   killCalls: [] as string[],
   hookListeners: [] as Array<(evt: { contextId: string; tabId: string; hookType: string }) => void>,
   hookSettingsCalls: [] as unknown[][],
-  seedCalls: [] as unknown[][],
   headlessRuns: [] as Array<Record<string, any>>,
   buffer: '',
   spawnId: 'term-1',
@@ -39,12 +38,6 @@ vi.mock('../../../src/main/services/notification-server', () => ({
 vi.mock('../../../src/main/services/hook.service', () => ({
   writeClaudeHookSettings: (...args: unknown[]) => {
     h.hookSettingsCalls.push(args)
-  },
-}))
-
-vi.mock('../../../src/main/services/permission-sync.service', () => ({
-  seedPermissions: (...args: unknown[]) => {
-    h.seedCalls.push(args)
   },
 }))
 
@@ -90,7 +83,6 @@ beforeEach(() => {
   h.killCalls = []
   h.hookListeners = []
   h.hookSettingsCalls = []
-  h.seedCalls = []
   h.headlessRuns = []
   h.buffer = ''
   h.spawnId = 'term-1'
@@ -156,14 +148,12 @@ describe('runForegroundPhase', () => {
     expect(h.spawnCalls[0][11]).toBeUndefined()
   })
 
-  it('writes hook settings and seeds permissions before spawning', async () => {
+  it('writes hook settings before spawning', async () => {
     const p = runForegroundPhase(baseOpts())
     fireHook({ contextId: 'sess-1', tabId: 'review-loop:r1:review', hookType: 'stop' })
     await p
     expect(h.hookSettingsCalls).toHaveLength(1)
     expect(h.hookSettingsCalls[0][0]).toBe('/wt/sess-1')
-    expect(h.seedCalls).toHaveLength(1)
-    expect(h.seedCalls[0]).toEqual(['/repo', '/wt/sess-1'])
   })
 
   it('resolves ok and freezes (kills) the terminal on a matching stop hook', async () => {
@@ -229,12 +219,11 @@ describe('runForegroundPhase', () => {
 })
 
 describe('runHeadlessPhase', () => {
-  it('seeds hooks + permissions, streams the transcript, and joins the output', async () => {
+  it('seeds hooks, streams the transcript, and joins the output', async () => {
     const streamed: string[] = []
     const res = await runHeadlessPhase({
       sessionId: 'sess-1',
       worktreePath: '/wt/sess-1',
-      repoPath: '/repo',
       prompt: 'review it',
       onTranscript: (l) => streamed.push(l),
     })
@@ -245,7 +234,6 @@ describe('runHeadlessPhase', () => {
     expect(streamed).toEqual(['line-a', 'line-b'])
     // Same worktree prep as the foreground path.
     expect(h.hookSettingsCalls).toHaveLength(1)
-    expect(h.seedCalls).toHaveLength(1)
     expect(h.headlessRuns[0].cwd).toBe('/wt/sess-1')
     expect(h.headlessRuns[0].prompt).toBe('review it')
   })

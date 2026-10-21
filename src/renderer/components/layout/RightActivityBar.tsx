@@ -53,44 +53,6 @@ export function RightActivityBar({ activePanel, onToggle }: RightActivityBarProp
         </button>
       </Tooltip>
 
-      <Tooltip content="Permissions" side="left">
-        <button
-          aria-label="Permissions"
-          onClick={() => onToggle('permissions')}
-          className={`w-8 h-8 rounded flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-            activePanel === 'permissions'
-              ? 'bg-accent/15 text-accent'
-              : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
-          }`}
-          style={{ marginTop: 4 }}
-        >
-          {/* Shield icon */}
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-          </svg>
-        </button>
-      </Tooltip>
-
-      <Tooltip content="Foundry" side="left">
-        <button
-          aria-label="Foundry"
-          onClick={() => onToggle('foundry')}
-          className={`w-8 h-8 rounded flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-            activePanel === 'foundry'
-              ? 'bg-accent/15 text-accent'
-              : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
-          }`}
-          style={{ marginTop: 4 }}
-        >
-          {/* Factory/forge icon */}
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 21h18" />
-            <path d="M3 21V11l5 3V11l5 3V11l5 3v7" />
-            <path d="M7 17v.01" /><path d="M12 17v.01" /><path d="M17 17v.01" />
-          </svg>
-        </button>
-      </Tooltip>
-
       {/* Custom buttons */}
       <CustomButtonBar placement="right-activity-bar" />
     </div>

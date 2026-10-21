@@ -52,10 +52,6 @@ vi.mock('../../../src/main/services/claude-headless.service', () => ({
   killChildTree: vi.fn((child: any) => child._exit(null, 'SIGTERM')),
 }))
 vi.mock('../../../src/main/services/hook.service', () => ({ writeClaudeHookSettings: vi.fn() }))
-vi.mock('../../../src/main/services/permission-sync.service', () => ({
-  seedPermissions: vi.fn(),
-  startWatching: vi.fn(),
-}))
 vi.mock('../../../src/main/services/event-bus', () => ({
   emitToRenderer: (_w: unknown, channel: string, agentId: string, frame: unknown) =>
     h.frames.push({ channel, agentId, frame }),
@@ -68,7 +64,6 @@ vi.mock('../../../src/main/services/notification-server', () => ({
 
 import * as svc from '../../../src/main/services/visual-agent/visual-agent.service'
 import { writeClaudeHookSettings } from '../../../src/main/services/hook.service'
-import { seedPermissions, startWatching } from '../../../src/main/services/permission-sync.service'
 
 const SID = '14b03bfe-3bf5-4a09-adb1-896839d8a45d'
 const root = mkdtempSync(join(tmpdir(), 'va-test-'))
@@ -116,8 +111,6 @@ describe('visual agent service', () => {
     // notification server drops; status comes from the run state instead.
     expect(opts.env.CRUCIBLE_TAB_ID).toBe('__visual-agent__')
     expect(writeClaudeHookSettings).toHaveBeenCalledWith('/wt', 'dark', 'session-1')
-    expect(seedPermissions).toHaveBeenCalledWith('/repo', '/wt')
-    expect(startWatching).toHaveBeenCalledWith('/repo', '/wt')
   })
 
   it('drops CLAUDE_CONFIG_DIR when none is provided', async () => {

@@ -31,7 +31,7 @@ describe('notion.service / placeholder helpers', () => {
       )
     })
 
-    it('substitutes {{prUrl}} and {{prNumber}} (Foundry placeholders)', () => {
+    it('substitutes {{prUrl}} and {{prNumber}} (PR placeholders)', () => {
       expect(
         resolvePlaceholders('pr={{prUrl}}#{{prNumber}}', {
           prUrl: 'https://github.com/o/r/pull/42',

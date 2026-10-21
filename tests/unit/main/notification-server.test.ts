@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // notification-server pulls in electron + a couple of services at module load;
 // stub them so the hook-event emitter can be tested in isolation. With no main
@@ -20,11 +20,9 @@ import {
   onHookEvent,
   startNotificationServer,
   stopNotificationServer,
-  setLocalPRCapture,
   registerContextMapping,
-  VISUAL_AGENT_HOOK_TAB,
   removeContextMapping,
-  type LocalPRCaptureArgs,
+  VISUAL_AGENT_HOOK_TAB,
 } from '../../../src/main/services/notification-server'
 import http from 'node:http'
 
@@ -79,22 +77,18 @@ describe('notification-server onHookEvent', () => {
   })
 })
 
-describe('notification-server /local-pr endpoint', () => {
+describe('notification-server /hook endpoint', () => {
   let port = 0
   const fakeWindow = { isDestroyed: () => false, webContents: { send: () => {} } } as any
 
-  function post(path: string, body: unknown): Promise<{ status: number; json: any }> {
+  function post(path: string, body: unknown): Promise<number> {
     return new Promise((resolve, reject) => {
       const data = JSON.stringify(body)
       const req = http.request(
         { host: '127.0.0.1', port, path, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } },
         (res) => {
-          const chunks: Buffer[] = []
-          res.on('data', (c) => chunks.push(c))
-          res.on('end', () => {
-            const text = Buffer.concat(chunks).toString('utf8')
-            resolve({ status: res.statusCode ?? 0, json: text ? JSON.parse(text) : null })
-          })
+          res.resume()
+          res.on('end', () => resolve(res.statusCode ?? 0))
         }
       )
       req.on('error', reject)
@@ -110,43 +104,7 @@ describe('notification-server /local-pr endpoint', () => {
 
   afterEach(() => {
     removeContextMapping('ctx-1')
-    setLocalPRCapture(null)
     stopNotificationServer()
-  })
-
-  it('resolves the context, base64-decodes title/body, and returns the capture result', async () => {
-    let captured: LocalPRCaptureArgs | null = null
-    setLocalPRCapture(async (args) => {
-      captured = args
-      return { number: 7, url: 'https://github.com/local/local/pull/7' }
-    })
-
-    const res = await post('/local-pr?context=ctx-1&tab=agent', {
-      action: 'create',
-      title_b64: Buffer.from('My title').toString('base64'),
-      body_b64: Buffer.from('Multi\nline').toString('base64'),
-      have_title: 1,
-      have_body: 1,
-      base: 'main',
-      head: 'feat/x',
-      draft: true,
-    })
-
-    expect(res.status).toBe(200)
-    expect(res.json).toMatchObject({ ok: true, number: 7, url: 'https://github.com/local/local/pull/7' })
-    expect(captured).toBeTruthy()
-    expect(captured!.action).toBe('create')
-    expect(captured!.projectId).toBe('p1')
-    expect(captured!.worktreePath).toBe('/wt')
-    expect(captured!.fields.title).toBe('My title')
-    expect(captured!.fields.body).toBe('Multi\nline')
-    expect(captured!.fields.draft).toBe(true)
-  })
-
-  it('passes the view payload back as-is', async () => {
-    setLocalPRCapture(async () => ({ ok: true, view_b64: 'Zm9v' } as any))
-    const res = await post('/local-pr?context=ctx-1&tab=agent', { action: 'view', json: 'number' })
-    expect(res.json.view_b64).toBe('Zm9v')
   })
 
   it('routes /hook events to the tab, but drops ones from visual-agent processes', async () => {
@@ -156,11 +114,5 @@ describe('notification-server /local-pr endpoint', () => {
     await post(`/hook?type=stop&context=ctx-1&tab=${VISUAL_AGENT_HOOK_TAB}`, { cwd: '/wt' })
     off()
     expect(received).toEqual(['ctx-1|agent:2|stop'])
-  })
-
-  it('503s when no capture handler is registered', async () => {
-    setLocalPRCapture(null)
-    const res = await post('/local-pr?context=ctx-1&tab=agent', { action: 'create' })
-    expect(res.status).toBe(503)
   })
 })

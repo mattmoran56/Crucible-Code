@@ -2,8 +2,7 @@ import type { CIStatus } from './types'
 
 /**
  * Collapse a GitHub `statusCheckRollup` (or any list of check-like entries) into
- * a single CI status. Shared by the GitHub service (real PR checks) and the
- * local CI runner so both map to the same UI shape.
+ * a single CI status for the PR card / review panel.
  */
 export function deriveCIStatus(
   rollup: Array<{ status?: string | null; conclusion?: string | null }> | null | undefined

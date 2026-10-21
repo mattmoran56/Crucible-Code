@@ -51,8 +51,6 @@ interface SessionState {
   createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string, notionTicket?: NotionTicketLink, agentView?: 'terminal' | 'visual') => Promise<void>
   removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
   renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
-  /** Toggle whether this session's terminals capture `gh pr create` into a local PR. */
-  setSessionCaptureLocalPr: (projectId: string, sessionId: string, enabled: boolean) => Promise<void>
   /** Switch the core Agent tab between the claude terminal and the Visual Agent UI. */
   setSessionAgentView: (projectId: string, sessionId: string, view: 'terminal' | 'visual') => Promise<void>
   /**
@@ -298,16 +296,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     set({ sessions })
-  },
-
-  setSessionCaptureLocalPr: async (projectId, sessionId, enabled) => {
-    const sessions = get().sessions.map((s) =>
-      s.id === sessionId ? { ...s, captureLocalPr: enabled } : s
-    )
-    await window.api.session.save(projectId, sessions)
-    if (get().currentProjectId === projectId) set({ sessions })
-    // Capture is keyed by contextId, which is the session id for sessions.
-    await window.api.localPr.setCapture(sessionId, enabled)
   },
 
   setSessionAgentView: async (projectId, sessionId, view) => {

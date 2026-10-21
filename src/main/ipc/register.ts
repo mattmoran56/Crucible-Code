@@ -10,15 +10,12 @@ import { registerUpdateHandlers } from './update.ipc'
 import { registerNotesHandlers } from './notes.ipc'
 import { registerUsageHandlers } from './usage.ipc'
 import { registerFileHandlers } from './file.ipc'
-import { registerPermissionsHandlers } from './permissions.ipc'
 import { registerButtonHandlers } from './button.ipc'
 import { registerStartupPromptHandlers } from './startup-prompt.ipc'
 import { registerReviewLoopHandlers } from './review-loop.ipc'
 import { registerClaudeWebHandlers } from './claudeWeb.ipc'
 import { registerSchedulerHandlers } from './scheduler.ipc'
 import { registerNotionHandlers } from './notion.ipc'
-import { registerFoundryHandlers } from './foundry.ipc'
-import { registerLocalPRHandlers } from './local-pr.ipc'
 import { registerRemoteHandlers } from './remote.ipc'
 import { registerVisualAgentHandlers } from './visual-agent.ipc'
 import {
@@ -38,15 +35,12 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerNotesHandlers()
   registerUsageHandlers(window)
   registerFileHandlers(window)
-  registerPermissionsHandlers()
   registerButtonHandlers(window)
   registerStartupPromptHandlers()
   registerReviewLoopHandlers(window)
   registerClaudeWebHandlers()
   registerSchedulerHandlers(window)
   registerNotionHandlers(window)
-  registerFoundryHandlers(window)
-  registerLocalPRHandlers(window)
   registerRemoteHandlers(window)
   registerVisualAgentHandlers(window)
 

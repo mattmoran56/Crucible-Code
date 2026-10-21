@@ -182,13 +182,6 @@ test.describe('Right activity bar panels', () => {
     await expect(page.getByText('Rate Limits', { exact: true })).toBeVisible()
   })
 
-  test('Permissions button opens the panel with the seeded allow/deny lists', async ({ page }) => {
-    await page.getByRole('button', { name: 'Permissions', exact: true }).click()
-    // mockApi.permissions.get returns 5 allow + 1 deny for the active repo
-    await expect(page.getByText(/^Allowed \(\d+\)$/)).toBeVisible()
-    await expect(page.getByText(/^Denied \(\d+\)$/)).toBeVisible()
-  })
-
   test('switching panels keeps only one open at a time', async ({ page }) => {
     await page.getByRole('button', { name: 'Notes', exact: true }).click()
     await expect(page.getByText('Architecture Notes')).toBeVisible({ timeout: 5_000 })

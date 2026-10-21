@@ -8,8 +8,7 @@
  * PERMISSIONS (CLAUDE.md, non-negotiable): no `--dangerously-skip-permissions`
  * and no `--permission-mode` of any kind — `AUTO_PERMISSION_MODE_ARGS` (empty)
  * only, so the CLI inherits the user's configured default (auto). The worktree
- * is prepped exactly like a terminal spawn (hook settings + seeded permission
- * allowlist + watcher), and permission questions the CLI escalates arrive as
+ * is prepped exactly like a terminal spawn (hook settings), and permission questions the CLI escalates arrive as
  * `control_request` `can_use_tool` on the stream and are answered by a person
  * in the UI.
  */
@@ -34,7 +33,6 @@ import { emitToRenderer } from '../event-bus'
 import { handleHookEvent, VISUAL_AGENT_HOOK_TAB } from '../notification-server'
 import { killChildTree } from '../claude-headless.service'
 import { writeClaudeHookSettings } from '../hook.service'
-import { seedPermissions, startWatching } from '../permission-sync.service'
 import {
   QUESTION_TOOL,
   agentArgv,
@@ -581,14 +579,6 @@ function prepWorktree(opts: VisualAgentStartOptions): void {
     writeClaudeHookSettings(opts.cwd, 'dark', opts.sessionId)
   } catch (err) {
     console.warn('[visual-agent] hook settings failed:', (err as Error)?.message ?? err)
-  }
-  if (opts.repoPath) {
-    try {
-      seedPermissions(opts.repoPath, opts.cwd)
-      startWatching(opts.repoPath, opts.cwd)
-    } catch (err) {
-      console.warn('[visual-agent] permission sync failed:', (err as Error)?.message ?? err)
-    }
   }
 }
 

@@ -6,11 +6,9 @@ import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import { detectUsageLimit, type UsageLimitKind } from '../../shared/patterns'
 import type { UsageLimitEvent } from '../../shared/types'
-import { handleHookEvent, findContextById, getNotificationServerPort } from './notification-server'
+import { handleHookEvent, findContextById } from './notification-server'
 import { getSessionUsage } from './usage.service'
 import { getStorePath } from '../store-path'
-import { ensureGhShimInstalled } from './gh-shim.service'
-import { shouldCaptureContext } from './local-pr.service'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
@@ -55,7 +53,7 @@ function isTransientSpawnError(err: unknown): boolean {
  * Spawn with bounded retry + backoff. Under heavy load (many concurrent worker
  * toolchains) macOS can return EAGAIN for a `posix_spawn`; node-pty throws
  * "posix_spawnp failed". That's transient — retry a few times with a short
- * backoff instead of letting a one-off saturation kill a session/foreman pass.
+ * backoff instead of letting a one-off saturation kill a session.
  * Exported (with injectable sleep) so it can be unit-tested without real delays.
  */
 export function spawnWithRetry<T>(
@@ -280,14 +278,6 @@ function spawnPty(
 ): pty.IPty {
   const shell = process.env.SHELL || '/bin/zsh'
 
-  // Local-PR capture: when this context is in capture mode, prepend the gh shim
-  // dir to PATH so the agent's `gh pr create` is intercepted into a local PR.
-  const capture = shouldCaptureContext(instance.contextId)
-  const shimDir = capture ? ensureGhShimInstalled() : null
-  // Prepend in the shell body too — the login shell (`-l`) re-sources the
-  // user's profile, which may re-prepend PATH; doing it here wins afterwards.
-  const pathPrefix = shimDir ? `export PATH=${shellQuote(shimDir)}:"$PATH"; ` : ''
-
   let command: string
   let args: string[]
 
@@ -299,11 +289,11 @@ function spawnPty(
       commandString: instance.commandString,
       claudeArgs: instance.claudeArgs,
     })
-    args = ['-l', '-c', pathPrefix + shellBody]
+    args = ['-l', '-c', shellBody]
   } else if (instance.mode === 'command' && instance.commandString) {
     // Run a specific command via shell -l -c "cmd", exits when done
     command = shell
-    args = ['-l', '-c', pathPrefix + instance.commandString]
+    args = ['-l', '-c', instance.commandString]
   } else {
     command = shell
     args = []
@@ -328,15 +318,6 @@ function spawnPty(
   // these to the URL, so the notification server can resolve which tab fired.
   env.CRUCIBLE_CONTEXT_ID = instance.contextId
   env.CRUCIBLE_TAB_ID = instance.tabId
-
-  // Local-PR capture env — read by the gh shim. Also prepend the shim dir to
-  // PATH at the env level (belt-and-braces with the shell-body prepend above).
-  if (shimDir) {
-    env.CRUCIBLE_LOCAL_PR = '1'
-    env.CRUCIBLE_GH_SHIM_DIR = shimDir
-    env.CRUCIBLE_NOTIFY_PORT = String(getNotificationServerPort() ?? '')
-    env.PATH = `${shimDir}:${env.PATH ?? ''}`
-  }
 
   const ptyProcess = spawnWithRetry(() =>
     pty.spawn(command, args, {
@@ -599,10 +580,6 @@ export function killTerminal(terminalId: string): void {
   }
 }
 
-export function getTerminalCwd(terminalId: string): string | undefined {
-  return terminals.get(terminalId)?.cwd
-}
-
 /**
  * Kill every review-loop PTY for a session (tabId prefixed `review-loop:`).
  *
@@ -627,19 +604,16 @@ export function killReviewLoopTerminals(sessionId: string): number {
   return killed
 }
 
-/** Kill all terminals belonging to a session. Returns cwds for cleanup of watchers. */
-export function killSessionTerminals(sessionId: string): string[] {
-  const cwds: string[] = []
+/** Kill all terminals belonging to a session. */
+export function killSessionTerminals(sessionId: string): void {
   for (const [id, instance] of terminals) {
     if (instance.sessionId === sessionId) {
-      cwds.push(instance.cwd)
       instance.stopped = true
       instance.pty.kill()
       terminals.delete(id)
       unpersistTerminal(id)
     }
   }
-  return cwds
 }
 
 /** Kill every terminal (used on app quit). */
