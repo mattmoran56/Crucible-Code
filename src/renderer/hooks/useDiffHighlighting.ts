@@ -222,3 +222,40 @@ export function useDiffHighlighting(
 
   return tokenMap
 }
+
+// --- Standalone code highlighting (shares the singleton above) ---
+
+const LANG_ALIASES: Record<string, string> = {
+  ts: 'typescript', js: 'javascript', py: 'python', sh: 'bash', zsh: 'bash',
+  shell: 'bash', console: 'bash', yml: 'yaml', md: 'markdown', rb: 'ruby', rs: 'rust',
+}
+
+/**
+ * Tokenise a standalone snippet (e.g. a fenced code block) with the shared
+ * highlighter. `lang` may be a fence language or a file path. Resolves null
+ * when the language is unknown or the snippet is too large.
+ */
+export async function highlightCodeTokens(
+  code: string,
+  langOrPath: string | null,
+): Promise<ThemedToken[][] | null> {
+  if (!langOrPath || code.length > 200_000) return null
+  const raw = langOrPath.toLowerCase().trim()
+  const lang = raw.includes('.') || raw.includes('/') ? langFromPath(raw) : (LANG_ALIASES[raw] ?? raw)
+  if (!lang) return null
+  const h = await getOrCreateHighlighter()
+  if (!loadedLangs.has(lang)) {
+    try {
+      await h.loadLanguage(lang as Parameters<typeof h.loadLanguage>[0])
+      loadedLangs.add(lang)
+    } catch {
+      return null
+    }
+  }
+  try {
+    const theme = getShikiTheme()
+    return h.codeToTokens(code, { lang: lang as Parameters<typeof h.codeToTokens>[1]['lang'], theme }).tokens
+  } catch {
+    return null
+  }
+}
