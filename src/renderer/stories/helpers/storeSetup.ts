@@ -16,6 +16,7 @@ import { useButtonStore } from '../../stores/buttonStore'
 import { useStartupPromptStore } from '../../stores/startupPromptStore'
 import { useReviewLoopStore } from '../../stores/reviewLoopStore'
 import { useVisualAgentStore } from '../../stores/visualAgentStore'
+import { useCloudSessionStore } from '../../stores/cloudSessionStore'
 import type { VisualAgentSnapshot } from '../../../shared/visual-agent'
 
 /** The mock bridge's story helpers (see mock/mockApi.ts `__mock`). */
@@ -24,7 +25,7 @@ interface MockHelpers {
 }
 const mockHelpers = (): MockHelpers | null =>
   (typeof window === 'undefined' ? null : (window as unknown as { api?: { __mock?: MockHelpers } }).api?.__mock) ?? null
-import type { ReviewLoopState, SessionStatus } from '../../../shared/types'
+import type { ReviewLoopState, Session, SessionStatus } from '../../../shared/types'
 
 import {
   mockProjects,
@@ -80,6 +81,17 @@ interface StorySetupOptions {
    * `workspaceTabs`) with the demo conversation.
    */
   visualAgent?: { openForkId?: string | null }
+  /**
+   * Make the active session a cloud session (Claude Code on the web), so its
+   * Agent tab shows the cloud panel attached to the mock cloud PTY.
+   */
+  cloudSession?: boolean
+}
+
+/** Fixed cloud link for story sessions (deterministic for visual baselines). */
+export const STORY_CLOUD_LINK = {
+  sessionId: 'session_01Hx7QmCloudDemo',
+  url: 'https://claude.ai/code/session_01Hx7QmCloudDemo',
 }
 
 export function setupStoresForStory(options: StorySetupOptions = {}) {
@@ -108,8 +120,17 @@ export function setupStoresForStory(options: StorySetupOptions = {}) {
 
   // Session store
   const activeSessionForStore = options.activePRNumber ? null : sessionId
+  const sessions = ((mockSessions[projectId] ?? []) as Session[]).map((s) =>
+    options.cloudSession && s.id === sessionId ? { ...s, location: 'cloud' as const, cloud: STORY_CLOUD_LINK } : s
+  )
+  // App.tsx reloads sessions through the mock bridge on mount; pin the list
+  // there too so the cloud session survives the reload.
+  if (typeof window !== 'undefined') {
+    if (options.cloudSession) (window as any).__mockSessions = { [projectId]: sessions }
+    else delete (window as any).__mockSessions
+  }
   useSessionStore.setState({
-    sessions: mockSessions[projectId] ?? [],
+    sessions,
     currentProjectId: projectId,
     activeSessionId: activeSessionForStore,
     activePRNumber: options.activePRNumber ?? null,
@@ -384,4 +405,5 @@ export function resetStores() {
   })
   useWorkspaceLayoutStore.setState({ columns: [], savedLayouts: {} })
   useVisualAgentStore.setState({ agents: {}, errors: {}, ui: {}, options: {} })
+  useCloudSessionStore.setState({ teleports: {} })
 }

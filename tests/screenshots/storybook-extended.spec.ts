@@ -88,6 +88,24 @@ function fullAppExtraTargets(): Target[] {
   ]
 }
 
+/** Cloud sessions: the cloud Agent tab's phases, the Cloud/Local dialog toggle, and the full app. */
+function cloudSessionTargets(): Target[] {
+  const panel = { width: 1000, height: 520 }
+  const app = { width: 1280, height: 800 }
+  const dialog = { width: 900, height: 760 }
+  return [
+    { name: 'cloud-panel-attached', storyId: 'cloud-cloudagentpanel--attached', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-attach-unavailable', storyId: 'cloud-cloudagentpanel--attach-unavailable', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-teleport-blocked', storyId: 'cloud-cloudagentpanel--teleport-blocked', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-teleported', storyId: 'cloud-cloudagentpanel--teleported', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-teleport-ended', storyId: 'cloud-cloudagentpanel--teleport-ended', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-error', storyId: 'cloud-cloudagentpanel--error-state', viewport: panel, delay: 300 },
+    { name: 'create-session-dialog-cloud', storyId: 'sessions-createsessiondialog--cloud-default', viewport: dialog, delay: 600 },
+    { name: 'create-session-dialog-local', storyId: 'sessions-createsessiondialog--local', viewport: dialog, delay: 600 },
+    { name: 'app-cloud-session', storyId: 'app-full-layout--cloud-session', viewport: app, delay: 2000 },
+  ]
+}
+
 function receiverTargets(): Target[] {
   return [
     { name: 'receiver-project-tabs', storyId: 'remote-projecttabs--default', viewport: { width: 420, height: 120 }, delay: 200 },
@@ -139,6 +157,7 @@ const TARGETS: Target[] = [
   ...remotePopoverTargets(),
   ...sessionCardExtraTargets(),
   ...fullAppExtraTargets(),
+  ...cloudSessionTargets(),
   ...receiverTargets(),
   ...themeSweepTargets(),
 ]

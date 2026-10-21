@@ -427,3 +427,14 @@ export const VisualAgentForkSheet: Story = {
     },
   ],
 }
+
+// A cloud session (Claude Code on the web): the Agent tab shows the cloud
+// panel attached to the mock cloud PTY, with Open in browser / Teleport.
+export const CloudSession: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ cloudSession: true })
+      return <Story />
+    },
+  ],
+}

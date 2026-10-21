@@ -199,6 +199,8 @@ export const mockApi = {
   /** Story-only helpers, reached through window.api so stories need no mock imports. */
   __mock: {
     demoVisualAgentSnapshot,
+    /** A fake PTY that prints `lines`; returns its terminal id. */
+    pty: mockPty,
   },
 
   git: {
@@ -323,7 +325,12 @@ export const mockApi = {
   },
 
   session: {
-    list: async (projectId: string) => mockSessions[projectId] ?? [],
+    /**
+     * Stories can pin a project's session list with
+     * `(window as any).__mockSessions = { [projectId]: sessions }` before mount.
+     */
+    list: async (projectId: string) =>
+      (globalThis as any).__mockSessions?.[projectId] ?? mockSessions[projectId] ?? [],
     save: async () => {},
     saveContext: async () => {},
     getContext: async () => null,
