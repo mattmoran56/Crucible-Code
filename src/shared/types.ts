@@ -27,13 +27,25 @@ export interface CloudSessionLink {
   sessionId: string
   /** https://claude.ai/code/... URL for the session. */
   url: string
-  /** ISO time the session was teleported down to the local worktree. */
+  /**
+   * ISO time a teleport down to the local worktree started. The session only
+   * really is local once the teleported conversation was found on disk
+   * (`visualAgents.agent`); until then the teleport may be abandoned and the
+   * session goes back to the cloud (lib/teleportRecovery).
+   */
   teleportedAt?: string
   /**
    * Set once we have tried to find the local Claude session a teleport wrote,
    * so a failed discovery is not retried (and re-noticed) on every launch.
    */
   localResumeResolved?: boolean
+  /**
+   * A teleport was started but abandoned before Claude saved anything locally
+   * (interactive `claude --teleport` only writes a transcript after the first
+   * message), so the session went back to the cloud. The Agent tab says so and
+   * offers to teleport again; cleared by the next teleport.
+   */
+  teleportIncomplete?: boolean
   /** The branch the cloud agent was told to work on and push to. */
   branch?: string
 }

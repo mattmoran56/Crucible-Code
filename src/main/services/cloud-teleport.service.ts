@@ -261,7 +261,7 @@ async function settle(run: Run, code: number): Promise<void> {
   }
   if (run.userFinished) {
     // The user chose the Agent view without a saved transcript: hand over with
-    // no id, and the renderer starts a fresh agent (and says so).
+    // no id, and the renderer puts the session back in the cloud (and says so).
     update(run, { status: 'done', claudeSessionId: undefined, error: undefined })
     return
   }

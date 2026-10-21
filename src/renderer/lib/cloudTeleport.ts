@@ -1,4 +1,5 @@
-// After a teleport: hand the (now local) session to the visual agent.
+// After a teleport: hand the (now local) session to the visual agent — or,
+// when nothing was saved locally, put it back in the cloud.
 //
 // One path for both cases — a teleport finishing during this run (the main
 // process reports the local Claude session id) and one from an earlier run
@@ -16,6 +17,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useToastStore } from '../stores/toastStore'
 import { destroyTerminal } from '../components/terminal/useTerminal'
 import { branchMismatchToast, reconcileTeleportBranch } from './teleportBranch'
+import { abandonedTeleportPatch } from './teleportRecovery'
 
 /** The patch that resumes a teleported session's conversation in the Agent tab. */
 export function teleportResumePatch(session: Session, claudeSessionId: string | null): Partial<Session> {
@@ -34,8 +36,10 @@ export function teleportResumePatch(session: Session, claudeSessionId: string | 
 }
 
 /**
- * Point a teleported session at its local Claude conversation (or, when none
- * was found, let it start a fresh agent) and leave the teleport view.
+ * Point a teleported session at its local Claude conversation and leave the
+ * teleport view. When none was found nothing was saved locally: the teleport
+ * is abandoned and the session goes back to the cloud (lib/teleportRecovery)
+ * instead of starting a fresh agent that would lose the cloud conversation.
  */
 export async function resumeTeleportedSession(session: Session, claudeSessionId: string | null): Promise<void> {
   const store = useSessionStore.getState()
@@ -54,11 +58,13 @@ export async function resumeTeleportedSession(session: Session, claudeSessionId:
   if (!claudeSessionId) {
     useToastStore
       .getState()
-      .addToast('info', `Couldn't find the teleported conversation for ${session.name} — starting a fresh agent.`)
+      .addToast('info', `Teleport of ${session.name} didn't finish — nothing was saved locally. It is back in the cloud.`)
   }
+  const patchFor = (s: Session): Partial<Session> =>
+    claudeSessionId ? teleportResumePatch(s, claudeSessionId) : abandonedTeleportPatch(s)
   // Re-read: the branch reconcile may have patched the session.
   const latest = useSessionStore.getState().sessions.find((s) => s.id === session.id) ?? session
-  const patch = { ...teleportResumePatch(latest, claudeSessionId), ...(branchName ? { branchName } : {}) }
+  const patch = { ...patchFor(latest), ...(branchName ? { branchName } : {}) }
   if (current) {
     // One write, so the switch to the visual agent sees it all at once.
     await store.patchSession(session.projectId, session.id, patch)
@@ -66,7 +72,7 @@ export async function resumeTeleportedSession(session: Session, claudeSessionId:
     const list = await window.api.session.list(session.projectId)
     await window.api.session.save(
       session.projectId,
-      list.map((s) => (s.id === session.id ? { ...s, ...teleportResumePatch(s, claudeSessionId) } : s))
+      list.map((s) => (s.id === session.id ? { ...s, ...patchFor(s) } : s))
     )
   }
   useCloudSessionStore.getState().clearTeleport(session.id)
@@ -84,7 +90,7 @@ async function findSession(sessionId: string, projectId?: string): Promise<Sessi
 /**
  * A finished teleport run → resume it in the Agent tab (once per run). A run
  * the user ended from the terminal before Claude saved anything is `done`
- * with no id: the Agent tab starts fresh (resumeTeleportedSession says so).
+ * with no id: the session goes back to the cloud (resumeTeleportedSession).
  */
 const applied = new Set<string>()
 export async function applyTeleportState(state: CloudTeleportState): Promise<void> {

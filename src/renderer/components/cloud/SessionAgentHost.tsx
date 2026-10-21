@@ -36,7 +36,8 @@ export function SessionAgentHost({ sessionId, visible }: { sessionId: string; vi
  * Finds the local Claude session a teleport wrote (in an earlier run, or one
  * whose PTY went away before it reported) and hands it to the visual agent —
  * the same path a teleport finishing in this run takes (lib/cloudTeleport).
- * On failure it records that it tried and falls through to a fresh agent.
+ * With nothing found the teleport was abandoned: the session goes back to
+ * the cloud (lib/teleportRecovery).
  */
 function TeleportResume({ session, visible }: { session: Session; visible: boolean }) {
   const project = useProjectStore((s) => s.projects.find((p) => p.id === session.projectId))
