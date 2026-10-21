@@ -523,9 +523,6 @@ const api = {
     /** Queue a follow-up message to a cloud session (`claude -p --cloud <id>`). */
     send: (opts: { worktreePath: string; cloudSessionId: string; message: string; configDir?: string | null }): Promise<CloudSessionResult> =>
       ipcRenderer.invoke(IPC.CLOUD_SESSION_SEND, opts),
-    /** Spawn the `claude --cloud <id>` attach PTY for a session's Agent tab. Returns its terminal id. */
-    attach: (opts: { sessionId: string; worktreePath: string; cloudSessionId: string; configDir?: string | null; repoPath?: string; claudeTheme?: string }): Promise<string> =>
-      ipcRenderer.invoke(IPC.CLOUD_SESSION_ATTACH, opts),
     /** Check the worktree is clean, then spawn `claude --teleport <id>` in the Agent tab. */
     teleport: (opts: { sessionId: string; worktreePath: string; cloudSessionId: string; configDir?: string | null; repoPath?: string; claudeTheme?: string }): Promise<CloudTeleportResult> =>
       ipcRenderer.invoke(IPC.CLOUD_SESSION_TELEPORT, opts),

@@ -239,7 +239,6 @@ export const IPC = {
   // Cloud sessions — Claude Code on the web, watched and teleported from here
   CLOUD_SESSION_CREATE: 'cloud-session:create',
   CLOUD_SESSION_SEND: 'cloud-session:send',
-  CLOUD_SESSION_ATTACH: 'cloud-session:attach',
   CLOUD_SESSION_TELEPORT: 'cloud-session:teleport',
   CLOUD_SESSION_DISCOVER_LOCAL: 'cloud-session:discover-local',
   CLOUD_SESSION_OPEN_URL: 'cloud-session:open-url',
