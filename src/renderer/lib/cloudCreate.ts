@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import type { CloudCreateState, Session } from '../../shared/types'
 import { useCloudSessionStore } from '../stores/cloudSessionStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useCloudTeleportBootstrap } from './cloudTeleport'
 
 /** The patch that makes a pending session a ready cloud session, or null when there is nothing to do. */
 export function cloudCreatedPatch(session: Session, state: CloudCreateState): Partial<Session> | null {
@@ -43,8 +44,12 @@ export async function applyCloudCreated(state: CloudCreateState): Promise<void> 
   )
 }
 
-/** App-level: track create runs and save each new cloud session as soon as the CLI prints it. */
+/**
+ * App-level: track create runs and save each new cloud session as soon as the
+ * CLI prints it; track teleport runs too (lib/cloudTeleport).
+ */
 export function useCloudCreateBootstrap(): void {
+  useCloudTeleportBootstrap()
   useEffect(() => {
     const off = window.api.cloudSession?.onCreateEvent?.((state) => {
       useCloudSessionStore.getState().setCreate(state)

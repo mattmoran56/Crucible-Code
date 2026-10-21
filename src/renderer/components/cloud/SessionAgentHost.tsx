@@ -1,18 +1,17 @@
 // The core Agent tab of a session. Picks what it shows:
-// - a cloud session (or one teleported during this run) → CloudAgentHost
-// - a session teleported in an earlier run whose local Claude session has not
-//   been looked up yet → find it, then resume it as a visual agent
+// - a cloud session (or one being teleported right now) → CloudAgentHost,
+//   which shows the "Teleporting…" view until the conversation is local
+// - a teleported session whose local Claude session has not been looked up
+//   yet (teleported in an earlier run) → find it, then resume it visually
 // - anything else → the normal visual agent
 
 import React, { useEffect, useRef } from 'react'
 import type { Session } from '../../../shared/types'
-import { DEFAULT_VISUAL_AGENT_MODEL } from '../../../shared/visual-agent'
 import { projectConfigDir } from '../../lib/visualAgents'
-import { branchMismatchToast, reconcileTeleportBranch } from '../../lib/teleportBranch'
+import { resumeTeleportedSession } from '../../lib/cloudTeleport'
 import { useCloudSessionStore } from '../../stores/cloudSessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
-import { useToastStore } from '../../stores/toastStore'
 import { VisualAgentHost } from '../visual-agent/VisualAgentHost'
 import { Spinner } from '../visual-agent/icons'
 import { CloudAgentHost } from './CloudAgentHost'
@@ -34,9 +33,10 @@ export function SessionAgentHost({ sessionId, visible }: { sessionId: string; vi
 }
 
 /**
- * Finds the local Claude session a teleport wrote and records it as the Agent
- * tab's visual agent, so it resumes the teleported conversation. On failure it
- * records that it tried and falls through to a fresh visual agent.
+ * Finds the local Claude session a teleport wrote (in an earlier run, or one
+ * whose PTY went away before it reported) and hands it to the visual agent —
+ * the same path a teleport finishing in this run takes (lib/cloudTeleport).
+ * On failure it records that it tried and falls through to a fresh agent.
  */
 function TeleportResume({ session, visible }: { session: Session; visible: boolean }) {
   const project = useProjectStore((s) => s.projects.find((p) => p.id === session.projectId))
@@ -46,40 +46,19 @@ function TeleportResume({ session, visible }: { session: Session; visible: boole
   useEffect(() => {
     if (ran.current || !session.cloud?.teleportedAt) return
     ran.current = true
-    const cloud = session.cloud
+    const since = session.cloud.teleportedAt
     void (async () => {
       let claudeSessionId: string | null = null
       try {
         claudeSessionId = await window.api.cloudSession.discoverLocal({
           worktreePath: session.worktreePath,
           configDir: projectConfigDir(project, accounts),
-          since: cloud.teleportedAt!,
+          since,
         })
       } catch {
         claudeSessionId = null
       }
-      // Teleported in an earlier run: make sure the session follows the
-      // branch the teleport actually checked out.
-      const mismatch = await reconcileTeleportBranch(session)
-      if (mismatch) useToastStore.getState().addToast('info', branchMismatchToast(session.name, mismatch))
-      if (!claudeSessionId) {
-        useToastStore
-          .getState()
-          .addToast('info', `Couldn't find the teleported conversation for ${session.name} — starting a fresh agent.`)
-      }
-      // One write, so the switch to the visual agent sees both at once.
-      await useSessionStore.getState().patchSession(session.projectId, session.id, {
-        ...(mismatch ? { branchName: mismatch.actual } : {}),
-        cloud: { ...cloud, localResumeResolved: true },
-        ...(claudeSessionId
-          ? {
-              visualAgents: {
-                ...session.visualAgents,
-                agent: { claudeSessionId, model: DEFAULT_VISUAL_AGENT_MODEL },
-              },
-            }
-          : {}),
-      })
+      await resumeTeleportedSession(session, claudeSessionId)
     })()
   }, [session, project, accounts])
 
