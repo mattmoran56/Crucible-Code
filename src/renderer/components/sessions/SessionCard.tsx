@@ -6,6 +6,7 @@ import { Dialog } from '../ui/Dialog'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
 import { CIIndicator } from '../pullrequests/CIIndicator'
+import { renameMovesBranch, sessionDeletesLocalBranch, sessionRemoteBranch } from '../../../shared/branch-name'
 
 interface Props {
   session: Session
@@ -15,7 +16,8 @@ interface Props {
   pr?: PullRequest
   onClick: () => void
   onOpenAsMainBranch: () => void
-  onDelete: () => void
+  /** `deleteRemoteBranch` is only offered for cloud (or teleported) sessions. */
+  onDelete: (opts?: { deleteRemoteBranch?: boolean }) => void
   onRename: (newName: string) => Promise<void>
 }
 
@@ -92,6 +94,10 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
   const [renameValue, setRenameValue] = useState(session.name)
   const [renameError, setRenameError] = useState<string | null>(null)
   const [renaming, setRenaming] = useState(false)
+  const [deleteRemote, setDeleteRemote] = useState(false)
+  const remoteBranch = session.cloud ? sessionRemoteBranch(session) : undefined
+  const deletesLocalBranch = sessionDeletesLocalBranch(session)
+  const movesBranch = renameMovesBranch(session)
 
   const openRename = () => {
     setRenameValue(session.name)
@@ -184,7 +190,14 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
             items={[
               ...(!isOpenedAsMain ? [{ label: 'Open as main branch', onClick: onOpenAsMainBranch }] : []),
               { label: 'Rename', onClick: openRename },
-              { label: 'Delete', variant: 'danger' as const, onClick: () => setShowConfirm(true) },
+              {
+                label: 'Delete',
+                variant: 'danger' as const,
+                onClick: () => {
+                  setDeleteRemote(false)
+                  setShowConfirm(true)
+                },
+              },
             ]}
           >
             <IconButton
@@ -213,7 +226,11 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
             placeholder="e.g. fix-auth-bug"
             disabled={renaming}
             error={renameError || undefined}
-            hint={`The git branch will be renamed to session/${renameValue.trim() || '<new name>'}`}
+            hint={
+              movesBranch
+                ? `The git branch will be renamed to session/${renameValue.trim() || '<new name>'}`
+                : `The git branch stays ${session.branchName}`
+            }
           />
           <div className="flex gap-3 justify-end">
             <Button type="button" variant="ghost" size="sm" onClick={() => setShowRename(false)} disabled={renaming}>
@@ -228,9 +245,20 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
 
       <Dialog open={showConfirm} onClose={() => setShowConfirm(false)} title="Delete session?">
         <p className="text-xs text-text-muted mb-5">
-          This will remove the worktree and branch for{' '}
+          This will remove the worktree{deletesLocalBranch ? ' and local branch' : ''} for{' '}
           <strong className="text-text">{session.name}</strong>. This cannot be undone.
         </p>
+        {remoteBranch && (
+          <label className="flex items-center gap-2 text-xs text-text cursor-pointer select-none mb-5">
+            <input
+              type="checkbox"
+              checked={deleteRemote}
+              onChange={(e) => setDeleteRemote(e.target.checked)}
+              className="cursor-pointer"
+            />
+            Also delete the remote branch origin/{remoteBranch}
+          </label>
+        )}
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" size="sm" onClick={() => setShowConfirm(false)}>
             Cancel
@@ -240,7 +268,7 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
             size="sm"
             onClick={() => {
               setShowConfirm(false)
-              onDelete()
+              onDelete(remoteBranch && deleteRemote ? { deleteRemoteBranch: true } : undefined)
             }}
           >
             Delete

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation } from '../../shared/types'
 import { useToastStore } from './toastStore'
+import { renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name'
 import { useTerminalStore } from './terminalStore'
 import { useVisualAgentStore } from './visualAgentStore'
 
@@ -109,10 +110,6 @@ export interface CreateSessionOptions {
   /** Branch to create for the session. Defaults to `session/<name>`. */
   branchName?: string
 }
-
-/** The branch a session's remote copy lives on: the cloud agent's, else the local one. */
-export const sessionRemoteBranch = (session: Session): string | undefined =>
-  session.cloud?.branch || session.branchName || undefined
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
   if (!info) return
@@ -376,7 +373,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // name changes. A local session still on its default `session/<name>`
     // branch follows the new name.
     let newBranch = session.branchName
-    if (!session.cloud && session.branchName === `session/${session.name}`) {
+    if (renameMovesBranch(session)) {
       ;({ newBranch } = await window.api.worktree.renameBranch(
         repoPath,
         session.worktreePath,

@@ -2,7 +2,7 @@
  * Session branch naming and validation, shared by the main process (which
  * creates/deletes branches) and the renderer (create dialog).
  */
-import type { SessionLocation } from './types'
+import type { Session, SessionLocation } from './types'
 
 /**
  * Prefix for an app-created session branch, per location. Claude Code on the
@@ -43,3 +43,18 @@ export function validateBranchName(branch: string): string | null {
   if (branch.split('/').some((part) => part.startsWith('.'))) return 'Branch name parts cannot start with "."'
   return null
 }
+
+/** The branch a session's remote copy lives on: the cloud agent's, else the local one. */
+export const sessionRemoteBranch = (session: Pick<Session, 'branchName' | 'cloud'>): string | undefined =>
+  session.cloud?.branch || session.branchName || undefined
+
+/**
+ * Whether removing the session also deletes its local branch: `session/*`
+ * branches always are, and any branch the app created for the session.
+ */
+export const sessionDeletesLocalBranch = (session: Pick<Session, 'branchName' | 'ownsBranch'>): boolean =>
+  !!session.branchName && (session.branchName.startsWith('session/') || !!session.ownsBranch)
+
+/** Whether renaming the session renames its branch (see sessionStore.renameSession). */
+export const renameMovesBranch = (session: Pick<Session, 'name' | 'branchName' | 'cloud'>): boolean =>
+  !session.cloud && session.branchName === `session/${session.name}`

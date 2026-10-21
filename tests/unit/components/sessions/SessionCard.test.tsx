@@ -92,4 +92,54 @@ describe('SessionCard', () => {
     expect(screen.queryByTitle('Running in Claude Code on the web')).not.toBeInTheDocument()
     expect(screen.queryByText('Cloud')).not.toBeInTheDocument()
   })
+
+  it('delete confirm offers no remote-branch option for a local session', async () => {
+    const user = userEvent.setup()
+    const onDelete = vi.fn()
+    render(<SessionCard {...baseProps} onDelete={onDelete} />)
+    await user.click(screen.getByRole('button', { name: /Actions for feat\/x/ }))
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    expect(screen.getByText(/remove the worktree and local branch/)).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(onDelete).toHaveBeenCalledWith(undefined)
+  })
+
+  it('delete confirm for a cloud session can also delete the remote branch (off by default)', async () => {
+    const user = userEvent.setup()
+    const onDelete = vi.fn()
+    const cloudSession = {
+      ...session,
+      location: 'cloud',
+      cloud: { sessionId: 'session_1', url: 'u', branch: 'session/feat-x' },
+    }
+    render(<SessionCard {...baseProps} session={cloudSession} onDelete={onDelete} />)
+    await user.click(screen.getByRole('button', { name: /Actions for feat\/x/ }))
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    const box = screen.getByRole('checkbox', { name: 'Also delete the remote branch origin/session/feat-x' })
+    expect(box).not.toBeChecked()
+    await user.click(box)
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(onDelete).toHaveBeenCalledWith({ deleteRemoteBranch: true })
+  })
+
+  it('delete confirm for a cloud session leaves the remote branch when unchecked', async () => {
+    const user = userEvent.setup()
+    const onDelete = vi.fn()
+    const cloudSession = { ...session, cloud: { sessionId: 'session_1', url: 'u' } }
+    render(<SessionCard {...baseProps} session={cloudSession} onDelete={onDelete} />)
+    await user.click(screen.getByRole('button', { name: /Actions for feat\/x/ }))
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    expect(screen.getByRole('checkbox', { name: /origin\/session\/feat-x/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(onDelete).toHaveBeenCalledWith(undefined)
+  })
+
+  it('delete confirm does not promise to delete a branch the app did not create', async () => {
+    const user = userEvent.setup()
+    render(<SessionCard {...baseProps} session={{ ...session, branchName: 'feature/theirs' }} />)
+    await user.click(screen.getByRole('button', { name: /Actions for feat\/x/ }))
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    expect(screen.getByText(/remove the worktree for/)).toBeInTheDocument()
+  })
 })

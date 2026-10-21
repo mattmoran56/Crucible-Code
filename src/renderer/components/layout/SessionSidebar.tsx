@@ -630,7 +630,7 @@ export function SessionSidebar() {
                         clearContextStatuses(session.id)
                       }}
                       onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
-                      onDelete={() => removeSession(activeProject.id, activeProject.repoPath, session.id)}
+                      onDelete={(opts) => removeSession(activeProject.id, activeProject.repoPath, session.id, opts)}
                       onRename={(newName) => renameSession(activeProject.id, activeProject.repoPath, session.id, newName)}
                     />
                   ))}
