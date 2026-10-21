@@ -55,6 +55,7 @@ function mockPty(lines: string[]): string {
 }
 const terminalExitCallbacks: Array<(terminalId: string, exitCode: number) => void> = []
 let terminalCounter = 0
+const cloudCreateCallbacks: Array<(state: any) => void> = []
 
 function noop() { return () => {} }
 
@@ -494,7 +495,32 @@ export const mockApi = {
   // Cloud sessions: nothing leaves the machine. The teleport "PTY" just
   // prints a canned transcript so stories and the mock app show the flow.
   cloudSession: {
-    create: async (opts: { branch: string }) => ({ sessionId: 'session_01MockCloudSession', url: 'https://claude.ai/code/session_01MockCloudSession', branch: opts.branch }),
+    // Interactive create: a PTY that shows the CLI's setup checklist, then the
+    // session URL; the 'created' event follows, like the main process's watcher.
+    start: async (opts: { sessionId: string; projectId: string; branch: string; task: string }) => {
+      const sessionId = 'session_01MockCloudSession'
+      const url = `https://claude.ai/code/${sessionId}`
+      const terminalId = mockPty([
+        `\x1b[90m$ claude --cloud '<task>' --on-branch ${opts.branch}\x1b[0m\r\n`,
+        'Setting up remote session…\r\n',
+        '  \x1b[32m✓\x1b[0m Checked this checkout\r\n',
+        '  \x1b[32m✓\x1b[0m Created cloud session\r\n',
+        `Cloud session active · code here or at ${url}?from=cli&m=0\r\n`,
+      ])
+      const base = { sessionId: opts.sessionId, projectId: opts.projectId, terminalId, attached: true }
+      setTimeout(() => {
+        for (const cb of cloudCreateCallbacks) cb({ ...base, status: 'created', result: { sessionId, url, branch: opts.branch } })
+      }, 900)
+      return { ...base, status: 'running' as const }
+    },
+    createState: async () => null,
+    onCreateEvent: (cb: (state: any) => void) => {
+      cloudCreateCallbacks.push(cb)
+      return () => {
+        const i = cloudCreateCallbacks.indexOf(cb)
+        if (i >= 0) cloudCreateCallbacks.splice(i, 1)
+      }
+    },
     send: async (opts: { cloudSessionId: string }) => ({ sessionId: opts.cloudSessionId, url: `https://claude.ai/code/${opts.cloudSessionId}` }),
     teleport: async (opts: { cloudSessionId: string }) => ({ ok: true as const, terminalId: mockPty([
       `\x1b[90m$ claude --teleport ${opts.cloudSessionId}\x1b[0m\r\n`,
