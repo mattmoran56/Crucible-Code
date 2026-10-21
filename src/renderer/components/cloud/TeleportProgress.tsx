@@ -49,7 +49,7 @@ const headline = (run: CloudTeleportState | null): string => {
       if (run.waiting === 'first-message') {
         return run.claudeSessionId
           ? 'Saved locally — open it in the Agent view when this turn is done'
-          : 'The conversation is loaded in the terminal. Claude saves it locally after your first message — send one below, then open it in the Agent view'
+          : 'Send a message in the terminal below. Claude saves the conversation locally only after your first message; then you can open it in the Agent view'
       }
       if (run.waiting === 'timeout') return 'This is taking longer than expected — check the terminal below'
       return 'Claude needs your input — answer in the terminal below'
@@ -88,12 +88,12 @@ export function TeleportProgress({ run, terminalId, sessionId, sessionName, visi
 
   const busy = status === 'running' || status === 'finishing' || status === 'done'
   const resumed = run?.steps.includes('Session resumed') ?? false
-  const canFinish = !!onFinish && (status === 'needs-input' || (status === 'running' && resumed))
-  // Leaving before Claude saved the conversation abandons the teleport.
-  const finishTitle =
-    run?.claudeSessionId || !run?.waiting || run.waiting === 'prompt'
-      ? 'Close the terminal and continue in the Agent view'
-      : 'Close the terminal and open the Agent view. Nothing is saved locally yet, so the session goes back to the cloud (send a message first to keep it here).'
+  const canLeave = !!onFinish && (status === 'needs-input' || (status === 'running' && resumed))
+  // Only a conversation Claude has saved locally can open in the Agent view.
+  // Before that, leaving closes the CLI and abandons the teleport (the session
+  // stays in the cloud), so it is offered as Cancel, never as "Open in Agent
+  // view" — clicking that and watching the CLI terminate read as a crash.
+  const saved = !!run?.claudeSessionId
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="teleport-progress">
@@ -110,9 +110,26 @@ export function TeleportProgress({ run, terminalId, sessionId, sessionName, visi
       >
         {busy ? <Spinner className="text-accent" /> : <TeleportIcon size={12} className="text-accent" />}
         <span className="min-w-0 flex-1">{headline(run)}</span>
-        {canFinish ? (
-          <button type="button" onClick={onFinish} className={BTN} title={finishTitle} data-testid="teleport-finish">
+        {canLeave && saved ? (
+          <button
+            type="button"
+            onClick={onFinish}
+            className={BTN}
+            title="Close the terminal and continue in the Agent view"
+            data-testid="teleport-finish"
+          >
             Open in Agent view
+          </button>
+        ) : null}
+        {canLeave && !saved ? (
+          <button
+            type="button"
+            onClick={onFinish}
+            className={BTN}
+            title="Close the terminal and stop the teleport. Nothing is saved locally yet, so the session stays in the cloud. To bring it here, send a message in the terminal first."
+            data-testid="teleport-cancel"
+          >
+            Cancel teleport
           </button>
         ) : null}
         <button

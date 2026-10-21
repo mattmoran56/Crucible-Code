@@ -242,25 +242,37 @@ describe('cloud session Agent tab', () => {
     expect(api.discoverLocal).not.toHaveBeenCalled()
   })
 
-  it('reveals the terminal when the CLI asks something, and offers to open the Agent view', async () => {
+  it('reveals the terminal when the CLI asks something; nothing saved yet, so it offers Cancel, not the Agent view', async () => {
     await startTeleport()
     emitTeleport({ status: 'needs-input', steps: ['Validating session'] })
     expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText(/Claude needs your input/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Agent view' }))
+    expect(screen.queryByRole('button', { name: 'Open in Agent view' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel teleport' }))
     expect(api.finishTeleport).toHaveBeenCalledWith('s1')
   })
 
-  it('hands over when Claude has the conversation but has not saved it: terminal shown, Open in Agent view warns', async () => {
+  it('hands over when Claude has the conversation but has not saved it: terminal shown, only Cancel until saved', async () => {
     await startTeleport()
+    // The REPL is up but nothing is on disk yet (before the hand-over too).
+    emitTeleport({ status: 'running', steps: ['Validating session', 'Session resumed'] })
+    expect(screen.queryByTestId('teleport-finish')).toBeNull()
+    expect(screen.getByTestId('teleport-cancel')).toBeTruthy()
     emitTeleport({ status: 'needs-input', waiting: 'first-message', steps: ['Validating session', 'Session resumed'] })
     expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText(/saves it locally after your first message/)).toBeTruthy()
-    expect(screen.getByTestId('teleport-finish').getAttribute('title')).toMatch(/goes back to the cloud/)
-    // After the first message Claude saved it: the button just opens it.
+    expect(screen.getByText(/saves the conversation locally only after your first message/)).toBeTruthy()
+    // Regression: "Open in Agent view" here closed the CLI with nothing saved,
+    // which read as the teleport terminating on its way to the Agent view.
+    expect(screen.queryByTestId('teleport-finish')).toBeNull()
+    expect(screen.getByTestId('teleport-cancel').getAttribute('title')).toMatch(/stays in the cloud/)
+    // After the first message Claude saved it: now it can open in the Agent view.
     emitTeleport({ status: 'needs-input', waiting: 'first-message', claudeSessionId: 'local-claude-5', steps: ['Session resumed'] })
     expect(screen.getByText(/Saved locally/)).toBeTruthy()
-    expect(screen.getByTestId('teleport-finish').getAttribute('title')).not.toMatch(/back to the cloud/)
+    expect(screen.queryByTestId('teleport-cancel')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Agent view' }))
+    expect(api.finishTeleport).toHaveBeenCalledWith('s1')
+    emitTeleport({ status: 'done', claudeSessionId: 'local-claude-5', steps: ['Session resumed'] })
+    await waitFor(() => expect(screen.getByTestId('visual-agent').dataset.resume).toBe('local-claude-5'))
   })
 
   it('a stalled teleport says so, with the terminal and a way out', async () => {
@@ -268,7 +280,7 @@ describe('cloud session Agent tab', () => {
     emitTeleport({ status: 'needs-input', waiting: 'timeout', steps: ['Validating session'] })
     expect(screen.getByText(/taking longer than expected/)).toBeTruthy()
     expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Agent view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel teleport' }))
     expect(api.finishTeleport).toHaveBeenCalledWith('s1')
     // Ended with nothing saved: abandoned, back to the cloud page with a retry.
     emitTeleport({ status: 'done', steps: ['Validating session'] })
@@ -280,7 +292,7 @@ describe('cloud session Agent tab', () => {
   it('an abandoned teleport goes back to the cloud page with a notice, and Teleport again retries', async () => {
     await startTeleport()
     emitTeleport({ status: 'needs-input', waiting: 'first-message', steps: ['Session resumed'] })
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Agent view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel teleport' }))
     emitTeleport({ status: 'done', steps: ['Session resumed'] })
     await waitFor(() => expect(screen.getByTestId('teleport-incomplete').textContent).toMatch(
       /Teleport didn't finish — nothing was saved locally/
