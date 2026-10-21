@@ -243,16 +243,32 @@ export function CloudAgentHost({
       setPhase('teleported')
       // startedAt was taken before the PTY started, so transcript discovery
       // (if this run is interrupted) looks at files written from then on.
+      // Not really local until the conversation is on disk: an abandoned run
+      // puts it back in the cloud (lib/teleportRecovery).
       const teleportedAt = result.state?.startedAt ?? new Date().toISOString()
+      const { teleportIncomplete: _incomplete, ...rest } = link
       await useSessionStore.getState().patchSession(session.projectId, session.id, {
         location: 'local',
-        cloud: { ...link, teleportedAt },
+        cloud: { ...rest, teleportedAt },
       })
     } catch (err) {
       setError(`Teleport failed: ${message(err)}`)
       setPhase('error')
     }
   }, [session, project, accounts, register])
+
+  // The teleport went away without the conversation coming down (it is back
+  // in the cloud): show the page again.
+  useEffect(() => {
+    if (!teleportTerminal) setPhase((p) => (p === 'teleported' || p === 'teleport-ended' ? 'web' : p))
+  }, [teleportTerminal])
+
+  const dismissIncomplete = useCallback(() => {
+    const current = useSessionStore.getState().sessions.find((s) => s.id === sessionId)
+    if (!current?.cloud?.teleportIncomplete) return
+    const { teleportIncomplete: _incomplete, ...link } = current.cloud
+    void useSessionStore.getState().patchSession(current.projectId, current.id, { cloud: link })
+  }, [sessionId])
 
   const openInBrowser = useCallback(() => {
     if (cloud?.url) void window.api.cloudSession.openUrl(cloud.url)
@@ -322,6 +338,8 @@ export function CloudAgentHost({
       onTeleport={() => void teleport()}
       onDismissError={dismissError}
       onOpenLocally={openLocally}
+      teleportIncomplete={!pending && !teleportTerminal && !!cloud?.teleportIncomplete}
+      onDismissIncomplete={dismissIncomplete}
       branchNotice={branchNotice}
       onCleanupBranch={cleanupBranch}
       embedWebview={embedWebview}

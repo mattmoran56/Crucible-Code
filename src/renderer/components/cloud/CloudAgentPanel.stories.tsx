@@ -96,6 +96,8 @@ interface StoryProps {
   mayExist?: boolean
   /** The create CLI is still attached after the session was created. */
   cliAttached?: boolean
+  /** An earlier teleport was abandoned before anything was saved locally. */
+  teleportIncomplete?: boolean
   /** The main process's teleport run, for the Teleporting… view. */
   teleportRun?: Pick<CloudTeleportState, 'status' | 'steps'> & { error?: string }
 }
@@ -112,6 +114,7 @@ function Harness({
   failLoad,
   mayExist,
   cliAttached,
+  teleportIncomplete,
   teleportRun,
 }: StoryProps) {
   const [terminalId, setTerminalId] = useState<string | null>(null)
@@ -150,6 +153,8 @@ function Harness({
         onTeleport={noop}
         onDismissError={noop}
         onOpenLocally={noop}
+        teleportIncomplete={teleportIncomplete}
+        onDismissIncomplete={noop}
         branchNotice={branchNotice}
         onCleanupBranch={async (b) => `Deleted ${b} locally and on origin.`}
         embedWebview={embedWebview}
@@ -262,6 +267,11 @@ export const TeleportEnded: Story = {
       'Teleport ended (exit 1) before the conversation came down:\nError: You must run claude --teleport session_01Hx7QmCloudDemo from a checkout of acme/web.',
     teleportRun: { status: 'failed', steps: ['Validating session'] },
   },
+}
+
+/** A teleport abandoned before Claude saved anything: back on the cloud page, with a retry. */
+export const TeleportIncomplete: Story = {
+  args: { phase: 'web', teleportIncomplete: true },
 }
 
 /** The teleport checked out another branch: the session follows it; cleanup is offered. */

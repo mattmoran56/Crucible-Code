@@ -4,7 +4,8 @@
 // something, when it is handed over (the REPL has the conversation but Claude
 // has not saved it yet) or stalls, and when the teleport fails. When the
 // conversation is local the tab switches to the visual agent
-// (lib/cloudTeleport) — this view goes away.
+// (lib/cloudTeleport) — this view goes away; if it ends with nothing saved,
+// the session goes back to the cloud page.
 
 import React, { useEffect, useState } from 'react'
 import type { CloudTeleportState } from '../../../shared/types'
@@ -88,11 +89,11 @@ export function TeleportProgress({ run, terminalId, sessionId, sessionName, visi
   const busy = status === 'running' || status === 'finishing' || status === 'done'
   const resumed = run?.steps.includes('Session resumed') ?? false
   const canFinish = !!onFinish && (status === 'needs-input' || (status === 'running' && resumed))
-  // Leaving before Claude saved the conversation starts a fresh agent.
+  // Leaving before Claude saved the conversation abandons the teleport.
   const finishTitle =
     run?.claudeSessionId || !run?.waiting || run.waiting === 'prompt'
       ? 'Close the terminal and continue in the Agent view'
-      : 'Close the terminal and open the Agent view. Nothing is saved locally yet, so it starts a fresh agent (the conversation stays in the cloud).'
+      : 'Close the terminal and open the Agent view. Nothing is saved locally yet, so the session goes back to the cloud (send a message first to keep it here).'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="teleport-progress">

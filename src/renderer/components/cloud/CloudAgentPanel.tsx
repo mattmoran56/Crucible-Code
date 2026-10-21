@@ -66,8 +66,15 @@ export interface CloudAgentPanelProps {
   onTeleport: () => void
   /** Dismiss an error and go back to the embedded page. */
   onDismissError: () => void
-  /** After the teleported session ends: reopen the Agent tab as a local visual agent. */
+  /**
+   * After the teleport ends: close it. The Agent tab resumes the conversation
+   * locally if Claude saved it, else the session goes back to the cloud.
+   */
   onOpenLocally?: () => void
+  /** An earlier teleport was abandoned before anything was saved locally. */
+  teleportIncomplete?: boolean
+  /** Hide the incomplete-teleport notice. */
+  onDismissIncomplete?: () => void
   branchNotice?: BranchNotice | null
   /** Delete the now-unused branch the app created (local + origin). Resolves to a status line. */
   onCleanupBranch?: (branch: string) => Promise<string>
@@ -103,6 +110,8 @@ export function CloudAgentPanel({
   onTeleport,
   onDismissError,
   onOpenLocally,
+  teleportIncomplete,
+  onDismissIncomplete,
   branchNotice,
   onCleanupBranch,
   embedWebview,
@@ -209,6 +218,25 @@ export function CloudAgentPanel({
         onOpenCloudHome={onOpenCloudHome}
         onDeleteSession={onDeleteSession}
       />
+      {teleportIncomplete && !teleported && !confirming ? (
+        <div
+          role="status"
+          className="flex shrink-0 items-center gap-2 border-b border-accent/50 bg-accent/10 px-3! py-1.5! text-[11.5px] text-text"
+          data-testid="teleport-incomplete"
+        >
+          <span className="min-w-0 flex-1">
+            Teleport didn't finish — nothing was saved locally. The session is still in the cloud.
+          </span>
+          <button type="button" onClick={() => setConfirming(true)} disabled={!canTeleport} className={TELEPORT_BTN}>
+            <TeleportIcon size={12} /> Teleport again
+          </button>
+          {onDismissIncomplete ? (
+            <button type="button" onClick={onDismissIncomplete} className={BAR_BTN}>
+              Dismiss
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {cliAttached ? (
         <div
           role="status"
@@ -464,7 +492,7 @@ function Banner({
       )
       actions = onOpenLocally ? (
         <button type="button" onClick={onOpenLocally} className={BAR_BTN}>
-          Continue as local agent
+          Close teleport
         </button>
       ) : null
       break
