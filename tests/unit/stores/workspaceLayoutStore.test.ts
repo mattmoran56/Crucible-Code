@@ -3,6 +3,7 @@ import {
   getTabBaseType,
   getTabLabel,
   isDynamicTab,
+  isVisualAgentTab,
   useWorkspaceLayoutStore,
   type WorkspaceTab,
 } from '../../../src/renderer/stores/workspaceLayoutStore'
@@ -505,5 +506,43 @@ describe('workspaceLayoutStore misc edges', () => {
     useWorkspaceLayoutStore.getState().saveLayout('fresh')
     const saved = useWorkspaceLayoutStore.getState().savedLayouts
     expect(Object.keys(saved).sort()).toEqual(['fresh', 'old'])
+  })
+})
+
+describe('workspaceLayout visual-agent tabs', () => {
+  it('treats visual-agent:N as a dynamic, closable tab with its own base type and label', () => {
+    const tab = 'visual-agent:4' as WorkspaceTab
+    expect(isDynamicTab(tab)).toBe(true)
+    expect(isVisualAgentTab(tab)).toBe(true)
+    expect(isVisualAgentTab('agent:4')).toBe(false)
+    expect(isVisualAgentTab('agent')).toBe(false)
+    expect(getTabBaseType(tab)).toBe('visual-agent')
+    expect(getTabLabel(tab)).toBe('Visual Agent 4')
+  })
+
+  it('addDynamicTab uses the visual-agent: prefix with its own counter', () => {
+    useWorkspaceLayoutStore.setState({
+      columns: [{ id: 'c1', tabs: ['agent'], activeTab: 'agent', flex: 1 }],
+    })
+    const first = useWorkspaceLayoutStore.getState().addDynamicTab('c1', 'visual-agent')
+    const second = useWorkspaceLayoutStore.getState().addDynamicTab('c1', 'visual-agent')
+    expect(first).toMatch(/^visual-agent:\d+$/)
+    expect(second).toMatch(/^visual-agent:\d+$/)
+    expect(second).not.toBe(first)
+    const col = useWorkspaceLayoutStore.getState().columns[0]
+    expect(col.activeTab).toBe(second)
+    expect(useWorkspaceLayoutStore.getState().getDynamicTabs()).toEqual([first, second])
+  })
+
+  it('keeps saved visual-agent tabs when restoring a layout', () => {
+    useWorkspaceLayoutStore.setState({
+      savedLayouts: {
+        s1: [{ id: 'c9', tabs: ['agent', 'visual-agent:2' as WorkspaceTab], activeTab: 'visual-agent:2' as WorkspaceTab, flex: 1 }],
+      },
+    })
+    useWorkspaceLayoutStore.getState().resetLayout(['agent', 'git'], 'agent', 's1')
+    const col = useWorkspaceLayoutStore.getState().columns[0]
+    expect(col.tabs).toEqual(['agent', 'visual-agent:2', 'git'])
+    expect(col.activeTab).toBe('visual-agent:2')
   })
 })

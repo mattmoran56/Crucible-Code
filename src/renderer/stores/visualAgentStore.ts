@@ -454,4 +454,5 @@ export const __resetVisualAgentSubscription = (): void => {
   unsubscribe = null
   inFlight.clear()
   started.clear()
+  released.clear()
 }

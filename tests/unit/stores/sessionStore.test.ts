@@ -883,3 +883,76 @@ describe('sessionStore.setSessionCaptureLocalPr', () => {
     expect(useSessionStore.getState().sessions[0].captureLocalPr).toBeUndefined()
   })
 })
+
+describe('sessionStore visual agents', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ currentProjectId: 'p1', sessions: [S('s1'), S('s2')] } as any)
+  })
+
+  it('createSession records agentView only when the visual interface was asked for', async () => {
+    worktreeApi.create.mockResolvedValue({ path: '/wt/new', branch: 'session/feat' })
+    await useSessionStore.getState().createSession('p1', '/repo', 'feat', undefined, 'go', undefined, 'visual')
+    const created = useSessionStore.getState().sessions.find((s) => s.name === 'feat')!
+    expect(created.agentView).toBe('visual')
+    // The startup prompt still queues: the visual agent takes it as its first message.
+    expect(useSessionStore.getState().pendingStartup).toEqual({ sessionId: created.id, command: 'go' })
+
+    await useSessionStore.getState().createSession('p1', '/repo', 'plain')
+    const plain = useSessionStore.getState().sessions.find((s) => s.name === 'plain')!
+    expect('agentView' in plain).toBe(false)
+  })
+
+  it('setSessionAgentView persists the switch and clears it back to terminal', async () => {
+    await useSessionStore.getState().setSessionAgentView('p1', 's1', 'visual')
+    expect(useSessionStore.getState().sessions[0].agentView).toBe('visual')
+    expect(sessionApi.save).toHaveBeenLastCalledWith('p1', useSessionStore.getState().sessions)
+
+    await useSessionStore.getState().setSessionAgentView('p1', 's1', 'terminal')
+    expect('agentView' in useSessionStore.getState().sessions[0]).toBe(false)
+    expect(sessionApi.save).toHaveBeenCalledTimes(2)
+
+    // No-op when already on that view.
+    await useSessionStore.getState().setSessionAgentView('p1', 's1', 'terminal')
+    expect(sessionApi.save).toHaveBeenCalledTimes(2)
+  })
+
+  it('setSessionVisualAgent saves, updates and forgets the resume record per tab', async () => {
+    const store = useSessionStore.getState()
+    await store.setSessionVisualAgent('p1', 's1', 'agent', { claudeSessionId: 'cs-1', model: 'claude-opus-5-5' })
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'visual-agent:2', { claudeSessionId: 'cs-2', model: 'claude-haiku-5-5' })
+    expect(useSessionStore.getState().sessions[0].visualAgents).toEqual({
+      agent: { claudeSessionId: 'cs-1', model: 'claude-opus-5-5' },
+      'visual-agent:2': { claudeSessionId: 'cs-2', model: 'claude-haiku-5-5' },
+    })
+    expect(sessionApi.save).toHaveBeenLastCalledWith('p1', useSessionStore.getState().sessions)
+
+    // Same values: nothing to save.
+    const saves = sessionApi.save.mock.calls.length
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'agent', { claudeSessionId: 'cs-1', model: 'claude-opus-5-5' })
+    expect(sessionApi.save.mock.calls.length).toBe(saves)
+
+    // A model change is recorded.
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'agent', { claudeSessionId: 'cs-1', model: 'claude-sonnet-5-5' })
+    expect(useSessionStore.getState().sessions[0].visualAgents?.agent.model).toBe('claude-sonnet-5-5')
+
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'visual-agent:2', null)
+    await useSessionStore.getState().setSessionVisualAgent('p1', 's1', 'agent', null)
+    expect('visualAgents' in useSessionStore.getState().sessions[0]).toBe(false)
+    // The other session is untouched.
+    expect(useSessionStore.getState().sessions[1]).toEqual(S('s2'))
+  })
+
+  it('removeSession stops the session’s visual agents', async () => {
+    const { useVisualAgentStore } = await import('../../../src/renderer/stores/visualAgentStore')
+    const releaseSession = vi.fn().mockResolvedValue(undefined)
+    const original = useVisualAgentStore.getState().releaseSession
+    useVisualAgentStore.setState({ releaseSession } as any)
+    vi.spyOn(useTerminalStore.getState(), 'killAllForSession').mockResolvedValue(undefined)
+    try {
+      await useSessionStore.getState().removeSession('p1', '/repo', 's1')
+      expect(releaseSession).toHaveBeenCalledWith('s1')
+    } finally {
+      useVisualAgentStore.setState({ releaseSession: original } as any)
+    }
+  })
+})

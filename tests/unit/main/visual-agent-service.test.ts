@@ -277,6 +277,24 @@ describe('visual agent service', () => {
     expect(h.spawnCalls[1].args).toContain('--resume')
   })
 
+  it('start after stop respawns on the same conversation; fresh starts a new one', async () => {
+    await svc.startVisualAgent(baseOpts())
+    lastChild()._line(init())
+    lastChild()._line({ type: 'assistant', message: { id: 'm1', role: 'assistant', content: [{ type: 'text', text: 'hi' }] }, session_id: SID, parent_tool_use_id: null, uuid: 'u-1' })
+    svc.stopVisualAgent('agent-1')
+    const resumed = await svc.startVisualAgent(baseOpts())
+    expect(h.spawnCalls).toHaveLength(2)
+    expect(h.spawnCalls[1].args).toContain('--resume')
+    expect(resumed.claudeSessionId).toBe(SID)
+
+    svc.stopVisualAgent('agent-1')
+    const fresh = await svc.startVisualAgent(baseOpts({ fresh: true, resumeClaudeSessionId: null }))
+    expect(h.spawnCalls).toHaveLength(3)
+    expect(h.spawnCalls[2].args).not.toContain('--resume')
+    expect(fresh.claudeSessionId).toBeNull()
+    expect(fresh.events).toEqual([])
+  })
+
   it('fork spawns a no-tools resume+fork process, streams fork-events and ends on result', async () => {
     await svc.startVisualAgent(baseOpts())
     expect(() => svc.forkVisualAgent('agent-1', 'why?')).toThrow(/send a message first/)

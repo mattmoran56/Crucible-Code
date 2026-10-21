@@ -175,6 +175,45 @@ describe('store wiring', () => {
     expect(useVisualAgentStore.getState().ui.a1.openForkId).toBe('f1')
   })
 
+  it('restart goes straight to start (respawning an ended agent), resuming unless fresh', async () => {
+    const opts = { agentId: 'a1', sessionId: 's', cwd: '/w', initialPrompt: 'hello' }
+    await useVisualAgentStore.getState().ensureStarted(opts)
+    api.getState.mockResolvedValue(snap({ agentId: 'a1', state: 'done', claudeSessionId: 'sid' }))
+    await useVisualAgentStore.getState().restart('a1')
+    expect(api.stop).toHaveBeenCalledWith('a1')
+    expect(api.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({ agentId: 'a1', resumeClaudeSessionId: 'sid', initialPrompt: null, fresh: false }),
+    )
+    await useVisualAgentStore.getState().restart('a1', true)
+    expect(api.start).toHaveBeenLastCalledWith(expect.objectContaining({ resumeClaudeSessionId: null, fresh: true }))
+    expect(api.getState).toHaveBeenCalledTimes(1)
+  })
+
+  it('release stops the agent and a later ensureStarted respawns it rather than re-reading the ended snapshot', async () => {
+    const opts = { agentId: 'a1', sessionId: 's', cwd: '/w' }
+    await useVisualAgentStore.getState().ensureStarted(opts)
+    await useVisualAgentStore.getState().release('a1')
+    expect(api.stop).toHaveBeenCalledWith('a1')
+    api.getState.mockResolvedValue(snap({ agentId: 'a1', state: 'done', claudeSessionId: 'sid' }))
+    await useVisualAgentStore.getState().ensureStarted(opts)
+    expect(api.start).toHaveBeenCalledTimes(2)
+  })
+
+  it('without a release, an existing agent is adopted from getState, not restarted', async () => {
+    api.getState.mockResolvedValue(snap({ agentId: 'a1', state: 'done', claudeSessionId: 'sid' }))
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w' })
+    expect(api.start).not.toHaveBeenCalled()
+    expect(useVisualAgentStore.getState().agents.a1.state).toBe('done')
+  })
+
+  it('releaseSession stops only that session\u2019s agents', async () => {
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 's1:agent', sessionId: 's1', cwd: '/w' })
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 's1:visual-agent:2', sessionId: 's1', cwd: '/w' })
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 's2:agent', sessionId: 's2', cwd: '/w' })
+    await useVisualAgentStore.getState().releaseSession('s1')
+    expect(api.stop.mock.calls.map((c) => c[0]).sort()).toEqual(['s1:agent', 's1:visual-agent:2'])
+  })
+
   it('records an error when start fails', async () => {
     api.start.mockRejectedValueOnce(new Error('no claude'))
     await useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w' })
