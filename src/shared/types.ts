@@ -34,12 +34,16 @@ export interface CloudSessionLink {
    * so a failed discovery is not retried (and re-noticed) on every launch.
    */
   localResumeResolved?: boolean
+  /** The branch the cloud agent was told to work on and push to. */
+  branch?: string
 }
 
 /** Result of creating a cloud session or queuing a message to one. */
 export interface CloudSessionResult {
   sessionId: string
   url: string
+  /** The branch the cloud agent was told to use (set by create). */
+  branch?: string
 }
 
 /** Result of asking to teleport a cloud session down to its worktree. */

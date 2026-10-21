@@ -11,6 +11,8 @@ const h = vi.hoisted(() => {
     gitCalls: [] as Array<{ args: string[]; cwd: string }>,
     /** What the next claude child prints and how it exits. */
     claudeOut: { stdout: '', stderr: '', code: 0 as number | null },
+    /** Per-call outputs, consumed first; falls back to claudeOut. */
+    claudeOutQueue: [] as Array<{ stdout: string; stderr: string; code: number | null }>,
     /** git responses keyed by first arg. */
     gitResult: {} as Record<string, { err?: Error; stdout?: string; stderr?: string }>,
   }
@@ -28,7 +30,7 @@ vi.mock('node:child_process', () => {
   const spawn = (file: string, args: string[], opts: unknown) => {
     h.state.spawnCalls.push({ file, args, opts })
     const child = h.makeChild()
-    const out = h.state.claudeOut
+    const out = h.state.claudeOutQueue.shift() ?? h.state.claudeOut
     setTimeout(() => {
       if (out.stdout) child.stdout.emit('data', Buffer.from(out.stdout))
       if (out.stderr) child.stderr.emit('data', Buffer.from(out.stderr))
@@ -51,17 +53,18 @@ vi.mock('../../../src/main/services/terminal.service', () => ({
 
 import {
   claudeShellCommand,
-  cloudAttachArgv,
   cloudCreateArgv,
   cloudEnv,
   cloudSendArgv,
   createCloudSession,
   discoverTeleportedSession,
   encodeProjectDir,
+  isUnknownOnBranchError,
   parseCloudResult,
   parsePorcelain,
   sendCloudMessage,
   teleportArgv,
+  withBranchInstruction,
   worktreeDirtyFiles,
 } from '../../../src/main/services/cloud-session.service'
 
@@ -74,6 +77,7 @@ beforeEach(() => {
   h.state.spawnCalls = []
   h.state.gitCalls = []
   h.state.claudeOut = { stdout: '', stderr: '', code: 0 }
+  h.state.claudeOutQueue = []
   h.state.gitResult = {}
 })
 
@@ -82,6 +86,14 @@ describe('argv builders', () => {
     const argv = cloudCreateArgv('  fix the login bug  ')
     expect(argv).toEqual(['-p', 'fix the login bug', '--cloud', '--output-format', 'json'])
     assertNoPermissionFlags(argv)
+  })
+
+  it('create: --on-branch <branch> when a branch is given', () => {
+    const argv = cloudCreateArgv('go', 'session/feat')
+    expect(argv).toEqual(['-p', 'go', '--cloud', '--on-branch', 'session/feat', '--output-format', 'json'])
+    assertNoPermissionFlags(argv)
+    expect(() => cloudCreateArgv('go', '--force')).toThrow(/Invalid branch name/)
+    expect(() => cloudCreateArgv('go', '')).toThrow(/Invalid branch name/)
   })
 
   it('create: a prompt starting with "-" cannot be read as a flag', () => {
@@ -94,12 +106,10 @@ describe('argv builders', () => {
     assertNoPermissionFlags(argv)
   })
 
-  it('attach and teleport take only a validated id', () => {
-    expect(cloudAttachArgv('session_01abc')).toEqual(['--cloud', 'session_01abc'])
+  it('teleport takes only a validated id', () => {
     expect(teleportArgv('session_01abc')).toEqual(['--teleport', 'session_01abc'])
-    assertNoPermissionFlags(cloudAttachArgv('session_01abc'))
     assertNoPermissionFlags(teleportArgv('session_01abc'))
-    expect(() => cloudAttachArgv('x; rm -rf /')).toThrow(/Invalid cloud session id/)
+    expect(() => teleportArgv('x; rm -rf /')).toThrow(/Invalid cloud session id/)
     expect(() => teleportArgv('$(whoami)')).toThrow(/Invalid cloud session id/)
     expect(() => cloudSendArgv('a b', 'hi')).toThrow(/Invalid cloud session id/)
   })
@@ -156,12 +166,21 @@ describe('createCloudSession', () => {
       prompt: 'do the thing',
       configDir: '/cfg/personal',
     })
-    expect(result).toEqual({ sessionId: 'session_05', url: 'https://claude.ai/code/session_05' })
+    expect(result).toEqual({ sessionId: 'session_05', url: 'https://claude.ai/code/session_05', branch: 'session/feat' })
     expect(h.state.gitCalls).toEqual([{ args: ['push', '-u', 'origin', 'session/feat'], cwd: '/wt/feat' }])
     expect(h.state.spawnCalls).toHaveLength(1)
     const call = h.state.spawnCalls[0]
     expect(call.file).toBe('claude')
-    expect(call.args).toEqual(['-p', 'do the thing', '--cloud', '--output-format', 'json'])
+    expect(call.args).toEqual([
+      '-p',
+      withBranchInstruction('do the thing', 'session/feat'),
+      '--cloud',
+      '--on-branch',
+      'session/feat',
+      '--output-format',
+      'json',
+    ])
+    assertNoPermissionFlags(call.args)
     expect(call.opts.cwd).toBe('/wt/feat')
     expect(call.opts.env.CLAUDE_CONFIG_DIR).toBe('/cfg/personal')
     expect(call.opts.shell).toBeUndefined()
@@ -180,11 +199,45 @@ describe('createCloudSession', () => {
     expect(h.state.spawnCalls).toHaveLength(0)
   })
 
+  it('retries once without --on-branch when the CLI does not know the flag', async () => {
+    h.state.claudeOutQueue = [
+      { stdout: '', stderr: "error: unknown option '--on-branch'", code: 1 },
+      { stdout: '{"ok":true,"session_id":"session_07"}', stderr: '', code: 0 },
+    ]
+    const result = await createCloudSession({ worktreePath: '/wt', branch: 'feature/x', prompt: 'go' })
+    expect(result).toEqual({ sessionId: 'session_07', url: 'https://claude.ai/code/session_07', branch: 'feature/x' })
+    expect(h.state.spawnCalls).toHaveLength(2)
+    expect(h.state.spawnCalls[0].args).toContain('--on-branch')
+    expect(h.state.spawnCalls[1].args).not.toContain('--on-branch')
+    expect(h.state.spawnCalls[1].args[1]).toBe(withBranchInstruction('go', 'feature/x'))
+  })
+
+  it('does not retry on other failures', async () => {
+    h.state.claudeOut = { stdout: '', stderr: 'Not logged in', code: 1 }
+    await expect(createCloudSession({ worktreePath: '/wt', branch: 'b', prompt: 'go' })).rejects.toThrow(/Not logged in/)
+    expect(h.state.spawnCalls).toHaveLength(1)
+  })
+
   it('includes the exit code when claude fails', async () => {
     h.state.claudeOut = { stdout: '', stderr: 'Not logged in', code: 1 }
     await expect(createCloudSession({ worktreePath: '/wt', branch: 'b', prompt: 'go' })).rejects.toThrow(
       /Not logged in.*exited with code 1/
     )
+  })
+})
+
+describe('branch instruction', () => {
+  it('prepends the branch to the prompt', () => {
+    const p = withBranchInstruction('fix it', 'session/a')
+    expect(p).toMatch(/^Work on the git branch `session\/a`/)
+    expect(p).toContain('git push origin session/a')
+    expect(p.endsWith('\n\nfix it')).toBe(true)
+  })
+
+  it('recognises an unknown --on-branch option', () => {
+    expect(isUnknownOnBranchError("error: unknown option '--on-branch'")).toBe(true)
+    expect(isUnknownOnBranchError('Unrecognized argument: --on-branch')).toBe(true)
+    expect(isUnknownOnBranchError('Not logged in')).toBe(false)
   })
 })
 
