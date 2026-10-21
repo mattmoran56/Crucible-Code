@@ -10,6 +10,7 @@ import {
 } from '../../stores/startupPromptStore'
 import type { Project, QueuedSession, SessionLocation } from '../../../shared/types'
 import { resolveDefaultSessionLocation } from '../../../shared/cloud-session'
+import { defaultSessionBranch, validateBranchName } from '../../../shared/branch-name'
 import { useProjectStore } from '../../stores/projectStore'
 import { projectConfigDir } from '../../lib/visualAgents'
 import { ToggleGroup } from '../ui/ToggleGroup'
@@ -46,6 +47,9 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   const [location, setLocation] = useState<SessionLocation>(() => resolveDefaultSessionLocation(project))
   // The cloud session's task when no startup prompt is picked.
   const [cloudTask, setCloudTask] = useState('')
+  // The session branch follows the name/location until the user edits it.
+  const [branchInput, setBranchInput] = useState('')
+  const [branchEdited, setBranchEdited] = useState(false)
   const claudeAccounts = useProjectStore((s) => s.claudeAccounts)
   const { createSession } = useSessionStore()
   const addQueuedSession = useSchedulerStore((s) => s.addQueuedSession)
@@ -79,6 +83,8 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
     setCustomPrompt('')
     setLocation(resolveDefaultSessionLocation(project))
     setCloudTask('')
+    setBranchInput('')
+    setBranchEdited(false)
     setBranchesLoading(true)
     Promise.all([
       window.api.git.defaultBranch(project.repoPath),
@@ -123,10 +129,26 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   const cloud = location === 'cloud' && !scheduleEnabled
   // A cloud session must start with a task: the picked prompt, or a typed one.
   const cloudNeedsTask = cloud && !selectedPrompt && !cloudTask.trim()
+  // Scheduled sessions are created later by the scheduler on the default
+  // `session/<name>` branch, so the field is only offered for immediate creates.
+  const showBranch = !scheduleEnabled
+  const autoBranch = name.trim() ? defaultSessionBranch(name.trim(), cloud ? 'cloud' : 'local') : ''
+  const branch = (branchEdited ? branchInput : autoBranch).trim()
+  const branchError = useMemo(() => {
+    if (!showBranch || (!branch && !branchEdited)) return null
+    const invalid = validateBranchName(branch)
+    if (invalid) return invalid
+    if (cloud && baseBranch && branch === baseBranch) {
+      return 'A cloud session needs its own branch, not the base branch'
+    }
+    if (branches.includes(branch)) return `A branch named ${branch} already exists`
+    return null
+  }, [showBranch, branch, branchEdited, cloud, baseBranch, branches])
   const canSubmit =
     !!name.trim() &&
     !inputMissing &&
     !cloudNeedsTask &&
+    !branchError &&
     !creating &&
     !scheduleInPast &&
     !scheduleNeedsPrompt &&
@@ -186,7 +208,10 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           baseBranch || undefined,
           startupCommand,
           undefined,
-          cloud ? { location: 'cloud', configDir: projectConfigDir(project, claudeAccounts) } : undefined
+          {
+            branchName: branch || undefined,
+            ...(cloud ? { location: 'cloud' as const, configDir: projectConfigDir(project, claudeAccounts) } : {}),
+          }
         )
       }
       setName('')
@@ -197,6 +222,8 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
       setScheduledForInput('')
       setCustomPrompt('')
       setCloudTask('')
+      setBranchInput('')
+      setBranchEdited(false)
       onClose()
     } catch (err: any) {
       setError(err.message || 'Failed to create session')
@@ -246,6 +273,27 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           loading={branchesLoading}
           placeholder="main"
         />
+
+        {showBranch && (
+          <Input
+            label="Branch"
+            value={branchEdited ? branchInput : autoBranch}
+            onChange={(e) => {
+              setBranchEdited(true)
+              setBranchInput(e.target.value)
+            }}
+            placeholder={defaultSessionBranch('<name>', cloud ? 'cloud' : 'local')}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            error={branchError ?? undefined}
+            hint={
+              cloud
+                ? 'Created from the base branch and pushed; the cloud agent commits and pushes to it'
+                : 'Created from the base branch for this session'
+            }
+          />
+        )}
 
         {prompts.length > 0 && (
           <div>

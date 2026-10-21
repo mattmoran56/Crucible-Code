@@ -50,6 +50,7 @@ describe('<CreateSessionDialog> location toggle', () => {
     fireEvent.click(submit)
     await waitFor(() => expect(createSession).toHaveBeenCalled())
     expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'fix-auth', 'main', 'Fix the auth bug', undefined, {
+      branchName: 'session/fix-auth',
       location: 'cloud',
       configDir: '/cfg/work',
     })
@@ -62,7 +63,11 @@ describe('<CreateSessionDialog> location toggle', () => {
     fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'fix-auth' } })
     fireEvent.click(radio('Local'))
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
-    await waitFor(() => expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'fix-auth', 'main', undefined, undefined, undefined))
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'fix-auth', 'main', undefined, undefined, {
+        branchName: 'session/fix-auth',
+      })
+    )
   })
 
   it('hides the toggle for scheduled sessions (they start locally)', () => {
@@ -70,5 +75,57 @@ describe('<CreateSessionDialog> location toggle', () => {
     fireEvent.click(screen.getByLabelText('Schedule for later'))
     expect(screen.queryByRole('radio', { name: 'Cloud' })).toBeNull()
     expect(screen.queryByLabelText('Task')).toBeNull()
+  })
+})
+
+describe('<CreateSessionDialog> branch field', () => {
+  const branchInput = () => screen.getByLabelText('Branch') as HTMLInputElement
+
+  it('follows the session name until edited, then keeps the user value', async () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'login' } })
+    expect(branchInput().value).toBe('session/login')
+    fireEvent.change(branchInput(), { target: { value: 'feature/login' } })
+    fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'login-2' } })
+    expect(branchInput().value).toBe('feature/login')
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'login-2', 'main', undefined, undefined, {
+        branchName: 'feature/login',
+      })
+    )
+  })
+
+  it('shows an inline error and blocks submit for an invalid branch', async () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'x' } })
+    fireEvent.change(branchInput(), { target: { value: 'bad name' } })
+    expect(screen.getByText('Branch name cannot contain spaces')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('refuses an existing branch', async () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'x' } })
+    fireEvent.change(branchInput(), { target: { value: 'main' } })
+    await waitFor(() => expect(screen.getByText('A branch named main already exists')).toBeTruthy())
+  })
+
+  it('refuses the base branch for a cloud session', async () => {
+    ;(window as any).api.git.defaultBranch = vi.fn(async () => 'develop')
+    render(<CreateSessionDialog open project={project()} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'x' } })
+    fireEvent.change(branchInput(), { target: { value: 'develop' } })
+    await waitFor(() => expect(screen.getByText('A cloud session needs its own branch, not the base branch')).toBeTruthy())
+  })
+
+  it('is hidden for scheduled sessions', () => {
+    render(<CreateSessionDialog open project={project()} onClose={() => {}} />)
+    fireEvent.click(screen.getByLabelText('Schedule for later'))
+    expect(screen.queryByLabelText('Branch')).toBeNull()
   })
 })
