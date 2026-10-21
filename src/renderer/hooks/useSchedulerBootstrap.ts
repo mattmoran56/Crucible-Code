@@ -6,6 +6,7 @@ import { useToastStore } from '../stores/toastStore'
 import type { QueuedSession, QueuedMessage, Session } from '../../shared/types'
 import { formatClockTime } from '../lib/scheduleTime'
 import { startSessionVisualAgent } from '../lib/startVisualAgent'
+import { projectConfigDir } from '../lib/visualAgents'
 
 function sortByCreatedAtDesc(sessions: Session[]): Session[] {
   return [...sessions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -158,10 +159,22 @@ export async function fireQueuedMessage(item: QueuedMessage): Promise<void> {
     useSessionStore.setState({ sessions: projectSessions })
   }
 
+  const cloud = session.location === 'cloud' ? session.cloud : undefined
   try {
-    // Sent to the Agent tab's visual agent: as its next turn if it is running,
-    // else it starts (resuming the saved conversation) with the message.
-    await startSessionVisualAgent(session, project, item.message)
+    if (cloud) {
+      // A cloud session has no local agent: queue the message to the Claude
+      // Code on the web session itself (`claude -p <msg> --cloud <id>`).
+      await window.api.cloudSession.send({
+        worktreePath: session.worktreePath,
+        cloudSessionId: cloud.sessionId,
+        message: item.message,
+        configDir: projectConfigDir(project, useProjectStore.getState().claudeAccounts),
+      })
+    } else {
+      // Sent to the Agent tab's visual agent: as its next turn if it is running,
+      // else it starts (resuming the saved conversation) with the message.
+      await startSessionVisualAgent(session, project, item.message)
+    }
   } catch (err) {
     useToastStore.getState().addToast(
       'error',
@@ -170,7 +183,9 @@ export async function fireQueuedMessage(item: QueuedMessage): Promise<void> {
     return
   }
 
-  useToastStore.getState().addToast('info', `Sent queued message to "${session.name}"`)
+  useToastStore
+    .getState()
+    .addToast('info', cloud ? `Sent queued message to cloud session "${session.name}"` : `Sent queued message to "${session.name}"`)
 }
 
 /**
