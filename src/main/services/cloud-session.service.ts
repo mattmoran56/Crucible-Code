@@ -16,8 +16,11 @@
  *   a CLI that rejects `--on-branch` (we retry without the flag).
  * - send: `claude -p <msg> --cloud <id> --output-format json` queues a
  *   follow-up to an EXISTING session (valid with --print).
- * - teleport: `claude --teleport <id>` in a PTY, in the worktree. Interactive
- *   only, needs a clean tree; afterwards it is a normal local Claude session.
+ * - teleport: `claude --teleport <id>` in a PTY, in the worktree, watched by
+ *   cloud-teleport.service until the conversation is saved locally; then the
+ *   PTY is closed and the Agent tab resumes it as a visual agent. Needs a
+ *   clean tree. (`--teleport` is accepted with `-p` too, but there it fails
+ *   hard on prompts and writes no transcript until the first new turn.)
  *
  * PERMISSIONS (CLAUDE.md, non-negotiable): never `--dangerously-skip-permissions`
  * and never any `--permission-mode`. Every argv spreads
