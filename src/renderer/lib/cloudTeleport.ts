@@ -14,6 +14,7 @@ import { DEFAULT_VISUAL_AGENT_MODEL } from '../../shared/visual-agent'
 import { useCloudSessionStore } from '../stores/cloudSessionStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useToastStore } from '../stores/toastStore'
+import { destroyTerminal } from '../components/terminal/useTerminal'
 import { branchMismatchToast, reconcileTeleportBranch } from './teleportBranch'
 
 /** The patch that resumes a teleported session's conversation in the Agent tab. */
@@ -90,6 +91,8 @@ export async function applyTeleportState(state: CloudTeleportState): Promise<voi
   const session = await findSession(state.sessionId, state.projectId)
   if (!session) return
   await resumeTeleportedSession(session, state.claudeSessionId)
+  // The teleport PTY has exited; drop its xterm instance.
+  destroyTerminal(state.terminalId)
 }
 
 /** Test hook. */
