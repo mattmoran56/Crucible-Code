@@ -358,7 +358,6 @@ async function runHeadlessPhaseForSlot(
   const result = await runHeadlessPhase({
     sessionId: loop.sessionId,
     worktreePath: loop.state.worktreePath,
-    repoPath: loop.repoPath,
     claudeTheme: loop.claudeTheme,
     claudeConfigDir: loop.claudeConfigDir,
     prompt,

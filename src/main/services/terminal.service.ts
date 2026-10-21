@@ -53,7 +53,7 @@ function isTransientSpawnError(err: unknown): boolean {
  * Spawn with bounded retry + backoff. Under heavy load (many concurrent worker
  * toolchains) macOS can return EAGAIN for a `posix_spawn`; node-pty throws
  * "posix_spawnp failed". That's transient — retry a few times with a short
- * backoff instead of letting a one-off saturation kill a session/foreman pass.
+ * backoff instead of letting a one-off saturation kill a session.
  * Exported (with injectable sleep) so it can be unit-tested without real delays.
  */
 export function spawnWithRetry<T>(
@@ -580,10 +580,6 @@ export function killTerminal(terminalId: string): void {
   }
 }
 
-export function getTerminalCwd(terminalId: string): string | undefined {
-  return terminals.get(terminalId)?.cwd
-}
-
 /**
  * Kill every review-loop PTY for a session (tabId prefixed `review-loop:`).
  *
@@ -608,19 +604,16 @@ export function killReviewLoopTerminals(sessionId: string): number {
   return killed
 }
 
-/** Kill all terminals belonging to a session. Returns cwds for cleanup of watchers. */
-export function killSessionTerminals(sessionId: string): string[] {
-  const cwds: string[] = []
+/** Kill all terminals belonging to a session. */
+export function killSessionTerminals(sessionId: string): void {
   for (const [id, instance] of terminals) {
     if (instance.sessionId === sessionId) {
-      cwds.push(instance.cwd)
       instance.stopped = true
       instance.pty.kill()
       terminals.delete(id)
       unpersistTerminal(id)
     }
   }
-  return cwds
 }
 
 /** Kill every terminal (used on app quit). */

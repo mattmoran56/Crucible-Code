@@ -28,7 +28,7 @@ export interface ForegroundPhaseOptions {
   /** Used as the hook-routing contextId — must be a registered session/context id. */
   sessionId: string
   worktreePath: string
-  /** Source repo for permission seeding (optional). */
+  /** Source repo, forwarded to the spawned terminal (optional). */
   repoPath?: string
   claudeTheme?: string
   claudeConfigDir?: string
@@ -62,11 +62,9 @@ export interface ForegroundPhaseResult {
 }
 
 export interface HeadlessPhaseOptions {
-  /** Hook-routing not needed (no PTY/Stop hook); used only for permission seeding. */
+  /** Hook-routing not needed (no PTY/Stop hook); used for the worktree hook settings. */
   sessionId: string
   worktreePath: string
-  /** Source repo for permission seeding (optional). */
-  repoPath?: string
   claudeTheme?: string
   claudeConfigDir?: string
   /** Prompt piped to `claude -p` on stdin. */
@@ -79,9 +77,8 @@ export interface HeadlessPhaseOptions {
 }
 
 /**
- * Run one review-loop phase headlessly via `claude -p` (no PTY). Seeds the same
- * worktree hooks + permission allowlist as the foreground path so an auto-mode
- * run isn't starved, streams the transcript through `onTranscript`, and resolves
+ * Run one review-loop phase headlessly via `claude -p` (no PTY). Writes the same
+ * worktree hooks as the foreground path, streams the transcript through `onTranscript`, and resolves
  * with a {@link ForegroundPhaseResult} (terminalId is empty — there is no PTY).
  */
 export async function runHeadlessPhase(

@@ -224,7 +224,6 @@ describe('runHeadlessPhase', () => {
     const res = await runHeadlessPhase({
       sessionId: 'sess-1',
       worktreePath: '/wt/sess-1',
-      repoPath: '/repo',
       prompt: 'review it',
       onTranscript: (l) => streamed.push(l),
     })

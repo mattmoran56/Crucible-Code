@@ -28,6 +28,11 @@ import { useSchedulerBootstrap } from './hooks/useSchedulerBootstrap'
 import { useNotionBootstrap } from './hooks/useNotionBootstrap'
 import { UsageLimitToast } from './components/usage/UsageLimitToast'
 
+const RIGHT_PANEL_LABELS = { notes: 'Notes', usage: 'Usage' } as const
+type RightPanelId = keyof typeof RIGHT_PANEL_LABELS
+const isRightPanelId = (id: string): id is RightPanelId =>
+  Object.prototype.hasOwnProperty.call(RIGHT_PANEL_LABELS, id)
+
 export default function App() {
   const { loadProjects, loadAccounts, projects } = useProjectStore()
   const { activeSessionId } = useSessionStore()
@@ -45,12 +50,16 @@ export default function App() {
 
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
   const rightPanel = useResizable({ direction: 'horizontal', initialSize: 300, minSize: 200, maxSize: 600, inverted: true })
-  const [activeRightPanel, setActiveRightPanel] = useState<string | null>(null)
+  const [activeRightPanel, setActiveRightPanel] = useState<RightPanelId | null>(null)
   const [loading, setLoading] = useState(true)
   const [showLoader, setShowLoader] = useState(true)
 
-  const toggleRightPanel = (panel: string) =>
+  // Only known panels can open — a stale id (e.g. a removed panel like
+  // 'permissions' or 'foundry' fired from an old custom button) is ignored.
+  const toggleRightPanel = (panel: string) => {
+    if (!isRightPanelId(panel)) return
     setActiveRightPanel((prev) => (prev === panel ? null : panel))
+  }
 
   // Listen for app-action panel toggle events from custom buttons
   useEffect(() => {
@@ -212,7 +221,7 @@ export default function App() {
                   style={{ padding: '10px 12px' }}
                 >
                   <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                    {activeRightPanel === 'notes' ? 'Notes' : activeRightPanel === 'usage' ? 'Usage' : activeRightPanel}
+                    {RIGHT_PANEL_LABELS[activeRightPanel]}
                   </span>
                   <IconButton label="Close panel" onClick={() => setActiveRightPanel(null)}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
