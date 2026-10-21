@@ -52,9 +52,10 @@ describe('validateBranchName', () => {
 })
 
 describe('session branch helpers', () => {
-  it('sessionRemoteBranch prefers the cloud branch', () => {
+  it('sessionRemoteBranch follows the session branch (reality after a teleport), falling back to the cloud one', () => {
     expect(sessionRemoteBranch({ branchName: 'session/a' })).toBe('session/a')
-    expect(sessionRemoteBranch({ branchName: 'session/a', cloud: { sessionId: 's', url: 'u', branch: 'feat/b' } })).toBe('feat/b')
+    expect(sessionRemoteBranch({ branchName: 'claude/a-x', cloud: { sessionId: 's', url: 'u', branch: 'session/a' } })).toBe('claude/a-x')
+    expect(sessionRemoteBranch({ branchName: '', cloud: { sessionId: 's', url: 'u', branch: 'feat/b' } })).toBe('feat/b')
   })
 
   it('sessionDeletesLocalBranch: session/* or app-owned', () => {

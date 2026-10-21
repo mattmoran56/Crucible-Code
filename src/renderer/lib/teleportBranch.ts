@@ -35,7 +35,11 @@ export async function reconcileTeleportBranch(session: Session): Promise<BranchM
   }
   const mismatch = branchMismatch(session.branchName, actual)
   if (!mismatch) return null
-  await useSessionStore.getState().patchSession(session.projectId, session.id, { branchName: mismatch.actual })
+  // The app did not create the branch the teleport checked out, so deleting
+  // the session must not delete it as if it had (unless it is a session/* one).
+  await useSessionStore
+    .getState()
+    .patchSession(session.projectId, session.id, { branchName: mismatch.actual, ownsBranch: false })
   return mismatch
 }
 

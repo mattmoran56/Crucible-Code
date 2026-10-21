@@ -210,6 +210,7 @@ describe('cloud session Agent tab', () => {
     })
     await waitFor(() => expect(screen.getByText(/Teleport checked out/)).toBeTruthy())
     expect(useSessionStore.getState().sessions[0].branchName).toBe('claude/feat-xyz')
+    expect(useSessionStore.getState().sessions[0].ownsBranch).toBe(false)
     expect(screen.getByTestId('cloud-branch').textContent).toBe('claude/feat-xyz')
     // Nothing deleted until the user asks, and confirms.
     expect(worktree.deleteLocalBranch).not.toHaveBeenCalled()

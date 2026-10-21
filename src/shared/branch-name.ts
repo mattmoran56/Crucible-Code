@@ -44,9 +44,12 @@ export function validateBranchName(branch: string): string | null {
   return null
 }
 
-/** The branch a session's remote copy lives on: the cloud agent's, else the local one. */
+/**
+ * The branch a session's remote copy lives on: the session's branch (which
+ * follows reality after a teleport), else the one the cloud agent was given.
+ */
 export const sessionRemoteBranch = (session: Pick<Session, 'branchName' | 'cloud'>): string | undefined =>
-  session.cloud?.branch || session.branchName || undefined
+  session.branchName || session.cloud?.branch || undefined
 
 /**
  * Whether removing the session also deletes its local branch: `session/*`
