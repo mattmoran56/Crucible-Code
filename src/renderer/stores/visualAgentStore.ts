@@ -131,7 +131,8 @@ export const reduceFrame = (snap: VisualAgentSnapshot, frame: VisualAgentFrame):
         partial: ENDED.has(frame.state) ? null : snap.partial,
       }
     case 'session':
-      return { ...snap, claudeSessionId: frame.claudeSessionId, model: frame.model || snap.model }
+      // A model change before any conversation carries an empty id; keep the one we know.
+      return { ...snap, claudeSessionId: frame.claudeSessionId || snap.claudeSessionId, model: frame.model || snap.model }
     case 'usage':
       return { ...snap, usage: frame.usage }
     case 'forks':
@@ -161,9 +162,11 @@ export const mergeSnapshot = (held: VisualAgentSnapshot | undefined, incoming: V
   }
 }
 
-/** Whether an ask can still be answered: undecided, on a run that is waiting. */
+/** Whether an ask can still be answered: undecided, live (not replayed), on a run that is waiting. */
 export const isAskPending = (snap: VisualAgentSnapshot, askId: string): boolean => {
   if (snap.state !== 'needs-input' && snap.state !== 'running') return false
+  // A replayed ask belongs to a process that is gone: it can never be answered.
+  if (snap.events.some((e) => e.kind === 'ask' && e.id === askId && e.replayed)) return false
   return !snap.events.some((e) => e.kind === 'ask-result' && e.id === askId)
 }
 
