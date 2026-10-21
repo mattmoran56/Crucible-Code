@@ -4,7 +4,6 @@ import { IPC } from '../../shared/constants'
 import * as scheduler from '../services/scheduler.service'
 import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
-import { seedPermissions, startWatching } from '../services/permission-sync.service'
 import type { QueuedSession, QueuedMessage } from '../../shared/types'
 
 export function registerSchedulerHandlers(window: BrowserWindow) {
@@ -30,15 +29,10 @@ export function registerSchedulerHandlers(window: BrowserWindow) {
       contextId: string,
       tabId: string
     ): Promise<string> => {
-      // Mirror IPC.TERMINAL_SPAWN: write hook settings + seed permissions
-      // for this worktree, so the queued session gets the same observability
-      // (usage tracking, notifications, allow/deny lists) as a manually-
-      // created one.
+      // Mirror IPC.TERMINAL_SPAWN: write hook settings for this worktree, so
+      // the queued session gets the same observability (usage tracking,
+      // notifications) as a manually-created one.
       writeClaudeHookSettings(cwd, claudeTheme, sessionId)
-      if (repoPath) {
-        seedPermissions(repoPath, cwd)
-        startWatching(repoPath, cwd)
-      }
       return terminalService.spawnTerminal(
         window,
         sessionId,

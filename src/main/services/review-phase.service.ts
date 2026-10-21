@@ -19,7 +19,6 @@ import {
 } from './terminal.service'
 import { onHookEvent } from './notification-server'
 import { writeClaudeHookSettings } from './hook.service'
-import { seedPermissions } from './permission-sync.service'
 import { runHeadlessClaude, killChildTree } from './claude-headless.service'
 
 export const DEFAULT_PHASE_TIMEOUT_MS = 30 * 60 * 1000
@@ -88,19 +87,11 @@ export interface HeadlessPhaseOptions {
 export async function runHeadlessPhase(
   opts: HeadlessPhaseOptions
 ): Promise<ForegroundPhaseResult> {
-  // Same worktree prep as the foreground path: hooks (harmless here) + the
-  // inherited permission allowlist so a non-bypass run can act on approved tools.
+  // Same worktree prep as the foreground path: hooks (harmless here).
   try {
     writeClaudeHookSettings(opts.worktreePath, opts.claudeTheme ?? 'dark', opts.sessionId)
   } catch {
     // Non-fatal.
-  }
-  if (opts.repoPath) {
-    try {
-      seedPermissions(opts.repoPath, opts.worktreePath)
-    } catch {
-      // Non-fatal.
-    }
   }
 
   if (opts.signal?.aborted) {
@@ -157,19 +148,11 @@ export function runForegroundPhase(
   return new Promise((resolve) => {
     const timeoutMs = opts.timeoutMs ?? DEFAULT_PHASE_TIMEOUT_MS
 
-    // Make sure the worktree has our hooks (so Stop fires) and the inherited
-    // permission allowlist (so a skip-permissions-less run isn't starved).
+    // Make sure the worktree has our hooks (so Stop fires).
     try {
       writeClaudeHookSettings(opts.worktreePath, opts.claudeTheme ?? 'dark', opts.sessionId)
     } catch {
       // Non-fatal — a missing Stop hook only means we fall back to the timeout.
-    }
-    if (opts.repoPath) {
-      try {
-        seedPermissions(opts.repoPath, opts.worktreePath)
-      } catch {
-        // Non-fatal.
-      }
     }
 
     const claudeArgs = opts.autoAcceptEdits ? AUTO_PERMISSION_MODE_ARGS : undefined

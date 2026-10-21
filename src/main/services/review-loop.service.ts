@@ -37,7 +37,6 @@ import {
   DEFAULT_PHASE_TIMEOUT_MS,
   type ForegroundPhaseResult,
 } from './review-phase.service'
-import { patchLocalPR } from './local-pr.service'
 import { killReviewLoopTerminals } from './terminal.service'
 
 const execFileAsync = promisify(execFile)
@@ -53,9 +52,6 @@ interface ActiveLoop {
   abort: AbortController
   config: ReviewLoopConfig
   prNumber?: number
-  /** True when reviewing a local PR (no GitHub PR yet) — findings stored locally. */
-  isLocalPr?: boolean
-  localPrId?: string
   loopDir: string
   /** Foreground spawn context (passed through from the renderer). */
   claudeTheme?: string
@@ -92,10 +88,6 @@ export interface StartReviewLoopOptions {
   baseBranch: string
   config: ReviewLoopConfig
   prNumber?: number
-  /** When set, the loop is reviewing a local PR: skip the gh sticky comment and
-   * store findings on the local PR record instead. */
-  isLocalPr?: boolean
-  localPrId?: string
   /** Foreground spawn context — theme, claude account config dir, source repo. */
   claudeTheme?: string
   claudeConfigDir?: string
@@ -140,8 +132,6 @@ export async function startReviewLoop(opts: StartReviewLoopOptions): Promise<voi
     abort: new AbortController(),
     config,
     prNumber: opts.prNumber,
-    isLocalPr: opts.isLocalPr,
-    localPrId: opts.localPrId,
     loopDir,
     claudeTheme: opts.claudeTheme,
     claudeConfigDir: opts.claudeConfigDir,
@@ -616,14 +606,6 @@ async function writeStickyPRComment(loop: ActiveLoop): Promise<void> {
   if (loop.state.skippedIssues.length === 0) return
 
   const body = renderStickyComment(loop.state)
-
-  // Local PRs aren't on GitHub yet — there's nothing to comment on. Persist the
-  // findings on the local PR record so they show in the local-PR view and can
-  // be appended to the body at promote time.
-  if (loop.isLocalPr) {
-    if (loop.localPrId) patchLocalPR(loop.localPrId, { reviewFindings: body })
-    return
-  }
 
   if (!loop.prNumber) return
   const repoPath = loop.state.worktreePath

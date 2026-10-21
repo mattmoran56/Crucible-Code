@@ -65,12 +65,6 @@ vi.mock('../../../src/main/services/notification-server', () => ({
 vi.mock('../../../src/main/services/hook.service', () => ({
   writeClaudeHookSettings: vi.fn(),
 }))
-vi.mock('../../../src/main/services/permission-sync.service', () => ({
-  seedPermissions: vi.fn(),
-  startWatching: vi.fn(),
-  stopWatching: vi.fn(),
-  setWindow: vi.fn(),
-}))
 
 import { IPC } from '../../../src/shared/constants'
 import { invokeHandler } from '../../../src/main/ipc/handle'

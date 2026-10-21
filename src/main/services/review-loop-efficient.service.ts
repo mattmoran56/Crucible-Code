@@ -50,7 +50,6 @@ import {
 } from './terminal.service'
 import { onHookEvent } from './notification-server'
 import { writeClaudeHookSettings } from './hook.service'
-import { seedPermissions } from './permission-sync.service'
 
 const execFileAsync = promisify(execFile)
 
@@ -76,8 +75,6 @@ interface ActiveLoop {
   abort: AbortController
   config: ReviewLoopConfig
   prNumber?: number
-  /** True when reviewing a local PR — forces the diff-based /review path. */
-  isLocalPr?: boolean
   /** HEAD sha at loop start — the baseline for "did this round produce a commit". */
   startSha: string
   /** Foreground spawn context (passed through from the renderer). */
@@ -115,8 +112,6 @@ export interface StartReviewLoopEfficientOptions {
   baseBranch: string
   config: ReviewLoopConfig
   prNumber?: number
-  /** True when reviewing a local PR (no GitHub PR) — forces the diff /review path. */
-  isLocalPr?: boolean
   /** Foreground spawn context — theme, claude account config dir, source repo. */
   claudeTheme?: string
   claudeConfigDir?: string
@@ -163,7 +158,6 @@ export async function startReviewLoopEfficient(
     abort: new AbortController(),
     config,
     prNumber: opts.prNumber,
-    isLocalPr: opts.isLocalPr,
     startSha,
     claudeTheme: opts.claudeTheme,
     claudeConfigDir: opts.claudeConfigDir,
@@ -257,7 +251,7 @@ async function runReviewPhase(loop: ActiveLoop, round: ReviewLoopRound): Promise
   emitState(loop)
 
   let prompt: string
-  if (loop.prNumber && !loop.isLocalPr) {
+  if (loop.prNumber) {
     pushLog(round, `Running /review ${loop.prNumber}…`)
     prompt = `/review ${loop.prNumber}`
   } else {
@@ -402,19 +396,12 @@ function runWorkerTurn(loop: ActiveLoop, prompt: string): Promise<TurnResult> {
 
 /** Spawn the single persistent interactive worker terminal with its first prompt. */
 function spawnPersistentWorker(loop: ActiveLoop, initialPrompt: string): void {
-  // Seed the worktree hooks (so Stop fires) + inherited permission allowlist,
-  // mirroring runForegroundPhase. Non-fatal on failure.
+  // Seed the worktree hooks (so Stop fires), mirroring runForegroundPhase.
+  // Non-fatal on failure.
   try {
     writeClaudeHookSettings(loop.state.worktreePath, loop.claudeTheme ?? 'dark', loop.sessionId)
   } catch {
     /* a missing Stop hook only means we fall back to the timeout */
-  }
-  if (loop.repoPath) {
-    try {
-      seedPermissions(loop.repoPath, loop.state.worktreePath)
-    } catch {
-      /* non-fatal */
-    }
   }
 
   const terminalId = spawnTerminal(

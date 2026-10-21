@@ -4,7 +4,7 @@ import { powerSaveBlocker, powerMonitor } from 'electron'
 //
 // We use `prevent-app-suspension` (not `prevent-display-sleep`): this stops the
 // *system* from going to sleep — so the app and every child process it owns
-// (PTY terminals, Claude sessions, foundry workers, the relay server) keep
+// (PTY terminals, Claude sessions, the relay server) keep
 // running — while still letting the *display* turn off when the screen locks.
 // In other words: lock the screen, the Mac stays awake and our work continues.
 // `prevent-display-sleep` would also force the screen to stay on, which is not

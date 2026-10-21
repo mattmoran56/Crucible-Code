@@ -3,12 +3,9 @@ import { handle } from './handle'
 import { IPC } from '../../shared/constants'
 import * as terminalService from '../services/terminal.service'
 import { writeClaudeHookSettings } from '../services/hook.service'
-import { seedPermissions, startWatching, stopWatching, setWindow } from '../services/permission-sync.service'
 import type { TerminalMode } from '../services/terminal.service'
 
 export function registerTerminalHandlers(window: BrowserWindow) {
-  setWindow(window)
-
   handle(
     IPC.TERMINAL_SPAWN,
     async (
@@ -26,12 +23,6 @@ export function registerTerminalHandlers(window: BrowserWindow) {
       // Write Claude Code hook settings so notifications route to our server
       // and statusLine writes usage data for this session
       writeClaudeHookSettings(cwd, claudeTheme ?? 'dark', sessionId)
-
-      // Sync shared permissions from the main repo into this worktree
-      if (repoPath) {
-        seedPermissions(repoPath, cwd)
-        startWatching(repoPath, cwd)
-      }
 
       // Agent sessions inherit the user's default permission mode (auto) — we
       // pass no explicit --permission-mode, and never bypass.
@@ -69,18 +60,11 @@ export function registerTerminalHandlers(window: BrowserWindow) {
   })
 
   handle(IPC.TERMINAL_KILL, async (_e, terminalId: string) => {
-    const cwd = terminalService.getTerminalCwd(terminalId)
-    if (cwd) {
-      stopWatching(cwd)
-    }
     terminalService.killTerminal(terminalId)
   })
 
   handle(IPC.TERMINAL_KILL_SESSION, async (_e, sessionId: string) => {
-    const cwds = terminalService.killSessionTerminals(sessionId)
-    for (const cwd of cwds) {
-      stopWatching(cwd)
-    }
+    terminalService.killSessionTerminals(sessionId)
   })
 
   handle(IPC.TERMINAL_RECOVERY_LIST, async () => {

@@ -10,8 +10,6 @@ vi.mock('../../../src/main/services/notification-server', () => ({
   findContextById: () => undefined,
   getNotificationServerPort: () => 0,
 }))
-vi.mock('../../../src/main/services/gh-shim.service', () => ({ ensureGhShimInstalled: () => '/tmp/shim' }))
-vi.mock('../../../src/main/services/local-pr.service', () => ({ shouldCaptureContext: () => false }))
 
 import { spawnWithRetry } from '../../../src/main/services/terminal.service'
 

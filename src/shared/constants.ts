@@ -138,11 +138,6 @@ export const IPC = {
   USAGE_GET_SUBSCRIPTION: 'usage:get-subscription',
   USAGE_SESSION_UPDATE: 'usage:session-update',
 
-  // Permissions
-  PERMISSIONS_GET: 'permissions:get',
-  PERMISSIONS_UPDATE: 'permissions:update',
-  PERMISSIONS_CHANGED: 'permissions:changed',
-
   // File I/O
   FILE_LIST_DIR: 'file:list-dir',
   FILE_READ: 'file:read',
@@ -228,30 +223,4 @@ export const IPC = {
   REMOTE_DENY_PAIRING: 'remote:deny-pairing',
   REMOTE_PAIRING_REQUESTED: 'remote:pairing-requested',
   REMOTE_SET_PAIRING_MODE: 'remote:set-pairing-mode',
-
-  // Foundry — autopilot orchestrator over a Notion task set
-  FOUNDRY_LIST: 'foundry:list',
-  FOUNDRY_SAVE: 'foundry:save',
-  FOUNDRY_DELETE: 'foundry:delete',
-  FOUNDRY_SET_PAUSED: 'foundry:set-paused',
-  FOUNDRY_RUN_NOW: 'foundry:run-now',
-  FOUNDRY_STATE_GET: 'foundry:state:get',
-  FOUNDRY_STATE_UPDATE: 'foundry:state:update',
-  FOUNDRY_FIRE_TASK: 'foundry:fire-task',
-  FOUNDRY_TASK_STARTED: 'foundry:task-started',
-  FOUNDRY_SPAWN_WORKER: 'foundry:spawn-worker',
-  FOUNDRY_PIPELINE_ACTION: 'foundry:pipeline-action',
-  FOUNDRY_OPEN_FOREMAN: 'foundry:open-foreman',
-  FOUNDRY_REQUEST_PASS: 'foundry:request-pass',
-  FOUNDRY_RESET_STATE: 'foundry:reset-state',
-  FOUNDRY_PUBLISH_PRS: 'foundry:publish-prs',
-
-  // Local PRs — a session-level stage between a draft branch and an open PR
-  LOCAL_PR_LIST: 'local-pr:list',
-  LOCAL_PR_CREATE: 'local-pr:create',
-  LOCAL_PR_UPDATE: 'local-pr:update',
-  LOCAL_PR_DISCARD: 'local-pr:discard',
-  LOCAL_PR_PROMOTE: 'local-pr:promote',
-  LOCAL_PR_SET_CAPTURE: 'local-pr:set-capture',
-  LOCAL_PR_STATE_UPDATE: 'local-pr:state:update',
 } as const
