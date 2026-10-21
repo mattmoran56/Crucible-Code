@@ -58,16 +58,11 @@ export function TextBubble({ event }: { event: EventOf<'text'> }) {
   return <Markdown text={event.text} />
 }
 
-/** The assistant's message as it streams, with a caret. */
+/** The assistant's message as it streams. The caret rides at the end of the last block. */
 export function StreamingText({ text }: { text: string }) {
   return (
-    <div aria-live="off" aria-busy="true">
-      <Markdown text={text}>
-        <span
-          aria-hidden="true"
-          className="-mt-2! inline-block h-[1.05em] w-[0.5em] translate-y-[2px] animate-pulse bg-accent/80 motion-reduce:animate-none"
-        />
-      </Markdown>
+    <div aria-busy="true">
+      <Markdown text={`${text}\u2009▍`} />
     </div>
   )
 }
@@ -334,7 +329,7 @@ export function Rows({ rows, ctx, tail }: { rows: Row[]; ctx: RowsContext; tail?
           <div
             key={keyOf(piece, index)}
             className={cn(
-              'min-w-0 [contain-intrinsic-size:auto_48px] [content-visibility:auto]',
+              'min-w-0',
               index > 0 && (close ? 'mt-1.5!' : 'mt-3.5!'),
             )}
           >

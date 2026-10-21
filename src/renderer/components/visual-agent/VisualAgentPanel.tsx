@@ -382,15 +382,16 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
           onInterrupt={() => void actions.interrupt(agentId)}
           onClear={() => void actions.restart(agentId, true)}
         />
-        <ForkSheet
-          fork={openFork}
-          onStop={(forkId) => void actions.forkStop(agentId, forkId)}
-          onClose={() => {
-            setUi({ openForkId: null })
-            requestAnimationFrame(() => composer.current?.focus())
-          }}
-        />
       </div>
+
+      <ForkSheet
+        fork={openFork}
+        onStop={(forkId) => void actions.forkStop(agentId, forkId)}
+        onClose={() => {
+          setUi({ openForkId: null })
+          requestAnimationFrame(() => composer.current?.focus())
+        }}
+      />
     </div>
   )
 }

@@ -47,7 +47,7 @@ export function ForkSheet({
         onClose()
       }}
       className={cn(
-        'absolute inset-x-0 bottom-0 z-30 flex max-h-[70%] flex-col rounded-t-xl border-t border-accent/40 bg-bg-secondary shadow-[0_-12px_32px_rgba(0,0,0,0.25)] outline-none',
+        'absolute inset-x-0 bottom-0 z-30 flex max-h-[65%] flex-col rounded-t-xl border-t border-accent/40 bg-bg-secondary shadow-[0_-12px_32px_rgba(0,0,0,0.25)] outline-none',
         'transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none',
         open ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-full opacity-0',
       )}
@@ -82,7 +82,7 @@ export function ForkSheet({
           </div>
           <p className="px-3.5! pt-1.5! text-[12.5px] font-medium leading-relaxed text-text">{aside.question}</p>
 
-          <div role="log" aria-label={`Answer to: ${aside.question}`} className="min-h-[4rem] flex-1 overflow-y-auto px-3.5! py-2.5!">
+          <div role="log" aria-label={`Answer to: ${aside.question}`} className="min-h-16 shrink overflow-y-auto px-3.5! py-2.5!">
             {transcript.main.rows.length ? (
               <Rows rows={transcript.main.rows} ctx={{ threads: transcript.threads, onFocusChip: noop, running }} />
             ) : (

@@ -120,6 +120,8 @@ export const reduceFrame = (snap: VisualAgentSnapshot, frame: VisualAgentFrame):
       return { ...snap, events, partial: clears ? null : snap.partial }
     }
     case 'partial':
+      // An empty accumulation is the stream saying "nothing in flight".
+      if (!frame.text) return snap.partial === null ? snap : { ...snap, partial: null }
       return { ...snap, partial: { messageId: frame.messageId, threadId: frame.threadId, text: frame.text } }
     case 'state':
       return {
