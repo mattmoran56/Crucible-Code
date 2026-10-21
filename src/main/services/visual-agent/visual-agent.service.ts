@@ -61,6 +61,7 @@ import {
   type PermissionRequest,
 } from './normalise'
 import { TranscriptWriter, readTranscript } from './transcript-store'
+import { readClaudeTranscript } from './claude-transcript'
 
 export const MAX_LIVE_FORKS = 3
 const MAX_NOISE_LINES = 20
@@ -468,7 +469,14 @@ function interruptBySignal(held: LiveAgent): void {
 /* --- replay --------------------------------------------------------------- */
 
 async function replayInto(held: LiveAgent, claudeSessionId: string): Promise<void> {
-  const entries = await readTranscript(transcriptDir(), claudeSessionId)
+  let entries = await readTranscript(transcriptDir(), claudeSessionId)
+  if (entries.length === 0) {
+    // A conversation we never ran (teleported down from the cloud, or started
+    // in a terminal): rebuild its history from Claude Code's own transcript,
+    // and seed our store with it so later resumes keep the whole history.
+    entries = await readClaudeTranscript(claudeSessionId, held.opts.cwd, held.opts.claudeConfigDir)
+    for (const entry of entries) held.writer.append(entry.dir, entry.line, entry.at || undefined)
+  }
   if (entries.length === 0) return
   const ctx: NormaliseContext = {
     seq: held.ctx.seq,
