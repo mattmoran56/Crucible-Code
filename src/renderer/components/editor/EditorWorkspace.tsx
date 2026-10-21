@@ -12,6 +12,7 @@ import {
   useWorkspaceLayoutStore,
   isDynamicTab,
   type WorkspaceTab,
+  type DynamicTabType,
   type CoreTab,
 } from '../../stores/workspaceLayoutStore'
 import { ColumnPanel } from '../layout/WorkspaceColumn'
@@ -171,7 +172,7 @@ export function EditorWorkspace() {
   const splitEnabled = canSplit()
 
   const handleAddDynamicTab = useCallback(
-    (columnId: string, type: 'agent' | 'terminal') => {
+    (columnId: string, type: DynamicTabType) => {
       addDynamicTab(columnId, type)
     },
     [addDynamicTab]

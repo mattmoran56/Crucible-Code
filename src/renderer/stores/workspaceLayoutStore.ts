@@ -2,11 +2,17 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 export type CoreTab = 'agent' | 'git' | 'pr' | 'review' | 'review-loop' | 'code'
-export type WorkspaceTab = CoreTab | `agent:${string}` | `terminal:${string}`
+export type WorkspaceTab = CoreTab | `agent:${string}` | `terminal:${string}` | `visual-agent:${string}`
+export type DynamicTabType = 'agent' | 'terminal' | 'visual-agent'
 
 /** Check if a tab is a dynamic (closable) instance */
 export function isDynamicTab(tab: WorkspaceTab): boolean {
-  return tab.startsWith('agent:') || tab.startsWith('terminal:')
+  return tab.startsWith('agent:') || tab.startsWith('terminal:') || tab.startsWith('visual-agent:')
+}
+
+/** Whether a tab is a dynamic Visual Agent tab. */
+export function isVisualAgentTab(tab: string): tab is `visual-agent:${string}` {
+  return tab.startsWith('visual-agent:')
 }
 
 /** Get the base type of a tab ('agent', 'git', 'terminal', etc.) */
@@ -25,6 +31,7 @@ export function getTabLabel(tab: WorkspaceTab): string {
   if (tab === 'code') return 'Code'
   if (tab.startsWith('agent:')) return `Agent ${tab.split(':')[1]}`
   if (tab.startsWith('terminal:')) return `Terminal ${tab.split(':')[1]}`
+  if (tab.startsWith('visual-agent:')) return `Visual Agent ${tab.split(':')[1]}`
   return tab
 }
 
@@ -44,10 +51,12 @@ interface PersistedLayoutState {
   savedLayouts: Record<string, WorkspaceColumn[]>
   dynamicAgentCounter: number
   dynamicTerminalCounter: number
+  dynamicVisualAgentCounter: number
 }
 
 let dynamicAgentCounter = 1
 let dynamicTerminalCounter = 0
+let dynamicVisualAgentCounter = 0
 
 interface WorkspaceLayoutState {
   columns: WorkspaceColumn[]
@@ -94,7 +103,7 @@ interface WorkspaceLayoutState {
   canSplit: () => boolean
 
   /** Add a dynamic agent or terminal tab to a column, returns the new tab ID */
-  addDynamicTab: (columnId: string, type: 'agent' | 'terminal') => WorkspaceTab
+  addDynamicTab: (columnId: string, type: DynamicTabType) => WorkspaceTab
 
   /** Remove a dynamic tab from all columns (and clean up empty columns) */
   removeDynamicTab: (tab: WorkspaceTab) => void
@@ -300,6 +309,8 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>()(
     let tabId: WorkspaceTab
     if (type === 'agent') {
       tabId = `agent:${++dynamicAgentCounter}` as WorkspaceTab
+    } else if (type === 'visual-agent') {
+      tabId = `visual-agent:${++dynamicVisualAgentCounter}` as WorkspaceTab
     } else {
       tabId = `terminal:${++dynamicTerminalCounter}` as WorkspaceTab
     }
@@ -338,13 +349,15 @@ export const useWorkspaceLayoutStore = create<WorkspaceLayoutState>()(
         savedLayouts: state.savedLayouts,
         dynamicAgentCounter,
         dynamicTerminalCounter,
+        dynamicVisualAgentCounter,
       }),
-      onRehydrate: (_state) => {
+      onRehydrateStorage: () => {
         return (rehydratedState) => {
           if (rehydratedState) {
-            const persisted = rehydratedState as unknown as { dynamicAgentCounter?: number; dynamicTerminalCounter?: number }
+            const persisted = rehydratedState as unknown as { dynamicAgentCounter?: number; dynamicTerminalCounter?: number; dynamicVisualAgentCounter?: number }
             if (persisted.dynamicAgentCounter) dynamicAgentCounter = persisted.dynamicAgentCounter
             if (persisted.dynamicTerminalCounter) dynamicTerminalCounter = persisted.dynamicTerminalCounter
+            if (persisted.dynamicVisualAgentCounter) dynamicVisualAgentCounter = persisted.dynamicVisualAgentCounter
           }
         }
       },
