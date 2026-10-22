@@ -315,6 +315,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   removeSession: async (projectId, repoPath, sessionId, opts) => {
     const session = get().sessions.find((s) => s.id === sessionId)
+
+    // Stop everything running in the worktree first (terminals, dev servers,
+    // agents): anything still alive keeps writing files (.claude settings,
+    // .vite caches) into the directory after it has been removed.
+    await useTerminalStore.getState().killAllForSession(sessionId)
+    await window.api.terminal.killSession(sessionId)
+    await useVisualAgentStore.getState().releaseSession(sessionId)
+
     if (session) {
       try {
         // session/* branches are always cleaned up by the main process; a
@@ -325,8 +333,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           session.ownsBranch && session.branchName ? { deleteBranch: session.branchName } : undefined
         )
         warnAboutSandboxTeardown(report, repoPath)
-      } catch {
-        // Worktree may already be removed
+      } catch (err) {
+        // A worktree that was already gone is not an error (the main process
+        // treats it as removed), so anything here means files are left on disk.
+        useToastStore
+          .getState()
+          .addToast('error', `Couldn't fully remove ${session.worktreePath}: ${err instanceof Error ? err.message : String(err)}`)
       }
       const remoteBranch = sessionRemoteBranch(session)
       if (opts?.deleteRemoteBranch && remoteBranch) {
@@ -339,11 +351,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         }
       }
     }
-
-    // Clean up all terminals for this session (both renderer xterm instances and main PTY processes)
-    await useTerminalStore.getState().killAllForSession(sessionId)
-    await window.api.terminal.killSession(sessionId)
-    await useVisualAgentStore.getState().releaseSession(sessionId)
 
     const sessions = get().sessions.filter((s) => s.id !== sessionId)
     await window.api.session.save(projectId, sessions)
@@ -544,8 +551,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await Promise.all(stale.map(async (w) => {
       try {
         warnAboutSandboxTeardown(await window.api.worktree.removePR(repoPath, w.prNumber), repoPath)
-      } catch {
+      } catch (err) {
         // Best-effort; will retry on next poll.
+        console.warn(`Couldn't remove PR #${w.prNumber} worktree:`, err)
       }
     }))
 
