@@ -101,7 +101,15 @@ export const controlRequestFrame = (requestId: string, request: Record<string, u
 export const interruptFrame = (requestId: string): string =>
   controlRequestFrame(requestId, { subtype: 'interrupt' })
 
-export const setModelFrame = (requestId: string, model: string): string =>
+/**
+ * The SDK handshake. Answered before any message (with --input-format
+ * stream-json the CLI says nothing else until then) with, among others, the
+ * full slash-command list: repo and user commands, skills, plugins, built-ins.
+ */
+export const initializeFrame = (requestId: string): string =>
+  controlRequestFrame(requestId, { subtype: 'initialize' })
+
+export const setModelFrame =(requestId: string, model: string): string =>
   controlRequestFrame(requestId, { subtype: 'set_model', model })
 
 export const DENY_MESSAGE = 'Denied from CodeCrucible.'

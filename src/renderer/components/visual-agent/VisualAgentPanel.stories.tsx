@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import type { VisualAgentSnapshot } from '../../../shared/visual-agent'
+import type { VisualAgentCommand, VisualAgentSnapshot } from '../../../shared/visual-agent'
 import { useVisualAgentStore, type VisualAgentUi } from '../../stores/visualAgentStore'
 import { VisualAgentPanel } from './VisualAgentPanel'
 import {
@@ -66,6 +66,25 @@ export const Streaming: Story = {
 export const SlashMenuOpen: Story = {
   args: {
     snapshot: { ...demoSnapshot('story-slash'), state: 'idle', turnStartedAt: null },
+    ui: { draft: '/' },
+  },
+}
+
+/** What a session's Claude Code reports: the repo's commands and skills, then built-ins. */
+const REPORTED_COMMANDS: VisualAgentCommand[] = [
+  { name: 'deploy', description: 'Deploy the current branch to an environment (project)', argumentHint: '<env>', builtin: false },
+  { name: 'run-tests', description: 'Run the unit and e2e suites and summarise failures (project)', argumentHint: '[pattern]', builtin: false },
+  { name: 'update-screenshots', description: 'Capture and verify screenshots from Storybook for the README (project)', argumentHint: '', builtin: false },
+  { name: 'notion-ticket', description: 'Pick up a Notion ticket and start work on it (user)', argumentHint: '<ticket url>', builtin: false },
+  { name: 'compact', description: 'Clear conversation history but keep a summary in context', argumentHint: '[instructions]', builtin: true },
+  { name: 'init', description: 'Initialize a new CLAUDE.md file with codebase documentation', argumentHint: '', builtin: true },
+  { name: 'review', description: 'Review a pull request', argumentHint: '', builtin: true },
+]
+
+/** Typing `/` lists what the session's Claude Code offers: the repo's commands and skills first. */
+export const SlashMenuRepoCommands: Story = {
+  args: {
+    snapshot: { ...demoSnapshot('story-slash-repo'), state: 'idle', turnStartedAt: null, commands: REPORTED_COMMANDS },
     ui: { draft: '/' },
   },
 }

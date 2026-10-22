@@ -118,8 +118,55 @@ describe('visual agent service', () => {
     const snap = await svc.startVisualAgent(baseOpts())
     expect(snap.state).toBe('idle')
     expect(frames('state').at(-1)).toMatchObject({ state: 'idle' })
-    // Nothing has been read from stdout and no 'spawn' event has fired.
-    expect(lastChild().stdin.write).not.toHaveBeenCalled()
+    // Nothing has been read from stdout and no 'spawn' event has fired; the
+    // only write is the handshake asking for the slash commands.
+    expect(lastChild().writes()).toEqual([
+      { type: 'control_request', request_id: expect.stringMatching(/^crucible-initialize-/), request: { subtype: 'initialize' } },
+    ])
+  })
+
+  it('reports the slash commands the CLI offers, outside the conversation', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    const requestId = c.writes()[0].request_id
+    c._line({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: requestId,
+        response: {
+          commands: [
+            { name: 'deploy', description: 'Deploy the thing (project)', argumentHint: '<env>' },
+            { name: 'compact', description: 'Compact', argumentHint: '', builtin: true },
+            { name: '__internal', description: '', argumentHint: '', builtin: true },
+          ],
+        },
+      },
+    })
+    const expected = [
+      { name: 'deploy', description: 'Deploy the thing (project)', argumentHint: '<env>', builtin: false },
+      { name: 'compact', description: 'Compact', argumentHint: '', builtin: true },
+    ]
+    expect(frames('commands')).toEqual([{ t: 'commands', commands: expected }])
+    expect(svc.getVisualAgentState('agent-1')?.commands).toEqual(expected)
+    expect(events()).toEqual([])
+    expect(frames('error')).toEqual([])
+
+    // Skills found mid-session replace the list.
+    c._line({ type: 'system', subtype: 'commands_changed', commands: [{ name: 'my-skill', description: 'A skill' }] })
+    expect(svc.getVisualAgentState('agent-1')?.commands).toEqual([
+      { name: 'my-skill', description: 'A skill', argumentHint: '', builtin: false },
+    ])
+  })
+
+  it('a CLI that refuses the handshake keeps quiet and falls back to the names system/init lists', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    c._line({ type: 'control_response', response: { subtype: 'error', request_id: c.writes()[0].request_id, error: 'unknown' } })
+    expect(frames('error')).toEqual([])
+    svc.sendVisualAgentMessage('agent-1', 'hi')
+    c._line({ ...init(), slash_commands: ['deploy', 'compact'] })
+    expect(svc.getVisualAgentState('agent-1')?.commands?.map((x) => x.name)).toEqual(['deploy', 'compact'])
   })
 
   it('a spawn that fails (no pid, then an error) ends failed with an error row, never stuck starting', async () => {
@@ -148,7 +195,7 @@ describe('visual agent service', () => {
     await svc.startVisualAgent(baseOpts())
     lastChild()._emit('spawn')
     svc.sendVisualAgentMessage('agent-1', 'say hi')
-    expect(lastChild().writes()[0]).toEqual({
+    expect(lastChild().writes().at(-1)).toEqual({
       type: 'user',
       message: { role: 'user', content: [{ type: 'text', text: 'say hi' }] },
       parent_tool_use_id: null,

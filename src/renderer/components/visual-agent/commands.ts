@@ -1,6 +1,8 @@
 // Slash commands the composer offers, and the pure judgements around them:
 // when the menu is open, what matches, and what a sent draft means.
 
+import type { VisualAgentCommand } from '../../../shared/visual-agent'
+
 export interface SlashCommand {
   name: string
   description: string
@@ -20,6 +22,31 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: '/security-review', description: 'Security review of the pending changes', handledBy: 'session' },
   { name: '/cost', description: 'Show what this session has cost so far', handledBy: 'session' },
 ]
+
+/**
+ * The menu for a session: the panel's own commands, then what the session's
+ * Claude Code reported — the repo's and the user's commands and skills first,
+ * Claude Code's built-ins after. Until it has reported, the built-in list.
+ */
+export const sessionCommands = (reported?: readonly VisualAgentCommand[] | null): SlashCommand[] => {
+  if (!reported?.length) return BUILTIN_COMMANDS
+  const panel = BUILTIN_COMMANDS.filter((command) => command.handledBy === 'panel')
+  const taken = new Set(panel.map((command) => bare(command.name)))
+  const fromSession = reported
+    .filter((command) => !taken.has(command.name.toLowerCase()))
+    .map((command): SlashCommand => ({
+      name: `/${command.name}`,
+      description: command.description,
+      ...(command.argumentHint ? { args: command.argumentHint } : {}),
+      handledBy: 'session',
+    }))
+  const builtin = new Set(reported.filter((command) => command.builtin).map((command) => `/${command.name}`))
+  return [
+    ...panel,
+    ...fromSession.filter((command) => !builtin.has(command.name)),
+    ...fromSession.filter((command) => builtin.has(command.name)),
+  ]
+}
 
 /** The query the menu should match, or null when the menu should be closed. */
 export const commandQuery = (draft: string): string | null => {

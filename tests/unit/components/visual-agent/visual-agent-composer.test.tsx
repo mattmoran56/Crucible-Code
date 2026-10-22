@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { composerKeyAction, typedKey } from '../../../../src/renderer/components/visual-agent/composerKeys'
-import { BUILTIN_COMMANDS, commandQuery, intentOf, matchCommands } from '../../../../src/renderer/components/visual-agent/commands'
+import { BUILTIN_COMMANDS, commandQuery, intentOf, matchCommands, sessionCommands } from '../../../../src/renderer/components/visual-agent/commands'
 import { Composer, type ComposerProps } from '../../../../src/renderer/components/visual-agent/Composer'
 
 describe('composerKeyAction', () => {
@@ -41,6 +41,19 @@ describe('commands', () => {
   it('ranks exact, then prefix, then subsequence', () => {
     expect(matchCommands(BUILTIN_COMMANDS, '/c').map((c) => c.name).slice(0, 3)).toEqual(['/compact', '/clear', '/cost'])
     expect(matchCommands(BUILTIN_COMMANDS, '/btw')[0].name).toBe('/btw')
+  })
+  it('builds the menu from what the session reports: panel commands, then the repo\'s, then built-ins', () => {
+    expect(sessionCommands(undefined)).toBe(BUILTIN_COMMANDS)
+    expect(sessionCommands([])).toBe(BUILTIN_COMMANDS)
+    const menu = sessionCommands([
+      { name: 'compact', description: 'Compact', argumentHint: '[instructions]', builtin: true },
+      { name: 'deploy', description: 'Deploy (project)', argumentHint: '<env>', builtin: false },
+      { name: 'clear', description: 'Clear', argumentHint: '', builtin: true },
+      { name: 'my-skill', description: 'A skill (project)', argumentHint: '', builtin: false },
+    ])
+    expect(menu.map((c) => c.name)).toEqual(['/btw', '/clear', '/model', '/deploy', '/my-skill', '/compact'])
+    expect(menu[3]).toEqual({ name: '/deploy', description: 'Deploy (project)', args: '<env>', handledBy: 'session' })
+    expect(menu[1].handledBy).toBe('panel')
   })
   it('reads intent from a draft', () => {
     expect(intentOf('/btw why?')).toEqual({ kind: 'fork', question: 'why?' })

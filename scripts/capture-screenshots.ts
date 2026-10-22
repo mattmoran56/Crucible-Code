@@ -377,6 +377,12 @@ const targets: ScreenshotTarget[] = [
     delay: 2500,
   },
   {
+    name: 'visual-agent-slash-menu',
+    storyId: 'visual-agent-visualagentpanel--slash-menu-repo-commands',
+    viewport: { width: 900, height: 760 },
+    delay: 1500,
+  },
+  {
     name: 'visual-agent-add-tab',
     storyId: 'app-full-layout--visual-agent',
     delay: 2500,

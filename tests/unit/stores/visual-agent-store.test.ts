@@ -103,6 +103,13 @@ describe('mergeSnapshot / isAskPending', () => {
     expect(merged.state).toBe('idle')
   })
 
+  it('takes the command list from a frame and keeps it over a start reply that has none yet', () => {
+    const commands = [{ name: 'deploy', description: 'Deploy (project)', argumentHint: '', builtin: false }]
+    const held = reduceFrame(snap(), { t: 'commands', commands })
+    expect(held.commands).toEqual(commands)
+    expect(mergeSnapshot(held, snap({ state: 'idle' })).commands).toEqual(commands)
+  })
+
   it('keeps a later state over a start reply that still says starting', () => {
     // The process reported idle by frame before `start` resolved.
     const held = snap({ state: 'idle' })
