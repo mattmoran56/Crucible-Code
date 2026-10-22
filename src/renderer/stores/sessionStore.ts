@@ -8,6 +8,7 @@ import { useVisualAgentStore } from './visualAgentStore'
 import { useProjectStore } from './projectStore'
 import { projectConfigDir } from '../lib/visualAgents'
 import { recoverAbandonedTeleports } from '../lib/teleportRecovery'
+import { warnAboutSandboxTeardown } from '../lib/sandboxTeardown'
 
 type WorkspaceTab = 'agent' | 'git' | 'pr'
 
@@ -318,11 +319,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       try {
         // session/* branches are always cleaned up by the main process; a
         // custom-named branch only when the app created it.
-        await window.api.worktree.remove(
+        const report = await window.api.worktree.remove(
           repoPath,
           session.worktreePath,
           session.ownsBranch && session.branchName ? { deleteBranch: session.branchName } : undefined
         )
+        warnAboutSandboxTeardown(report, repoPath)
       } catch {
         // Worktree may already be removed
       }
@@ -541,7 +543,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     await Promise.all(stale.map(async (w) => {
       try {
-        await window.api.worktree.removePR(repoPath, w.prNumber)
+        warnAboutSandboxTeardown(await window.api.worktree.removePR(repoPath, w.prNumber), repoPath)
       } catch {
         // Best-effort; will retry on next poll.
       }

@@ -29,6 +29,7 @@
 - **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
 - **Remote access** — Pair a second device's browser to your desktop instance over the LAN, or over a hosted end-to-end encrypted Cloudflare Worker relay that works through VPNs and hotel Wi-Fi. View projects, sessions, settings, and live agent terminals from anywhere (full mobile layout, PWA-installable on iOS)
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
+- **Sandboxer sandboxes** — Per-project opt-in: run a session's worktree as a [Sandboxer](https://github.com/mattmoran56/sandboxer-core) sandbox (one container with its own database and storage) from the Sandbox panel. Deleting the session destroys the sandbox and its data
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that become the first message of a new session's agent
 - **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Pick a variant per project: **Lite**/**Pro** (three fresh sessions per round) or **Efficient** (fresh stacked reviews + one persistent worker that keeps context across rounds — cheaper). Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
 - **Visual agents** — Every agent tab is a chat interface to Claude Code rather than a terminal — rich tool cards with diffs, inline permission and question cards, a sub-agent tray, `/btw` side questions in a fork, a model picker, and conversations that resume across app restarts
@@ -234,7 +235,7 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 - **Open remote branch** — Create a session from a remote branch with autocomplete
 - **Open as main branch** — Temporarily check out a session's branch on the main repo (useful for builds that need the real repo path)
 - **Rename a session** — Give a session a more identifiable name from the card's `⋯` menu. The underlying git branch is renamed to match when it is still the default `session/<name>`; a custom branch, or a cloud (or teleported) session's branch, stays as it is
-- **Delete a session** — Removes the worktree and the local branch the app created. For a cloud (or teleported) session the confirm dialog also offers, unticked by default, to delete the branch on origin
+- **Delete a session** — Removes the worktree and the local branch the app created. For a cloud (or teleported) session the confirm dialog also offers, unticked by default, to delete the branch on origin. Any Sandboxer sandbox built from the worktree is destroyed first (see **Sandboxer sandboxes** below)
 
 ![Rename session dialog](docs/screenshots/rename-session-dialog.png)
 
@@ -397,6 +398,19 @@ Poll a Notion database for new tasks and auto-spawn a session per task. Sessions
 ![Session card with Notion ticket link](docs/screenshots/session-card-notion-ticket.png)
 
 ![Notion settings with multiple OR filter groups](docs/screenshots/notion-settings-multiple-groups.png)
+
+</details>
+
+<details>
+<summary><strong>Sandboxer sandboxes</strong></summary>
+
+[Sandboxer](https://github.com/mattmoran56/sandboxer-core) turns a git worktree into a running copy of the whole project: one container per branch with its own database, file storage and services, reachable at `https://<slug>--<app>--<project>.sbx.localhost`. The `sandboxer` CLI must be installed (`sandboxer doctor` checks the machine).
+
+- **Off by default, per project** — Turn it on in **Settings → Sandboxer** and point it at the project's `sandboxer.yaml`. The path defaults to `sandboxer.yaml` at the repo root and can be any path relative to the root, or absolute. The card shows whether the file exists, how git sees it, and whether the CLI is installed
+- **Config kept out of git** — A config that is not committed (e.g. listed in `.git/info/exclude`) never reaches a worktree on its own, so the app copies it to `<worktree>/sandboxer.yaml` before every start and makes sure it is excluded there too. A worktree that commits its own `sandboxer.yaml` is left alone. Because of the copy, `sandboxer up` also works by hand from a session's terminal
+- **Sandbox panel** — A box icon in the right activity bar (only for enabled projects) shows the active session's sandbox: its state, a link per app, and **Start sandbox** (runs `sandboxer up` in a terminal tab), **Stop** / **Start**, **Logs**, **Shell** and **Destroy**
+- **Destroyed with the session** — Deleting a session, whether by hand or by cleanup (including PR review worktrees), runs `sandboxer down` for every sandbox built from the worktree, before the worktree is removed. That removes the container, database, uploads and its generated files. Anything that survives is reaped with `sandboxer gc` once the worktree is gone, and the app warns you if a sandbox still could not be destroyed
+- **Startup sweep** — On launch, sandboxes whose session worktree no longer exists (e.g. deleted while Docker was down) are reaped with `sandboxer gc`
 
 </details>
 
