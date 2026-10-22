@@ -381,7 +381,6 @@ export const mockApi = {
       gitState: 'ignored' as const,
       cliVersion: '0.1.0',
     }),
-    prepare: async (repoPath: string) => ({ copied: true, source: `${repoPath}/sandboxer.yaml` }),
     status: async (worktreePath: string) => [
       {
         project: 'acme',
@@ -393,14 +392,36 @@ export const mockApi = {
         ttl: '43200',
         urls: {
           app: 'https://new-feature--app--acme.sbx.localhost',
+          admin: 'https://new-feature--admin--acme.sbx.localhost',
+          storybook: 'https://new-feature--storybook--acme.sbx.localhost',
           api: 'https://new-feature--api--acme.sbx.localhost',
         },
+        links: { app: 'ready' as const, admin: 'starting' as const, storybook: 'not-built' as const, api: 'ready' as const },
       },
     ],
     stop: async () => {},
     start: async () => {},
     down: async () => ({ removed: ['acme/new-feature'], failed: [] }),
     openUrl: async () => {},
+    up: async (_repoPath: string, worktreePath: string) => ({
+      worktreePath,
+      title: 'Starting sandbox',
+      state: 'running' as const,
+      lines: ['$ sandboxer up', '==> Building sandboxer/acme:f6eb644f49b7'],
+      step: 'Building sandboxer/acme:f6eb644f49b7',
+      startedAt: new Date().toISOString(),
+    }),
+    build: async (sandbox: { worktree: string }, label: string) => ({
+      worktreePath: sandbox.worktree,
+      title: `Building ${label}`,
+      state: 'running' as const,
+      lines: [],
+      step: null,
+      startedAt: new Date().toISOString(),
+    }),
+    job: async () => null,
+    cancelJob: async () => {},
+    onJobEvent: () => () => {},
   },
 
   button: {
@@ -594,6 +615,25 @@ export const mockApi = {
     },
     discoverLocal: async () => null,
     openUrl: async () => {},
+    up: async (_repoPath: string, worktreePath: string) => ({
+      worktreePath,
+      title: 'Starting sandbox',
+      state: 'running' as const,
+      lines: ['$ sandboxer up', '==> Building sandboxer/acme:f6eb644f49b7'],
+      step: 'Building sandboxer/acme:f6eb644f49b7',
+      startedAt: new Date().toISOString(),
+    }),
+    build: async (sandbox: { worktree: string }, label: string) => ({
+      worktreePath: sandbox.worktree,
+      title: `Building ${label}`,
+      state: 'running' as const,
+      lines: [],
+      step: null,
+      startedAt: new Date().toISOString(),
+    }),
+    job: async () => null,
+    cancelJob: async () => {},
+    onJobEvent: () => () => {},
   },
 
   reviewLoop: {

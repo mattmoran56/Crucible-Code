@@ -2,6 +2,7 @@ import { IPC } from '../../shared/constants'
 import { handle } from './handle'
 import * as worktreeService from '../services/worktree.service'
 import * as sandboxerService from '../services/sandboxer.service'
+import { cancelJob } from '../services/sandboxer-jobs.service'
 import type { SandboxTeardownReport } from '../../shared/types'
 
 /**
@@ -14,6 +15,8 @@ async function removeWithSandboxes(
   worktreePath: string,
   remove: () => Promise<void>
 ): Promise<SandboxTeardownReport> {
+  // A `sandboxer up` still running would bring the sandbox straight back.
+  cancelJob(worktreePath)
   const report = await sandboxerService.teardownForWorktree(worktreePath)
   await remove()
   const survivors = new Set(

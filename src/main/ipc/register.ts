@@ -44,7 +44,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerRemoteHandlers(window)
   registerVisualAgentHandlers(window)
   registerCloudSessionHandlers(window)
-  registerSandboxerHandlers()
+  registerSandboxerHandlers(window)
 
   // Context mapping management for notification routing.
   // The renderer registers sessions, the Code editor (per-project) and individual

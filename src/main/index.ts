@@ -17,6 +17,7 @@ import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-
 import { unregisterCloud } from '../../remote/server/cloud-client'
 import { scrubInheritedClaudeSession } from './services/claude-env'
 import { reapOrphanedSessionSandboxes } from './services/sandboxer.service'
+import { killAllJobs as killSandboxerJobs } from './services/sandboxer-jobs.service'
 
 // When launched from Finder/Dock, process.env.PATH is the minimal macOS default
 // and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
@@ -107,6 +108,7 @@ app.on('before-quit', (event) => {
   stopScheduler()
   stopRelayServer()
   stopKeepAwake()
+  killSandboxerJobs()
 })
 
 app.on('window-all-closed', () => {

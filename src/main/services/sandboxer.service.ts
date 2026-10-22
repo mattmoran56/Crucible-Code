@@ -1,10 +1,13 @@
 import { execFile } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
 import { appendFile, copyFile, readFile } from 'node:fs/promises'
+import { request as httpRequest, type IncomingMessage } from 'node:http'
+import { request as httpsRequest } from 'node:https'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type {
   SandboxInfo,
+  SandboxLinkState,
   SandboxTeardownReport,
   SandboxerConfigCheck,
 } from '../../shared/types'
@@ -188,19 +191,80 @@ export async function listForWorktree(worktreePath: string): Promise<SandboxInfo
   return (await listAll()).filter((s) => !!s.worktree && samePath(s.worktree, worktreePath))
 }
 
-/** Sandboxes for this worktree with their URLs, for the Sandbox panel. */
+/**
+ * Does a sandbox URL answer yet? Asked of the URL itself because sandboxer only
+ * reports readiness for backends, not front-ends. What the answers mean:
+ * - 502/504 or no connection: the sandbox's Caddy is up but the app is not.
+ * - 503 "has not been built": a front-end sandboxer has not built yet.
+ * - 404 not via Caddy: Traefik has no route yet (the container is starting).
+ * - anything else, including an app's own 404 on `/`: ready.
+ * Certificates are not checked: these are sandboxer's own loopback hostnames,
+ * often signed by a local mkcert CA that Node does not trust.
+ */
+export function probeUrl(url: string, timeoutMs = 4_000): Promise<SandboxLinkState> {
+  return new Promise((resolvePromise) => {
+    let settled = false
+    const done = (state: SandboxLinkState) => {
+      if (settled) return
+      settled = true
+      resolvePromise(state)
+      req.destroy()
+    }
+    let target: URL
+    try {
+      target = new URL(url)
+    } catch {
+      resolvePromise('starting')
+      return
+    }
+    const send = target.protocol === 'https:' ? httpsRequest : httpRequest
+    const req = send(target, { method: 'GET', timeout: timeoutMs, rejectUnauthorized: false }, (res: IncomingMessage) => {
+      const code = res.statusCode ?? 0
+      const viaCaddy = /caddy/i.test(`${res.headers.server ?? ''} ${res.headers.via ?? ''}`)
+      if (code === 503) {
+        let body = ''
+        res.setEncoding('utf8')
+        res.on('data', (chunk: string) => {
+          body += chunk
+          if (body.length > 4_096) done(/has not been built/.test(body) ? 'not-built' : 'starting')
+        })
+        res.on('end', () => done(/has not been built/.test(body) ? 'not-built' : 'starting'))
+        res.on('error', () => done('starting'))
+        return
+      }
+      if (code === 0 || code === 502 || code === 504 || (code === 404 && !viaCaddy)) done('starting')
+      else done('ready')
+    })
+    req.on('timeout', () => done('starting'))
+    req.on('error', () => done('starting'))
+    req.end()
+  })
+}
+
+let probe: (url: string) => Promise<SandboxLinkState> = (url) => probeUrl(url)
+
+/** Test seam: swap the URL probe. Pass nothing to restore the default. */
+export function setProbeForTests(fn?: (url: string) => Promise<SandboxLinkState>): void {
+  probe = fn ?? ((url) => probeUrl(url))
+}
+
+/** Sandboxes for this worktree with their URLs and whether each one answers yet. */
 export async function status(worktreePath: string): Promise<SandboxInfo[]> {
   const sandboxes = await listForWorktree(worktreePath)
   return Promise.all(
     sandboxes.map(async (s) => {
+      let info: SandboxInfo = s
       try {
         const detail = JSON.parse(
           await sandboxer(['status', s.slug, '--project', s.project], { cwd: worktreePath, timeoutMs: 30_000 })
         ) as SandboxInfo
-        return { ...s, ...detail }
+        info = { ...s, ...detail }
       } catch {
         return s
       }
+      const entries = Object.entries(info.urls ?? {})
+      const states = await Promise.all(entries.map(([, url]) => probe(url)))
+      return { ...info, links: Object.fromEntries(entries.map(([label], i) => [label, states[i]])) }
     })
   )
 }

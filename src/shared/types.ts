@@ -54,6 +54,29 @@ export interface SandboxInfo {
   container: string
   ttl?: string
   urls?: Record<string, string>
+  /** Whether each URL answers yet, keyed like `urls` (filled in by status). */
+  links?: Record<string, SandboxLinkState>
+}
+
+/**
+ * ready: the app answers. starting: nothing listening yet (502/504/no
+ * connection). not-built: a front-end sandboxer has not built in this sandbox.
+ */
+export type SandboxLinkState = 'ready' | 'starting' | 'not-built'
+
+/** A long-running sandboxer command started from the Sandbox panel. */
+export interface SandboxJob {
+  worktreePath: string
+  /** What the panel calls it, e.g. "Starting sandbox" or "Building app". */
+  title: string
+  state: 'running' | 'succeeded' | 'failed'
+  /** Output lines, newest last (capped). */
+  lines: string[]
+  /** The most recent `==>` step sandboxer printed. */
+  step: string | null
+  startedAt: string
+  finishedAt?: string
+  exitCode?: number | null
 }
 
 /** What tearing down a worktree's sandboxes did. */

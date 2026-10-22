@@ -22,8 +22,24 @@ const running: SandboxInfo = {
   worktree: '/wt/feat',
   state: 'running',
   container: 'sandboxer-acme-feat',
-  urls: { app: 'https://feat--app--acme.sbx.localhost' },
+  urls: {
+    app: 'https://feat--app--acme.sbx.localhost',
+    admin: 'https://feat--admin--acme.sbx.localhost',
+    storybook: 'https://feat--storybook--acme.sbx.localhost',
+  },
+  links: { app: 'ready', admin: 'starting', storybook: 'not-built' },
 }
+
+const runningJob = {
+  worktreePath: '/wt/feat',
+  title: 'Starting sandbox',
+  state: 'running' as const,
+  lines: ['$ sandboxer up', '==> Building sandboxer/acme:f6eb'],
+  step: 'Building sandboxer/acme:f6eb',
+  startedAt: new Date().toISOString(),
+}
+
+let jobListener: ((job: any) => void) | null
 
 let api: Record<string, ReturnType<typeof vi.fn>>
 
@@ -35,9 +51,19 @@ function setProject(project: Partial<Project>) {
 }
 
 beforeEach(() => {
+  jobListener = null
   api = {
     status: vi.fn(async () => [running]),
-    prepare: vi.fn(async () => ({ copied: true, source: '/repo/sandboxer.yaml' })),
+    up: vi.fn(async () => runningJob),
+    build: vi.fn(async () => ({ ...runningJob, title: 'Building storybook', step: null })),
+    job: vi.fn(async () => null),
+    cancelJob: vi.fn(async () => {}),
+    onJobEvent: vi.fn((cb: (job: any) => void) => {
+      jobListener = cb
+      return () => {
+        jobListener = null
+      }
+    }),
     down: vi.fn(async () => ({ removed: ['acme/feat'], failed: [] })),
     stop: vi.fn(async () => {}),
     start: vi.fn(async () => {}),
@@ -69,13 +95,58 @@ describe('SandboxPanel', () => {
     expect(api.openUrl).toHaveBeenCalledWith('https://feat--app--acme.sbx.localhost')
   })
 
-  it('starting a sandbox copies the config in, then runs sandboxer up in the worktree', async () => {
+  it('marks each link ready, starting or not built, and counts the ready ones', async () => {
+    render(<SandboxPanel />)
+    expect(await screen.findByTestId('sandbox-ready-count')).toHaveTextContent('1 of 3 ready')
+    const state = (text: string) => screen.getByText(text).closest('button')!.getAttribute('data-link-state')
+    expect(state('feat--app--acme.sbx.localhost')).toBe('ready')
+    expect(state('feat--admin--acme.sbx.localhost')).toBe('starting')
+    expect(state('feat--storybook--acme.sbx.localhost')).toBe('not-built')
+  })
+
+  it('offers to build a front-end that is not built, as a job', async () => {
+    const user = userEvent.setup()
+    render(<SandboxPanel />)
+    await user.click(await screen.findByRole('button', { name: 'Build' }))
+    expect(api.build).toHaveBeenCalledWith(expect.objectContaining({ slug: 'feat' }), 'storybook')
+    expect(await screen.findByText('Building storybook')).toBeInTheDocument()
+  })
+
+  it('starting a sandbox runs it as a job and shows its progress in the panel, not a terminal', async () => {
     api.status.mockResolvedValue([])
     const user = userEvent.setup()
     render(<SandboxPanel />)
     await user.click(await screen.findByRole('button', { name: 'Start sandbox' }))
-    expect(api.prepare).toHaveBeenCalledWith('/repo', '/wt/feat', 'ops/sb.yaml')
-    expect((window as any).api.button.execute).toHaveBeenCalledWith('sandboxer up', '/wt/feat', 'shell', 'terminal', 's1')
+    expect(api.up).toHaveBeenCalledWith('/repo', '/wt/feat', 'ops/sb.yaml')
+    expect((window as any).api.button.execute).not.toHaveBeenCalled()
+    expect(await screen.findByText('Starting sandbox')).toBeInTheDocument()
+    expect(screen.getByText('Building sandboxer/acme:f6eb')).toBeInTheDocument()
+
+    // Progress pushed from main updates the card; the output is there on demand.
+    jobListener!({ ...runningJob, step: 'Starting session-feat from session/feat@99ec052', lines: [...runningJob.lines, '==> Starting session-feat'] })
+    expect(await screen.findByText(/Starting session-feat from/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show output' }))
+    expect(screen.getByText(/\$ sandboxer up/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(api.cancelJob).toHaveBeenCalledWith('/wt/feat')
+  })
+
+  it('shows a failed job with its output, and refreshes the sandbox when a job ends', async () => {
+    render(<SandboxPanel />)
+    await screen.findByText('acme/feat')
+    const calls = api.status.mock.calls.length
+    jobListener!({ ...runningJob, state: 'failed', exitCode: 1, finishedAt: new Date().toISOString(), lines: ['x boom'] })
+    expect(await screen.findByText('Failed (exit 1)')).toBeInTheDocument()
+    expect(screen.getByText('x boom')).toBeInTheDocument()
+    await waitFor(() => expect(api.status.mock.calls.length).toBeGreaterThan(calls))
+  })
+
+  it('ignores job events for other worktrees, and picks up a job already running', async () => {
+    api.job.mockResolvedValue(runningJob)
+    render(<SandboxPanel />)
+    expect(await screen.findByText('Starting sandbox')).toBeInTheDocument()
+    jobListener!({ ...runningJob, worktreePath: '/wt/other', title: 'Elsewhere' })
+    expect(screen.queryByText('Elsewhere')).not.toBeInTheDocument()
   })
 
   it('destroy asks first, then tears the sandbox down', async () => {

@@ -152,11 +152,20 @@ describe('prepareWorktree', () => {
 })
 
 describe('status', () => {
-  it('returns only this worktree’s sandboxes, with their URLs', async () => {
+  afterEach(() => sandboxer.setProbeForTests())
+
+  it('returns only this worktree’s sandboxes, with their URLs and whether each answers', async () => {
+    const probed: string[] = []
+    sandboxer.setProbeForTests(async (url) => {
+      probed.push(url)
+      return 'starting'
+    })
     fleet = [sb('feat', worktree), sb('other', join(dir, 'other'))]
     const result = await sandboxer.status(worktree)
     expect(result.map((s) => s.slug)).toEqual(['feat'])
     expect(result[0].urls?.app).toBe('https://feat--app--acme.sbx.localhost')
+    expect(result[0].links).toEqual({ app: 'starting' })
+    expect(probed).toEqual(['https://feat--app--acme.sbx.localhost'])
   })
 })
 
