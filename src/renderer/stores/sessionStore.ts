@@ -314,7 +314,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   removeSession: async (projectId, repoPath, sessionId, opts) => {
-    const session = get().sessions.find((s) => s.id === sessionId)
+    const before = get().sessions
+    const session = before.find((s) => s.id === sessionId)
+    const index = session ? before.indexOf(session) : -1
+    const visible = () => get().currentProjectId === projectId
+
+    // Hide it straight away, so a delete feels instant even though the
+    // worktree (and any sandbox) can take a while to tear down. If the
+    // teardown fails it comes back below so the user can try again.
+    if (session && visible()) {
+      const sessions = get().sessions.filter((s) => s.id !== sessionId)
+      set({
+        sessions,
+        activeSessionId:
+          get().activeSessionId === sessionId ? (sessions[0]?.id ?? null) : get().activeSessionId,
+      })
+    }
 
     // Stop everything running in the worktree first (terminals, dev servers,
     // agents): anything still alive keeps writing files (.claude settings,
@@ -335,10 +350,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         warnAboutSandboxTeardown(report, repoPath)
       } catch (err) {
         // A worktree that was already gone is not an error (the main process
-        // treats it as removed), so anything here means files are left on disk.
+        // treats it as removed), so this means files are still on disk: put
+        // the session back rather than lose track of them.
         useToastStore
           .getState()
-          .addToast('error', `Couldn't fully remove ${session.worktreePath}: ${err instanceof Error ? err.message : String(err)}`)
+          .addToast(
+            'error',
+            `Couldn't delete "${session.name}": ${err instanceof Error ? err.message : String(err)}. It's back in the list so you can try again.`
+          )
+        if (visible() && !get().sessions.some((s) => s.id === sessionId)) {
+          const sessions = [...get().sessions]
+          sessions.splice(Math.min(index, sessions.length), 0, session)
+          set({ sessions })
+        }
+        return
       }
       const remoteBranch = sessionRemoteBranch(session)
       if (opts?.deleteRemoteBranch && remoteBranch) {
@@ -352,17 +377,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
     }
 
-    const sessions = get().sessions.filter((s) => s.id !== sessionId)
+    // Persist from the live list when this project is still shown (it may have
+    // gained sessions meanwhile), otherwise from the list we started with.
+    const sessions = (visible() ? get().sessions : before).filter((s) => s.id !== sessionId)
     await window.api.session.save(projectId, sessions)
-    if (get().currentProjectId !== projectId) return
-
-    set({
-      sessions,
-      activeSessionId:
-        get().activeSessionId === sessionId
-          ? (sessions[0]?.id ?? null)
-          : get().activeSessionId,
-    })
+    if (visible()) set({ sessions })
   },
 
   renameSession: async (projectId, repoPath, sessionId, newName) => {

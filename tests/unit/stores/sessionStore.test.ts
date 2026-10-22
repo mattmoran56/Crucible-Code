@@ -465,10 +465,26 @@ describe('sessionStore.removeSession', () => {
     expect(useSessionStore.getState().activeSessionId).toBeNull()
   })
 
-  it('swallows worktree removal errors and still deletes the session', async () => {
-    worktreeApi.remove.mockRejectedValue(new Error('already gone'))
-    await useSessionStore.getState().removeSession('p1', '/repo', 's1')
+  it('hides the session immediately, before the worktree removal finishes', async () => {
+    let finish!: () => void
+    worktreeApi.remove.mockImplementation(() => new Promise<void>((r) => (finish = r)))
+    const pending = useSessionStore.getState().removeSession('p1', '/repo', 's1')
     expect(useSessionStore.getState().sessions.map((x) => x.id)).toEqual(['s2'])
+    expect(useSessionStore.getState().activeSessionId).toBe('s2')
+    await vi.waitFor(() => expect(worktreeApi.remove).toHaveBeenCalled())
+    expect(sessionApi.save).not.toHaveBeenCalled()
+    finish()
+    await pending
+    expect(sessionApi.save).toHaveBeenCalledWith('p1', [expect.objectContaining({ id: 's2' })])
+  })
+
+  it('brings the session back, in place, when the worktree removal fails', async () => {
+    worktreeApi.remove.mockRejectedValue(new Error('Worktree directory was not fully removed'))
+    useToastStore.setState({ toasts: [] })
+    await useSessionStore.getState().removeSession('p1', '/repo', 's1')
+    expect(useSessionStore.getState().sessions.map((x) => x.id)).toEqual(['s1', 's2'])
+    expect(sessionApi.save).not.toHaveBeenCalled()
+    expect(useToastStore.getState().toasts[0].message).toMatch(/Couldn't delete .*not fully removed.*try again/)
   })
 
   it('skips the worktree removal for an unknown session id but still persists', async () => {
