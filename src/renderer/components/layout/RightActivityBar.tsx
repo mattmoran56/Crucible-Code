@@ -1,6 +1,7 @@
 import React from 'react'
 import { Tooltip } from '../ui'
 import { CustomButtonBar } from '../buttons/CustomButtonBar'
+import { useProjectStore } from '../../stores/projectStore'
 
 interface RightActivityBarProps {
   activePanel: string | null
@@ -8,6 +9,10 @@ interface RightActivityBarProps {
 }
 
 export function RightActivityBar({ activePanel, onToggle }: RightActivityBarProps) {
+  // Only projects that opted into Sandboxer get the Sandbox panel.
+  const sandboxerEnabled = useProjectStore(
+    (s) => !!s.projects.find((p) => p.id === s.activeProjectId)?.sandboxer?.enabled
+  )
   return (
     <div
       className="flex flex-col items-center bg-bg-secondary border-l border-border flex-shrink-0"
@@ -52,6 +57,28 @@ export function RightActivityBar({ activePanel, onToggle }: RightActivityBarProp
           </svg>
         </button>
       </Tooltip>
+
+      {sandboxerEnabled && (
+        <Tooltip content="Sandbox" side="left">
+          <button
+            aria-label="Sandbox"
+            onClick={() => onToggle('sandbox')}
+            className={`w-8 h-8 rounded flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              activePanel === 'sandbox'
+                ? 'bg-accent/15 text-accent'
+                : 'text-text-muted hover:text-text hover:bg-bg-tertiary'
+            }`}
+            style={{ marginTop: 4 }}
+          >
+            {/* Container/box icon */}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              <path d="M3.27 6.96L12 12.01l8.73-5.05" />
+              <path d="M12 22.08V12" />
+            </svg>
+          </button>
+        </Tooltip>
+      )}
 
       {/* Custom buttons */}
       <CustomButtonBar placement="right-activity-bar" />

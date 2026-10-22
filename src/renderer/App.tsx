@@ -7,6 +7,7 @@ import { useEditorStore } from './stores/editorStore'
 import { RightActivityBar } from './components/layout/RightActivityBar'
 import { NotesPanel } from './components/notes/NotesPanel'
 import { UsagePanel } from './components/usage/UsagePanel'
+import { SandboxPanel } from './components/sandboxer/SandboxPanel'
 import { useUsageStore } from './stores/usageStore'
 import { ResizeHandle, IconButton } from './components/ui'
 import { useProjectStore } from './stores/projectStore'
@@ -30,7 +31,7 @@ import { useNotionBootstrap } from './hooks/useNotionBootstrap'
 import { UsageLimitToast } from './components/usage/UsageLimitToast'
 import { CloudWebPool } from './components/cloud/CloudWebPool'
 
-const RIGHT_PANEL_LABELS = { notes: 'Notes', usage: 'Usage' } as const
+const RIGHT_PANEL_LABELS = { notes: 'Notes', usage: 'Usage', sandbox: 'Sandbox' } as const
 type RightPanelId = keyof typeof RIGHT_PANEL_LABELS
 const isRightPanelId = (id: string): id is RightPanelId =>
   Object.prototype.hasOwnProperty.call(RIGHT_PANEL_LABELS, id)
@@ -235,6 +236,7 @@ export default function App() {
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   {activeRightPanel === 'notes' && <NotesPanel />}
                   {activeRightPanel === 'usage' && <UsagePanel />}
+                  {activeRightPanel === 'sandbox' && <SandboxPanel />}
                 </div>
               </div>
             </>

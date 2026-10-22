@@ -7,6 +7,7 @@ export type SettingsSection =
   | 'pr-list'
   | 'startup-prompts'
   | 'notion'
+  | 'sandboxer'
   | 'review-loop'
   | 'project-defaults'
   | 'buttons'
@@ -28,6 +29,7 @@ const ITEMS: NavItem[] = [
   { id: 'pr-list', label: 'PR List Display', group: 'project' },
   { id: 'startup-prompts', label: 'Startup Prompts', group: 'project', requiresProjects: true },
   { id: 'notion', label: 'Notion', group: 'project', requiresProjects: true },
+  { id: 'sandboxer', label: 'Sandboxer', group: 'project', requiresProjects: true },
   { id: 'review-loop', label: 'Review Loop', group: 'project' },
   { id: 'about', label: 'About', group: 'meta' },
 ]
