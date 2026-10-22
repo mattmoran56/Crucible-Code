@@ -52,6 +52,13 @@ export type VisualAgentEvent = EventBase & (
 )
 
 export interface VisualAgentUsage { input: number; output: number; cacheRead: number; cacheWrite: number }
+
+/**
+ * A slash command the session's Claude Code offers: built-ins plus the repo's
+ * and the user's `.claude/commands`, skills and plugin commands. `name` has no
+ * leading slash; `builtin` marks Claude Code's own.
+ */
+export interface VisualAgentCommand { name: string; description: string; argumentHint: string; builtin: boolean }
 export type VisualAgentAskDecision = 'allow' | 'always' | 'deny'
 
 export interface VisualAgentFork {
@@ -73,6 +80,8 @@ export interface VisualAgentSnapshot {
   usage: { input: number; output: number; total: number } | null
   forks: VisualAgentFork[]
   turnStartedAt: string | null
+  /** What the CLI reported it offers; absent until it has said. */
+  commands?: VisualAgentCommand[]
 }
 
 export type VisualAgentFrame =
@@ -83,6 +92,7 @@ export type VisualAgentFrame =
   | { t: 'usage'; usage: { input: number; output: number; total: number } }
   | { t: 'forks'; forks: VisualAgentFork[] }
   | { t: 'fork-event'; forkId: string; event: VisualAgentEvent }
+  | { t: 'commands'; commands: VisualAgentCommand[] }
   | { t: 'error'; message: string }
 
 export interface VisualAgentStartOptions {

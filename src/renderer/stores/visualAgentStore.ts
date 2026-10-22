@@ -135,6 +135,8 @@ export const reduceFrame = (snap: VisualAgentSnapshot, frame: VisualAgentFrame):
       return { ...snap, claudeSessionId: frame.claudeSessionId || snap.claudeSessionId, model: frame.model || snap.model }
     case 'usage':
       return { ...snap, usage: frame.usage }
+    case 'commands':
+      return { ...snap, commands: frame.commands }
     case 'forks':
       return { ...snap, forks: mergeForks(snap.forks, frame.forks) }
     case 'fork-event': {
@@ -164,6 +166,8 @@ export const mergeSnapshot = (held: VisualAgentSnapshot | undefined, incoming: V
     ...(keepHeldState ? { state: held.state, turnStartedAt: held.turnStartedAt } : {}),
     events: mergeEvents(incoming.events, held.events),
     forks: mergeForks(held.forks, incoming.forks),
+    // A commands frame can likewise beat the snapshot that would carry it.
+    ...(incoming.commands || held.commands ? { commands: incoming.commands ?? held.commands } : {}),
   }
 }
 

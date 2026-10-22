@@ -13,7 +13,7 @@
  *  - Nesting comes from `parent_tool_use_id` and nothing else.
  *  - Pure: no I/O, no clocks except through the context.
  */
-import type { VisualAgentEvent, VisualAgentUsage } from '../../../shared/visual-agent'
+import type { VisualAgentCommand, VisualAgentEvent, VisualAgentUsage } from '../../../shared/visual-agent'
 import { TELEPORT_AUTO_LABEL, TELEPORT_AUTO_MESSAGE } from '../../../shared/visual-agent'
 
 export const MAIN_THREAD = 'main'
@@ -100,6 +100,60 @@ export const initModelIn = (line: unknown): string | null => {
   const raw = obj(line)
   if (!raw || raw.type !== 'system' || raw.subtype !== 'init') return null
   return nonEmpty(raw.model)
+}
+
+/* --- slash commands ------------------------------------------------------- */
+
+const commandOf = (value: unknown): VisualAgentCommand | null => {
+  const held = obj(value)
+  const name = held ? nonEmpty(held.name)?.replace(/^\//, '') : null
+  // `__`-prefixed names are Claude Code's internal plumbing.
+  if (!held || !name || name.startsWith('__')) return null
+  return {
+    name,
+    description: str(held.description) ?? '',
+    argumentHint: str(held.argumentHint) ?? '',
+    builtin: held.builtin === true,
+  }
+}
+
+/**
+ * The full command list a line carries, or null: the reply to our
+ * `initialize` request, or a `system/commands_changed` push (skills found
+ * mid-session), which replaces the list.
+ */
+export const commandsIn = (line: unknown): VisualAgentCommand[] | null => {
+  const raw = obj(line)
+  if (!raw) return null
+  let list: unknown
+  if (raw.type === 'system' && raw.subtype === 'commands_changed') list = raw.commands
+  else if (raw.type === 'control_response') {
+    const outer = obj(raw.response)
+    if (outer?.subtype !== 'success') return null
+    list = obj(outer.response)?.commands
+  }
+  if (!Array.isArray(list)) return null
+  const seen = new Set<string>()
+  const commands: VisualAgentCommand[] = []
+  for (const entry of list) {
+    const command = commandOf(entry)
+    if (!command || seen.has(command.name)) continue
+    seen.add(command.name)
+    commands.push(command)
+  }
+  return commands
+}
+
+/**
+ * Command names a `system/init` line lists, or null. Names only — a fallback
+ * for a CLI that answered `initialize` without a list.
+ */
+export const initCommandNamesIn = (line: unknown): string[] | null => {
+  const raw = obj(line)
+  if (!raw || raw.type !== 'system' || raw.subtype !== 'init' || !Array.isArray(raw.slash_commands)) return null
+  return raw.slash_commands
+    .filter((n): n is string => typeof n === 'string' && n !== '' && !n.startsWith('__'))
+    .map((n) => n.replace(/^\//, ''))
 }
 
 /* --- meta: telling the person apart from Claude Code speaking as them ------ */

@@ -14,6 +14,7 @@ import {
   isAskPending,
   useVisualAgentStore,
 } from '../../stores/visualAgentStore'
+import { sessionCommands } from './commands'
 import { Composer } from './Composer'
 import { useComposerFocus } from './composerFocus'
 import { ForkSheet } from './ForkSheet'
@@ -212,6 +213,7 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
 
   const transcript = useMemo(() => buildTranscript(snap.events), [snap.events])
   const asides = useMemo(() => snap.forks.map(asideOf), [snap.forks])
+  const commands = useMemo(() => sessionCommands(snap.commands), [snap.commands])
   const pendingAsks = useMemo(() => {
     const ids = new Set<string>()
     for (const e of snap.events) if (e.kind === 'ask' && isAskPending(snap, e.id)) ids.add(e.id)
@@ -417,6 +419,7 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
           onFork={(question) => void actions.fork(agentId, question)}
           onInterrupt={() => void actions.interrupt(agentId)}
           onClear={() => void actions.restart(agentId, true)}
+          commands={commands}
         />
       </div>
 

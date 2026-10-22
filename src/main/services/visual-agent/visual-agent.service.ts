@@ -21,6 +21,7 @@ import { IPC } from '../../../shared/constants'
 import {
   DEFAULT_VISUAL_AGENT_MODEL,
   type VisualAgentAskDecision,
+  type VisualAgentCommand,
   type VisualAgentEvent,
   type VisualAgentFork,
   type VisualAgentFrame,
@@ -38,6 +39,7 @@ import {
   QUESTION_TOOL,
   agentArgv,
   forkArgv,
+  initializeFrame,
   interruptFrame,
   isValidModel,
   permissionResponseFrame,
@@ -49,8 +51,10 @@ import {
 } from './launch'
 import {
   assistantMessageIdIn,
+  commandsIn,
   controlResponseIn,
   conversationIdIn,
+  initCommandNamesIn,
   initModelIn,
   lineReader,
   normalise,
@@ -69,11 +73,12 @@ const MAX_NOISE_LINES = 20
 const INTERRUPT_FALLBACK_MS = 3000
 const SET_MODEL_FALLBACK_MS = 10000
 const RESTART_EXIT_WAIT_MS = 3000
+const INITIALIZE_WAIT_MS = 30000
 
 type Child = ChildProcessWithoutNullStreams
 
 interface PendingControl {
-  kind: 'interrupt' | 'set_model'
+  kind: 'interrupt' | 'set_model' | 'initialize'
   model?: string
   timer: ReturnType<typeof setTimeout>
 }
@@ -94,6 +99,8 @@ interface LiveAgent {
   lastPartialId: string | null
   usage: { input: number; output: number; total: number } | null
   turnStartedAt: string | null
+  /** The slash commands the CLI offers, or null until it has said. */
+  commands: VisualAgentCommand[] | null
   forks: LiveFork[]
   child: Child | null
   ctx: NormaliseContext
@@ -194,6 +201,7 @@ function snapshotOf(held: LiveAgent): VisualAgentSnapshot {
     usage: held.usage ? { ...held.usage } : null,
     forks: held.forks.map(forkSnapshot),
     turnStartedAt: held.turnStartedAt,
+    ...(held.commands ? { commands: [...held.commands] } : {}),
   }
 }
 
@@ -278,6 +286,8 @@ function handleControlResponse(held: LiveAgent, requestId: string, ok: boolean, 
   }
   clearTimeout(pending.timer)
   held.pendingControl.delete(requestId)
+  // An older CLI that refuses the handshake just keeps the built-in menu.
+  if (pending.kind === 'initialize') return
   if (pending.kind === 'interrupt') {
     if (!ok) interruptBySignal(held)
     return
@@ -292,12 +302,33 @@ function handleControlResponse(held: LiveAgent, requestId: string, ok: boolean, 
   }
 }
 
+function setCommands(held: LiveAgent, commands: VisualAgentCommand[]): void {
+  held.commands = commands
+  emit(held, { t: 'commands', commands })
+}
+
 function handleLine(held: LiveAgent, parsed: unknown, raw: string): void {
   held.sawJson = true
-  held.writer.append('in', raw)
 
   const control = controlResponseIn(parsed)
+  const commands = commandsIn(parsed)
+  if (commands) {
+    // Not part of the conversation: kept out of the transcript.
+    if (control) handleControlResponse(held, control.requestId, control.ok, control.error)
+    setCommands(held, commands)
+    return
+  }
+
+  held.writer.append('in', raw)
   if (control) handleControlResponse(held, control.requestId, control.ok, control.error)
+
+  const named = initCommandNamesIn(parsed)
+  if (named && !held.commands?.length) {
+    setCommands(
+      held,
+      named.map((name) => ({ name, description: '', argumentHint: '', builtin: false }))
+    )
+  }
 
   const conversation = conversationIdIn(parsed)
   if (conversation && conversation !== held.claudeSessionId) {
@@ -406,6 +437,7 @@ function spawnMain(held: LiveAgent): void {
     held.child = null
     setState(held, 'failed')
   })
+  requestCommands(held, child)
   child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
     reader.flush()
     if (held.child !== child) return // replaced by a restart
@@ -428,6 +460,23 @@ function spawnMain(held: LiveAgent): void {
     }
     setState(held, clean ? 'done' : 'failed')
   })
+}
+
+/**
+ * Ask the CLI what slash commands it offers. Written straight to stdin rather
+ * than through writeOut: it is plumbing, not part of the conversation.
+ */
+function requestCommands(held: LiveAgent, child: Child): void {
+  if (!isAlive(child)) return
+  const requestId = nextRequestId('initialize')
+  const timer = setTimeout(() => held.pendingControl.delete(requestId), INITIALIZE_WAIT_MS)
+  held.pendingControl.set(requestId, { kind: 'initialize', timer })
+  try {
+    child.stdin.write(initializeFrame(requestId))
+  } catch {
+    clearTimeout(timer)
+    held.pendingControl.delete(requestId)
+  }
 }
 
 function waitForExit(child: Child, ms: number): Promise<void> {
@@ -554,6 +603,7 @@ export async function startVisualAgent(opts: VisualAgentStartOptions): Promise<V
     lastPartialId: null,
     usage: null,
     turnStartedAt: null,
+    commands: null,
     forks: [],
     child: null,
     ctx: { seq: 0, fallbackId: randomUUID, now: nowIso, lastSession: null },
