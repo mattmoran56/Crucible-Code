@@ -17,9 +17,17 @@
  *   buttons).
  * - The partition reports a plain Chrome user agent: Google sign-in rejects
  *   user agents carrying an `Electron/x` token as "not a secure browser".
+ *
+ * The Agent tab's link browser (the panel links open in) is a second kind of
+ * guest on the same partition, so it shares the claude.ai page's sign-ins.
+ * It is created on `about:blank` (AGENT_BROWSER_ENTRY_URL), which is how
+ * will-attach-webview tells it apart, and gets its own guards: any web page,
+ * nothing else. Links the claude.ai page opens go to that panel.
  */
 import { app, session as electronSession, shell, type WebContents } from 'electron'
+import { AGENT_BROWSER_ENTRY_URL, isWebUrl, type AgentBrowserLinkEvent } from '../../shared/agent-browser'
 import { CLAUDE_WEB_PARTITION } from '../../shared/cloud-session'
+import { IPC } from '../../shared/constants'
 
 /** Hosts (and their subdomains) the embedded page may navigate to. */
 export const CLAUDE_WEB_HOSTS = ['claude.ai', 'claude.com', 'anthropic.com'] as const
@@ -99,11 +107,18 @@ export interface GuestWebPreferences {
   [key: string]: unknown
 }
 
+/** The two kinds of embedded page: a cloud session's claude.ai page, or the Agent tab's link browser. */
+export type WebviewRole = 'claude' | 'browser'
+
 /**
- * Harden a webview's preferences in place. Returns false when the webview
- * must not be attached at all (wrong partition or not a claude.ai page).
+ * Harden a webview's preferences in place and say which kind of page it is.
+ * Returns null when the webview must not be attached at all (wrong partition,
+ * or neither a claude.ai page nor the link browser's blank entry page).
  */
-export function hardenWebviewAttach(prefs: GuestWebPreferences, params: { src?: string; partition?: string }): boolean {
+export function hardenWebviewAttach(
+  prefs: GuestWebPreferences,
+  params: { src?: string; partition?: string },
+): WebviewRole | null {
   delete prefs.preload
   delete (prefs as Record<string, unknown>).preloadURL
   prefs.nodeIntegration = false
@@ -112,44 +127,97 @@ export function hardenWebviewAttach(prefs: GuestWebPreferences, params: { src?: 
   prefs.sandbox = true
   prefs.webSecurity = true
   prefs.allowRunningInsecureContent = false
-  if (params.partition !== CLAUDE_WEB_PARTITION) return false
+  if (params.partition !== CLAUDE_WEB_PARTITION || !params.src) return null
   prefs.partition = CLAUDE_WEB_PARTITION
-  return !!params.src && isClaudeWebEntryUrl(params.src)
+  if (params.src === AGENT_BROWSER_ENTRY_URL) return 'browser'
+  return isClaudeWebEntryUrl(params.src) ? 'claude' : null
 }
 
-const openExternally = (url: string): void => {
+export const openExternally = (url: string): void => {
   if (isExternalOpenable(url)) void shell.openExternal(url)
 }
 
+/** Where a link the claude.ai page opens should go (default: the system browser). */
+export type LinkOpener = (url: string) => void
+
+/**
+ * Google / Apple sign-in may use a popup that talks back to its opener: keep
+ * those in the app, in a sandboxed window on the same partition.
+ */
+function signInPopup(url: string) {
+  const u = parse(url)
+  if (!u || !(CLAUDE_WEB_AUTH_HOSTS as readonly string[]).includes(u.hostname) || u.hostname === 'github.com') return null
+  return {
+    action: 'allow' as const,
+    overrideBrowserWindowOptions: {
+      width: 520,
+      height: 680,
+      autoHideMenuBar: true,
+      webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, partition: CLAUDE_WEB_PARTITION },
+    },
+  }
+}
+
 /** Lock down one claude.ai guest page (and any sign-in popups it opens). */
-export function guardClaudeWebContents(contents: WebContents): void {
+export function guardClaudeWebContents(contents: WebContents, openLink: LinkOpener = openExternally): void {
   const onNavigate = (event: { preventDefault: () => void }, url: string): void => {
     if (isAllowedClaudeWebNavigation(url)) return
     event.preventDefault()
-    openExternally(url)
+    openLink(url)
   }
   contents.on('will-navigate', onNavigate)
   contents.on('will-redirect', onNavigate)
   contents.setWindowOpenHandler(({ url }) => {
-    // Google / Apple sign-in may use a popup that talks back to its opener:
-    // keep those in the app (same partition, same guards via
-    // did-create-window below). Everything else goes to the browser.
-    const u = parse(url)
-    if (u && (CLAUDE_WEB_AUTH_HOSTS as readonly string[]).includes(u.hostname) && u.hostname !== 'github.com') {
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          width: 520,
-          height: 680,
-          autoHideMenuBar: true,
-          webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, partition: CLAUDE_WEB_PARTITION },
-        },
-      }
-    }
-    openExternally(url)
+    const popup = signInPopup(url)
+    if (popup) return popup
+    openLink(url)
+    return { action: 'deny' }
+  })
+  // Popups are not in any session's Agent tab: their links go to the browser.
+  contents.on('did-create-window', (child) => guardClaudeWebContents(child.webContents))
+}
+
+/** Whether the link browser may load `url` itself: any web page, nothing else. */
+export function isAllowedAgentBrowserNavigation(url: string): boolean {
+  if (url === 'about:blank') return true
+  const u = parse(url)
+  return !!u && (u.protocol === 'https:' || u.protocol === 'http:') && !u.username && !u.password
+}
+
+/**
+ * Lock down the Agent tab's link browser: it may browse the web, but other
+ * schemes (file:, custom app protocols) never load in it — mailto: goes to the
+ * OS, the rest is dropped. Pages that open a new window navigate the panel
+ * instead, except sign-in popups that need their opener.
+ */
+export function guardAgentBrowserContents(contents: WebContents): void {
+  const onNavigate = (event: { preventDefault: () => void }, url: string): void => {
+    if (isAllowedAgentBrowserNavigation(url)) return
+    event.preventDefault()
+    if (url.startsWith('mailto:')) openExternally(url)
+  }
+  contents.on('will-navigate', onNavigate)
+  contents.on('will-redirect', onNavigate)
+  contents.setWindowOpenHandler(({ url }) => {
+    const popup = signInPopup(url)
+    if (popup) return popup
+    if (isAllowedAgentBrowserNavigation(url) && url !== 'about:blank') void contents.loadURL(url)
+    else if (url.startsWith('mailto:')) openExternally(url)
     return { action: 'deny' }
   })
   contents.on('did-create-window', (child) => guardClaudeWebContents(child.webContents))
+}
+
+/**
+ * The app window itself never opens windows: a stray `target="_blank"` link
+ * or `window.open` goes to the system browser rather than a bare, signed-out
+ * Electron window.
+ */
+export function guardAppWindowContents(contents: WebContents): void {
+  contents.setWindowOpenHandler(({ url }) => {
+    openExternally(url)
+    return { action: 'deny' }
+  })
 }
 
 let partitionConfigured = false
@@ -165,14 +233,50 @@ export function configureClaudeWebPartition(): void {
 }
 
 /**
+ * The role decided at will-attach-webview, waiting for its guest. Electron
+ * creates the guest's WebContents synchronously right after the event (in the
+ * same call), so `web-contents-created` picks it up before anything else can
+ * attach; did-attach-webview fires later, with only the guest to go on.
+ */
+let attachingRole: WebviewRole | null = null
+const guestRoles = new WeakMap<WebContents, WebviewRole>()
+let trackingGuests = false
+
+function trackGuestRoles(): void {
+  if (trackingGuests) return
+  trackingGuests = true
+  app.on('web-contents-created', (_event, contents) => {
+    if (contents.getType() !== 'webview' || !attachingRole) return
+    guestRoles.set(contents, attachingRole)
+    attachingRole = null
+  })
+}
+
+/**
  * Install the guards on the app window. Every webview the renderer creates
  * goes through `will-attach-webview`; guests on our partition get the
- * navigation guards as soon as they exist.
+ * navigation guards for their role as soon as they exist. Links the claude.ai
+ * page opens are offered to the renderer's link browser for that session.
  */
 export function installClaudeWebGuards(host: WebContents): void {
   configureClaudeWebPartition()
+  trackGuestRoles()
+  guardAppWindowContents(host)
   host.on('will-attach-webview', (event, webPreferences, params) => {
-    if (!hardenWebviewAttach(webPreferences as GuestWebPreferences, params)) event.preventDefault()
+    const role = hardenWebviewAttach(webPreferences as GuestWebPreferences, params)
+    if (!role) event.preventDefault()
+    attachingRole = role
   })
-  host.on('did-attach-webview', (_event, guest) => guardClaudeWebContents(guest))
+  host.on('did-attach-webview', (_event, guest) => {
+    // Unknown means we could not tell: the claude.ai guards are the strict ones.
+    if (guestRoles.get(guest) === 'browser') {
+      guardAgentBrowserContents(guest)
+      return
+    }
+    guardClaudeWebContents(guest, (url) => {
+      if (!isWebUrl(url) || host.isDestroyed()) return openExternally(url)
+      const link: AgentBrowserLinkEvent = { webContentsId: guest.id, url }
+      host.send(IPC.AGENT_BROWSER_OPEN_LINK, link)
+    })
+  })
 }
