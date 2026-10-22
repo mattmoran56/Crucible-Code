@@ -398,25 +398,7 @@ export const ReviewLoopEfficient: Story = {
   ],
 }
 
-export const ClaudeWebSessions: Story = {
-  decorators: [
-    (Story) => {
-      setupStoresForStory()
-      return <Story />
-    },
-  ],
-}
-
 export const ReviewLoopSettings: Story = {
-  decorators: [
-    (Story) => {
-      setupStoresForStory({ settingsOpen: true })
-      return <Story />
-    },
-  ],
-}
-
-export const ClaudeWebSettings: Story = {
   decorators: [
     (Story) => {
       setupStoresForStory({ settingsOpen: true })
@@ -441,6 +423,18 @@ export const VisualAgentForkSheet: Story = {
   decorators: [
     (Story) => {
       setupStoresForStory({ visualAgent: { openForkId: 'fork-demo-01' } })
+      return <Story />
+    },
+  ],
+}
+
+// A cloud session (Claude Code on the web): the Agent tab shows the cloud
+// panel with the embedded claude.ai page (stubbed outside Electron), its
+// branch, and Open in browser / Teleport.
+export const CloudSession: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory({ cloudSession: true })
       return <Story />
     },
   ],

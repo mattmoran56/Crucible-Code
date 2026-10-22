@@ -9,6 +9,7 @@ import type { UsageLimitEvent } from '../../shared/types'
 import { handleHookEvent, findContextById } from './notification-server'
 import { getSessionUsage } from './usage.service'
 import { getStorePath } from '../store-path'
+import { scrubInheritedClaudeSession } from './claude-env'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
@@ -140,7 +141,7 @@ export function buildClaudeCommand(opts: {
   return claudeWithArgs
 }
 
-function shellQuote(a: string): string {
+export function shellQuote(a: string): string {
   // Single-quote and escape any embedded single quotes for POSIX shells.
   if (/^[A-Za-z0-9_\-\/=:.,@+]+$/.test(a)) return a
   return `'${a.replace(/'/g, `'\\''`)}'`
@@ -265,6 +266,48 @@ export function getAndClearRecoveryList(): PersistedTerminal[] {
 }
 
 /** Safely send IPC — no-op if the window is already destroyed. */
+/**
+ * In-process watchers of a PTY's output and exit (e.g. the cloud-session create
+ * flow reading the new session's URL off the CLI's screen). Keyed by
+ * terminal id; dropped once the terminal exits.
+ */
+export interface TerminalWatcher {
+  onData?: (data: string) => void
+  onExit?: (exitCode: number) => void
+}
+const watchers = new Map<string, Set<TerminalWatcher>>()
+
+export function watchTerminal(terminalId: string, watcher: TerminalWatcher): () => void {
+  let set = watchers.get(terminalId)
+  if (!set) {
+    set = new Set()
+    watchers.set(terminalId, set)
+  }
+  set.add(watcher)
+  return () => {
+    const current = watchers.get(terminalId)
+    current?.delete(watcher)
+    if (current && current.size === 0) watchers.delete(terminalId)
+  }
+}
+
+function notifyWatchersData(terminalId: string, data: string): void {
+  const set = watchers.get(terminalId)
+  if (!set) return
+  for (const w of set) {
+    try { w.onData?.(data) } catch { /* a watcher must not break the PTY */ }
+  }
+}
+
+function notifyWatchersExit(terminalId: string, exitCode: number): void {
+  const set = watchers.get(terminalId)
+  if (!set) return
+  watchers.delete(terminalId)
+  for (const w of set) {
+    try { w.onExit?.(exitCode) } catch { /* ignore */ }
+  }
+}
+
 function safeSend(window: BrowserWindow, channel: string, ...args: unknown[]): void {
   if (!window.isDestroyed()) {
     window.webContents.send(channel, ...args)
@@ -299,7 +342,7 @@ function spawnPty(
     args = []
   }
 
-  const env: Record<string, string> = { ...process.env } as Record<string, string>
+  const env = scrubInheritedClaudeSession({ ...process.env } as Record<string, string>)
   if (instance.claudeConfigDir) {
     const resolved = instance.claudeConfigDir.startsWith('~/')
       ? join(homedir(), instance.claudeConfigDir.slice(2))
@@ -351,6 +394,7 @@ function spawnPty(
       appendToBuffer(current, data)
       detectAndEmitLimit(current, data)
     }
+    notifyWatchersData(terminalId, data)
     pendingChunks.push(data)
     if (!flushTimer) {
       flushTimer = setTimeout(flushPending, 16)
@@ -376,6 +420,7 @@ function spawnPty(
       safeSend(instance.window, IPC.TERMINAL_EXIT, terminalId, exitCode)
       terminals.delete(terminalId)
       unpersistTerminal(terminalId)
+      notifyWatchersExit(terminalId, exitCode)
       return
     }
 
@@ -427,6 +472,7 @@ function spawnPty(
       safeSend(instance.window, IPC.TERMINAL_EXIT, terminalId, exitCode)
       terminals.delete(terminalId)
       unpersistTerminal(terminalId)
+      notifyWatchersExit(terminalId, exitCode)
     }
   })
 
@@ -594,6 +640,26 @@ export function killReviewLoopTerminals(sessionId: string): number {
   let killed = 0
   for (const [id, instance] of terminals) {
     if (instance.sessionId === sessionId && instance.tabId.startsWith('review-loop:')) {
+      instance.stopped = true
+      try { instance.pty.kill() } catch { /* already dead */ }
+      terminals.delete(id)
+      unpersistTerminal(id)
+      killed += 1
+    }
+  }
+  return killed
+}
+
+/**
+ * Kill the live terminal(s) bound to one workspace tab of a session. Used
+ * before re-spawning a tab's PTY with a different command (a cloud session's
+ * attach terminal making way for its teleport), since spawnTerminal is
+ * idempotent per (sessionId, tabId) and would otherwise hand back the old one.
+ */
+export function killTerminalsForTab(sessionId: string, tabId: string): number {
+  let killed = 0
+  for (const [id, instance] of terminals) {
+    if (instance.sessionId === sessionId && instance.tabId === tabId) {
       instance.stopped = true
       try { instance.pty.kill() } catch { /* already dead */ }
       terminals.delete(id)

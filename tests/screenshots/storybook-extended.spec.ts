@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test'
 /**
  * Extended visual-regression suite covering the stories that the original
  * storybook.spec.ts does not snapshot: DiffViewer, PRConversationTab,
- * RemoteTogglePopover, ClaudeWebSessionCard, the remaining Full-App layout
+ * RemoteTogglePopover, the remaining Full-App layout
  * states, and the remote receiver components. Baselines update with:
  *
  *   npm run test:screenshots:update
@@ -63,16 +63,6 @@ function remotePopoverTargets(): Target[] {
   ]
 }
 
-function claudeWebCardTargets(): Target[] {
-  const v = { width: 320, height: 150 }
-  return [
-    { name: 'claude-web-card-default', storyId: 'sessions-claudewebsessioncard--default', viewport: v },
-    { name: 'claude-web-card-opening', storyId: 'sessions-claudewebsessioncard--opening', viewport: v },
-    { name: 'claude-web-card-open-pr', storyId: 'sessions-claudewebsessioncard--with-open-pr', viewport: v },
-    { name: 'claude-web-card-draft-pr', storyId: 'sessions-claudewebsessioncard--with-draft-pr', viewport: v },
-  ]
-}
-
 function sessionCardExtraTargets(): Target[] {
   return [
     { name: 'session-card-notion-ticket', storyId: 'sessions-sessioncard--with-notion-ticket', viewport: { width: 280, height: 130 } },
@@ -95,6 +85,25 @@ function fullAppExtraTargets(): Target[] {
     { name: 'app-startup-prompt-settings', storyId: 'app-full-layout--startup-prompt-settings', viewport: v, delay: 1500 },
     { name: 'app-startup-prompt-editor', storyId: 'app-full-layout--startup-prompt-editor', viewport: v, delay: 1500 },
     { name: 'app-review-loop-running', storyId: 'app-full-layout--review-loop-running', viewport: v, delay: 1800 },
+  ]
+}
+
+/** Cloud sessions: the cloud Agent tab's phases, the Cloud/Local dialog toggle, and the full app. */
+function cloudSessionTargets(): Target[] {
+  const panel = { width: 1000, height: 520 }
+  const app = { width: 1280, height: 800 }
+  const dialog = { width: 900, height: 760 }
+  return [
+    { name: 'cloud-panel-embedded', storyId: 'cloud-cloudagentpanel--embedded', viewport: panel, delay: 300 },
+    { name: 'cloud-panel-page-load-failed', storyId: 'cloud-cloudagentpanel--page-load-failed', viewport: panel, delay: 300 },
+    { name: 'cloud-panel-teleport-branch-changed', storyId: 'cloud-cloudagentpanel--teleport-branch-changed', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-teleport-blocked', storyId: 'cloud-cloudagentpanel--teleport-blocked', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-teleported', storyId: 'cloud-cloudagentpanel--teleported', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-teleport-ended', storyId: 'cloud-cloudagentpanel--teleport-ended', viewport: panel, delay: 1200 },
+    { name: 'cloud-panel-error', storyId: 'cloud-cloudagentpanel--error-state', viewport: panel, delay: 300 },
+    { name: 'create-session-dialog-cloud', storyId: 'sessions-createsessiondialog--cloud-default', viewport: dialog, delay: 600 },
+    { name: 'create-session-dialog-local', storyId: 'sessions-createsessiondialog--local', viewport: dialog, delay: 600 },
+    { name: 'app-cloud-session', storyId: 'app-full-layout--cloud-session', viewport: app, delay: 2000 },
   ]
 }
 
@@ -147,9 +156,9 @@ const TARGETS: Target[] = [
   ...diffViewerTargets(),
   ...prConversationTargets(),
   ...remotePopoverTargets(),
-  ...claudeWebCardTargets(),
   ...sessionCardExtraTargets(),
   ...fullAppExtraTargets(),
+  ...cloudSessionTargets(),
   ...receiverTargets(),
   ...themeSweepTargets(),
 ]

@@ -333,6 +333,75 @@ describe('fireQueuedMessage', () => {
     expect(startCall().sessionId).toBe('on-B')
   })
 
+  it('sends to the Claude Code on the web session for a cloud session, never a local agent', async () => {
+    const cloudSend = vi.fn(async () => ({ sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc' }))
+    ;(window as any).api.cloudSession = { send: cloudSend }
+    const sess = session({
+      id: 'sess-c',
+      projectId: 'proj-A',
+      location: 'cloud',
+      cloud: { sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc' },
+    } as any)
+    persisted['proj-A'] = [sess]
+    useProjectStore.setState({
+      projects: [project({ claudeAccountId: 'acct-1' } as any)],
+      activeProjectId: 'proj-A',
+      claudeAccounts: [{ id: 'acct-1', configDir: '/cfg/acct-1' }],
+    } as any)
+    useSessionStore.setState({ sessions: [sess], currentProjectId: 'proj-A' } as any)
+
+    await fireQueuedMessage(queuedMessage({ sessionId: 'sess-c', message: 'continue' }))
+
+    expect(cloudSend).toHaveBeenCalledWith({
+      worktreePath: sess.worktreePath,
+      cloudSessionId: 'session_01abc',
+      message: 'continue',
+      configDir: '/cfg/acct-1',
+    })
+    expect(visualAgentApi.start).not.toHaveBeenCalled()
+    expect(visualAgentApi.send).not.toHaveBeenCalled()
+    expect(useToastStore.getState().toasts.some((t) => /cloud session/.test(t.message))).toBe(true)
+  })
+
+  it('a cloud session still being created gets neither a cloud send nor a local agent', async () => {
+    const cloudSend = vi.fn()
+    ;(window as any).api.cloudSession = { send: cloudSend }
+    const sess = session({
+      id: 'sess-p',
+      projectId: 'proj-A',
+      location: 'cloud',
+      cloudPending: { task: 'go', branch: 'session/p', createdAt: '2026-10-21T00:00:00Z' },
+    } as any)
+    persisted['proj-A'] = [sess]
+    useProjectStore.setState({ projects: [project()], activeProjectId: 'proj-A' } as any)
+    useSessionStore.setState({ sessions: [sess], currentProjectId: 'proj-A' } as any)
+
+    await fireQueuedMessage(queuedMessage({ sessionId: 'sess-p', message: 'continue' }))
+
+    expect(cloudSend).not.toHaveBeenCalled()
+    expect(visualAgentApi.start).not.toHaveBeenCalled()
+    expect(useToastStore.getState().toasts.some((t) => t.type === 'error' && /hasn't started yet/.test(t.message))).toBe(true)
+  })
+
+  it('a teleported (now local) session goes to the local visual agent again', async () => {
+    const cloudSend = vi.fn()
+    ;(window as any).api.cloudSession = { send: cloudSend }
+    const sess = session({
+      id: 'sess-t',
+      projectId: 'proj-A',
+      location: 'local',
+      cloud: { sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc', teleportedAt: '2026-10-21T00:00:00Z' },
+    } as any)
+    persisted['proj-A'] = [sess]
+    useProjectStore.setState({ projects: [project()], activeProjectId: 'proj-A' } as any)
+    useSessionStore.setState({ sessions: [sess], currentProjectId: 'proj-A' } as any)
+
+    await fireQueuedMessage(queuedMessage({ sessionId: 'sess-t', message: 'continue' }))
+
+    expect(cloudSend).not.toHaveBeenCalled()
+    expect(visualAgentApi.start).toHaveBeenCalledTimes(1)
+  })
+
   it('shows a toast when the session no longer exists', async () => {
     useProjectStore.setState({ projects: [project()], activeProjectId: 'proj-A' } as any)
     persisted['proj-A'] = []

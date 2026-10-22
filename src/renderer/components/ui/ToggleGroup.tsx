@@ -28,6 +28,7 @@ export function ToggleGroup<T extends string>({
         return (
           <button
             key={option.value}
+            type="button"
             role="radio"
             aria-checked={active}
             onClick={() => onChange(option.value)}

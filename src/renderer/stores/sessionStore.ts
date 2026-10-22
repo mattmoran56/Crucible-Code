@@ -1,8 +1,13 @@
 import { create } from 'zustand'
-import type { Session, PullRequest, WorktreeInfo, NotionTicketLink } from '../../shared/types'
+import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation } from '../../shared/types'
 import { useToastStore } from './toastStore'
+import { renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name'
 import { useTerminalStore } from './terminalStore'
+import { useCloudSessionStore } from './cloudSessionStore'
 import { useVisualAgentStore } from './visualAgentStore'
+import { useProjectStore } from './projectStore'
+import { projectConfigDir } from '../lib/visualAgents'
+import { recoverAbandonedTeleports } from '../lib/teleportRecovery'
 
 type WorkspaceTab = 'agent' | 'git' | 'pr'
 
@@ -48,8 +53,28 @@ interface SessionState {
   /** A session whose agent xterm should auto-focus on first attach, consumed by useTerminal. */
   pendingFocusSessionId: string | null
   loadSessions: (projectId: string) => Promise<void>
-  createSession: (projectId: string, repoPath: string, name: string, baseBranch?: string, startupCommand?: string, notionTicket?: NotionTicketLink) => Promise<void>
-  removeSession: (projectId: string, repoPath: string, sessionId: string) => Promise<void>
+  createSession: (
+    projectId: string,
+    repoPath: string,
+    name: string,
+    baseBranch?: string,
+    startupCommand?: string,
+    notionTicket?: NotionTicketLink,
+    options?: CreateSessionOptions
+  ) => Promise<void>
+  /** Merge `patch` into one session and persist it (location, cloud link, …). */
+  patchSession: (projectId: string, sessionId: string, patch: Partial<Omit<Session, 'id' | 'projectId'>>) => Promise<void>
+  /**
+   * Remove the session's worktree (and its app-created branch), its terminals
+   * and the session itself. `opts.deleteRemoteBranch` also deletes the branch
+   * on origin, best effort.
+   */
+  removeSession: (
+    projectId: string,
+    repoPath: string,
+    sessionId: string,
+    opts?: { deleteRemoteBranch?: boolean }
+  ) => Promise<void>
   renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
   /**
    * Record (or with `null`, forget) the Claude session + model a visual agent
@@ -75,6 +100,19 @@ interface SessionState {
   consumePendingStartup: (sessionId: string) => string | null
   consumePendingFocus: (sessionId: string) => boolean
   queuePendingStartup: (sessionId: string, command: string) => void
+}
+
+export interface CreateSessionOptions {
+  /**
+   * 'cloud' runs the agent in Claude Code on the web: the worktree is created
+   * as usual and the session saved with `cloudPending` (the startup command is
+   * its task, required); its Agent tab then pushes the branch and runs the
+   * interactive `claude --cloud` that creates the cloud session. Default/omitted
+   * is 'local'.
+   */
+  location?: SessionLocation
+  /** Branch to create for the session. Defaults to `session/<name>`. */
+  branchName?: string
 }
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
@@ -124,8 +162,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
 
     const thisRequestId = ++loadSessionsRequestId
-    const sessions = sortByCreatedAtDesc(await window.api.session.list(projectId))
+    const listed = await window.api.session.list(projectId)
     if (thisRequestId !== loadSessionsRequestId) return  // stale response, discard
+    // Teleports abandoned before anything was saved locally go back to the cloud.
+    const project = useProjectStore.getState().projects.find((p) => p.id === projectId)
+    const recovered = await recoverAbandonedTeleports(listed, {
+      configDir: projectConfigDir(project, useProjectStore.getState().claudeAccounts),
+      liveTeleports: useCloudSessionStore.getState().teleports,
+    })
+    if (thisRequestId !== loadSessionsRequestId) return
+    if (recovered !== listed) await window.api.session.save(projectId, recovered)
+    const sessions = sortByCreatedAtDesc(recovered)
     const currentId = get().activeSessionId
     const stillExists = currentId && sessions.some((s) => s.id === currentId)
 
@@ -190,8 +237,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     })
   },
 
-  createSession: async (projectId, repoPath, name, baseBranch, startupCommand, notionTicket) => {
-    const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch)
+  createSession: async (projectId, repoPath, name, baseBranch, startupCommand, notionTicket, options) => {
+    const cloud = options?.location === 'cloud'
+    if (cloud && !startupCommand?.trim()) {
+      throw new Error('A cloud session needs a task — pick a startup prompt or describe the task')
+    }
+    const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch, options?.branchName)
     const session: Session = {
       id: crypto.randomUUID(),
       name,
@@ -202,10 +253,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       lastActiveAt: new Date().toISOString(),
       baseBranch,
       notionTicket,
+      ownsBranch: true,
+    }
+
+    if (cloud) {
+      // Creating the cloud side is interactive (`claude --cloud <task>` in a
+      // PTY), so the session is saved as pending and its Agent tab drives the
+      // CLI until the new session's URL shows up (CloudAgentHost).
+      session.location = 'cloud'
+      session.cloudPending = {
+        task: startupCommand!.trim(),
+        branch: worktreeInfo.branch,
+        createdAt: new Date().toISOString(),
+      }
     }
 
     const sessions = sortByCreatedAtDesc([...get().sessions, session])
     await window.api.session.save(projectId, sessions)
+    // Its Agent tab starts the interactive create on first mount.
+    if (cloud) useCloudSessionStore.getState().requestAutoStart(session.id)
     if (get().currentProjectId !== projectId) return
     await restoreDetachedWorktree(get().detachedWorktree)
     set({
@@ -215,10 +281,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       activePRWorktreePath: null,
       activeWorkspaceTab: 'agent',
       detachedWorktree: null,
-      pendingStartup: startupCommand ? { sessionId: session.id, command: startupCommand } : null,
+      // A cloud session already has its task; only a local agent consumes the prompt.
+      pendingStartup: startupCommand && !cloud ? { sessionId: session.id, command: startupCommand } : null,
       pendingFocusSessionId: session.id,
     })
     saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+  },
+
+  patchSession: async (projectId, sessionId, patch) => {
+    if (!get().sessions.some((s) => s.id === sessionId)) return
+    const sessions = get().sessions.map((s) => (s.id === sessionId ? { ...s, ...patch } : s))
+    await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId === projectId) set({ sessions })
   },
 
   consumePendingStartup: (sessionId: string) => {
@@ -238,13 +312,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ pendingStartup: { sessionId, command } })
   },
 
-  removeSession: async (projectId, repoPath, sessionId) => {
+  removeSession: async (projectId, repoPath, sessionId, opts) => {
     const session = get().sessions.find((s) => s.id === sessionId)
     if (session) {
       try {
-        await window.api.worktree.remove(repoPath, session.worktreePath)
+        // session/* branches are always cleaned up by the main process; a
+        // custom-named branch only when the app created it.
+        await window.api.worktree.remove(
+          repoPath,
+          session.worktreePath,
+          session.ownsBranch && session.branchName ? { deleteBranch: session.branchName } : undefined
+        )
       } catch {
         // Worktree may already be removed
+      }
+      const remoteBranch = sessionRemoteBranch(session)
+      if (opts?.deleteRemoteBranch && remoteBranch) {
+        try {
+          await window.api.worktree.deleteRemoteBranch(repoPath, remoteBranch)
+        } catch (err) {
+          useToastStore
+            .getState()
+            .addToast('error', `Couldn't delete origin/${remoteBranch}: ${err instanceof Error ? err.message : String(err)}`)
+        }
       }
     }
 
@@ -279,13 +369,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       throw new Error('Another session already uses this name')
     }
 
-    const desiredBranch = `session/${trimmed}`
-    const { newBranch } = await window.api.worktree.renameBranch(
-      repoPath,
-      session.worktreePath,
-      session.branchName,
-      desiredBranch
-    )
+    // A cloud (or teleported) session's branch is bound to the cloud session
+    // on origin, and a custom branch is the user's choice: only the display
+    // name changes. A local session still on its default `session/<name>`
+    // branch follows the new name.
+    let newBranch = session.branchName
+    if (renameMovesBranch(session)) {
+      ;({ newBranch } = await window.api.worktree.renameBranch(
+        repoPath,
+        session.worktreePath,
+        session.branchName,
+        `session/${trimmed}`
+      ))
+    }
 
     const sessions = get().sessions.map((s) =>
       s.id === sessionId ? { ...s, name: trimmed, branchName: newBranch } : s

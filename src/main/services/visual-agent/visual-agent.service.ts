@@ -33,6 +33,7 @@ import { emitToRenderer } from '../event-bus'
 import { handleHookEvent, VISUAL_AGENT_HOOK_TAB } from '../notification-server'
 import { killChildTree } from '../claude-headless.service'
 import { writeClaudeHookSettings } from '../hook.service'
+import { scrubInheritedClaudeSession } from '../claude-env'
 import {
   QUESTION_TOOL,
   agentArgv,
@@ -61,6 +62,7 @@ import {
   type PermissionRequest,
 } from './normalise'
 import { TranscriptWriter, readTranscript } from './transcript-store'
+import { readClaudeTranscript } from './claude-transcript'
 
 export const MAX_LIVE_FORKS = 3
 const MAX_NOISE_LINES = 20
@@ -205,7 +207,7 @@ function isAlive(child: Child | null): child is Child {
 
 /** Same CLAUDE_CONFIG_DIR rules as claude-headless.service / terminal.service. */
 export function buildEnv(opts: VisualAgentStartOptions): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env }
+  const env: NodeJS.ProcessEnv = scrubInheritedClaudeSession({ ...process.env })
   if (opts.claudeConfigDir) {
     env.CLAUDE_CONFIG_DIR = opts.claudeConfigDir.startsWith('~/')
       ? join(homedir(), opts.claudeConfigDir.slice(2))
@@ -468,7 +470,14 @@ function interruptBySignal(held: LiveAgent): void {
 /* --- replay --------------------------------------------------------------- */
 
 async function replayInto(held: LiveAgent, claudeSessionId: string): Promise<void> {
-  const entries = await readTranscript(transcriptDir(), claudeSessionId)
+  let entries = await readTranscript(transcriptDir(), claudeSessionId)
+  if (entries.length === 0) {
+    // A conversation we never ran (teleported down from the cloud, or started
+    // in a terminal): rebuild its history from Claude Code's own transcript,
+    // and seed our store with it so later resumes keep the whole history.
+    entries = await readClaudeTranscript(claudeSessionId, held.opts.cwd, held.opts.claudeConfigDir)
+    for (const entry of entries) held.writer.append(entry.dir, entry.line, entry.at || undefined)
+  }
   if (entries.length === 0) return
   const ctx: NormaliseContext = {
     seq: held.ctx.seq,

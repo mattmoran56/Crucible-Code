@@ -102,3 +102,14 @@ export const WithMergedPR: Story = {
     },
   },
 }
+
+export const Cloud: Story = {
+  args: {
+    session: {
+      ...baseSession,
+      location: 'cloud',
+      cloud: { sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc' },
+    },
+    status: 'running',
+  },
+}

@@ -13,11 +13,11 @@ import { registerFileHandlers } from './file.ipc'
 import { registerButtonHandlers } from './button.ipc'
 import { registerStartupPromptHandlers } from './startup-prompt.ipc'
 import { registerReviewLoopHandlers } from './review-loop.ipc'
-import { registerClaudeWebHandlers } from './claudeWeb.ipc'
 import { registerSchedulerHandlers } from './scheduler.ipc'
 import { registerNotionHandlers } from './notion.ipc'
 import { registerRemoteHandlers } from './remote.ipc'
 import { registerVisualAgentHandlers } from './visual-agent.ipc'
+import { registerCloudSessionHandlers } from './cloud-session.ipc'
 import {
   registerContextMapping,
   removeContextMapping,
@@ -38,11 +38,11 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerButtonHandlers(window)
   registerStartupPromptHandlers()
   registerReviewLoopHandlers(window)
-  registerClaudeWebHandlers()
   registerSchedulerHandlers(window)
   registerNotionHandlers(window)
   registerRemoteHandlers(window)
   registerVisualAgentHandlers(window)
+  registerCloudSessionHandlers(window)
 
   // Context mapping management for notification routing.
   // The renderer registers sessions, the Code editor (per-project) and individual

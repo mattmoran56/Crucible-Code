@@ -32,8 +32,8 @@ describe('IPC channel constants', () => {
 describe('IPC channel naming conventions', () => {
   const entries = Object.entries(IPC) as Array<[string, string]>
 
-  it('exposes exactly 181 channels (update this count when adding channels)', () => {
-    expect(entries.length).toBe(181)
+  it('exposes exactly 193 channels (update this count when adding channels)', () => {
+    expect(entries.length).toBe(193)
   })
 
   it('every key is SCREAMING_SNAKE_CASE', () => {
@@ -65,7 +65,7 @@ describe('IPC channel naming conventions', () => {
   it('uses exactly the known set of namespaces', () => {
     const namespaces = [...new Set(entries.map(([, v]) => v.split(':')[0]))].sort()
     expect(namespaces).toEqual([
-      'account', 'button', 'button-group', 'claude-web', 'file',
+      'account', 'button', 'button-group', 'cloud-session', 'file',
       'git', 'notes', 'notification', 'notion', 'pr', 'project',
       'remote', 'review-loop', 'scheduler', 'session', 'startup-prompt',
       'terminal', 'update', 'usage', 'visual-agent', 'worktree',
@@ -129,7 +129,6 @@ describe('IPC well-known channel spot checks', () => {
     ['REMOTE_SET_PAIRING_MODE', 'remote:set-pairing-mode'],
     ['STARTUP_PROMPT_SAVE', 'startup-prompt:save'],
     ['REVIEW_LOOP_STATE_UPDATE', 'review-loop:state:update'],
-    ['CLAUDE_WEB_LIST_SESSIONS', 'claude-web:list-sessions'],
     ['FILE_READ_BASE64', 'file:read-base64'],
   ])('%s maps to %s', (key, value) => {
     expect(IPC[key as keyof typeof IPC]).toBe(value)

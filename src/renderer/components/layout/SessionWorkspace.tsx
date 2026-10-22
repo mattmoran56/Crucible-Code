@@ -6,6 +6,7 @@ import { ReviewLoopPanel } from '../review-loop/ReviewLoopPanel'
 import { DynamicTerminalPanel } from '../terminal/DynamicTerminalPanel'
 import { PRReviewPanel } from '../pullrequests/PRReviewPanel'
 import { VisualAgentHost } from '../visual-agent/VisualAgentHost'
+import { SessionAgentHost } from '../cloud/SessionAgentHost'
 import { QueuedMessageChip } from '../sessions/QueuedMessageChip'
 import { ResizeHandle } from '../ui'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -431,7 +432,7 @@ export function SessionWorkspace() {
         <div className="absolute inset-0 flex flex-col min-h-0">
           {agentVisible && <QueuedMessageChip />}
           {liveVisualAgentSessions.map((id) => (
-            <VisualAgentHost key={id} sessionId={id} tabKey="agent" visible={agentVisible && id === activeSessionId} />
+            <SessionAgentHost key={id} sessionId={id} visible={agentVisible && id === activeSessionId} />
           ))}
         </div>,
         corePanelTargets.current.agent

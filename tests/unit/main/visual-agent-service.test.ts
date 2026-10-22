@@ -412,6 +412,43 @@ describe('visual agent service', () => {
     expect(args[args.indexOf('--resume') + 1]).toBe(SID)
   })
 
+  it("rebuilds a conversation it never ran (e.g. teleported) from Claude's own transcript, and keeps it", async () => {
+    const config = mkdtempSync(join(root, 'cfg-'))
+    const dir = join(config, 'projects', '-wt')
+    mkdirSync(dir, { recursive: true })
+    const rows = [
+      { type: 'user', uuid: 'u1', sessionId: SID, isSidechain: false, timestamp: '2026-10-21T09:00:00.000Z', remoteSourced: true, message: { role: 'user', content: 'build the thing' } },
+      { type: 'assistant', uuid: 'a1', sessionId: SID, isSidechain: false, timestamp: '2026-10-21T09:00:05.000Z', remoteSourced: true, message: { id: 'msg1', role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } }] } },
+      { type: 'user', uuid: 'u2', isSidechain: false, timestamp: '2026-10-21T09:00:06.000Z', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'a.ts' }] } },
+      { type: 'assistant', uuid: 'side', isSidechain: true, timestamp: '2026-10-21T09:00:07.000Z', message: { id: 'x', role: 'assistant', content: [{ type: 'text', text: 'subagent chatter' }] } },
+      { type: 'assistant', uuid: 'a2', isSidechain: false, timestamp: '2026-10-21T09:00:08.000Z', message: { id: 'msg2', role: 'assistant', content: [{ type: 'text', text: 'built it' }] } },
+      { type: 'user', uuid: 'u3', isMeta: true, timestamp: '2026-10-21T09:10:00.000Z', message: { role: 'user', content: 'This session is being continued from another machine.' } },
+      { type: 'last-prompt', sessionId: SID },
+    ]
+    writeFileSync(join(dir, `${SID}.jsonl`), rows.map((r) => JSON.stringify(r)).join('\n') + '\n{torn')
+
+    const snap = await svc.startVisualAgent(baseOpts({ resumeClaudeSessionId: SID, claudeConfigDir: config }))
+    expect(snap.events.map((e) => [e.kind, (e as any).text ?? (e as any).name ?? ''])).toEqual([
+      ['text', 'build the thing'],
+      ['tool', 'Bash'],
+      ['tool-result', 'a.ts'],
+      ['text', 'built it'],
+      ['note', 'This session is being continued from another machine.'],
+    ])
+    expect(snap.events.every((e) => e.replayed)).toBe(true)
+    expect(snap.events[0].at).toBe('2026-10-21T09:00:00.000Z')
+    const args = h.spawnCalls.at(-1).args
+    expect(args[args.indexOf('--resume') + 1]).toBe(SID)
+
+    // Our own store is seeded, so a later resume still has the whole history.
+    await flush()
+    const ours = readFileSync(join(h.userData, 'visual-agents', `${SID}.jsonl`), 'utf-8').trim().split('\n').map((l) => JSON.parse(l))
+    expect(ours.map((l) => l.dir)).toEqual(['out', 'in', 'in', 'in', 'out'])
+    svc.__resetVisualAgentsForTest()
+    const again = await svc.startVisualAgent(baseOpts({ agentId: 'agent-2', resumeClaudeSessionId: SID, claudeConfigDir: join(root, 'nowhere') }))
+    expect(again.events.filter((e) => e.kind === 'text').map((e) => (e as any).text)).toEqual(['build the thing', 'built it'])
+  })
+
   it('a corrupt transcript never stops the session from starting', async () => {
     mkdirSync(join(h.userData, 'visual-agents'), { recursive: true })
     writeFileSync(join(h.userData, 'visual-agents', `${SID}.jsonl`), 'not json\n{"dir":"in","line":"{"}\n')

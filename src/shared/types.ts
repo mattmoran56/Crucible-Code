@@ -9,15 +9,136 @@ export interface Project {
   name: string
   repoPath: string
   claudeAccountId?: string
-  claudeWebEnabled?: boolean
-  claudeWebBranchPrefix?: string
+  /**
+   * Where new sessions run by default. `undefined` means CLOUD: the user wants
+   * Claude Code on the web to be the default so local CI/test load stays off
+   * their machine. This is a deliberate exception to the usual "optional
+   * features default off" rule — only an explicit 'local' opts out.
+   */
+  defaultSessionLocation?: SessionLocation
 }
 
-export interface ClaudeWebSession {
-  branchName: string
-  headSha: string
-  lastCommitDate: string
-  authorName: string
+/** Where a session's agent runs: Claude Code on the web, or on this machine. */
+export type SessionLocation = 'cloud' | 'local'
+
+/** The Claude Code on the web session a cloud session is bound to. */
+export interface CloudSessionLink {
+  /** Cloud session id (e.g. `session_...`). */
+  sessionId: string
+  /** https://claude.ai/code/... URL for the session. */
+  url: string
+  /**
+   * ISO time a teleport down to the local worktree started. The session only
+   * really is local once the teleported conversation was found on disk
+   * (`visualAgents.agent`); until then the teleport may be abandoned and the
+   * session goes back to the cloud (lib/teleportRecovery).
+   */
+  teleportedAt?: string
+  /**
+   * Set once we have tried to find the local Claude session a teleport wrote,
+   * so a failed discovery is not retried (and re-noticed) on every launch.
+   */
+  localResumeResolved?: boolean
+  /**
+   * A teleport was started but abandoned before Claude saved anything locally
+   * (interactive `claude --teleport` only writes a transcript after the first
+   * message), so the session went back to the cloud. The Agent tab says so and
+   * offers to teleport again; cleared by the next teleport.
+   */
+  teleportIncomplete?: boolean
+  /** The branch the cloud agent was told to work on and push to. */
+  branch?: string
+}
+
+/** Result of creating a cloud session or queuing a message to one. */
+export interface CloudSessionResult {
+  sessionId: string
+  url: string
+  /** The branch the cloud agent was told to use (set by create). */
+  branch?: string
+}
+
+/**
+ * A cloud session whose cloud side has not been created yet. Creation is
+ * interactive (`claude --cloud <task>` in a PTY in the Agent tab), so the
+ * session is saved first and the Agent tab drives the CLI until it prints the
+ * new session's URL; then `cloud` is set and this is cleared.
+ */
+export interface CloudSessionPending {
+  /** The task the cloud session starts with (without the branch instruction). */
+  task: string
+  /** The branch the cloud agent is told to work on and push to. */
+  branch: string
+  /** ISO time the session was saved as pending. */
+  createdAt: string
+}
+
+/** Where an interactive cloud create run is. */
+export type CloudCreateStatus = 'running' | 'created' | 'failed'
+
+/** Snapshot of one interactive cloud create run (main process → renderer). */
+export interface CloudCreateState {
+  /** App session id. */
+  sessionId: string
+  projectId: string
+  /** The PTY running `claude --cloud …`; null before it starts. */
+  terminalId: string | null
+  status: CloudCreateStatus
+  /** Set once the CLI printed the new session. */
+  result?: CloudSessionResult
+  /** Why the run failed (CLI output tail, push error, …). */
+  error?: string
+  /** The CLI was cancelled after sending the create request: a session may exist on claude.ai/code. */
+  mayExist?: boolean
+  /** The local CLI process is still running. */
+  attached: boolean
+}
+
+/** Result of asking to teleport a cloud session down to its worktree. */
+export type CloudTeleportResult =
+  | { ok: true; terminalId: string; state: CloudTeleportState }
+  | { ok: false; reason: 'dirty'; files: string[] }
+
+/**
+ * Where a teleport run is:
+ * - running: `claude --teleport <id>` is pulling the session down (PTY)
+ * - needs-input: the CLI is asking something; the user answers in the terminal
+ * - finishing: the conversation is local; the PTY is being closed
+ * - done: `claudeSessionId` is the local Claude session to resume visually
+ * - failed: see `error` (the PTY's scrollback stays available)
+ */
+export type CloudTeleportStatus = 'running' | 'needs-input' | 'finishing' | 'done' | 'failed'
+
+/**
+ * Why a `needs-input` run is waiting on the user:
+ * - prompt: the CLI is showing a dialog/menu (stash, trust, sign-in, …)
+ * - first-message: the REPL has the conversation loaded but Claude Code only
+ *   saves a teleported conversation to disk once it changes (2.1.306), so
+ *   there is no transcript to resume yet; the user can carry on in the
+ *   terminal; once a transcript exists "Open in Agent view" picks it up
+ *   (until then the only way out is "Cancel teleport", which abandons it)
+ * - timeout: no progress for a long time; the terminal shows what is going on
+ */
+export type CloudTeleportWaiting = 'prompt' | 'first-message' | 'timeout'
+
+/** Snapshot of one teleport run (main process → renderer). */
+export interface CloudTeleportState {
+  /** App session id. */
+  sessionId: string
+  /** The app session's project (so a run finishing in another project still lands). */
+  projectId?: string
+  /** The PTY running `claude --teleport …`. */
+  terminalId: string
+  status: CloudTeleportStatus
+  /** Progress lines the CLI printed, oldest first (e.g. "Fetching session logs"). */
+  steps: string[]
+  /** ISO time the teleport started (transcript discovery looks from here). */
+  startedAt: string
+  /** The local Claude session the teleport wrote, once found. */
+  claudeSessionId?: string
+  /** Set with `needs-input`: what the run is waiting for. */
+  waiting?: CloudTeleportWaiting
+  error?: string
 }
 
 export type SessionStatus = 'running' | 'attention' | 'completed'
@@ -48,6 +169,17 @@ export interface Session {
    * app resumes the same Claude conversation on the same model.
    */
   visualAgents?: Record<string, { claudeSessionId: string; model: string }>
+  /** Where the agent runs. Missing means local (every session before cloud sessions). */
+  location?: SessionLocation
+  /** The cloud session behind this session, kept after a teleport for reference. */
+  cloud?: CloudSessionLink
+  /** Set while the cloud session is being created (location 'cloud', no `cloud` yet). */
+  cloudPending?: CloudSessionPending
+  /**
+   * True when the app created `branchName` (via createWorktree), so removing
+   * the session may delete it even when it does not use the `session/` prefix.
+   */
+  ownsBranch?: boolean
 }
 
 export interface Commit {

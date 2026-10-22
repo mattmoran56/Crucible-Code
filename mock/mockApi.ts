@@ -40,8 +40,23 @@ import { DEFAULT_VISUAL_AGENT_MODEL } from '../src/shared/visual-agent'
 
 // Collect terminal.onData callbacks so we can push fake output
 const terminalDataCallbacks: Array<(terminalId: string, data: string) => void> = []
+
+/** A fake PTY that prints `lines` and returns its terminal id. */
+function mockPty(lines: string[]): string {
+  const terminalId = `mock-term-${++terminalCounter}`
+  setTimeout(() => {
+    lines.forEach((line, i) =>
+      setTimeout(() => {
+        for (const cb of terminalDataCallbacks) cb(terminalId, line)
+      }, i * 80)
+    )
+  }, 200)
+  return terminalId
+}
 const terminalExitCallbacks: Array<(terminalId: string, exitCode: number) => void> = []
 let terminalCounter = 0
+const cloudCreateCallbacks: Array<(state: any) => void> = []
+const cloudTeleportCallbacks: Array<(state: any) => void> = []
 
 function noop() { return () => {} }
 
@@ -186,6 +201,8 @@ export const mockApi = {
   /** Story-only helpers, reached through window.api so stories need no mock imports. */
   __mock: {
     demoVisualAgentSnapshot,
+    /** A fake PTY that prints `lines`; returns its terminal id. */
+    pty: mockPty,
   },
 
   git: {
@@ -211,10 +228,16 @@ export const mockApi = {
   },
 
   worktree: {
-    create: async () => ({ path: '/mock/worktree', branch: 'session/new' }),
+    create: async (_repoPath: string, sessionName: string, _baseBranch?: string, branchName?: string) => ({
+      path: '/mock/worktree',
+      branch: branchName || `session/${sessionName}`,
+    }),
     list: async () => [],
     remove: async () => {},
     createFromBranch: async () => ({ path: '/mock/worktree', branch: 'session/new' }),
+    currentBranch: async () => 'session/new',
+    deleteLocalBranch: async () => {},
+    deleteRemoteBranch: async () => {},
   },
 
   terminal: {
@@ -310,7 +333,12 @@ export const mockApi = {
   },
 
   session: {
-    list: async (projectId: string) => mockSessions[projectId] ?? [],
+    /**
+     * Stories can pin a project's session list with
+     * `(window as any).__mockSessions = { [projectId]: sessions }` before mount.
+     */
+    list: async (projectId: string) =>
+      (globalThis as any).__mockSessions?.[projectId] ?? mockSessions[projectId] ?? [],
     save: async () => {},
     saveContext: async () => {},
     getContext: async () => null,
@@ -465,6 +493,80 @@ export const mockApi = {
     },
   },
 
+  // Cloud sessions: nothing leaves the machine. The teleport "PTY" just
+  // prints a canned transcript so stories and the mock app show the flow.
+  cloudSession: {
+    // Interactive create: a PTY that shows the CLI's setup checklist, then the
+    // session URL; the 'created' event follows, like the main process's watcher.
+    start: async (opts: { sessionId: string; projectId: string; branch: string; task: string }) => {
+      const sessionId = 'session_01MockCloudSession'
+      const url = `https://claude.ai/code/${sessionId}`
+      const terminalId = mockPty([
+        `\x1b[90m$ claude --cloud '<task>' --on-branch ${opts.branch}\x1b[0m\r\n`,
+        'Setting up remote session…\r\n',
+        '  \x1b[32m✓\x1b[0m Checked this checkout\r\n',
+        '  \x1b[32m✓\x1b[0m Created cloud session\r\n',
+        `Cloud session active · code here or at ${url}?from=cli&m=0\r\n`,
+      ])
+      const base = { sessionId: opts.sessionId, projectId: opts.projectId, terminalId, attached: true }
+      setTimeout(() => {
+        for (const cb of cloudCreateCallbacks) cb({ ...base, status: 'created', result: { sessionId, url, branch: opts.branch } })
+      }, 900)
+      return { ...base, status: 'running' as const }
+    },
+    createState: async () => null,
+    onCreateEvent: (cb: (state: any) => void) => {
+      cloudCreateCallbacks.push(cb)
+      return () => {
+        const i = cloudCreateCallbacks.indexOf(cb)
+        if (i >= 0) cloudCreateCallbacks.splice(i, 1)
+      }
+    },
+    send: async (opts: { cloudSessionId: string }) => ({ sessionId: opts.cloudSessionId, url: `https://claude.ai/code/${opts.cloudSessionId}` }),
+    // Teleport: the CLI's steps in a PTY; the run reports them, then 'done'
+    // with a local session id (the Agent tab then resumes it visually).
+    teleport: async (opts: { sessionId: string; projectId?: string; cloudSessionId: string }) => {
+      const terminalId = mockPty([
+        `\x1b[90m$ claude --teleport ${opts.cloudSessionId}\x1b[0m\r\n`,
+        '\x1b[32m✓\x1b[0m Validating session\r\n',
+        '\x1b[32m✓\x1b[0m Fetching session logs\r\n',
+        '\x1b[32m✓\x1b[0m Getting branch info\r\n',
+        '\x1b[32m✓\x1b[0m Checking out branch\r\n',
+        '⎿ Session resumed\r\n',
+      ])
+      const base = {
+        sessionId: opts.sessionId,
+        projectId: opts.projectId,
+        terminalId,
+        startedAt: new Date().toISOString(),
+      }
+      const steps = ['Validating session', 'Fetching session logs', 'Getting branch info', 'Checking out branch', 'Session resumed']
+      const emit = (state: any) => {
+        for (const cb of cloudTeleportCallbacks) cb(state)
+      }
+      steps.forEach((_, i) =>
+        setTimeout(() => emit({ ...base, status: 'running', steps: steps.slice(0, i + 1) }), 400 * (i + 1))
+      )
+      setTimeout(() => emit({ ...base, status: 'finishing', steps }), 400 * (steps.length + 1))
+      setTimeout(
+        () => emit({ ...base, status: 'done', steps, claudeSessionId: '00000000-0000-4000-8000-00000000c10d' }),
+        400 * (steps.length + 2)
+      )
+      return { ok: true as const, terminalId, state: { ...base, status: 'running' as const, steps: [] } }
+    },
+    teleportState: async () => null,
+    finishTeleport: async () => null,
+    onTeleportEvent: (cb: (state: any) => void) => {
+      cloudTeleportCallbacks.push(cb)
+      return () => {
+        const i = cloudTeleportCallbacks.indexOf(cb)
+        if (i >= 0) cloudTeleportCallbacks.splice(i, 1)
+      }
+    },
+    discoverLocal: async () => null,
+    openUrl: async () => {},
+  },
+
   reviewLoop: {
     getSettings: async () => mockReviewLoopSettings,
     setSettings: async () => {},
@@ -480,29 +582,6 @@ export const mockApi = {
       return override ?? mockReviewLoopRunning
     },
     onStateUpdate: () => noop(),
-  },
-
-  claudeWeb: {
-    listSessions: async () => [
-      {
-        branchName: 'claude/zen-mendeleev',
-        headSha: 'aaa1111',
-        lastCommitDate: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        authorName: 'Matt Moran',
-      },
-      {
-        branchName: 'claude/eager-darwin',
-        headSha: 'bbb2222',
-        lastCommitDate: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-        authorName: 'Matt Moran',
-      },
-      {
-        branchName: 'claude/wise-curie',
-        headSha: 'ccc3333',
-        lastCommitDate: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
-        authorName: 'Matt Moran',
-      },
-    ],
   },
 
   config: {

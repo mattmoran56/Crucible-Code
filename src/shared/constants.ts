@@ -35,6 +35,9 @@ export const IPC = {
   WORKTREE_CREATE_FOR_PR: 'worktree:create-for-pr',
   WORKTREE_LIST_PR: 'worktree:list-pr',
   WORKTREE_REMOVE_PR: 'worktree:remove-pr',
+  WORKTREE_CURRENT_BRANCH: 'worktree:current-branch',
+  WORKTREE_DELETE_LOCAL_BRANCH: 'worktree:delete-local-branch',
+  WORKTREE_DELETE_REMOTE_BRANCH: 'worktree:delete-remote-branch',
 
   // Terminal
   TERMINAL_SPAWN: 'terminal:spawn',
@@ -169,9 +172,6 @@ export const IPC = {
   REVIEW_LOOP_STATE_GET: 'review-loop:state:get',
   REVIEW_LOOP_STATE_UPDATE: 'review-loop:state:update',
 
-  // Claude Web Sessions
-  CLAUDE_WEB_LIST_SESSIONS: 'claude-web:list-sessions',
-
   // Scheduler — queued sessions and queued messages
   SCHEDULER_LIST_QUEUED_SESSIONS: 'scheduler:list-queued-sessions',
   SCHEDULER_ADD_QUEUED_SESSION: 'scheduler:add-queued-session',
@@ -235,4 +235,22 @@ export const IPC = {
   VISUAL_AGENT_FORK_STOP: 'visual-agent:fork-stop',
   VISUAL_AGENT_GET_STATE: 'visual-agent:get-state',
   VISUAL_AGENT_FRAME: 'visual-agent:frame',
+
+  // Cloud sessions — Claude Code on the web, watched and teleported from here
+  /** Push the branch and run the interactive `claude --cloud <task>` PTY in the Agent tab. */
+  CLOUD_SESSION_START: 'cloud-session:start',
+  /** The current create run for an app session (survives an Agent tab remount). */
+  CLOUD_SESSION_CREATE_STATE: 'cloud-session:create-state',
+  /** main → renderer: a create run changed (session found, failed, CLI detached). */
+  CLOUD_SESSION_CREATE_EVENT: 'cloud-session:create-event',
+  CLOUD_SESSION_SEND: 'cloud-session:send',
+  CLOUD_SESSION_TELEPORT: 'cloud-session:teleport',
+  /** The current teleport run for an app session (survives an Agent tab remount). */
+  CLOUD_SESSION_TELEPORT_STATE: 'cloud-session:teleport-state',
+  /** main → renderer: a teleport run changed (step, needs input, done, failed). */
+  CLOUD_SESSION_TELEPORT_EVENT: 'cloud-session:teleport-event',
+  /** Close the teleport PTY now and hand the session to the visual agent. */
+  CLOUD_SESSION_TELEPORT_FINISH: 'cloud-session:teleport-finish',
+  CLOUD_SESSION_DISCOVER_LOCAL: 'cloud-session:discover-local',
+  CLOUD_SESSION_OPEN_URL: 'cloud-session:open-url',
 } as const

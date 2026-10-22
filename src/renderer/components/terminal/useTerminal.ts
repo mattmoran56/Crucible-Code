@@ -36,6 +36,11 @@ function getCurrentTerminalTheme() {
   return THEMES.find((t) => t.name === theme)?.terminal ?? THEMES[0].terminal
 }
 
+/** Put the keyboard focus in a mounted terminal (no-op if it is not mounted). */
+export function focusTerminal(terminalId: string): void {
+  terminalInstances.get(terminalId)?.term.focus()
+}
+
 export function destroyTerminal(terminalId: string): void {
   const instance = terminalInstances.get(terminalId)
   if (!instance) return

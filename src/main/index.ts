@@ -12,13 +12,21 @@ import { killAllVisualAgents } from './services/visual-agent/visual-agent.servic
 import { stopScheduler } from './services/scheduler.service'
 import { startKeepAwake, stopKeepAwake } from './services/keep-awake.service'
 import { eventBus } from './services/event-bus'
+import { installClaudeWebGuards } from './services/claude-web.service'
 import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
 import { unregisterCloud } from '../../remote/server/cloud-client'
+import { scrubInheritedClaudeSession } from './services/claude-env'
 
 // When launched from Finder/Dock, process.env.PATH is the minimal macOS default
 // and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
 // git, gh, and credential helpers resolve correctly.
 fixPath()
+
+// Launched from inside a Claude Code session (an agent running `npm run dev`,
+// a Claude Code terminal), the app inherits its child-session markers, and
+// every claude we spawn would then run with transcript saving off. See
+// claude-env.ts.
+scrubInheritedClaudeSession(process.env)
 
 let mainWindow: BrowserWindow | null = null
 
@@ -35,8 +43,13 @@ async function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // For the embedded claude.ai/code page in cloud sessions' Agent tab.
+      // Every webview is hardened (and restricted to claude.ai on its own
+      // partition) by installClaudeWebGuards below.
+      webviewTag: true,
     },
   })
+  installClaudeWebGuards(mainWindow.webContents)
 
   mainWindow.once('ready-to-show', () => mainWindow!.show())
 
