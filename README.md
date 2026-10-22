@@ -313,6 +313,8 @@ The agent interface: a chat UI for Claude Code, driven over `claude -p --input-f
 
 ![A /btw side question](docs/screenshots/visual-agent-fork-sheet.png)
 
+![The slash menu listing the repo's commands and skills](docs/screenshots/visual-agent-slash-menu.png)
+
 </details>
 
 <details>
