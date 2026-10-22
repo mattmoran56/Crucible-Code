@@ -16,6 +16,7 @@ import { installClaudeWebGuards } from './services/claude-web.service'
 import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
 import { unregisterCloud } from '../../remote/server/cloud-client'
 import { scrubInheritedClaudeSession } from './services/claude-env'
+import { reapOrphanedSessionSandboxes } from './services/sandboxer.service'
 
 // When launched from Finder/Dock, process.env.PATH is the minimal macOS default
 // and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
@@ -84,6 +85,9 @@ app.whenReady().then(() => {
   // Claude sessions and the relay keep running while the
   // screen is locked. Released on quit (below).
   startKeepAwake()
+  // Destroy sandboxes whose session worktree is already gone (deleted while
+  // Docker was down, or the app quit mid-delete). Off the startup path.
+  setTimeout(() => void reapOrphanedSessionSandboxes(), 15_000)
   return createWindow()
 })
 

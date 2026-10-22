@@ -253,4 +253,15 @@ export const IPC = {
   CLOUD_SESSION_TELEPORT_FINISH: 'cloud-session:teleport-finish',
   CLOUD_SESSION_DISCOVER_LOCAL: 'cloud-session:discover-local',
   CLOUD_SESSION_OPEN_URL: 'cloud-session:open-url',
+
+  // Sandboxer — one container per worktree (sandboxer-core CLI)
+  SANDBOXER_CHECK_CONFIG: 'sandboxer:check-config',
+  /** Copy the project's sandboxer.yaml into a worktree that does not track one. */
+  SANDBOXER_PREPARE: 'sandboxer:prepare',
+  SANDBOXER_STATUS: 'sandboxer:status',
+  SANDBOXER_STOP: 'sandboxer:stop',
+  SANDBOXER_START: 'sandboxer:start',
+  /** Destroy a worktree's sandboxes and their data (the worktree stays). */
+  SANDBOXER_DOWN: 'sandboxer:down',
+  SANDBOXER_OPEN_URL: 'sandboxer:open-url',
 } as const

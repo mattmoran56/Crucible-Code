@@ -233,7 +233,7 @@ export const mockApi = {
       branch: branchName || `session/${sessionName}`,
     }),
     list: async () => [],
-    remove: async () => {},
+    remove: async () => ({ removed: [], failed: [] }),
     createFromBranch: async () => ({ path: '/mock/worktree', branch: 'session/new' }),
     currentBranch: async () => 'session/new',
     deleteLocalBranch: async () => {},
@@ -372,6 +372,35 @@ export const mockApi = {
     watch: async () => {},
     unwatch: async () => {},
     onChanged: () => noop(),
+  },
+
+  sandboxer: {
+    checkConfig: async (repoPath: string) => ({
+      path: `${repoPath}/sandboxer.yaml`,
+      exists: true,
+      gitState: 'ignored' as const,
+      cliVersion: '0.1.0',
+    }),
+    prepare: async (repoPath: string) => ({ copied: true, source: `${repoPath}/sandboxer.yaml` }),
+    status: async (worktreePath: string) => [
+      {
+        project: 'acme',
+        slug: 'new-feature',
+        branch: 'session/new-feature',
+        worktree: worktreePath,
+        state: 'running',
+        container: 'sandboxer-acme-new-feature',
+        ttl: '43200',
+        urls: {
+          app: 'https://new-feature--app--acme.sbx.localhost',
+          api: 'https://new-feature--api--acme.sbx.localhost',
+        },
+      },
+    ],
+    stop: async () => {},
+    start: async () => {},
+    down: async () => ({ removed: ['acme/new-feature'], failed: [] }),
+    openUrl: async () => {},
   },
 
   button: {
