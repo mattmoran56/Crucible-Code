@@ -18,7 +18,8 @@ vi.mock('../../../../src/renderer/components/visual-agent/VisualAgentPanel', () 
 vi.mock('../../../../src/renderer/components/terminal/TerminalView', () => ({
   TerminalView: ({ terminalId }: { terminalId: string }) => <div data-testid="terminal" data-terminal={terminalId} />,
 }))
-vi.mock('../../../../src/renderer/components/terminal/useTerminal', () => ({ destroyTerminal: vi.fn() }))
+const focusTerminal = vi.hoisted(() => vi.fn())
+vi.mock('../../../../src/renderer/components/terminal/useTerminal', () => ({ destroyTerminal: vi.fn(), focusTerminal }))
 vi.mock('../../../../src/renderer/components/terminal/DynamicTerminalPanel', () => ({ DynamicTerminalPanel: () => null }))
 vi.mock('../../../../src/renderer/components/terminal/ReviewTerminalPanel', () => ({ ReviewTerminalPanel: () => null }))
 vi.mock('../../../../src/renderer/components/review-loop/ReviewLoopPanel', () => ({ ReviewLoopPanel: () => null }))
@@ -261,13 +262,21 @@ describe('cloud session Agent tab', () => {
     emitTeleport({ status: 'needs-input', waiting: 'first-message', steps: ['Validating session', 'Session resumed'] })
     expect(screen.getByTestId('teleport-terminal-toggle').getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText(/saves the conversation locally only after your first message/)).toBeTruthy()
+    // The user missed that in the status line: say it right above the
+    // terminal, put the cursor there, and the panel header follows the run.
+    expect(screen.getByTestId('teleport-send-message').textContent).toMatch(/Send any message below to finish bringing this session down/)
+    await waitFor(() => expect(focusTerminal).toHaveBeenCalled())
+    expect(screen.getByText(/waiting for your message/)).toBeTruthy()
+    expect(screen.queryByText(/teleporting…/)).toBeNull()
     // Regression: "Open in Agent view" here closed the CLI with nothing saved,
     // which read as the teleport terminating on its way to the Agent view.
     expect(screen.queryByTestId('teleport-finish')).toBeNull()
     expect(screen.getByTestId('teleport-cancel').getAttribute('title')).toMatch(/stays in the cloud/)
     // After the first message Claude saved it: now it can open in the Agent view.
     emitTeleport({ status: 'needs-input', waiting: 'first-message', claudeSessionId: 'local-claude-5', steps: ['Session resumed'] })
-    expect(screen.getByText(/Saved locally/)).toBeTruthy()
+    expect(screen.getByText(/Saved locally — open it/)).toBeTruthy()
+    expect(screen.getByText(/saved locally — open in Agent view/)).toBeTruthy()
+    expect(screen.queryByTestId('teleport-send-message')).toBeNull()
     expect(screen.queryByTestId('teleport-cancel')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Open in Agent view' }))
     expect(api.finishTeleport).toHaveBeenCalledWith('s1')

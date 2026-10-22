@@ -163,7 +163,7 @@ export function CloudAgentPanel({
             <code className="truncate font-mono text-[10.5px]">{session.branchName}</code>
           </span>
         ) : null}
-        <PhaseLabel phase={phase} />
+        <PhaseLabel phase={phase} run={teleportRun ?? null} />
 
         <span className="flex-1" />
 
@@ -372,13 +372,27 @@ function BranchNoticeBar({ notice, onCleanup }: { notice: BranchNotice; onCleanu
   )
 }
 
-function PhaseLabel({ phase }: { phase: CloudAgentPhase }) {
+/** The header's word for a running teleport: follows the run, not just the phase. */
+export function teleportPhaseLabel(run: CloudTeleportState | null): string {
+  if (run?.claudeSessionId && run.status === 'needs-input') return 'saved locally — open in Agent view'
+  switch (run?.status) {
+    case 'needs-input':
+      return run.waiting === 'first-message' ? 'waiting for your message' : 'waiting for you'
+    case 'finishing':
+    case 'done':
+      return 'opening in Agent view…'
+    default:
+      return 'teleporting…'
+  }
+}
+
+function PhaseLabel({ phase, run }: { phase: CloudAgentPhase; run: CloudTeleportState | null }) {
   const text: Partial<Record<CloudAgentPhase, string>> = {
     creating: 'starting cloud session…',
     'create-failed': 'not started',
     'create-interrupted': 'not started',
     'teleport-checking': 'checking worktree…',
-    teleported: 'teleporting…',
+    teleported: teleportPhaseLabel(run),
     'teleport-ended': 'teleport stopped',
   }
   const label = text[phase]

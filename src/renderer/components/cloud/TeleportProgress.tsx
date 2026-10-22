@@ -11,6 +11,7 @@ import React, { useEffect, useState } from 'react'
 import type { CloudTeleportState } from '../../../shared/types'
 import { cn } from '../../lib/cn'
 import { TerminalView } from '../terminal/TerminalView'
+import { focusTerminal } from '../terminal/useTerminal'
 import { Check, Spinner } from '../visual-agent/icons'
 import { TeleportIcon } from './icons'
 
@@ -94,6 +95,15 @@ export function TeleportProgress({ run, terminalId, sessionId, sessionName, visi
   // stays in the cloud), so it is offered as Cancel, never as "Open in Agent
   // view" — clicking that and watching the CLI terminate read as a crash.
   const saved = !!run?.claudeSessionId
+  // Handed over with nothing saved yet: the user has to send a message in the
+  // terminal. Easy to miss in the status line, so say it right above the
+  // terminal too, and put the cursor there.
+  const needsMessage = status === 'needs-input' && waiting === 'first-message' && !saved
+  useEffect(() => {
+    if (!visible || !showTerminal || status !== 'needs-input' || saved) return
+    const raf = requestAnimationFrame(() => focusTerminal(terminalId))
+    return () => cancelAnimationFrame(raf)
+  }, [visible, showTerminal, status, waiting, saved, terminalId])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="teleport-progress">
@@ -142,6 +152,22 @@ export function TeleportProgress({ run, terminalId, sessionId, sessionName, visi
           {showTerminal ? 'Hide terminal' : 'Show terminal'}
         </button>
       </div>
+
+      {needsMessage && showTerminal ? (
+        <div
+          role="alert"
+          className="flex shrink-0 items-center gap-2 border-b border-accent bg-accent/20 px-3! py-2! text-[13px] font-medium text-text"
+          data-testid="teleport-send-message"
+        >
+          <TeleportIcon size={14} className="shrink-0 text-accent" />
+          <span>
+            Send any message below to finish bringing this session down.
+            <span className="ml-1 font-normal text-text-muted">
+              Type it in the terminal and press Enter: Claude writes the conversation to this machine only once you do.
+            </span>
+          </span>
+        </div>
+      ) : null}
 
       <div className="relative min-h-0 flex-1">
         <TerminalView terminalId={terminalId} sessionId={sessionId} sessionName={sessionName} visible={visible && showTerminal} />
