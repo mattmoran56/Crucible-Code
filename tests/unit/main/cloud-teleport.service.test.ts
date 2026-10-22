@@ -10,7 +10,14 @@ const h = vi.hoisted(() => ({
   writeTerminal: vi.fn(),
   killTerminal: vi.fn(),
   transcript: null as null | { id: string; path: string; size: number; mtime: number; marked: boolean },
+  fileText: '',
 }))
+
+vi.mock('node:fs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs')>()
+  const promises = { ...real.promises, readFile: vi.fn(async () => h.fileText) }
+  return { ...real, default: { ...real, promises }, promises }
+})
 
 vi.mock('../../../src/main/services/terminal.service', () => ({
   AUTO_PERMISSION_MODE_ARGS: [],
@@ -33,7 +40,10 @@ import {
   TELEPORT_EXIT_WAIT_MS,
   TELEPORT_POLL_MS,
   TELEPORT_STALL_MS,
-  TELEPORT_TRANSCRIPT_WAIT_MS,
+  TELEPORT_AUTO_ENTER_DELAY_MS,
+  TELEPORT_AUTO_MESSAGE_DELAY_MS,
+  TELEPORT_AUTO_SAVE_WAIT_MS,
+  AUTO_SAVE_STEP,
   TRANSCRIPT_OFF_ERROR,
   transcriptSavingOffIn,
   _resetTeleportRuns,
@@ -46,6 +56,7 @@ import {
   startTeleport,
 } from '../../../src/main/services/cloud-teleport.service'
 import { IPC } from '../../../src/shared/constants'
+import { TELEPORT_AUTO_MESSAGE } from '../../../src/shared/visual-agent'
 import type { CloudTeleportState } from '../../../src/shared/types'
 
 const sent: CloudTeleportState[] = []
@@ -62,6 +73,7 @@ beforeEach(() => {
   sent.length = 0
   h.watchers.clear()
   h.transcript = null
+  h.fileText = ''
   vi.clearAllMocks()
 })
 afterEach(() => {
@@ -194,22 +206,83 @@ describe('a teleport run', () => {
   // Root cause (verified in 2.1.306): the REPL loads the teleported rows as
   // its restored conversation and its transcript recorder skips restored
   // messages, so nothing reaches disk until the conversation changes. The run
-  // used to wait on the transcript forever ("Loading the conversation
-  // locally" spinning). Now: REPL up + no transcript → hand over to the user.
-  it('hands over to the terminal when the REPL is up but Claude has saved no transcript', async () => {
+  // now types a fixed automated first message (the user asked for this) once
+  // the REPL is idle, waits for Claude's reply, then closes the REPL.
+  const PASTE = `\x1b[200~${TELEPORT_AUTO_MESSAGE}\x1b[201~`
+  const autoWrites = () => h.writeTerminal.mock.calls.filter((c) => c[1] === PASTE)
+  const userRow = (text: string) => JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
+  const replyRow = JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Ready.' }] } })
+
+  it('types the automated first message once the REPL is idle, exactly once', async () => {
     startTeleport(win, opts)
     pty().onData!(`${frame(3)}\x1b[2J⎿ Session resumed\r\n❯ \r\n? for shortcuts`)
-    expect(getTeleportState('s1')).toMatchObject({ status: 'running' })
     expect(getTeleportState('s1')?.steps).toContain('Session resumed')
-    await tick(TELEPORT_TRANSCRIPT_WAIT_MS + TELEPORT_POLL_MS)
-    expect(getTeleportState('s1')).toMatchObject({ status: 'needs-input', waiting: 'first-message' })
     expect(h.writeTerminal).not.toHaveBeenCalled()
+    await tick(TELEPORT_AUTO_MESSAGE_DELAY_MS + TELEPORT_POLL_MS)
+    expect(autoWrites()).toHaveLength(1)
+    expect(getTeleportState('s1')?.steps).toContain(AUTO_SAVE_STEP)
+    await tick(TELEPORT_AUTO_ENTER_DELAY_MS)
+    expect(h.writeTerminal).toHaveBeenLastCalledWith('term-t', '\r')
+    await tick(TELEPORT_POLL_MS * 5)
+    expect(autoWrites()).toHaveLength(1)
+    expect(getTeleportState('s1')?.status).toBe('running')
+  })
+
+  it('does not type the message while a dialog is showing; sends it once the dialog is answered', async () => {
+    startTeleport(win, opts)
+    pty().onData!('⎿ Session resumed\r\nDo you trust the files in this folder?\r\n❯ 1. Yes\r\n')
+    expect(getTeleportState('s1')).toMatchObject({ status: 'needs-input', waiting: 'prompt' })
+    await tick(TELEPORT_AUTO_MESSAGE_DELAY_MS + TELEPORT_POLL_MS * 3)
+    expect(autoWrites()).toHaveLength(0)
+    pty().onData!('⎿ Session resumed\r\n? for shortcuts')
+    expect(getTeleportState('s1')?.status).toBe('running')
+    await tick(TELEPORT_POLL_MS)
+    expect(autoWrites()).toHaveLength(1)
+  })
+
+  it('switches to the Agent view on its own once Claude has answered and the transcript is saved', async () => {
+    startTeleport(win, opts)
+    pty().onData!('⎿ Session resumed\r\n? for shortcuts')
+    await tick(TELEPORT_AUTO_MESSAGE_DELAY_MS + TELEPORT_POLL_MS)
+    expect(autoWrites()).toHaveLength(1)
+    // Saved, but Claude has not replied yet: keep the REPL open.
+    h.transcript = { id: 'local-5', path: '/p/local-5.jsonl', size: 500, mtime: 1, marked: false }
+    h.fileText = userRow(TELEPORT_AUTO_MESSAGE)
+    await tick()
+    await tick()
+    await tick()
+    expect(getTeleportState('s1')?.status).toBe('running')
+    expect(h.writeTerminal).not.toHaveBeenCalledWith('term-t', '\x03')
+    // Replied: stable size → close and hand to the visual agent.
+    h.fileText = `${userRow(TELEPORT_AUTO_MESSAGE)}\n${replyRow}\n`
+    h.transcript = { ...h.transcript, size: 600 }
+    await tick()
+    await tick()
+    expect(getTeleportState('s1')).toMatchObject({ status: 'finishing', claudeSessionId: 'local-5' })
+    expect(h.writeTerminal).toHaveBeenCalledWith('term-t', '\x03')
+    pty().onExit!(0)
+    await tick(0)
+    expect(sent.at(-1)).toMatchObject({ status: 'done', claudeSessionId: 'local-5' })
+    expect(autoWrites()).toHaveLength(1)
+  })
+
+  it('falls back to the manual hand-over when the automated message saves nothing', async () => {
+    startTeleport(win, opts)
+    pty().onData!('⎿ Session resumed\r\n? for shortcuts')
+    await tick(TELEPORT_AUTO_MESSAGE_DELAY_MS + TELEPORT_POLL_MS)
+    expect(autoWrites()).toHaveLength(1)
+    await tick(TELEPORT_AUTO_SAVE_WAIT_MS + TELEPORT_POLL_MS)
+    expect(getTeleportState('s1')).toMatchObject({ status: 'needs-input', waiting: 'first-message' })
+    expect(autoWrites()).toHaveLength(1)
   })
 
   it('never closes a handed-over REPL on its own; records the transcript id once one is saved', async () => {
     startTeleport(win, opts)
     pty().onData!('⎿ Session resumed\r\n')
-    await tick(TELEPORT_TRANSCRIPT_WAIT_MS + TELEPORT_POLL_MS)
+    await tick(TELEPORT_AUTO_MESSAGE_DELAY_MS + TELEPORT_POLL_MS)
+    await tick(TELEPORT_AUTO_SAVE_WAIT_MS + TELEPORT_POLL_MS)
+    expect(getTeleportState('s1')?.waiting).toBe('first-message')
+    h.writeTerminal.mockClear()
     // The user sends a message; Claude now writes the whole conversation.
     h.transcript = { id: 'local-7', path: '/p', size: 900, mtime: 1, marked: true }
     await tick()

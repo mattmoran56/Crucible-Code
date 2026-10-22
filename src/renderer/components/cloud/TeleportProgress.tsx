@@ -22,7 +22,10 @@ export const TELEPORT_STEPS: Array<{ cli: string; label: string }> = [
   { cli: 'Getting branch info', label: 'Getting branch info' },
   { cli: 'Checking out branch', label: 'Checking out the branch' },
   { cli: 'Session resumed', label: 'Loading the conversation locally' },
+  // The run types its automated first message so Claude saves the conversation.
+  { cli: 'Saving the conversation locally', label: 'Saving the conversation locally' },
 ]
+const SAVING_CLI = 'Saving the conversation locally'
 const OPENING_LABEL = 'Opening it in the Agent view'
 
 type StepState = 'done' | 'active' | 'todo'
@@ -32,7 +35,9 @@ export function teleportStepStates(run: CloudTeleportState | null): Array<{ labe
   const seen = run?.steps ?? []
   let furthest = -1
   TELEPORT_STEPS.forEach((s, i) => {
-    if (seen.includes(s.cli)) furthest = i
+    // Saving is reported when it starts, not when it is done: it stays active
+    // until the run is finishing.
+    if (seen.includes(s.cli) && s.cli !== SAVING_CLI) furthest = i
   })
   const finishing = run?.status === 'finishing' || run?.status === 'done'
   const moving = run?.status === 'running' || run?.status === 'needs-input' || !run

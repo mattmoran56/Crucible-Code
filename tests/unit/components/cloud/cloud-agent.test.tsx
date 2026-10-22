@@ -230,7 +230,7 @@ describe('cloud session Agent tab', () => {
     emitTeleport({ steps: ['Validating session', 'Fetching session logs'] })
     const steps = () =>
       [...screen.getByRole('list', { name: 'Teleport progress' }).querySelectorAll('li')].map((li) => li.dataset.state)
-    expect(steps()).toEqual(['done', 'done', 'active', 'todo', 'todo', 'todo'])
+    expect(steps()).toEqual(['done', 'done', 'active', 'todo', 'todo', 'todo', 'todo'])
 
     // The CLI is done: the tab becomes the visual agent on the local conversation.
     emitTeleport({ status: 'done', claudeSessionId: 'local-claude-1', steps: ['Session resumed'] })
@@ -354,7 +354,7 @@ describe('cloud session Agent tab', () => {
     await waitFor(() =>
       expect(
         [...screen.getByRole('list', { name: 'Teleport progress' }).querySelectorAll('li')].map((li) => li.dataset.state)
-      ).toEqual(['done', 'done', 'done', 'active', 'todo', 'todo'])
+      ).toEqual(['done', 'done', 'done', 'active', 'todo', 'todo', 'todo'])
     )
     expect(api.teleportState).toHaveBeenCalledWith('s1')
   })

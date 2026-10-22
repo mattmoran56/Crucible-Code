@@ -25,17 +25,29 @@
  * is written to `<config>/projects/<encoded cwd>/` until the conversation
  * changes, i.e. the user's first message. Waiting on the transcript alone
  * therefore hangs forever. We also watch the PTY for the REPL being up
- * ("Session resumed", its "? for shortcuts" footer); if it is up and no
- * transcript shows within TELEPORT_TRANSCRIPT_WAIT_MS the run goes to
- * `needs-input` / `first-message` with the terminal revealed. Any run with no
+ * ("Session resumed", its "? for shortcuts" footer); once it is up the run
+ * sends the automated first message (below), and if that saves nothing the
+ * run goes to `needs-input` / `first-message` with the terminal revealed. Any run with no
  * progress for TELEPORT_STALL_MS goes to `needs-input` / `timeout`. Neither
  * ever closes the REPL on its own once the user may be typing in it.
+ *
+ * AUTOMATED FIRST MESSAGE (the user asked for this): once the REPL is up and
+ * idle — no dialog or prompt showing — the run types TELEPORT_AUTO_MESSAGE
+ * into it exactly once (bracketed paste, then Enter). That changes the
+ * conversation, so Claude saves it; when Claude has answered (a reply after
+ * that message in the transcript) and the file stops growing, the REPL is
+ * closed and the run is `done` as above — no click needed. If the message
+ * can't be sent or nothing is saved within TELEPORT_AUTO_SAVE_WAIT_MS, the
+ * run falls back to the `first-message` hand-over.
  *
  * PERMISSIONS: argv from teleportArgv, which spreads the empty
  * AUTO_PERMISSION_MODE_ARGS — never bypass, never --permission-mode.
  */
 import type { BrowserWindow } from 'electron'
+import { promises as fs } from 'node:fs'
 import { IPC } from '../../shared/constants'
+import { TELEPORT_AUTO_MESSAGE } from '../../shared/visual-agent'
+import { teleportAutoReplied } from './visual-agent/claude-transcript'
 import type { CloudTeleportState } from '../../shared/types'
 import * as terminalService from './terminal.service'
 import {
@@ -52,8 +64,14 @@ export const TELEPORT_PTY_TAB = 'agent'
 
 /** How often to look for the teleported transcript. */
 export const TELEPORT_POLL_MS = 1_000
-/** After the REPL is up, how long to wait for its transcript before handing over to the user. */
-export const TELEPORT_TRANSCRIPT_WAIT_MS = 8_000
+/** After the REPL is up, how long it gets to settle before the automated first message is typed. */
+export const TELEPORT_AUTO_MESSAGE_DELAY_MS = 1_500
+/** After the automated message, how long to wait for the conversation to be saved before handing over. */
+export const TELEPORT_AUTO_SAVE_WAIT_MS = 60_000
+/** Gap between pasting the automated message and pressing Enter. */
+export const TELEPORT_AUTO_ENTER_DELAY_MS = 200
+/** The step reported once the automated first message is sent (TeleportProgress shows it). */
+export const AUTO_SAVE_STEP = 'Saving the conversation locally'
 /** With no step, prompt or REPL seen for this long, show the terminal and offer a way out. */
 export const TELEPORT_STALL_MS = 120_000
 /** How long the REPL gets to exit after Ctrl-C before it is killed. */
@@ -191,6 +209,8 @@ interface Run {
    * closes the terminal on its own — they may be mid-turn in it.
    */
   handedOver: boolean
+  /** When the automated first message was typed (null: not yet; it is sent at most once). */
+  autoSentAt: number | null
 }
 
 const runs = new Map<string, Run>()
@@ -255,6 +275,35 @@ function closePty(run: Run): void {
   }, TELEPORT_EXIT_WAIT_MS)
 }
 
+/**
+ * Type the automated first message into the idle REPL, once: bracketed paste
+ * (as a typed message arrives), then Enter. Enter is skipped if a dialog
+ * appeared in between.
+ */
+function sendAutoMessage(run: Run, now: number): void {
+  run.autoSentAt = now
+  run.lastSize = null
+  const id = run.state.terminalId
+  try {
+    terminalService.writeTerminal(id, `\x1b[200~${TELEPORT_AUTO_MESSAGE}\x1b[201~`)
+  } catch {
+    return
+  }
+  setTimeout(() => {
+    if (!live(run) || run.exited || awaitingInputIn(run.output)) return
+    try {
+      terminalService.writeTerminal(id, '\r')
+    } catch {
+      // Gone; settle reports it.
+    }
+  }, TELEPORT_AUTO_ENTER_DELAY_MS)
+  update(run, { steps: Array.from(new Set([...run.state.steps, AUTO_SAVE_STEP])) })
+}
+
+/** Claude has answered the automated message in this transcript (its turn is over). */
+const autoReplied = (path: string): Promise<boolean> =>
+  fs.readFile(path, 'utf8').then(teleportAutoReplied, () => false)
+
 /** The conversation is local (or the user asked to leave): close the PTY; `done` follows on its exit. */
 function finish(run: Run): void {
   if (run.state.status === 'finishing' || run.state.status === 'done') return
@@ -304,6 +353,15 @@ async function tick(run: Run): Promise<void> {
         if (run.state.claudeSessionId !== found.id) update(run, { claudeSessionId: found.id })
         return
       }
+      // A dialog is up in the REPL: leave it to the user.
+      if (run.state.waiting === 'prompt') return
+      // After the automated message, wait for Claude's reply so the REPL is
+      // not closed mid-turn.
+      if (run.autoSentAt !== null && !(await autoReplied(found.path))) {
+        run.lastSize = null
+        return
+      }
+      if (!live(run) || run.exited) return
       // Wait for it to stop growing so we do not close the REPL mid-write.
       if (run.lastSize === found.size) {
         update(run, { claudeSessionId: found.id })
@@ -315,9 +373,14 @@ async function tick(run: Run): Promise<void> {
     }
     if (run.state.status === 'needs-input') return
     const now = Date.now()
-    if (run.readyAt !== null && now - run.readyAt > TELEPORT_TRANSCRIPT_WAIT_MS) {
+    if (run.readyAt !== null && run.autoSentAt === null) {
       // The REPL has the conversation, but Claude Code writes it to disk only
-      // once it changes. Show the terminal; the user can carry on there.
+      // once it changes: type the automated first message once it is idle.
+      if (now - run.readyAt >= TELEPORT_AUTO_MESSAGE_DELAY_MS && !awaitingInputIn(run.output)) sendAutoMessage(run, now)
+      return
+    }
+    if (run.autoSentAt !== null && now - run.autoSentAt > TELEPORT_AUTO_SAVE_WAIT_MS) {
+      // Still nothing saved: show the terminal; the user can carry on there.
       run.handedOver = true
       update(run, { status: 'needs-input', waiting: 'first-message' })
     } else if (run.readyAt === null && now - run.progressAt > TELEPORT_STALL_MS) {
@@ -402,6 +465,7 @@ export function startTeleport(window: BrowserWindow, opts: StartTeleportOptions)
     exited: false,
     userFinished: false,
     handedOver: false,
+    autoSentAt: null,
   }
   runs.set(opts.sessionId, run)
   run.unwatch = terminalService.watchTerminal(terminalId, {
