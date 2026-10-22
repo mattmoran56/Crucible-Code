@@ -9,6 +9,7 @@ import type { UsageLimitEvent } from '../../shared/types'
 import { handleHookEvent, findContextById } from './notification-server'
 import { getSessionUsage } from './usage.service'
 import { getStorePath } from '../store-path'
+import { scrubInheritedClaudeSession } from './claude-env'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
@@ -341,7 +342,7 @@ function spawnPty(
     args = []
   }
 
-  const env: Record<string, string> = { ...process.env } as Record<string, string>
+  const env = scrubInheritedClaudeSession({ ...process.env } as Record<string, string>)
   if (instance.claudeConfigDir) {
     const resolved = instance.claudeConfigDir.startsWith('~/')
       ? join(homedir(), instance.claudeConfigDir.slice(2))

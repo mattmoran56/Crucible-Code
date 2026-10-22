@@ -8,6 +8,7 @@ import Store from 'electron-store'
 import { IPC } from '../../shared/constants'
 import type { Project, Session, ClaudeAccount } from '../../shared/types'
 import { getStorePath } from '../store-path'
+import { scrubInheritedClaudeSession } from '../services/claude-env'
 
 // Auth terminal instances (lightweight, separate from session terminals)
 const authTerminals = new Map<string, pty.IPty>()
@@ -120,7 +121,7 @@ export function registerProjectHandlers(window: BrowserWindow) {
       rows: 16,
       cwd: homedir(),
       env: {
-        ...process.env,
+        ...scrubInheritedClaudeSession({ ...process.env }),
         CLAUDE_CONFIG_DIR: resolved,
       } as Record<string, string>,
     })

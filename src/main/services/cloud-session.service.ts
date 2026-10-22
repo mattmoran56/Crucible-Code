@@ -39,6 +39,7 @@ import { join } from 'node:path'
 import type { CloudSessionResult } from '../../shared/types'
 import { validateBranchName } from '../../shared/branch-name'
 import { AUTO_PERMISSION_MODE_ARGS, shellQuote } from './terminal.service'
+import { scrubInheritedClaudeSession } from './claude-env'
 
 /** How long a `-p --cloud <id>` call may take before we give up on it. */
 export const CLOUD_CALL_TIMEOUT_MS = 5 * 60_000
@@ -233,7 +234,7 @@ export const mayHaveCreatedSession = (raw: string): boolean =>
 
 /** Same CLAUDE_CONFIG_DIR rules as the visual agent / terminals. */
 export function cloudEnv(configDir?: string | null): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env }
+  const env: NodeJS.ProcessEnv = scrubInheritedClaudeSession({ ...process.env })
   if (configDir) {
     env.CLAUDE_CONFIG_DIR = configDir.startsWith('~/') ? join(homedir(), configDir.slice(2)) : configDir
   } else {

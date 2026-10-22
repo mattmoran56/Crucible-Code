@@ -13,6 +13,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { AUTO_PERMISSION_MODE_ARGS } from './terminal.service'
+import { scrubInheritedClaudeSession } from './claude-env'
 
 export const DEFAULT_PHASE_TIMEOUT_MS = 30 * 60 * 1000
 
@@ -181,7 +182,7 @@ export function runHeadlessClaude(opts: HeadlessClaudeOptions): Promise<Headless
     // caller explicitly overrides via opts.env.CLAUDE_CONFIG_DIR. Otherwise
     // a parent shell that exports CLAUDE_CONFIG_DIR (common in dev launchers)
     // would silently route every headless run to a non-default account.
-    const env: NodeJS.ProcessEnv = { ...process.env, ...(opts.env ?? {}) }
+    const env: NodeJS.ProcessEnv = { ...scrubInheritedClaudeSession({ ...process.env }), ...(opts.env ?? {}) }
     if (!opts.env || !('CLAUDE_CONFIG_DIR' in opts.env)) {
       delete env.CLAUDE_CONFIG_DIR
     } else if (env.CLAUDE_CONFIG_DIR?.startsWith('~/')) {

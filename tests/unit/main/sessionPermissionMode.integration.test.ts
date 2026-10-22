@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Capture every node-pty spawn so we can inspect the real launched command.
 const ptyState = vi.hoisted(() => ({
-  spawns: [] as Array<{ command: string; args: string[] }>,
+  spawns: [] as Array<{ command: string; args: string[]; env?: Record<string, string> }>,
 }))
 
 function makeFakePty() {
@@ -32,8 +32,8 @@ function makeFakePty() {
 }
 
 vi.mock('node-pty', () => ({
-  spawn: vi.fn((command: string, args: string[]) => {
-    ptyState.spawns.push({ command, args })
+  spawn: vi.fn((command: string, args: string[], opts?: { env?: Record<string, string> }) => {
+    ptyState.spawns.push({ command, args, env: opts?.env })
     return makeFakePty()
   }),
 }))
@@ -157,5 +157,20 @@ describe('opening a Claude Code session (TERMINAL_SPAWN)', () => {
     const launched = [last.command, ...last.args].join(' ')
     expect(launched).not.toContain('--permission-mode')
     expect(launched).not.toContain('claude')
+  })
+})
+
+describe('a session opened while the app itself runs inside a Claude Code session', () => {
+  const markers = { CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_SESSION_ID: 'parent', CLAUDE_PID: '1' }
+  beforeEach(() => Object.assign(process.env, markers))
+  afterEach(() => {
+    for (const key of Object.keys(markers)) delete process.env[key]
+  })
+
+  it("does not hand the parent's child-session markers to claude (they switch transcript saving off)", async () => {
+    await invokeHandler(IPC.TERMINAL_SPAWN, ['sess-nested', '/wt/sess-nested', 'claude', 'dark', undefined, undefined, false, 'sess-nested', 'agent'])
+    const env = ptyState.spawns.at(-1)!.env!
+    for (const key of Object.keys(markers)) expect(env).not.toHaveProperty(key)
+    expect(env.CRUCIBLE_CONTEXT_ID).toBe('sess-nested')
   })
 })

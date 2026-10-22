@@ -15,11 +15,18 @@ import { eventBus } from './services/event-bus'
 import { installClaudeWebGuards } from './services/claude-web.service'
 import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
 import { unregisterCloud } from '../../remote/server/cloud-client'
+import { scrubInheritedClaudeSession } from './services/claude-env'
 
 // When launched from Finder/Dock, process.env.PATH is the minimal macOS default
 // and won't include Homebrew, nvm, etc. This sources the user's shell PATH so
 // git, gh, and credential helpers resolve correctly.
 fixPath()
+
+// Launched from inside a Claude Code session (an agent running `npm run dev`,
+// a Claude Code terminal), the app inherits its child-session markers, and
+// every claude we spawn would then run with transcript saving off. See
+// claude-env.ts.
+scrubInheritedClaudeSession(process.env)
 
 let mainWindow: BrowserWindow | null = null
 

@@ -33,6 +33,7 @@ import { emitToRenderer } from '../event-bus'
 import { handleHookEvent, VISUAL_AGENT_HOOK_TAB } from '../notification-server'
 import { killChildTree } from '../claude-headless.service'
 import { writeClaudeHookSettings } from '../hook.service'
+import { scrubInheritedClaudeSession } from '../claude-env'
 import {
   QUESTION_TOOL,
   agentArgv,
@@ -206,7 +207,7 @@ function isAlive(child: Child | null): child is Child {
 
 /** Same CLAUDE_CONFIG_DIR rules as claude-headless.service / terminal.service. */
 export function buildEnv(opts: VisualAgentStartOptions): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env }
+  const env: NodeJS.ProcessEnv = scrubInheritedClaudeSession({ ...process.env })
   if (opts.claudeConfigDir) {
     env.CLAUDE_CONFIG_DIR = opts.claudeConfigDir.startsWith('~/')
       ? join(homedir(), opts.claudeConfigDir.slice(2))
