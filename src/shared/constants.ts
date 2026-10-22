@@ -253,4 +253,21 @@ export const IPC = {
   CLOUD_SESSION_TELEPORT_FINISH: 'cloud-session:teleport-finish',
   CLOUD_SESSION_DISCOVER_LOCAL: 'cloud-session:discover-local',
   CLOUD_SESSION_OPEN_URL: 'cloud-session:open-url',
+
+  // Sandboxer — one container per worktree (sandboxer-core CLI)
+  SANDBOXER_CHECK_CONFIG: 'sandboxer:check-config',
+  SANDBOXER_STATUS: 'sandboxer:status',
+  SANDBOXER_STOP: 'sandboxer:stop',
+  SANDBOXER_START: 'sandboxer:start',
+  /** Destroy a worktree's sandboxes and their data (the worktree stays). */
+  SANDBOXER_DOWN: 'sandboxer:down',
+  SANDBOXER_OPEN_URL: 'sandboxer:open-url',
+  /** Copy the config in and run `sandboxer up` as a job the panel shows. */
+  SANDBOXER_UP: 'sandboxer:up',
+  /** Build one front-end (`sandboxer reload --web <label>`) as a job. */
+  SANDBOXER_BUILD: 'sandboxer:build',
+  SANDBOXER_JOB_GET: 'sandboxer:job-get',
+  SANDBOXER_JOB_CANCEL: 'sandboxer:job-cancel',
+  /** main → renderer: a job's output or state changed. */
+  SANDBOXER_JOB_EVENT: 'sandboxer:job-event',
 } as const

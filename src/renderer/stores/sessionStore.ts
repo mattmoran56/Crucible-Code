@@ -8,6 +8,7 @@ import { useVisualAgentStore } from './visualAgentStore'
 import { useProjectStore } from './projectStore'
 import { projectConfigDir } from '../lib/visualAgents'
 import { recoverAbandonedTeleports } from '../lib/teleportRecovery'
+import { warnAboutSandboxTeardown } from '../lib/sandboxTeardown'
 
 type WorkspaceTab = 'agent' | 'git' | 'pr'
 
@@ -313,18 +314,56 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   removeSession: async (projectId, repoPath, sessionId, opts) => {
-    const session = get().sessions.find((s) => s.id === sessionId)
+    const before = get().sessions
+    const session = before.find((s) => s.id === sessionId)
+    const index = session ? before.indexOf(session) : -1
+    const visible = () => get().currentProjectId === projectId
+
+    // Hide it straight away, so a delete feels instant even though the
+    // worktree (and any sandbox) can take a while to tear down. If the
+    // teardown fails it comes back below so the user can try again.
+    if (session && visible()) {
+      const sessions = get().sessions.filter((s) => s.id !== sessionId)
+      set({
+        sessions,
+        activeSessionId:
+          get().activeSessionId === sessionId ? (sessions[0]?.id ?? null) : get().activeSessionId,
+      })
+    }
+
+    // Stop everything running in the worktree first (terminals, dev servers,
+    // agents): anything still alive keeps writing files (.claude settings,
+    // .vite caches) into the directory after it has been removed.
+    await useTerminalStore.getState().killAllForSession(sessionId)
+    await window.api.terminal.killSession(sessionId)
+    await useVisualAgentStore.getState().releaseSession(sessionId)
+
     if (session) {
       try {
         // session/* branches are always cleaned up by the main process; a
         // custom-named branch only when the app created it.
-        await window.api.worktree.remove(
+        const report = await window.api.worktree.remove(
           repoPath,
           session.worktreePath,
           session.ownsBranch && session.branchName ? { deleteBranch: session.branchName } : undefined
         )
-      } catch {
-        // Worktree may already be removed
+        warnAboutSandboxTeardown(report, repoPath)
+      } catch (err) {
+        // A worktree that was already gone is not an error (the main process
+        // treats it as removed), so this means files are still on disk: put
+        // the session back rather than lose track of them.
+        useToastStore
+          .getState()
+          .addToast(
+            'error',
+            `Couldn't delete "${session.name}": ${err instanceof Error ? err.message : String(err)}. It's back in the list so you can try again.`
+          )
+        if (visible() && !get().sessions.some((s) => s.id === sessionId)) {
+          const sessions = [...get().sessions]
+          sessions.splice(Math.min(index, sessions.length), 0, session)
+          set({ sessions })
+        }
+        return
       }
       const remoteBranch = sessionRemoteBranch(session)
       if (opts?.deleteRemoteBranch && remoteBranch) {
@@ -338,22 +377,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
     }
 
-    // Clean up all terminals for this session (both renderer xterm instances and main PTY processes)
-    await useTerminalStore.getState().killAllForSession(sessionId)
-    await window.api.terminal.killSession(sessionId)
-    await useVisualAgentStore.getState().releaseSession(sessionId)
-
-    const sessions = get().sessions.filter((s) => s.id !== sessionId)
+    // Persist from the live list when this project is still shown (it may have
+    // gained sessions meanwhile), otherwise from the list we started with.
+    const sessions = (visible() ? get().sessions : before).filter((s) => s.id !== sessionId)
     await window.api.session.save(projectId, sessions)
-    if (get().currentProjectId !== projectId) return
-
-    set({
-      sessions,
-      activeSessionId:
-        get().activeSessionId === sessionId
-          ? (sessions[0]?.id ?? null)
-          : get().activeSessionId,
-    })
+    if (visible()) set({ sessions })
   },
 
   renameSession: async (projectId, repoPath, sessionId, newName) => {
@@ -541,9 +569,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     await Promise.all(stale.map(async (w) => {
       try {
-        await window.api.worktree.removePR(repoPath, w.prNumber)
-      } catch {
+        warnAboutSandboxTeardown(await window.api.worktree.removePR(repoPath, w.prNumber), repoPath)
+      } catch (err) {
         // Best-effort; will retry on next poll.
+        console.warn(`Couldn't remove PR #${w.prNumber} worktree:`, err)
       }
     }))
 

@@ -16,6 +16,77 @@ export interface Project {
    * features default off" rule — only an explicit 'local' opts out.
    */
   defaultSessionLocation?: SessionLocation
+  /** Sandboxer integration (one container per worktree). Off unless set. */
+  sandboxer?: SandboxerProjectConfig
+}
+
+/** Per-project Sandboxer settings. */
+export interface SandboxerProjectConfig {
+  enabled: boolean
+  /**
+   * The project's `sandboxer.yaml`. Relative paths resolve against the repo
+   * root; unset means `sandboxer.yaml` at the repo root. It is copied into each
+   * worktree that does not track its own, so a config kept out of git (e.g.
+   * listed in `.git/info/exclude`) still reaches every session.
+   */
+  configPath?: string
+}
+
+/** Whether a project's Sandboxer config can be found, and how git sees it. */
+export interface SandboxerConfigCheck {
+  /** Absolute path the config resolves to. */
+  path: string
+  exists: boolean
+  /** tracked: committed; ignored: kept out of git; untracked: neither. */
+  gitState: 'tracked' | 'ignored' | 'untracked' | 'outside-repo' | 'unknown'
+  /** `sandboxer version`, or null when the CLI is not installed. */
+  cliVersion: string | null
+}
+
+/** One sandbox as `sandboxer ls/status --json` reports it. */
+export interface SandboxInfo {
+  project: string
+  slug: string
+  branch: string
+  worktree: string
+  /** running | stopped | starting | degraded | ... (whatever sandboxer says). */
+  state: string
+  container: string
+  ttl?: string
+  urls?: Record<string, string>
+  /** Whether each URL answers yet, keyed like `urls` (filled in by status). */
+  links?: Record<string, SandboxLinkState>
+}
+
+/**
+ * ready: the app answers. starting: nothing listening yet (502/504/no
+ * connection). not-built: a front-end sandboxer has not built in this sandbox.
+ */
+export type SandboxLinkState = 'ready' | 'starting' | 'not-built'
+
+/** A long-running sandboxer command started from the Sandbox panel. */
+export interface SandboxJob {
+  worktreePath: string
+  /** What the panel calls it, e.g. "Starting sandbox" or "Building app". */
+  title: string
+  state: 'running' | 'succeeded' | 'failed'
+  /** Output lines, newest last (capped). */
+  lines: string[]
+  /** The most recent `==>` step sandboxer printed. */
+  step: string | null
+  startedAt: string
+  finishedAt?: string
+  exitCode?: number | null
+}
+
+/** What tearing down a worktree's sandboxes did. */
+export interface SandboxTeardownReport {
+  /** `project/slug` of every sandbox that is gone. */
+  removed: string[]
+  /** `project/slug: reason` for any that could not be removed. */
+  failed: string[]
+  /** Set when sandboxer could not be asked at all (CLI missing, Docker down). */
+  skipped?: string
 }
 
 /** Where a session's agent runs: Claude Code on the web, or on this machine. */

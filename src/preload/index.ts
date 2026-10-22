@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
 import type { VisualAgentAskDecision, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -28,6 +28,7 @@ const onTerminalExit = makeMultiplex<[string, number]>(IPC.TERMINAL_EXIT)
 const onVisualAgentFrame = makeMultiplex<[string, VisualAgentFrame]>(IPC.VISUAL_AGENT_FRAME)
 const onCloudCreateEvent = makeMultiplex<[CloudCreateState]>(IPC.CLOUD_SESSION_CREATE_EVENT)
 const onCloudTeleportEvent = makeMultiplex<[CloudTeleportState]>(IPC.CLOUD_SESSION_TELEPORT_EVENT)
+const onSandboxerJobEvent = makeMultiplex<[SandboxJob]>(IPC.SANDBOXER_JOB_EVENT)
 
 const api = {
   git: {
@@ -97,7 +98,12 @@ const api = {
       ipcRenderer.invoke(IPC.WORKTREE_CREATE, repoPath, sessionName, baseBranch, branchName),
     list: (repoPath: string) => ipcRenderer.invoke(IPC.WORKTREE_LIST, repoPath),
     /** `opts.deleteBranch`: also delete the worktree's branch when it has exactly this name. */
-    remove: (repoPath: string, worktreePath: string, opts?: { deleteBranch?: string }) =>
+    /** Also destroys any sandbox built from the worktree; the report says how that went. */
+    remove: (
+      repoPath: string,
+      worktreePath: string,
+      opts?: { deleteBranch?: string }
+    ): Promise<SandboxTeardownReport> =>
       ipcRenderer.invoke(IPC.WORKTREE_REMOVE, repoPath, worktreePath, opts),
     /** `git branch --show-current` in the worktree; null when detached. */
     currentBranch: (worktreePath: string): Promise<string | null> =>
@@ -126,7 +132,7 @@ const api = {
       repoPath: string
     ): Promise<Array<{ prNumber: number; path: string; branch: string | null }>> =>
       ipcRenderer.invoke(IPC.WORKTREE_LIST_PR, repoPath),
-    removePR: (repoPath: string, prNumber: number): Promise<void> =>
+    removePR: (repoPath: string, prNumber: number): Promise<SandboxTeardownReport | void> =>
       ipcRenderer.invoke(IPC.WORKTREE_REMOVE_PR, repoPath, prNumber),
   },
 
@@ -581,6 +587,29 @@ const api = {
       ipcRenderer.on(IPC.REVIEW_LOOP_STATE_UPDATE, listener)
       return () => ipcRenderer.removeListener(IPC.REVIEW_LOOP_STATE_UPDATE, listener)
     },
+  },
+
+  sandboxer: {
+    checkConfig: (repoPath: string, configPath?: string): Promise<SandboxerConfigCheck> =>
+      ipcRenderer.invoke(IPC.SANDBOXER_CHECK_CONFIG, repoPath, configPath),
+    status: (worktreePath: string): Promise<SandboxInfo[]> =>
+      ipcRenderer.invoke(IPC.SANDBOXER_STATUS, worktreePath),
+    stop: (sandbox: SandboxInfo): Promise<void> => ipcRenderer.invoke(IPC.SANDBOXER_STOP, sandbox),
+    start: (sandbox: SandboxInfo): Promise<void> => ipcRenderer.invoke(IPC.SANDBOXER_START, sandbox),
+    down: (worktreePath: string): Promise<SandboxTeardownReport> =>
+      ipcRenderer.invoke(IPC.SANDBOXER_DOWN, worktreePath),
+    openUrl: (url: string): Promise<void> => ipcRenderer.invoke(IPC.SANDBOXER_OPEN_URL, url),
+    /** Copy the config in and run `sandboxer up`; progress arrives via onJobEvent. */
+    up: (repoPath: string, worktreePath: string, configPath?: string): Promise<SandboxJob> =>
+      ipcRenderer.invoke(IPC.SANDBOXER_UP, repoPath, worktreePath, configPath),
+    /** Build one front-end that sandboxer has not built yet. */
+    build: (sandbox: SandboxInfo, label: string): Promise<SandboxJob> =>
+      ipcRenderer.invoke(IPC.SANDBOXER_BUILD, sandbox, label),
+    job: (worktreePath: string): Promise<SandboxJob | null> =>
+      ipcRenderer.invoke(IPC.SANDBOXER_JOB_GET, worktreePath),
+    cancelJob: (worktreePath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.SANDBOXER_JOB_CANCEL, worktreePath),
+    onJobEvent: (cb: (job: SandboxJob) => void): (() => void) => onSandboxerJobEvent(cb),
   },
 
   notion: {

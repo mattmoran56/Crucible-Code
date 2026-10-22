@@ -1,8 +1,8 @@
 import simpleGit from 'simple-git'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { join, dirname, basename, resolve as resolvePath } from 'path'
-import { mkdir, access, realpath } from 'fs/promises'
+import { join, dirname, basename, resolve as resolvePath, relative, isAbsolute, sep } from 'path'
+import { mkdir, access, realpath, rm } from 'fs/promises'
 import type { WorktreeInfo } from '../../shared/types'
 import { getDefaultBranch } from './git.service'
 import { validateBranchName } from '../../shared/branch-name'
@@ -21,6 +21,78 @@ function prWorktreePath(repoPath: string, prNumber: number): string {
 function isPRWorktreeBasename(name: string): number | null {
   const match = /^pr-(\d+)$/.exec(name)
   return match ? Number(match[1]) : null
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await access(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** realpath, falling back to resolving the parent (the leaf may be gone). */
+async function normalizePath(p: string): Promise<string> {
+  try {
+    return await realpath(p)
+  } catch {
+    // The path may not exist (e.g. the worktree directory was already
+    // deleted). Resolve the parent — usually still present — and re-append
+    // the basename so symlinked ancestors (e.g. macOS /var → /private/var)
+    // are still followed.
+    try {
+      const parent = await realpath(dirname(p))
+      return join(parent, basename(p))
+    } catch {
+      return resolvePath(p)
+    }
+  }
+}
+
+/** True when `child` is strictly inside `parent` (never equal to it). */
+function isStrictlyInside(parent: string, child: string): boolean {
+  const rel = relative(parent, child)
+  return !!rel && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+
+/**
+ * Last-resort `rm -rf` of a worktree directory that git left on disk — e.g.
+ * the dir is no longer registered with git ("is not a working tree"), git
+ * refused to remove it (submodules), or files were recreated after removal.
+ *
+ * Guarded: only deletes a path strictly inside this repo's
+ * `.codecrucible-worktrees/<repo>` base dir — never the base itself, the
+ * main checkout, or anything containing it — and never a directory that
+ * still holds another registered worktree (session names may nest, e.g.
+ * `feat` and `feat/x`). Returns true when the directory is gone afterwards.
+ */
+async function forceRemoveWorktreeDir(repoPath: string, worktreePath: string): Promise<boolean> {
+  if (!(await pathExists(worktreePath))) return true
+  const target = await normalizePath(worktreePath)
+  const base = await normalizePath(worktreeDir(repoPath))
+  const repo = await normalizePath(repoPath)
+  if (!isStrictlyInside(base, target)) return false
+  if (target === repo || isStrictlyInside(target, repo)) return false
+
+  try {
+    const out = await simpleGit(repoPath).raw(['worktree', 'list', '--porcelain'])
+    for (const line of out.split('\n')) {
+      if (!line.startsWith('worktree ')) continue
+      const other = await normalizePath(line.slice('worktree '.length))
+      if (isStrictlyInside(target, other)) return false
+    }
+  } catch {
+    // Can't verify nothing else lives under the target — don't delete.
+    return false
+  }
+
+  try {
+    await rm(target, { recursive: true, force: true, maxRetries: 3 })
+  } catch {
+    // Fall through to the existence check.
+  }
+  return !(await pathExists(target))
 }
 
 // `git worktree prune` clears stale administrative entries left behind when a
@@ -321,22 +393,7 @@ export async function removeWorktree(
   // that block branch deletion in other tools (e.g. GitHub Desktop).
   // Normalize both sides via realpath so symlinked paths (e.g. macOS /var vs
   // /private/var) and trailing-slash differences don't cause a miss.
-  const normalize = async (p: string): Promise<string> => {
-    try {
-      return await realpath(p)
-    } catch {
-      // The path may not exist (e.g. the worktree directory was already
-      // deleted). Resolve the parent — usually still present — and re-append
-      // the basename so symlinked ancestors (e.g. macOS /var → /private/var)
-      // are still followed.
-      try {
-        const parent = await realpath(dirname(p))
-        return join(parent, basename(p))
-      } catch {
-        return resolvePath(p)
-      }
-    }
-  }
+  const normalize = normalizePath
   const targetPath = await normalize(worktreePath)
   let attachedBranch: string | null = null
   try {
@@ -360,38 +417,46 @@ export async function removeWorktree(
   } catch (err) {
     removeError = err
   }
+
+  // `git worktree remove` can fail or leave the directory behind: the dir is
+  // no longer registered ("is not a working tree"), it contains submodules,
+  // or a process still running in it recreated files. Without this the
+  // session vanishes from the UI while its files (node_modules, build output,
+  // .env, ...) stay on disk. Guarded to paths inside the worktrees base dir.
+  const dirGone = await forceRemoveWorktreeDir(repoPath, worktreePath)
   await pruneWorktrees(repoPath)
 
-  let removed = removeError === null
-  if (removeError) {
-    // The remove may have failed simply because the directory was already gone
-    // and git's admin entry was stale. After prune, re-check the worktree list:
-    // if our target is no longer registered, treat the removal as successful;
-    // otherwise surface the original error.
-    let stillPresent = true
+  const isStillRegistered = async (): Promise<boolean> => {
     try {
       const wtOutput = await g.raw(['worktree', 'list', '--porcelain'])
-      stillPresent = false
       for (const line of wtOutput.split('\n')) {
-        if (line.startsWith('worktree ')) {
-          const p = await normalize(line.slice('worktree '.length))
-          if (p === targetPath) {
-            stillPresent = true
-            break
-          }
+        if (line.startsWith('worktree ') && (await normalize(line.slice('worktree '.length))) === targetPath) {
+          return true
         }
       }
+      return false
     } catch {
-      // If we can't list, treat the worktree as still present and rethrow.
+      // If we can't list, assume it's still present.
+      return true
     }
-    if (stillPresent) throw removeError
-    removed = true
+  }
+
+  // The remove may have failed simply because the directory was already gone
+  // (or we just deleted it) and git's admin entry was stale. After prune, if
+  // our target is no longer registered, treat the removal as successful;
+  // otherwise surface the original error.
+  if (removeError && (await isStillRegistered())) throw removeError
+  if (!dirGone) {
+    throw new Error(
+      `Worktree directory was not fully removed from disk: ${worktreePath}` +
+        (removeError ? ` (${removeError instanceof Error ? removeError.message : String(removeError)})` : '')
+    )
   }
 
   const deletable =
     !!attachedBranch &&
     (attachedBranch.startsWith('session/') || (!!opts?.deleteBranch && attachedBranch === opts.deleteBranch))
-  if (removed && attachedBranch && deletable) {
+  if (attachedBranch && deletable) {
     try {
       await g.raw(['branch', '-D', attachedBranch])
     } catch {
@@ -493,6 +558,7 @@ export async function createPRWorktree(
   } catch (err) {
     // Roll back the detached worktree so we don't leave a half-broken one behind.
     try { await g.raw(['worktree', 'remove', wtPath, '--force']) } catch {}
+    await forceRemoveWorktreeDir(repoPath, wtPath)
     await pruneWorktrees(repoPath)
     throw new Error(`gh pr checkout failed: ${err instanceof Error ? err.message : String(err)}`)
   }
@@ -569,8 +635,9 @@ export async function removePRWorktree(
   try {
     await g.raw(['worktree', 'remove', existing.path, '--force'])
   } catch {
-    // Best-effort — prune below will clean up admin entries.
+    // Best-effort — the guarded rm and prune below clean up what's left.
   }
+  await forceRemoveWorktreeDir(repoPath, existing.path)
   await pruneWorktrees(repoPath)
 
   // Delete the branch gh created for this PR. Safe because PR worktrees are

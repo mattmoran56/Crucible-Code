@@ -36,6 +36,7 @@ describe('SettingsSidebar', () => {
       'PR List Display',
       'Startup Prompts',
       'Notion',
+      'Sandboxer',
       'Review Loop',
       'About',
     ]
@@ -44,9 +45,9 @@ describe('SettingsSidebar', () => {
     }
   })
 
-  it('renders exactly ten nav buttons when projects exist', () => {
+  it('renders exactly eleven nav buttons when projects exist', () => {
     renderSidebar({ hasProjects: true })
-    expect(screen.getAllByRole('button')).toHaveLength(10)
+    expect(screen.getAllByRole('button')).toHaveLength(11)
   })
 
   it('hides project-requiring items when there are no projects', () => {
@@ -54,6 +55,7 @@ describe('SettingsSidebar', () => {
     expect(screen.queryByRole('button', { name: 'Project Defaults' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Startup Prompts' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Notion' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sandboxer' })).not.toBeInTheDocument()
   })
 
   it('keeps PR List Display and Review Loop visible without projects', () => {
@@ -119,6 +121,7 @@ describe('SettingsSidebar', () => {
       'PR List Display',
       'Startup Prompts',
       'Notion',
+      'Sandboxer',
       'Review Loop',
       'About',
     ])

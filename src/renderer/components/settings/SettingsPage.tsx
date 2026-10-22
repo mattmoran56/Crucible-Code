@@ -18,6 +18,7 @@ import { NotionIntegrationSettings } from './NotionIntegrationSettings'
 import { SettingsSidebar, type SettingsSection } from './SettingsSidebar'
 import { ProjectPicker } from './ProjectPicker'
 import { SessionLocationSetting } from './SessionLocationSetting'
+import { SandboxerSettings } from './SandboxerSettings'
 
 const LIGHT_THEMES = THEMES.filter((t) => !t.isDark)
 const DARK_THEMES = THEMES.filter((t) => t.isDark)
@@ -59,6 +60,7 @@ export function SettingsPage() {
   const [prListProjectId, setPrListProjectId] = useState(initialProjectId)
   const [startupProjectId, setStartupProjectId] = useState(initialProjectId)
   const [notionProjectId, setNotionProjectId] = useState(initialProjectId)
+  const [sandboxerProjectId, setSandboxerProjectId] = useState(initialProjectId)
   const [reviewProjectId, setReviewProjectId] = useState(initialProjectId)
   const [defaultsProjectId, setDefaultsProjectId] = useState(initialProjectId)
 
@@ -770,6 +772,26 @@ export function SettingsPage() {
                 />
               )}
               <NotionIntegrationSettings projects={filterProject(notionProjectId || initialProjectId)} />
+            </Panel>
+
+            {/* Sandboxer */}
+            <Panel visible={activeSection === 'sandboxer'}>
+              <SectionHeader
+                title="Sandboxer"
+                description="Run session worktrees as Sandboxer sandboxes, and destroy them with the session."
+              />
+              {hasProjects && (
+                <>
+                  <ProjectPicker
+                    projects={projects}
+                    value={sandboxerProjectId || initialProjectId}
+                    onChange={setSandboxerProjectId}
+                  />
+                  {filterProject(sandboxerProjectId || initialProjectId).map((p) => (
+                    <SandboxerSettings key={p.id} project={p} />
+                  ))}
+                </>
+              )}
             </Panel>
 
             {/* Review Loop */}

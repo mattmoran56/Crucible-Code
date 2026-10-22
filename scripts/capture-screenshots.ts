@@ -121,6 +121,25 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 320, height: 200 },
   },
   {
+    name: 'sandbox-panel-links',
+    storyId: 'sandboxer-sandboxpanel--links-with-readiness',
+    delay: 1000,
+    viewport: { width: 340, height: 460 },
+  },
+  {
+    name: 'sandbox-panel-building',
+    storyId: 'sandboxer-sandboxpanel--building',
+    delay: 1000,
+    viewport: { width: 340, height: 560 },
+    clickButtonText: 'Show output',
+  },
+  {
+    name: 'sandboxer-settings',
+    storyId: 'settings-sandboxersettings--enabled',
+    delay: 1000,
+    viewport: { width: 690, height: 330 },
+  },
+  {
     name: 'custom-buttons',
     storyId: 'app-full-layout--custom-buttons',
     delay: 2000,
