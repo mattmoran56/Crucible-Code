@@ -240,6 +240,8 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 
 ![Rename session dialog](docs/screenshots/rename-session-dialog.png)
 
+![A link from the conversation open in the Agent tab's link browser](docs/screenshots/agent-browser-link-open.png)
+
 </details>
 
 <details>

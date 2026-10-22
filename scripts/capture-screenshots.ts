@@ -134,6 +134,12 @@ const targets: ScreenshotTarget[] = [
     clickButtonText: 'Show output',
   },
   {
+    name: 'agent-browser-link-open',
+    storyId: 'agent-browser-agentbrowsersplit--link-open',
+    delay: 1500,
+    viewport: { width: 1280, height: 720 },
+  },
+  {
     name: 'sandboxer-settings',
     storyId: 'settings-sandboxersettings--enabled',
     delay: 1000,
