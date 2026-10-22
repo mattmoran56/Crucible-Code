@@ -270,4 +270,10 @@ export const IPC = {
   SANDBOXER_JOB_CANCEL: 'sandboxer:job-cancel',
   /** main → renderer: a job's output or state changed. */
   SANDBOXER_JOB_EVENT: 'sandboxer:job-event',
+
+  // Agent tab link browser
+  /** main → renderer: open a link from a cloud session's claude.ai page in the link browser. */
+  AGENT_BROWSER_OPEN_LINK: 'agent-browser:open-link',
+  /** Open the link browser's page in the user's default browser. */
+  AGENT_BROWSER_OPEN_EXTERNAL: 'agent-browser:open-external',
 } as const

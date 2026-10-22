@@ -4,6 +4,8 @@
 // - a teleported session whose local Claude session has not been looked up
 //   yet (teleported in an earlier run) → find it, then resume it visually
 // - anything else → the normal visual agent
+// Whichever it is sits beside the link browser (AgentBrowserSplit), which
+// slides in when a link in the conversation is clicked.
 
 import React, { useEffect, useRef } from 'react'
 import type { Session } from '../../../shared/types'
@@ -12,6 +14,7 @@ import { resumeTeleportedSession } from '../../lib/cloudTeleport'
 import { useCloudSessionStore } from '../../stores/cloudSessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
+import { AgentBrowserSplit } from '../agent-browser/AgentBrowserSplit'
 import { VisualAgentHost } from '../visual-agent/VisualAgentHost'
 import { Spinner } from '../visual-agent/icons'
 import { CloudAgentHost } from './CloudAgentHost'
@@ -27,9 +30,17 @@ export function SessionAgentHost({ sessionId, visible }: { sessionId: string; vi
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === sessionId))
   const teleportedThisRun = useCloudSessionStore((s) => sessionId in s.teleports)
   if (!session) return null
-  if (session.location === 'cloud' || teleportedThisRun) return <CloudAgentHost sessionId={sessionId} visible={visible} />
-  if (needsTeleportResume(session)) return <TeleportResume session={session} visible={visible} />
-  return <VisualAgentHost sessionId={sessionId} tabKey="agent" visible={visible} />
+  return (
+    <AgentBrowserSplit sessionId={sessionId} visible={visible}>
+      {session.location === 'cloud' || teleportedThisRun ? (
+        <CloudAgentHost sessionId={sessionId} visible={visible} />
+      ) : needsTeleportResume(session) ? (
+        <TeleportResume session={session} visible={visible} />
+      ) : (
+        <VisualAgentHost sessionId={sessionId} tabKey="agent" visible={visible} />
+      )}
+    </AgentBrowserSplit>
+  )
 }
 
 /**

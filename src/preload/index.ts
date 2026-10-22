@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
 import type { VisualAgentAskDecision, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
+import type { AgentBrowserLinkEvent } from '../shared/agent-browser'
 import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
@@ -29,6 +30,7 @@ const onVisualAgentFrame = makeMultiplex<[string, VisualAgentFrame]>(IPC.VISUAL_
 const onCloudCreateEvent = makeMultiplex<[CloudCreateState]>(IPC.CLOUD_SESSION_CREATE_EVENT)
 const onCloudTeleportEvent = makeMultiplex<[CloudTeleportState]>(IPC.CLOUD_SESSION_TELEPORT_EVENT)
 const onSandboxerJobEvent = makeMultiplex<[SandboxJob]>(IPC.SANDBOXER_JOB_EVENT)
+const onAgentBrowserLink = makeMultiplex<[AgentBrowserLinkEvent]>(IPC.AGENT_BROWSER_OPEN_LINK)
 
 const api = {
   git: {
@@ -610,6 +612,13 @@ const api = {
     cancelJob: (worktreePath: string): Promise<void> =>
       ipcRenderer.invoke(IPC.SANDBOXER_JOB_CANCEL, worktreePath),
     onJobEvent: (cb: (job: SandboxJob) => void): (() => void) => onSandboxerJobEvent(cb),
+  },
+
+  agentBrowser: {
+    /** Open a web page in the user's default browser. */
+    openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.AGENT_BROWSER_OPEN_EXTERNAL, url),
+    /** A link was clicked in a cloud session's claude.ai page. */
+    onOpenLink: (cb: (link: AgentBrowserLinkEvent) => void): (() => void) => onAgentBrowserLink(cb),
   },
 
   notion: {

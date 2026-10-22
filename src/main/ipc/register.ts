@@ -19,6 +19,7 @@ import { registerRemoteHandlers } from './remote.ipc'
 import { registerVisualAgentHandlers } from './visual-agent.ipc'
 import { registerCloudSessionHandlers } from './cloud-session.ipc'
 import { registerSandboxerHandlers } from './sandboxer.ipc'
+import { registerAgentBrowserHandlers } from './agent-browser.ipc'
 import {
   registerContextMapping,
   removeContextMapping,
@@ -45,6 +46,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerVisualAgentHandlers(window)
   registerCloudSessionHandlers(window)
   registerSandboxerHandlers(window)
+  registerAgentBrowserHandlers()
 
   // Context mapping management for notification routing.
   // The renderer registers sessions, the Code editor (per-project) and individual

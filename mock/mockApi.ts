@@ -424,6 +424,13 @@ export const mockApi = {
     onJobEvent: () => () => {},
   },
 
+  agentBrowser: {
+    openExternal: async (url: string) => {
+      window.open(url, '_blank', 'noopener')
+    },
+    onOpenLink: () => () => {},
+  },
+
   button: {
     list: async () => mockButtons,
     save: async () => {},

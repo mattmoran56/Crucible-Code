@@ -30,6 +30,7 @@ import { useSchedulerBootstrap } from './hooks/useSchedulerBootstrap'
 import { useNotionBootstrap } from './hooks/useNotionBootstrap'
 import { UsageLimitToast } from './components/usage/UsageLimitToast'
 import { CloudWebPool } from './components/cloud/CloudWebPool'
+import { AgentBrowserLayer } from './components/agent-browser/AgentBrowserLayer'
 
 const RIGHT_PANEL_LABELS = { notes: 'Notes', usage: 'Usage', sandbox: 'Sandbox' } as const
 type RightPanelId = keyof typeof RIGHT_PANEL_LABELS
@@ -248,6 +249,8 @@ export default function App() {
       </div>
       {/* Embedded claude.ai pages: never unmounted, so they never reload. */}
       <CloudWebPool />
+      {/* The Agent tab's link-browser pages, for the same reason. */}
+      <AgentBrowserLayer />
       <UsageLimitToast />
       <ToastContainer />
     </div>

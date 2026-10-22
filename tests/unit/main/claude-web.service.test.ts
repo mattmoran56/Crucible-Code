@@ -8,11 +8,17 @@ const h = vi.hoisted(() => {
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
   }
-  return { ses, fromPartition: vi.fn(() => ses), openExternal: vi.fn(async () => {}) }
+  const appListeners = new Map<string, (...args: any[]) => void>()
+  const app = {
+    getName: () => 'Crucible Code',
+    on: vi.fn((event: string, fn: (...args: any[]) => void) => appListeners.set(event, fn)),
+    emit: (event: string, ...args: any[]) => appListeners.get(event)?.(...args),
+  }
+  return { ses, app, fromPartition: vi.fn(() => ses), openExternal: vi.fn(async () => {}) }
 })
 
 vi.mock('electron', () => ({
-  app: { getName: () => 'Crucible Code' },
+  app: h.app,
   session: { fromPartition: h.fromPartition },
   shell: { openExternal: h.openExternal },
 }))
@@ -20,9 +26,12 @@ vi.mock('electron', () => ({
 import {
   chromeUserAgent,
   configureClaudeWebPartition,
+  guardAgentBrowserContents,
+  guardAppWindowContents,
   guardClaudeWebContents,
   hardenWebviewAttach,
   installClaudeWebGuards,
+  isAllowedAgentBrowserNavigation,
   isAllowedClaudeWebNavigation,
   isAllowedClaudeWebPermission,
   isClaudeWebEntryUrl,
@@ -94,7 +103,7 @@ describe('hardenWebviewAttach', () => {
       sandbox: false,
       webSecurity: false,
     }
-    expect(hardenWebviewAttach(prefs, good)).toBe(true)
+    expect(hardenWebviewAttach(prefs, good)).toBe('claude')
     expect(prefs).toMatchObject({
       nodeIntegration: false,
       nodeIntegrationInSubFrames: false,
@@ -108,18 +117,31 @@ describe('hardenWebviewAttach', () => {
   })
 
   it('refuses a webview on another partition or pointed elsewhere', () => {
-    expect(hardenWebviewAttach({}, { ...good, partition: 'persist:other' })).toBe(false)
-    expect(hardenWebviewAttach({}, { ...good, partition: undefined })).toBe(false)
-    expect(hardenWebviewAttach({}, { ...good, src: 'https://example.com/' })).toBe(false)
-    expect(hardenWebviewAttach({}, { ...good, src: undefined })).toBe(false)
+    expect(hardenWebviewAttach({}, { ...good, partition: 'persist:other' })).toBeNull()
+    expect(hardenWebviewAttach({}, { ...good, partition: undefined })).toBeNull()
+    expect(hardenWebviewAttach({}, { ...good, src: 'https://example.com/' })).toBeNull()
+    expect(hardenWebviewAttach({}, { ...good, src: undefined })).toBeNull()
+  })
+
+  it('recognises the link browser by its blank entry page, hardened the same way', () => {
+    const prefs: Record<string, unknown> = { preload: '/evil.js', nodeIntegration: true, sandbox: false }
+    expect(hardenWebviewAttach(prefs, { src: 'about:blank', partition: CLAUDE_WEB_PARTITION })).toBe('browser')
+    expect(prefs).toMatchObject({ nodeIntegration: false, sandbox: true, contextIsolation: true })
+    expect(prefs.preload).toBeUndefined()
+    expect(hardenWebviewAttach({}, { src: 'about:blank', partition: 'persist:other' })).toBeNull()
   })
 })
 
 /** A fake WebContents that records its listeners and window-open handler. */
-function fakeContents() {
+function fakeContents(type = 'webview', id = 7) {
   const listeners = new Map<string, (...args: any[]) => void>()
   let openHandler: ((d: { url: string }) => any) | null = null
   return {
+    id,
+    getType: () => type,
+    isDestroyed: () => false,
+    send: vi.fn(),
+    loadURL: vi.fn(async () => {}),
     on: vi.fn((event: string, fn: (...args: any[]) => void) => listeners.set(event, fn)),
     setWindowOpenHandler: vi.fn((fn: (d: { url: string }) => any) => (openHandler = fn)),
     emit: (event: string, ...args: any[]) => listeners.get(event)?.(...args),
@@ -165,6 +187,65 @@ describe('guardClaudeWebContents', () => {
     expect(wc.open('https://github.com/acme/repo/pull/12')).toEqual({ action: 'deny' })
     expect(h.openExternal).toHaveBeenCalledWith('https://github.com/acme/repo/pull/12')
   })
+
+  it('hands links to a custom opener when given one', () => {
+    const wc = fakeContents()
+    const openLink = vi.fn()
+    guardClaudeWebContents(wc as any, openLink)
+    expect(wc.open('https://github.com/acme/repo/pull/12')).toEqual({ action: 'deny' })
+    const e = { preventDefault: vi.fn() }
+    wc.emit('will-navigate', e, 'https://example.com/docs')
+    expect(e.preventDefault).toHaveBeenCalled()
+    expect(openLink.mock.calls.map((c) => c[0])).toEqual(['https://github.com/acme/repo/pull/12', 'https://example.com/docs'])
+    expect(h.openExternal).not.toHaveBeenCalled()
+  })
+})
+
+describe('isAllowedAgentBrowserNavigation', () => {
+  it.each(['https://github.com/acme/repo/pull/12', 'http://localhost:3000/', 'https://example.com/a?b#c', 'about:blank'])(
+    'allows %s',
+    (url) => expect(isAllowedAgentBrowserNavigation(url)).toBe(true),
+  )
+  it.each(['file:///etc/passwd', 'javascript:alert(1)', 'mailto:a@b.c', 'vscode://file/x', 'https://u:p@example.com/', 'nope'])(
+    'blocks %s',
+    (url) => expect(isAllowedAgentBrowserNavigation(url)).toBe(false),
+  )
+})
+
+describe('guardAgentBrowserContents', () => {
+  it('browses any web page but never loads other schemes', () => {
+    const wc = fakeContents()
+    guardAgentBrowserContents(wc as any)
+    const ok = { preventDefault: vi.fn() }
+    wc.emit('will-navigate', ok, 'https://example.com/')
+    expect(ok.preventDefault).not.toHaveBeenCalled()
+    const file = { preventDefault: vi.fn() }
+    wc.emit('will-redirect', file, 'file:///etc/passwd')
+    expect(file.preventDefault).toHaveBeenCalled()
+    const mail = { preventDefault: vi.fn() }
+    wc.emit('will-navigate', mail, 'mailto:a@example.com')
+    expect(mail.preventDefault).toHaveBeenCalled()
+    expect(h.openExternal.mock.calls).toEqual([['mailto:a@example.com']])
+  })
+
+  it('opens new-window links in the panel itself, keeping sign-in popups', () => {
+    const wc = fakeContents()
+    guardAgentBrowserContents(wc as any)
+    expect(wc.open('https://example.com/next')).toEqual({ action: 'deny' })
+    expect(wc.loadURL).toHaveBeenCalledWith('https://example.com/next')
+    expect(wc.open('file:///etc/passwd')).toEqual({ action: 'deny' })
+    expect(wc.loadURL).toHaveBeenCalledTimes(1)
+    expect(wc.open('https://accounts.google.com/o/oauth2/auth').action).toBe('allow')
+  })
+})
+
+it('the app window opens no windows of its own: web links go to the system browser', () => {
+  const wc = fakeContents('window')
+  guardAppWindowContents(wc as any)
+  expect(wc.open('https://github.com/acme/repo')).toEqual({ action: 'deny' })
+  expect(h.openExternal).toHaveBeenCalledWith('https://github.com/acme/repo')
+  expect(wc.open('file:///etc/passwd')).toEqual({ action: 'deny' })
+  expect(h.openExternal).toHaveBeenCalledTimes(1)
 })
 
 describe('partition + attach wiring', () => {
@@ -194,7 +275,42 @@ describe('partition + attach wiring', () => {
     expect(good.preventDefault).not.toHaveBeenCalled()
     expect(prefs.preload).toBeUndefined()
     const guest = fakeContents()
+    h.app.emit('web-contents-created', {}, guest)
     host.emit('did-attach-webview', {}, guest)
     expect(guest.setWindowOpenHandler).toHaveBeenCalled()
+  })
+
+  it("sends the claude.ai page's links to the renderer's link browser", () => {
+    const host = fakeContents('window', 1)
+    installClaudeWebGuards(host as any)
+    host.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, { src: 'https://claude.ai/code/x', partition: CLAUDE_WEB_PARTITION })
+    const guest = fakeContents('webview', 42)
+    h.app.emit('web-contents-created', {}, guest)
+    host.emit('did-attach-webview', {}, guest)
+    expect(guest.open('https://github.com/acme/repo/pull/12')).toEqual({ action: 'deny' })
+    expect(host.send).toHaveBeenCalledWith('agent-browser:open-link', { webContentsId: 42, url: 'https://github.com/acme/repo/pull/12' })
+    expect(h.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('gives the link browser its own guards', () => {
+    const host = fakeContents('window', 1)
+    installClaudeWebGuards(host as any)
+    const event = { preventDefault: vi.fn() }
+    host.emit('will-attach-webview', event, {}, { src: 'about:blank', partition: CLAUDE_WEB_PARTITION })
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    const guest = fakeContents('webview', 43)
+    h.app.emit('web-contents-created', {}, guest)
+    host.emit('did-attach-webview', {}, guest)
+    const nav = { preventDefault: vi.fn() }
+    guest.emit('will-navigate', nav, 'https://example.com/')
+    expect(nav.preventDefault).not.toHaveBeenCalled()
+    expect(guest.open('https://example.com/next')).toEqual({ action: 'deny' })
+    expect(guest.loadURL).toHaveBeenCalledWith('https://example.com/next')
+  })
+
+  it('blocks the app window from opening popups', () => {
+    const host = fakeContents('window', 1)
+    installClaudeWebGuards(host as any)
+    expect(host.setWindowOpenHandler).toHaveBeenCalled()
   })
 })
