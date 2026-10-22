@@ -414,6 +414,12 @@ Poll a Notion database for new tasks and auto-spawn a session per task. Sessions
 - **Destroyed with the session** — Deleting a session, whether by hand or by cleanup (including PR review worktrees), runs `sandboxer down` for every sandbox built from the worktree, before the worktree is removed. That removes the container, database, uploads and its generated files. Anything that survives is reaped with `sandboxer gc` once the worktree is gone, and the app warns you if a sandbox still could not be destroyed
 - **Startup sweep** — On launch, sandboxes whose session worktree no longer exists (e.g. deleted while Docker was down) are reaped with `sandboxer gc`
 
+![Sandbox panel with link readiness](docs/screenshots/sandbox-panel-links.png)
+
+![Sandbox panel while sandboxer up runs](docs/screenshots/sandbox-panel-building.png)
+
+![Settings → Sandboxer](docs/screenshots/sandboxer-settings.png)
+
 </details>
 
 <details>
