@@ -34,6 +34,8 @@ import {
   TELEPORT_POLL_MS,
   TELEPORT_STALL_MS,
   TELEPORT_TRANSCRIPT_WAIT_MS,
+  TRANSCRIPT_OFF_ERROR,
+  transcriptSavingOffIn,
   _resetTeleportRuns,
   awaitingInputIn,
   finishTeleport,
@@ -249,5 +251,38 @@ describe('a teleport run', () => {
     expect(getTeleportState('s1')?.waiting).toBe('timeout')
     pty().onData!(frame(2))
     expect(getTeleportState('s1')).toMatchObject({ status: 'running' })
+  })
+})
+
+// Root cause of "sent a message, never saved locally": the CLI ran with
+// transcript saving off (an inherited CLAUDE_CODE_CHILD_SESSION marker), so
+// no transcript could ever appear. The run must say so, not wait forever.
+describe('a teleport Claude Code will not save', () => {
+  it('fails with an explanation as soon as the CLI says transcript saving is off, and closes the PTY', async () => {
+    startTeleport(win, opts)
+    pty().onData!(`${frame(3)}⎿ Session resumed\r\n\x1b[33mTranscript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker\x1b[39m\r\n? for shortcuts`)
+    expect(getTeleportState('s1')).toMatchObject({ status: 'failed', error: TRANSCRIPT_OFF_ERROR })
+    expect(h.writeTerminal).toHaveBeenCalledWith('term-t', '\x03')
+    pty().onExit!(130)
+    await tick(0)
+    expect(getTeleportState('s1')).toMatchObject({ status: 'failed', error: TRANSCRIPT_OFF_ERROR })
+  })
+
+  it('reads the notice with words run together by cursor moves', () => {
+    expect(transcriptSavingOffIn('Transcript\x1b[1Csaving\x1b[1Cis\x1b[1Coff')).toBe(true)
+    expect(transcriptSavingOffIn('⎿ Session resumed')).toBe(false)
+  })
+})
+
+describe('picking up the transcript once the user is at the terminal', () => {
+  it('accepts an unmarked transcript after a timeout hand-over (the REPL footer was never recognised)', async () => {
+    startTeleport(win, opts)
+    await tick(TELEPORT_STALL_MS + TELEPORT_POLL_MS)
+    expect(getTeleportState('s1')?.waiting).toBe('timeout')
+    // The user sends a message; the CLI writes an unmarked transcript.
+    h.transcript = { id: 'local-9', path: '/p', size: 10, mtime: 1, marked: false }
+    await tick()
+    expect(getTeleportState('s1')).toMatchObject({ status: 'needs-input', claudeSessionId: 'local-9' })
+    expect(h.writeTerminal).not.toHaveBeenCalled()
   })
 })

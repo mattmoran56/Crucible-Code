@@ -106,6 +106,18 @@ const PROMPTS: RegExp[] = [
   /❯\s*\d+\.\s/,
 ]
 
+/**
+ * Claude Code says it will not save this conversation (2.1.308: "Transcript
+ * saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker", or
+ * CLAUDE_CODE_SKIP_PROMPT_HISTORY). Nothing can come down then, whatever the
+ * user sends, so the run fails rather than waiting for a transcript forever.
+ */
+const TRANSCRIPT_OFF = /Transcript\s*saving\s*is\s*off/i
+export const transcriptSavingOffIn = (text: string): boolean => TRANSCRIPT_OFF.test(stripAnsi(text))
+export const TRANSCRIPT_OFF_ERROR =
+  "Claude Code isn't saving this conversation (\"Transcript saving is off\"), so it can't come down to this machine. " +
+  'This happens when Crucible Code was started from inside another Claude Code session. Quit and reopen Crucible Code, then teleport again.'
+
 /** The steps reached so far (drawn with a spinner or a tick), in CLI order, each once. */
 export function progressStepsIn(text: string): string[] {
   const plain = stripAnsi(text)
@@ -252,6 +264,7 @@ function finish(run: Run): void {
 }
 
 async function settle(run: Run, code: number): Promise<void> {
+  if (run.state.status === 'failed' && run.state.error === TRANSCRIPT_OFF_ERROR) return
   const found = await transcriptOf(run).catch(() => null)
   if (!live(run)) return
   const sure = !!found && (found.marked || run.readyAt !== null || run.state.status === 'finishing')
@@ -281,7 +294,10 @@ async function tick(run: Run): Promise<void> {
   try {
     const found = await transcriptOf(run).catch(() => null)
     if (!live(run) || run.exited) return
-    if (found && (found.marked || run.readyAt !== null)) {
+    // An unmarked transcript counts once the REPL is up or the user is at the
+    // terminal (handed over / timed out): it is the newest file in this
+    // worktree's own project dir, written since the teleport started.
+    if (found && (found.marked || run.readyAt !== null || run.state.status === 'needs-input')) {
       if (run.handedOver || run.state.waiting === 'timeout') {
         // The user may be mid-turn in the terminal: never close it under
         // them. Record the id; "Open in Agent view" finishes the run.
@@ -315,6 +331,14 @@ async function tick(run: Run): Promise<void> {
 function onData(run: Run, data: string): void {
   run.output = (run.output + data).slice(-OUTPUT_CAP)
   if (run.state.status !== 'running' && run.state.status !== 'needs-input') return
+  if (transcriptSavingOffIn(run.output)) {
+    // Nothing it does can be saved: close it (the cloud session is untouched)
+    // and keep this error rather than the exit code (see settle).
+    stopPolling(run)
+    update(run, { status: 'failed', error: TRANSCRIPT_OFF_ERROR })
+    closePty(run)
+    return
+  }
   const steps = Array.from(new Set([...run.state.steps, ...progressStepsIn(run.output)]))
   const now = Date.now()
   if (steps.length !== run.state.steps.length) run.progressAt = now
