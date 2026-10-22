@@ -14,6 +14,7 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { claudeConfigRoot, projectDirsFor } from '../cloud-session.service'
 import type { TranscriptEntry } from './transcript-store'
+import { TELEPORT_AUTO_MESSAGE } from '../../../shared/visual-agent'
 
 const SAFE_ID = /^[A-Za-z0-9-]+$/
 
@@ -68,9 +69,24 @@ export function claudeRowToEntry(row: unknown): TranscriptEntry | null {
   return null
 }
 
-/** A whole Claude transcript file's text → entries, oldest first. Torn lines are skipped. */
-export function claudeTranscriptToEntries(text: string): TranscriptEntry[] {
-  const entries: TranscriptEntry[] = []
+/** A row's plain text (string content or its text blocks), '' when it has none. */
+const rowText = (row: unknown): string => {
+  const content = obj(obj(row)?.message)?.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map((b) => (obj(b)?.type === 'text' ? String(obj(b)?.text ?? '') : '')).join('')
+}
+
+/** The automated first message Crucible Code sent into a teleported REPL (exact text). */
+export const isTeleportAutoMessage = (row: unknown): boolean =>
+  obj(row)?.type === 'user' && rowText(row).trim() === TELEPORT_AUTO_MESSAGE
+
+/**
+ * Whether Claude has answered the automated teleport message: a later
+ * assistant row with text. Until then the turn is still running.
+ */
+export function teleportAutoReplied(text: string): boolean {
+  let sent = false
   for (const raw of text.split('\n')) {
     if (!raw.trim()) continue
     let row: unknown
@@ -79,6 +95,31 @@ export function claudeTranscriptToEntries(text: string): TranscriptEntry[] {
     } catch {
       continue
     }
+    if (isTeleportAutoMessage(row)) sent = true
+    else if (sent && obj(row)?.type === 'assistant' && rowText(row).trim() !== '') return true
+  }
+  return false
+}
+
+/**
+ * A whole Claude transcript file's text → entries, oldest first. Torn lines
+ * are skipped. The automated teleport message stays (normalise folds it into
+ * a "Teleported from the cloud" note); Claude's reply to it is dropped.
+ */
+export function claudeTranscriptToEntries(text: string): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = []
+  let afterAuto = false
+  for (const raw of text.split('\n')) {
+    if (!raw.trim()) continue
+    let row: unknown
+    try {
+      row = JSON.parse(raw)
+    } catch {
+      continue
+    }
+    if (isTeleportAutoMessage(row)) afterAuto = true
+    else if (obj(row)?.type === 'user') afterAuto = false
+    else if (afterAuto && obj(row)?.type === 'assistant') continue
     const entry = claudeRowToEntry(row)
     if (entry) entries.push(entry)
   }

@@ -14,6 +14,7 @@
  *  - Pure: no I/O, no clocks except through the context.
  */
 import type { VisualAgentEvent, VisualAgentUsage } from '../../../shared/visual-agent'
+import { TELEPORT_AUTO_LABEL, TELEPORT_AUTO_MESSAGE } from '../../../shared/visual-agent'
 
 export const MAIN_THREAD = 'main'
 
@@ -172,6 +173,7 @@ const flaggedNote = (text: string): Note => {
 
 /** Null means a person wrote it — the default, because hiding what somebody typed is worse. */
 export const noteFor = (raw: Raw, text: string): Note | null => {
+  if (text.trim() === TELEPORT_AUTO_MESSAGE) return { source: 'meta', label: TELEPORT_AUTO_LABEL }
   if (raw.isSynthetic === true || raw.isMeta === true) return flaggedNote(text)
   if (INTERRUPT.test(text.trim())) return { source: 'interrupt', label: 'Interrupted' }
   return wrapperNote(text)

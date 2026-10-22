@@ -15,6 +15,16 @@ export const VISUAL_AGENT_MODELS: VisualAgentModel[] = [
 ]
 export const DEFAULT_VISUAL_AGENT_MODEL = 'claude-opus-5-5'
 
+/**
+ * The fixed first message Crucible Code sends into a teleported REPL so Claude
+ * Code saves the conversation locally (it writes nothing until the
+ * conversation changes). The Agent view matches this exact text and shows the
+ * exchange as one collapsed TELEPORT_AUTO_LABEL note.
+ */
+export const TELEPORT_AUTO_MESSAGE =
+  "Teleport to this machine succeeded. This is an automated message from Crucible Code: take no action and reply only with 'Ready.'"
+export const TELEPORT_AUTO_LABEL = 'Teleported from the cloud'
+
 export type VisualAgentRunState = 'starting' | 'running' | 'idle' | 'needs-input' | 'done' | 'failed'
 
 interface EventBase {
