@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'fs/promises'
+import { access, mkdir, mkdtemp, realpath, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import simpleGit from 'simple-git'
 import {
   createWorktree,
@@ -91,6 +91,62 @@ describe('worktree.service', () => {
 
     const branches = await simpleGit(repoPath).branch()
     expect(Object.keys(branches.branches)).not.toContain('session/feat/gone')
+  })
+
+  it('removeWorktree deletes untracked and gitignored files along with the worktree', async () => {
+    const info = await createWorktree(repoPath, 'feat/dirty', 'main')
+    await writeFile(join(info.path, '.gitignore'), 'node_modules/\n.env\n')
+    await mkdir(join(info.path, 'node_modules', 'pkg'), { recursive: true })
+    await writeFile(join(info.path, 'node_modules', 'pkg', 'index.js'), 'x')
+    await writeFile(join(info.path, '.env'), 'SECRET=1')
+    await writeFile(join(info.path, 'untracked.txt'), 'x')
+    await writeFile(join(info.path, 'README.md'), 'modified\n')
+
+    await removeWorktree(repoPath, info.path)
+    await expect(access(info.path)).rejects.toThrow()
+  })
+
+  it('removeWorktree rm -rf\'s an orphaned directory git no longer tracks', async () => {
+    const info = await createWorktree(repoPath, 'feat/orphan', 'main')
+    await mkdir(join(info.path, 'node_modules'), { recursive: true })
+    await writeFile(join(info.path, 'node_modules', 'big.bin'), 'x')
+    // Drop git's admin entry so the dir is an orphan: `git worktree remove`
+    // now fails with "is not a working tree".
+    const gitFile = (await simpleGit(info.path).raw(['rev-parse', '--git-dir'])).trim()
+    await rm(gitFile, { recursive: true, force: true })
+    await simpleGit(repoPath).raw(['worktree', 'prune'])
+
+    await expect(removeWorktree(repoPath, info.path)).resolves.toBeUndefined()
+    await expect(access(info.path)).rejects.toThrow()
+    // The parent repo is untouched.
+    await expect(access(join(repoPath, 'README.md'))).resolves.toBeUndefined()
+  })
+
+  it('removeWorktree never rm -rf\'s a directory outside the worktrees base', async () => {
+    const outside = join(tmpRoot, 'not-a-worktree')
+    await mkdir(outside, { recursive: true })
+    await writeFile(join(outside, 'keep.txt'), 'x')
+
+    await expect(removeWorktree(repoPath, outside)).rejects.toThrow()
+    await expect(access(join(outside, 'keep.txt'))).resolves.toBeUndefined()
+  })
+
+  it('removeWorktree refuses to rm -rf the base dir or the main checkout', async () => {
+    const info = await createWorktree(repoPath, 'keepme', 'main')
+    const base = dirname(info.path)
+
+    await expect(removeWorktree(repoPath, base)).rejects.toThrow()
+    await expect(access(info.path)).resolves.toBeUndefined()
+    await expect(removeWorktree(repoPath, repoPath)).rejects.toThrow()
+    await expect(access(join(repoPath, 'README.md'))).resolves.toBeUndefined()
+  })
+
+  it('removeWorktree does not rm -rf a directory that contains another registered worktree', async () => {
+    const nested = await createWorktree(repoPath, 'outer/inner', 'main')
+    const outer = dirname(nested.path)
+
+    await expect(removeWorktree(repoPath, outer)).rejects.toThrow()
+    await expect(access(join(nested.path, 'README.md'))).resolves.toBeUndefined()
   })
 
   it('createWorktree without a base branches off the remote default branch tip, not the local checkout', async () => {
