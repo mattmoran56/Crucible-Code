@@ -119,17 +119,44 @@ describe('<Composer>', () => {
     expect(onInterrupt).toHaveBeenCalled()
   })
 
-  it('opens the slash menu, moves with arrows and accepts with Enter', () => {
+  it('opens the slash menu, moves with arrows and inserts with Tab', () => {
     const onSend = vi.fn()
     render(<Harness initial="/" onSend={onSend} />)
     const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
     expect(box).toHaveAttribute('aria-expanded', 'true')
     fireEvent.keyDown(box, { key: 'ArrowDown' })
     expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true')
-    fireEvent.keyDown(box, { key: 'Enter' })
+    fireEvent.keyDown(box, { key: 'Tab' })
     expect(onSend).not.toHaveBeenCalled()
     expect(box.value).toBe('/compact ')
     expect(box).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('inserts and sends the chosen slash command on Enter', () => {
+    const onSend = vi.fn()
+    render(<Harness initial="/rev" onSend={onSend} />)
+    const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onSend).toHaveBeenCalledWith('/review')
+    expect(box.value).toBe('')
+  })
+
+  it('runs panel commands on Enter', () => {
+    const onClear = vi.fn()
+    render(<Harness initial="/cle" onClear={onClear} />)
+    fireEvent.keyDown(screen.getByLabelText('Message Claude'), { key: 'Enter' })
+    expect(onClear).toHaveBeenCalled()
+  })
+
+  it('only inserts a command that needs an argument on Enter', () => {
+    const onSend = vi.fn()
+    const onFork = vi.fn()
+    render(<Harness initial="/bt" onSend={onSend} onFork={onFork} />)
+    const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onSend).not.toHaveBeenCalled()
+    expect(onFork).not.toHaveBeenCalled()
+    expect(box.value).toBe('/btw ')
   })
 
   it('Esc closes the slash menu without interrupting', () => {

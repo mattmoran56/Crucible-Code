@@ -1,6 +1,7 @@
 // The slash-command menu: slides up above the composer while the draft is a
 // bare `/word`, and is driven from the textarea's keydown (↑/↓/Enter/Tab/Esc)
-// as an ARIA combobox so focus never leaves the composer.
+// as an ARIA combobox so focus never leaves the composer. Tab inserts the
+// command; Enter inserts and sends it.
 
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import { cn } from '../../lib/cn'
@@ -34,7 +35,8 @@ export function useCommandMenu({
 }: {
   commands: readonly SlashCommand[]
   draft: string
-  onAccept: (command: SlashCommand) => void
+  /** `insert` fills the composer (Tab, click); `send` runs the command too (Enter). */
+  onAccept: (command: SlashCommand, how: 'insert' | 'send') => void
 }): CommandMenuState {
   const [at, setAt] = useState(0)
   const [dismissed, setDismissed] = useState(false)
@@ -60,7 +62,7 @@ export function useCommandMenu({
 
   const choose = (index: number): void => {
     const command = items[index]
-    if (command) onAccept(command)
+    if (command) onAccept(command, 'insert')
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
@@ -77,9 +79,15 @@ export function useCommandMenu({
       setDismissed(true)
       return true
     }
-    if ((event.key === 'Tab' && !event.shiftKey) || (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing)) {
+    if (event.key === 'Tab' && !event.shiftKey) {
       event.preventDefault()
       choose(active)
+      return true
+    }
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault()
+      const command = items[active]
+      if (command) onAccept(command, 'send')
       return true
     }
     return false
@@ -150,7 +158,7 @@ export function CommandMenu({ menu }: { menu: CommandMenuState }) {
         })}
       </ul>
       <p className="border-t border-border bg-bg-tertiary px-3! py-1.5! text-[10.5px] text-text-muted">
-        ↑↓ to move · Enter or Tab to choose · Esc to close
+        ↑↓ to move · Enter to run · Tab to insert · Esc to close
       </p>
     </div>
   )
