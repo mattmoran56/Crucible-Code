@@ -98,6 +98,16 @@ describe('startCloudCreate', () => {
     }
   })
 
+  it('orchestrator: no --on-branch pin, and the task lets it move between branches', async () => {
+    await startCloudCreate(win, { ...opts, mode: 'orchestrator' })
+    expect(h.state.gitCalls[0]).toEqual({ args: ['push', '-u', 'origin', 'session/fix'], cwd: '/wt/fix' })
+    const spawn = h.state.spawns[0]
+    expect(spawn.command.startsWith("claude --cloud 'You are an orchestrator session")).toBe(true)
+    expect(spawn.command).toContain('fix the login bug')
+    expect(spawn.command).not.toContain('--on-branch')
+    expect(spawn.command).not.toContain('do not create or push to any other branch')
+  })
+
   it('pending → created: reports the session as soon as the CLI prints it, CLI still attached', async () => {
     await startCloudCreate(win, opts)
     pty('term-1').onData!('Setting up remote session…\r\n\x1b[32m✓\x1b[0m Created cloud session\r\n')

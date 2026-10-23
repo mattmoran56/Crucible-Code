@@ -87,6 +87,14 @@ export const cloudStartArgv = (prompt: string, branch?: string): string[] => {
 export const withBranchInstruction = (prompt: string, branch: string): string =>
   `Work on the git branch \`${branch}\` (already checked out for you). Commit your changes and push them to exactly that branch (\`git push origin ${branch}\`); do not create or push to any other branch.\n\n${prompt}`
 
+/**
+ * Prepend an instruction for an orchestrator cloud session: it starts on
+ * `branch` but may create, check out, merge and push whatever branches the
+ * task needs.
+ */
+export const withOrchestratorInstruction = (prompt: string, branch: string): string =>
+  `You are an orchestrator session. You start on the git branch \`${branch}\`, but you are not limited to it: create, check out, merge and push to whichever branches the task needs, and split the work across branches where that helps. When you finish, list every branch you created or pushed and what is on each.\n\n${prompt}`
+
 /** True when claude rejected `--on-branch` as an unknown option (older CLI). */
 export const isUnknownOnBranchError = (text: string): boolean =>
   /(unknown|unrecognized) (option|argument|flag)[^\n]*--on-branch/i.test(text)

@@ -14,12 +14,18 @@ export const SESSION_BRANCH_PREFIX: Record<SessionLocation, string> = {
   cloud: 'session/',
 }
 
+/**
+ * A session's human-readable name as a branch / directory segment: lowercased,
+ * with each run of whitespace replaced by a hyphen (`Fix Auth Bug` → `fix-auth-bug`).
+ */
+export const sessionNameSlug = (name: string): string => name.trim().toLowerCase().replace(/\s+/g, '-')
+
 export const defaultSessionBranch = (name: string, location: SessionLocation = 'local'): string =>
-  `${SESSION_BRANCH_PREFIX[location]}${name}`
+  `${SESSION_BRANCH_PREFIX[location]}${sessionNameSlug(name)}`
 
 /** The branch a local session named `name` gets when it was not customised. */
 export const isDefaultSessionBranch = (branch: string, name: string): boolean =>
-  (Object.values(SESSION_BRANCH_PREFIX) as string[]).some((p) => branch === `${p}${name}`)
+  (Object.values(SESSION_BRANCH_PREFIX) as string[]).some((p) => branch === `${p}${sessionNameSlug(name)}`)
 
 /**
  * Roughly `git check-ref-format --branch`. Returns a human-readable error, or
@@ -60,4 +66,4 @@ export const sessionDeletesLocalBranch = (session: Pick<Session, 'branchName' | 
 
 /** Whether renaming the session renames its branch (see sessionStore.renameSession). */
 export const renameMovesBranch = (session: Pick<Session, 'name' | 'branchName' | 'cloud' | 'cloudPending'>): boolean =>
-  !session.cloud && !session.cloudPending && session.branchName === `session/${session.name}`
+  !session.cloud && !session.cloudPending && session.branchName === defaultSessionBranch(session.name)

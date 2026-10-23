@@ -69,6 +69,7 @@ import {
   sendCloudMessage,
   teleportArgv,
   withBranchInstruction,
+  withOrchestratorInstruction,
   worktreeDirtyFiles,
 } from '../../../src/main/services/cloud-session.service'
 
@@ -233,6 +234,13 @@ describe('branch instruction', () => {
     const p = withBranchInstruction('fix it', 'session/a')
     expect(p).toMatch(/^Work on the git branch `session\/a`/)
     expect(p).toContain('git push origin session/a')
+    expect(p.endsWith('\n\nfix it')).toBe(true)
+  })
+
+  it('an orchestrator starts on the branch but is free to move between branches', () => {
+    const p = withOrchestratorInstruction('fix it', 'session/a')
+    expect(p).toMatch(/^You are an orchestrator session\. You start on the git branch `session\/a`/)
+    expect(p).not.toContain('do not create or push to any other branch')
     expect(p.endsWith('\n\nfix it')).toBe(true)
   })
 

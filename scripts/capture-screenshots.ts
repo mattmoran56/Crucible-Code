@@ -172,6 +172,12 @@ const targets: ScreenshotTarget[] = [
     delay: 1500,
   },
   {
+    name: 'new-session-dialog-orchestrator',
+    storyId: 'app-full-layout--new-session-dialog',
+    delay: 1500,
+    clickSelector: '[role="radio"]:has-text("Orchestrator")',
+  },
+  {
     name: 'rename-session-dialog',
     storyId: 'app-full-layout--rename-session-dialog',
     delay: 3500,

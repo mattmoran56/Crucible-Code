@@ -20,7 +20,7 @@
  */
 import type { BrowserWindow } from 'electron'
 import { IPC } from '../../shared/constants'
-import type { CloudCreateState } from '../../shared/types'
+import type { CloudCreateState, CloudSessionMode } from '../../shared/types'
 import * as terminalService from './terminal.service'
 import {
   claudeShellCommand,
@@ -31,6 +31,7 @@ import {
   pushSessionBranch,
   summarizeCreateFailure,
   withBranchInstruction,
+  withOrchestratorInstruction,
 } from './cloud-session.service'
 
 /** The Agent tab id cloud PTYs report under. */
@@ -46,6 +47,8 @@ export interface StartCloudCreateOptions {
   worktreePath: string
   branch: string
   task: string
+  /** Default 'single-branch'. */
+  mode?: CloudSessionMode
   configDir?: string | null
   repoPath?: string
   claudeTheme?: string
@@ -78,8 +81,20 @@ export function forgetCloudCreate(sessionId: string): void {
   runs.delete(sessionId)
 }
 
+/**
+ * The `--cloud` task for a run. A single-branch session is told to push only
+ * to its branch; an orchestrator is told it may move between branches.
+ */
+const createTask = (opts: Pick<StartCloudCreateOptions, 'task' | 'branch' | 'mode'>): string =>
+  opts.mode === 'orchestrator'
+    ? withOrchestratorInstruction(opts.task, opts.branch)
+    : withBranchInstruction(opts.task, opts.branch)
+
 function spawnCreatePty(run: Run, opts: StartCloudCreateOptions, withOnBranch: boolean): void {
-  const argv = cloudStartArgv(withBranchInstruction(opts.task, opts.branch), withOnBranch ? opts.branch : undefined)
+  // An orchestrator is never pinned with --on-branch: it starts on the pushed
+  // branch (the worktree's current one) and may push others.
+  const pin = withOnBranch && opts.mode !== 'orchestrator'
+  const argv = cloudStartArgv(createTask(opts), pin ? opts.branch : undefined)
   // One cloud PTY per session Agent tab; spawnTerminal is idempotent per tab.
   terminalService.killTerminalsForTab(opts.sessionId, CLOUD_PTY_TAB)
   const terminalId = terminalService.spawnTerminal(
@@ -119,7 +134,7 @@ function spawnCreatePty(run: Run, opts: StartCloudCreateOptions, withOnBranch: b
           emit(run)
           return
         }
-        if (withOnBranch && isUnknownOnBranchError(run.output)) {
+        if (pin && isUnknownOnBranchError(run.output)) {
           // A CLI without --on-branch: the VM still clones the pushed branch
           // (the worktree's current branch) and the task text steers it.
           spawnCreatePty(run, opts, false)
@@ -153,7 +168,7 @@ export async function startCloudCreate(window: BrowserWindow, opts: StartCloudCr
   const task = opts.task?.trim()
   if (!task) throw new Error('A cloud session needs a task description to start')
   // Validates the branch and task before anything runs.
-  cloudStartArgv(withBranchInstruction(task, opts.branch), opts.branch)
+  cloudStartArgv(createTask({ ...opts, task }), opts.branch)
 
   forgetCloudCreate(opts.sessionId)
   const run: Run = {

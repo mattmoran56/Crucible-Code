@@ -5,7 +5,7 @@ import { join, dirname, basename, resolve as resolvePath, relative, isAbsolute, 
 import { mkdir, access, realpath, rm } from 'fs/promises'
 import type { WorktreeInfo } from '../../shared/types'
 import { getDefaultBranch } from './git.service'
-import { validateBranchName } from '../../shared/branch-name'
+import { defaultSessionBranch, sessionNameSlug, validateBranchName } from '../../shared/branch-name'
 
 const execFileAsync = promisify(execFile)
 
@@ -171,11 +171,11 @@ export async function createWorktree(
   requestedBranch?: string
 ): Promise<WorktreeInfo> {
   const g = simpleGit(repoPath)
-  const branchName = requestedBranch?.trim() || `session/${sessionName}`
+  const branchName = requestedBranch?.trim() || defaultSessionBranch(sessionName)
   const invalid = validateBranchName(branchName)
   if (invalid) throw new Error(`Invalid branch name "${branchName}": ${invalid}`)
   const wtBase = worktreeDir(repoPath)
-  const wtPath = join(wtBase, sessionName)
+  const wtPath = join(wtBase, sessionNameSlug(sessionName))
 
   // The new branch is created with `-b`; refuse up front with a clear message
   // rather than git's terse "a branch named ... already exists".

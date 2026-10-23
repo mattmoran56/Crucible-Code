@@ -8,7 +8,7 @@ import {
   resolveStartupCommand,
   useStartupPromptStore,
 } from '../../stores/startupPromptStore'
-import type { Project, QueuedSession, SessionLocation } from '../../../shared/types'
+import type { CloudSessionMode, Project, QueuedSession, SessionLocation } from '../../../shared/types'
 import { resolveDefaultSessionLocation } from '../../../shared/cloud-session'
 import { defaultSessionBranch, validateBranchName } from '../../../shared/branch-name'
 import { ToggleGroup } from '../ui/ToggleGroup'
@@ -45,6 +45,8 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   const [location, setLocation] = useState<SessionLocation>(() => resolveDefaultSessionLocation(project))
   // The cloud session's task when no startup prompt is picked.
   const [cloudTask, setCloudTask] = useState('')
+  // Single-branch (pinned to the session branch) or an orchestrator that may move between branches.
+  const [cloudMode, setCloudMode] = useState<CloudSessionMode>('single-branch')
   // The session branch follows the name/location until the user edits it.
   const [branchInput, setBranchInput] = useState('')
   const [branchEdited, setBranchEdited] = useState(false)
@@ -80,6 +82,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
     setCustomPrompt('')
     setLocation(resolveDefaultSessionLocation(project))
     setCloudTask('')
+    setCloudMode('single-branch')
     setBranchInput('')
     setBranchEdited(false)
     setBranchesLoading(true)
@@ -207,7 +210,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           undefined,
           {
             branchName: branch || undefined,
-            ...(cloud ? { location: 'cloud' as const } : {}),
+            ...(cloud ? { location: 'cloud' as const, cloudMode } : {}),
           }
         )
       }
@@ -219,6 +222,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
       setScheduledForInput('')
       setCustomPrompt('')
       setCloudTask('')
+      setCloudMode('single-branch')
       setBranchInput('')
       setBranchEdited(false)
       onClose()
@@ -260,6 +264,25 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           </div>
         )}
 
+        {cloud && (
+          <div>
+            <label className="block text-xs text-text-muted mb-2">Cloud session type</label>
+            <ToggleGroup<CloudSessionMode>
+              options={[
+                { value: 'single-branch', label: 'Single branch' },
+                { value: 'orchestrator', label: 'Orchestrator' },
+              ]}
+              value={cloudMode}
+              onChange={setCloudMode}
+            />
+            <p className="text-[10px] text-text-muted mt-2">
+              {cloudMode === 'orchestrator'
+                ? 'Starts on the branch below but may create, switch between and push any branches the task needs.'
+                : 'Works on the branch below only and pushes nowhere else.'}
+            </p>
+          </div>
+        )}
+
         <BranchCombobox
           label="Base branch"
           hint="Branch to create the new session from"
@@ -286,7 +309,9 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
             error={branchError ?? undefined}
             hint={
               cloud
-                ? 'Created from the base branch and pushed; the cloud agent commits and pushes to it'
+                ? cloudMode === 'orchestrator'
+                  ? 'Created from the base branch and pushed; the orchestrator starts on it'
+                  : 'Created from the base branch and pushed; the cloud agent commits and pushes to it'
                 : 'Created from the base branch for this session'
             }
           />
