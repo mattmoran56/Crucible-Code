@@ -135,11 +135,20 @@ export interface CloudSessionResult {
  * session is saved first and the Agent tab drives the CLI until it prints the
  * new session's URL; then `cloud` is set and this is cleared.
  */
+/**
+ * How a cloud session treats branches. 'single-branch' pins it to the session
+ * branch and tells it to push only there; 'orchestrator' starts it on that
+ * branch but lets it create, switch between and push any branches it needs.
+ */
+export type CloudSessionMode = 'single-branch' | 'orchestrator'
+
 export interface CloudSessionPending {
   /** The task the cloud session starts with (without the branch instruction). */
   task: string
-  /** The branch the cloud agent is told to work on and push to. */
+  /** The branch the cloud agent is told to work on and push to (orchestrator: starts on). */
   branch: string
+  /** Missing means 'single-branch' (every pending session before orchestrator mode). */
+  mode?: CloudSessionMode
   /** ISO time the session was saved as pending. */
   createdAt: string
 }

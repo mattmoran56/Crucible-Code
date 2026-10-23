@@ -53,6 +53,12 @@ describe('worktree.service', () => {
     expect(await realpath(found!.path)).toBe(await realpath(info.path))
   })
 
+  it('createWorktree slugs a human-readable session name for the branch and dir', async () => {
+    const info = await createWorktree(repoPath, 'Fix Auth Bug', 'main')
+    expect(info.branch).toBe('session/fix-auth-bug')
+    expect(info.path.endsWith('fix-auth-bug')).toBe(true)
+  })
+
   it('removeWorktree removes the worktree and deletes its session/* branch', async () => {
     const info = await createWorktree(repoPath, 'feat/y', 'main')
     await removeWorktree(repoPath, info.path)

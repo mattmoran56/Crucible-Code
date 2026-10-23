@@ -4,6 +4,7 @@ import {
   isDefaultSessionBranch,
   renameMovesBranch,
   sessionDeletesLocalBranch,
+  sessionNameSlug,
   sessionRemoteBranch,
   validateBranchName,
 } from '../../../src/shared/branch-name'
@@ -17,6 +18,14 @@ describe('defaultSessionBranch', () => {
   it('recognises the default branch for a name', () => {
     expect(isDefaultSessionBranch('session/a', 'a')).toBe(true)
     expect(isDefaultSessionBranch('feature/a', 'a')).toBe(false)
+    expect(isDefaultSessionBranch('session/fix-auth', 'Fix Auth')).toBe(true)
+  })
+
+  it('lowercases a human-readable name and hyphenates its spaces', () => {
+    expect(sessionNameSlug('  Fix The   Auth Bug ')).toBe('fix-the-auth-bug')
+    expect(sessionNameSlug('fix/Misc Stuff')).toBe('fix/misc-stuff')
+    expect(defaultSessionBranch('Fix Auth Bug', 'cloud')).toBe('session/fix-auth-bug')
+    expect(renameMovesBranch({ name: 'Fix Auth', branchName: 'session/fix-auth' })).toBe(true)
   })
 })
 

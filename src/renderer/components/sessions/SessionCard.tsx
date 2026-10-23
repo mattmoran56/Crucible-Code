@@ -6,7 +6,7 @@ import { Dialog } from '../ui/Dialog'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
 import { CIIndicator } from '../pullrequests/CIIndicator'
-import { renameMovesBranch, sessionDeletesLocalBranch, sessionRemoteBranch } from '../../../shared/branch-name'
+import { defaultSessionBranch, renameMovesBranch, sessionDeletesLocalBranch, sessionRemoteBranch } from '../../../shared/branch-name'
 
 interface Props {
   session: Session
@@ -228,7 +228,7 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
             error={renameError || undefined}
             hint={
               movesBranch
-                ? `The git branch will be renamed to session/${renameValue.trim() || '<new name>'}`
+                ? `The git branch will be renamed to ${defaultSessionBranch(renameValue.trim() || '<new name>')}`
                 : `The git branch stays ${session.branchName}`
             }
           />

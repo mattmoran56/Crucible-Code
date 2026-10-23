@@ -98,6 +98,7 @@ export function CloudAgentHost({
         worktreePath: current.worktreePath,
         branch: pendingLink.branch,
         task: pendingLink.task,
+        mode: pendingLink.mode,
         configDir: projectConfigDir(project, accounts),
         repoPath: project?.repoPath,
         claudeTheme: useSettingsStore.getState().claudeTheme,

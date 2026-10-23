@@ -52,8 +52,31 @@ describe('<CreateSessionDialog> location toggle', () => {
     expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'fix-auth', 'main', 'Fix the auth bug', undefined, {
       branchName: 'session/fix-auth',
       location: 'cloud',
+      cloudMode: 'single-branch',
     })
     await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('offers an orchestrator cloud session and passes the mode through', async () => {
+    render(<CreateSessionDialog open project={project()} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    expect(radio('Single branch').getAttribute('aria-checked')).toBe('true')
+    fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'Big Refactor' } })
+    fireEvent.click(radio('Orchestrator'))
+    fireEvent.change(screen.getByLabelText('Task'), { target: { value: 'Split it up' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Start in cloud' }))
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'Big Refactor', 'main', 'Split it up', undefined, {
+        branchName: 'session/big-refactor',
+        location: 'cloud',
+        cloudMode: 'orchestrator',
+      })
+    )
+  })
+
+  it('hides the cloud session type for a local session', () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    expect(screen.queryByRole('radio', { name: 'Orchestrator' })).toBeNull()
   })
 
   it('switching to Local keeps today’s local create', async () => {

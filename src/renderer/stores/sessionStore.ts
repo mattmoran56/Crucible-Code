@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation } from '../../shared/types'
+import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation, CloudSessionMode } from '../../shared/types'
 import { useToastStore } from './toastStore'
-import { renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name'
+import { defaultSessionBranch, renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name'
 import { useTerminalStore } from './terminalStore'
 import { useCloudSessionStore } from './cloudSessionStore'
 import { useVisualAgentStore } from './visualAgentStore'
@@ -114,6 +114,8 @@ export interface CreateSessionOptions {
   location?: SessionLocation
   /** Branch to create for the session. Defaults to `session/<name>`. */
   branchName?: string
+  /** How a cloud session treats branches. Default 'single-branch'. */
+  cloudMode?: CloudSessionMode
 }
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
@@ -265,6 +267,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       session.cloudPending = {
         task: startupCommand!.trim(),
         branch: worktreeInfo.branch,
+        ...(options?.cloudMode === 'orchestrator' ? { mode: 'orchestrator' as const } : {}),
         createdAt: new Date().toISOString(),
       }
     }
@@ -407,7 +410,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         repoPath,
         session.worktreePath,
         session.branchName,
-        `session/${trimmed}`
+        defaultSessionBranch(trimmed)
       ))
     }
 
