@@ -27,6 +27,7 @@ export interface VisualAgentApi {
   ): Promise<unknown> | void
   setModel(agentId: string, model: string): Promise<unknown> | void
   fork(agentId: string, question: string): Promise<{ forkId: string }>
+  forkSend(agentId: string, forkId: string, text: string): Promise<unknown> | void
   forkStop(agentId: string, forkId: string): Promise<unknown> | void
   getState(agentId: string): Promise<VisualAgentSnapshot | null>
   onFrame(cb: (agentId: string, frame: VisualAgentFrame) => void): () => void
@@ -183,15 +184,17 @@ export const isAskPending = (snap: VisualAgentSnapshot, askId: string): boolean 
 
 interface VisualAgentUi {
   draft: string
-  /** The fork whose sheet is open, or null. */
+  /** The fork whose aside panel is open, or null. */
   openForkId: string | null
+  /** What is typed in each aside's chat bar, by fork id. */
+  asideDrafts: Record<string, string>
   /** Breadcrumb of sub-agent thread ids open in the right-hand sheet. */
   subagentPath: string[]
   /** An ask whose answer is in flight. */
   answering: string | null
 }
 
-const EMPTY_UI: VisualAgentUi = { draft: '', openForkId: null, subagentPath: [], answering: null }
+const EMPTY_UI: VisualAgentUi = { draft: '', openForkId: null, asideDrafts: {}, subagentPath: [], answering: null }
 
 interface VisualAgentStoreState {
   agents: Record<string, VisualAgentSnapshot>
@@ -232,6 +235,8 @@ interface VisualAgentStoreState {
   ) => Promise<void>
   setModel: (agentId: string, model: string) => Promise<void>
   fork: (agentId: string, question: string) => Promise<string | null>
+  /** A follow-up in an open aside: carries that side conversation on, never the main one. */
+  forkSend: (agentId: string, forkId: string, text: string) => Promise<void>
   forkStop: (agentId: string, forkId: string) => Promise<void>
 
   setUi: (agentId: string, patch: Partial<VisualAgentUi>) => void
@@ -455,6 +460,15 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
       } catch (error) {
         fail(agentId, error)
         return null
+      }
+    },
+
+    forkSend: async (agentId, forkId, text) => {
+      if (!text.trim()) return
+      try {
+        await api()?.forkSend(agentId, forkId, text.trim())
+      } catch (error) {
+        fail(agentId, error)
       }
     },
 

@@ -32,7 +32,7 @@
 - **Sandboxer sandboxes** — Per-project opt-in: run a session's worktree as a [Sandboxer](https://github.com/mattmoran56/sandboxer-core) sandbox (one container with its own database and storage) from the Sandbox panel. Deleting the session destroys the sandbox and its data
 - **Session startup prompts** — Pre-configure per-project prompts (e.g. `/notion-ticket {{input}}`) that become the first message of a new session's agent
 - **Review loop** — One-click review → triage → fix cycle on a branch. Runs headless in the background by default (`claude -p`, no terminal — the panel streams each transcript), or flip a per-project toggle to run it as three live Claude Code terminals you can watch and steer. Pick a variant per project: **Lite**/**Pro** (three fresh sessions per round) or **Efficient** (fresh stacked reviews + one persistent worker that keeps context across rounds — cheaper). Stop conditions (clean rounds, iteration cap) and a sticky PR comment for skipped findings
-- **Visual agents** — Every agent tab is a chat interface to Claude Code rather than a terminal — rich tool cards with diffs, inline permission and question cards, a sub-agent tray, `/btw` side questions in a fork, a model picker, and conversations that resume across app restarts
+- **Visual agents** — Every agent tab is a chat interface to Claude Code rather than a terminal — rich tool cards with diffs, inline permission and question cards, a sub-agent tray, `/btw` asides — side conversations in a fork, in their own slide-out panel — a model picker, and conversations that resume across app restarts
 - **Keyboard navigable** — Full keyboard support: arrow keys, focus trapping, roving tabindex, accessible by default
 
 ## Visual Tour
@@ -306,7 +306,7 @@ The agent interface: a chat UI for Claude Code, driven over `claude -p --input-f
 - **Tool cards** — Each tool call is a card: edits render as syntax-highlighted diffs, Bash shows the command and its output, reads and searches collapse into a one-line summary you can expand
 - **Permission and question cards** — When Claude needs approval (or asks a question with options) the card appears inline with Allow / Always allow / Deny, and the status bar switches to **Needs you**
 - **Sub-agents** — Tasks Claude spawns appear in a tray above the composer; click one to open its full thread in a sheet that slides in from the right
-- **`/btw` side questions** — Ask something without derailing the run: `/btw <question>` (or **Ask aside**) forks the conversation into a no-tools side session whose answer slides up over the composer. Nothing it says goes back into the main conversation
+- **`/btw` asides** — Ask something without derailing the run: `/btw <question>` (or **Ask aside**) forks the conversation into a no-tools side session that opens in its own full-height panel, sliding out from the right edge of the tab with an accent border. The aside has its own chat bar, so it is a secondary conversation you can carry on — each follow-up resumes the fork, never the main conversation — then close (✕ or Esc) to go back to the main chat; its marker in the main conversation reopens it. If the link browser is open, it stays between the main chat and the aside. The aside's divider drags to resize (double-click resets it). Nothing said in an aside goes back into the main conversation
 - **Slash menu** — Type `/` for every command the session's Claude Code offers, fuzzy-matched as you type: the panel's own `/btw`, `/model` and `/clear` (fresh conversation), then the repo's and your own commands and skills (`.claude/commands`, `.claude/skills`, plugins) with their descriptions and argument hints, then Claude Code's built-ins (`/compact`, `/init`, `/review` and more). The list comes from Claude Code itself when the session starts and updates when it discovers new skills mid-session
 - **Stop / interrupt** — `Esc` or **Stop turn** interrupts the current turn; **End session** stops the process; **Restart** brings it back on the same conversation
 - **Resume** — Each visual agent's Claude session id and model are saved on the session, so after an app restart the tab picks up the same conversation (its transcript is replayed from disk)
@@ -314,7 +314,9 @@ The agent interface: a chat UI for Claude Code, driven over `claude -p --input-f
 
 ![Adding a visual agent tab](docs/screenshots/visual-agent-add-tab.png)
 
-![A /btw side question](docs/screenshots/visual-agent-fork-sheet.png)
+![A /btw aside open beside the main conversation](docs/screenshots/visual-agent-aside.png)
+
+![The link browser between the main chat and an aside](docs/screenshots/agent-browser-with-aside.png)
 
 ![The slash menu listing the repo's commands and skills](docs/screenshots/visual-agent-slash-menu.png)
 

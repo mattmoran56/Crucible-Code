@@ -534,6 +534,22 @@ export const mockApi = {
       }, 900)
       return { forkId }
     },
+    forkSend: async (agentId: string, forkId: string, text: string) => {
+      const forks = () => visualAgentSnapshots.get(agentId)?.forks ?? []
+      const fork = forks().find((f) => f.id === forkId)
+      if (!fork) return
+      const n = fork.events.length
+      const asked: VisualAgentEvent = { uuid: `${forkId}-${n}`, seq: n, threadId: 'main', at: new Date().toISOString(), kind: 'text', role: 'user', text }
+      vaEmit(agentId, { t: 'fork-event', forkId, event: asked })
+      vaEmit(agentId, { t: 'forks', forks: forks().map((f) => (f.id === forkId ? { ...f, state: 'running' as const, events: [...f.events, asked] } : f)) })
+      setTimeout(() => {
+        const answer: VisualAgentEvent = { uuid: `${forkId}-${n + 1}`, seq: n + 1, threadId: 'main', at: new Date().toISOString(), kind: 'text', role: 'assistant', text: `(mock follow-up) On "${text.slice(0, 60)}": still answering from the conversation as it stood when you asked aside.` }
+        const result: VisualAgentEvent = { uuid: `${forkId}-${n + 2}`, seq: n + 2, threadId: 'main', at: new Date().toISOString(), kind: 'result', ok: true, costUsd: 0.003, durationMs: 900, usage: null, text: '' }
+        vaEmit(agentId, { t: 'fork-event', forkId, event: answer })
+        vaEmit(agentId, { t: 'fork-event', forkId, event: result })
+        vaEmit(agentId, { t: 'forks', forks: forks().map((f) => (f.id === forkId ? { ...f, state: 'done' as const, events: [...f.events, answer, result] } : f)) })
+      }, 900)
+    },
     forkStop: async (agentId: string, forkId: string) => {
       const forks = visualAgentSnapshots.get(agentId)?.forks ?? []
       vaEmit(agentId, { t: 'forks', forks: forks.map((f) => (f.id === forkId && f.state === 'running' ? { ...f, state: 'done' as const } : f)) })

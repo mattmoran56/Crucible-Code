@@ -39,6 +39,7 @@ import {
   QUESTION_TOOL,
   agentArgv,
   forkArgv,
+  forkFollowUpArgv,
   initializeFrame,
   interruptFrame,
   isValidModel,
@@ -86,6 +87,8 @@ interface PendingControl {
 interface LiveFork {
   info: VisualAgentFork
   child: Child | null
+  /** One normaliser context across the fork's runs, so seq keeps counting up. */
+  ctx: NormaliseContext
 }
 
 interface LiveAgent {
@@ -754,24 +757,69 @@ export function forkVisualAgent(agentId: string, question: string): { forkId: st
   if (!held.claudeSessionId) {
     throw new Error('Nothing to fork yet — send a message first so the conversation exists')
   }
-  const live = held.forks.filter((f) => f.info.state === 'running' || f.info.state === 'starting')
-  if (live.length >= MAX_LIVE_FORKS) {
-    throw new Error(`At most ${MAX_LIVE_FORKS} side questions can run at once`)
-  }
+  checkForkRoom(held)
 
   const forkId = randomUUID()
   const fork: LiveFork = {
     info: { id: forkId, question: asked, startedAt: nowIso(), afterSeq: held.ctx.seq, state: 'running', events: [] },
     child: null,
+    ctx: { seq: 0, fallbackId: randomUUID, now: nowIso, lastSession: null },
   }
   held.forks.push(fork)
-
-  const child = spawnClaude(
+  runFork(
+    held,
+    fork,
     forkArgv({ parentSessionId: held.claudeSessionId, forkSessionId: forkId, model: held.model }),
-    held.opts
+    sideQuestionPreamble(asked)
   )
+  emitForks(held)
+  return { forkId }
+}
+
+/**
+ * A follow-up in an aside: resume the fork's own session (never the parent's)
+ * with the same no-tools flags, ask once more, and stop again.
+ */
+export function sendVisualAgentFork(agentId: string, forkId: string, text: string): void {
+  const held = requireAgent(agentId)
+  const fork = held.forks.find((f) => f.info.id === forkId)
+  if (!fork) throw new Error('That side question is gone')
+  const said = typeof text === 'string' ? text.trim() : ''
+  if (!said) return
+  if (fork.info.state === 'running' || fork.info.state === 'starting') {
+    throw new Error('The side question is still answering')
+  }
+  checkForkRoom(held)
+
+  fork.info.state = 'running'
+  const event: VisualAgentEvent = {
+    uuid: randomUUID(),
+    seq: fork.ctx.seq++,
+    threadId: 'main',
+    at: nowIso(),
+    kind: 'text',
+    role: 'user',
+    text: said,
+  }
+  fork.info.events.push(event)
+  emit(held, { t: 'fork-event', forkId, event })
+  runFork(held, fork, forkFollowUpArgv({ forkSessionId: forkId, model: held.model }), said)
+  emitForks(held)
+}
+
+function checkForkRoom(held: LiveAgent): void {
+  const live = held.forks.filter((f) => f.info.state === 'running' || f.info.state === 'starting')
+  if (live.length >= MAX_LIVE_FORKS) {
+    throw new Error(`At most ${MAX_LIVE_FORKS} side questions can run at once`)
+  }
+}
+
+/** Spawn one run of a fork, stream its events into the fork, and stop it on its result. */
+function runFork(held: LiveAgent, fork: LiveFork, argv: string[], message: string): void {
+  const forkId = fork.info.id
+  const child = spawnClaude(argv, held.opts)
   fork.child = child
-  const ctx: NormaliseContext = { seq: 0, fallbackId: randomUUID, now: nowIso, lastSession: null }
+  const ctx = fork.ctx
   const noise: string[] = []
 
   const pushForkEvent = (event: VisualAgentEvent): void => {
@@ -779,6 +827,7 @@ export function forkVisualAgent(agentId: string, question: string): { forkId: st
     emit(held, { t: 'fork-event', forkId, event })
   }
   const settle = (state: VisualAgentRunState): void => {
+    if (fork.child !== child) return
     if (fork.info.state !== 'running' && fork.info.state !== 'starting') return
     fork.info.state = state
     emitForks(held)
@@ -786,6 +835,7 @@ export function forkVisualAgent(agentId: string, question: string): { forkId: st
 
   const reader = lineReader(
     (parsed) => {
+      if (fork.child !== child) return
       for (const event of normalise(parsed, ctx)) {
         if (event.kind === 'session') continue
         pushForkEvent(event)
@@ -807,6 +857,7 @@ export function forkVisualAgent(agentId: string, question: string): { forkId: st
   })
   child.stdin.on?.('error', () => undefined)
   const fail = (message: string): void => {
+    if (fork.child !== child) return
     if (fork.info.state !== 'running' && fork.info.state !== 'starting') return
     pushForkEvent({ uuid: randomUUID(), seq: ctx.seq++, threadId: 'main', at: nowIso(), kind: 'error', message })
     settle('failed')
@@ -814,14 +865,12 @@ export function forkVisualAgent(agentId: string, question: string): { forkId: st
   child.on('error', (err: Error) => fail(`Could not start the side question: ${err.message}`))
   child.on('exit', (code: number | null) => {
     reader.flush()
-    fork.child = null
     if (code === 0) settle('done')
     else fail(`The side question ended early${noise.length ? `: ${noise.join('\n').slice(0, 2000)}` : '.'}`)
+    if (fork.child === child) fork.child = null
   })
 
-  child.stdin.write(userMessageFrame(sideQuestionPreamble(asked)))
-  emitForks(held)
-  return { forkId }
+  child.stdin.write(userMessageFrame(message))
 }
 
 function stopFork(held: LiveAgent, fork: LiveFork): void {

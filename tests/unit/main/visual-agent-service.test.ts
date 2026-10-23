@@ -423,6 +423,44 @@ describe('visual agent service', () => {
     expect(snap.events.every((e) => e.kind !== 'text' || e.text !== 'because')).toBe(true)
   })
 
+  it('carries an aside on: a follow-up resumes the fork session itself, with no tools', async () => {
+    await svc.startVisualAgent(baseOpts())
+    lastChild()._line(init())
+    const { forkId } = svc.forkVisualAgent('agent-1', 'why?')
+    const first = lastChild()
+    expect(() => svc.sendVisualAgentFork('agent-1', forkId, 'more?')).toThrow(/still answering/)
+    first._line({ ...result, session_id: forkId })
+    expect(svc.getVisualAgentState('agent-1')!.forks[0].state).toBe('done')
+
+    svc.sendVisualAgentFork('agent-1', forkId, 'and then?')
+    const second = lastChild()
+    expect(second).not.toBe(first)
+    const args = h.spawnCalls.at(-1).args
+    expect(args[args.indexOf('--resume') + 1]).toBe(forkId)
+    expect(args).not.toContain('--fork-session')
+    expect(args).not.toContain('--session-id')
+    expect(args[args.indexOf('--tools') + 1]).toBe('')
+    expect(args).toContain('--strict-mcp-config')
+    expect(args.join(' ')).not.toMatch(/--permission-mode|--dangerously-skip-permissions|--permission-prompt-tool/)
+    expect(second.writes()[0].message.content[0].text).toBe('and then?')
+    expect(svc.getVisualAgentState('agent-1')!.forks[0].state).toBe('running')
+
+    // The first run's late exit must not touch the second run.
+    first._exit(1)
+    expect(svc.getVisualAgentState('agent-1')!.forks[0].state).toBe('running')
+
+    second._line({ type: 'assistant', session_id: forkId, parent_tool_use_id: null, message: { id: 'm2', role: 'assistant', content: [{ type: 'text', text: 'then this' }] } })
+    second._line({ ...result, session_id: forkId })
+    const fork = svc.getVisualAgentState('agent-1')!.forks[0]
+    expect(fork.state).toBe('done')
+    const said = fork.events.filter((e) => e.kind === 'text').map((e: any) => [e.role, e.text])
+    expect(said).toEqual([['user', 'and then?'], ['assistant', 'then this']])
+    const seqs = fork.events.map((e) => e.seq)
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs)
+    // The main conversation is untouched.
+    expect(svc.getVisualAgentState('agent-1')!.events.some((e) => e.kind === 'text' && e.text === 'and then?')).toBe(false)
+  })
+
   it('caps live forks at 3', async () => {
     await svc.startVisualAgent(baseOpts())
     lastChild()._line(init())

@@ -83,6 +83,27 @@ export const forkArgv = (opts: ForkArgvOptions): string[] => [
   resolveModel(opts.model),
 ]
 
+export interface ForkFollowUpArgvOptions {
+  forkSessionId: string
+  model: string
+}
+
+/**
+ * A follow-up in an aside: resume the fork's own session (not the parent's,
+ * and not forked again), still with no tools and no MCP servers.
+ */
+export const forkFollowUpArgv = (opts: ForkFollowUpArgvOptions): string[] => [
+  ...STREAM_ARGS,
+  '--resume',
+  opts.forkSessionId,
+  '--tools',
+  '',
+  '--strict-mcp-config',
+  ...AUTO_PERMISSION_MODE_ARGS,
+  '--model',
+  resolveModel(opts.model),
+]
+
 /* --- stdin frames --------------------------------------------------------- */
 
 const line = (value: unknown): string => `${JSON.stringify(value)}\n`

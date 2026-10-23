@@ -1,6 +1,7 @@
 import React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { AsideSplit } from '../../../../src/renderer/components/visual-agent/AsidePanel'
 import { VisualAgentPanel } from '../../../../src/renderer/components/visual-agent/VisualAgentPanel'
 import { __resetVisualAgentSubscription, useVisualAgentStore } from '../../../../src/renderer/stores/visualAgentStore'
 import {
@@ -19,13 +20,18 @@ const api = {
   answer: vi.fn(async () => {}),
   setModel: vi.fn(async () => {}),
   fork: vi.fn(async () => ({ forkId: 'f' })),
+  forkSend: vi.fn(async () => {}),
   forkStop: vi.fn(async () => {}),
   onFrame: vi.fn(() => () => {}),
 }
 
 const mount = () => {
   useVisualAgentStore.getState().seed(demoVisualAgentSnapshot('p1'))
-  return render(<VisualAgentPanel agentId="p1" startOptions={{ agentId: 'p1', sessionId: 's', cwd: DEMO_CWD }} visible />)
+  return render(
+    <AsideSplit agentId="p1" visible>
+      <VisualAgentPanel agentId="p1" startOptions={{ agentId: 'p1', sessionId: 's', cwd: DEMO_CWD }} visible />
+    </AsideSplit>,
+  )
 }
 
 beforeEach(() => {
@@ -60,11 +66,31 @@ describe('<VisualAgentPanel>', () => {
     expect(useVisualAgentStore.getState().ui.p1.subagentPath).toEqual([])
   })
 
-  it('reopens a side question from its marker', () => {
+  it('reopens an aside from its marker in a panel beside the conversation, and closes it with Esc', () => {
     mount()
+    expect(screen.queryByTestId('aside-panel')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /Side question asked here/ }))
     expect(useVisualAgentStore.getState().ui.p1.openForkId).toBe('fork-demo-01')
-    expect(screen.getByText(/Forked from the conversation as it stood/)).toBeInTheDocument()
+    const aside = screen.getByTestId('aside-panel')
+    expect(within(aside).getByText(/Forked from the conversation as it stood/)).toBeInTheDocument()
+    // The question opens the aside's conversation, followed by the answer.
+    const log = within(aside).getByRole('log')
+    expect(within(log).getByText('Why not just add a click handler too?')).toBeInTheDocument()
+    // The main conversation stays on screen beside it.
+    expect(screen.getByRole('log', { name: 'Conversation' })).toBeInTheDocument()
+    fireEvent.keyDown(aside, { key: 'Escape' })
+    expect(useVisualAgentStore.getState().ui.p1.openForkId).toBeNull()
+  })
+
+  it('sends a follow-up from the aside chat bar into the fork, not the main conversation', () => {
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: /Side question asked here/ }))
+    const box = screen.getByRole('textbox', { name: 'Follow up in the aside' })
+    fireEvent.change(box, { target: { value: 'and on touch screens?' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(api.forkSend).toHaveBeenCalledWith('p1', 'fork-demo-01', 'and on touch screens?')
+    expect(api.send).not.toHaveBeenCalled()
+    expect(useVisualAgentStore.getState().ui.p1.asideDrafts['fork-demo-01']).toBe('')
   })
 
   it('stays pinned to the bottom through browser scroll resets, and lets go on a wheel', () => {

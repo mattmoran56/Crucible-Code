@@ -142,7 +142,7 @@ export function SubagentRef({ thread, onFocusChip }: { thread: Thread; onFocusCh
   )
 }
 
-/** Where a /btw side question was asked. Clicking reopens the fork sheet. */
+/** Where a /btw aside was asked. Clicking reopens it in the aside panel. */
 export function AsideRef({ aside, onOpen }: { aside: Aside; onOpen: () => void }) {
   const status = THREAD_STATUS[aside.status]
   return (
@@ -156,7 +156,7 @@ export function AsideRef({ aside, onOpen }: { aside: Aside; onOpen: () => void }
       <span className="shrink-0 font-mono text-[11px] text-text">btw</span>
       <span className="min-w-0 truncate">{oneLine(aside.question, 60)}</span>
       <StatusDot status={aside.status} />
-      <span className="shrink-0">{aside.status === 'running' ? 'asking…' : 'read the answer'}</span>
+      <span className="shrink-0">{aside.status === 'running' ? 'asking…' : 'open the aside'}</span>
     </button>
   )
 }

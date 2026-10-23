@@ -418,8 +418,8 @@ export const VisualAgent: Story = {
   ],
 }
 
-// The /btw side question sheet slid up over the composer.
-export const VisualAgentForkSheet: Story = {
+// A /btw aside: a second conversation in a full-height panel slid out beside the main chat.
+export const VisualAgentAside: Story = {
   decorators: [
     (Story) => {
       setupStoresForStory({ visualAgent: { openForkId: 'fork-demo-01' } })
