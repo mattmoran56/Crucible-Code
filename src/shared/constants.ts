@@ -232,6 +232,7 @@ export const IPC = {
   VISUAL_AGENT_ANSWER: 'visual-agent:answer',
   VISUAL_AGENT_SET_MODEL: 'visual-agent:set-model',
   VISUAL_AGENT_FORK: 'visual-agent:fork',
+  VISUAL_AGENT_FORK_SEND: 'visual-agent:fork-send',
   VISUAL_AGENT_FORK_STOP: 'visual-agent:fork-stop',
   VISUAL_AGENT_GET_STATE: 'visual-agent:get-state',
   VISUAL_AGENT_FRAME: 'visual-agent:frame',

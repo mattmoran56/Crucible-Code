@@ -8,6 +8,7 @@ import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useVisualAgentStore } from '../../stores/visualAgentStore'
 import { buildVisualAgentStartOptions, visualAgentId, type VisualAgentTabKey } from '../../lib/visualAgents'
+import { AsideSplit } from './AsidePanel'
 import { VisualAgentPanel } from './VisualAgentPanel'
 
 /**
@@ -21,10 +22,13 @@ export function VisualAgentHost({
   sessionId,
   tabKey,
   visible,
+  asideOutside = false,
 }: {
   sessionId: string
   tabKey: VisualAgentTabKey
   visible: boolean
+  /** The host lays out the agent's aside itself (the Agent tab, around its link browser). */
+  asideOutside?: boolean
 }) {
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === sessionId))
   const project = useProjectStore((s) => s.projects.find((p) => p.id === session?.projectId))
@@ -66,5 +70,11 @@ export function VisualAgentHost({
   }, [projectId, sessionId, tabKey, agentId, claudeSessionId, model])
 
   if (!session || !startOptions) return null
-  return <VisualAgentPanel agentId={agentId} startOptions={startOptions} visible={visible} />
+  const panel = <VisualAgentPanel agentId={agentId} startOptions={startOptions} visible={visible} />
+  if (asideOutside) return panel
+  return (
+    <AsideSplit agentId={agentId} visible={visible}>
+      {panel}
+    </AsideSplit>
+  )
 }

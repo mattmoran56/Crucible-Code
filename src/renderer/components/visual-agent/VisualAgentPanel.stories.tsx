@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import type { VisualAgentCommand, VisualAgentSnapshot } from '../../../shared/visual-agent'
 import { useVisualAgentStore, type VisualAgentUi } from '../../stores/visualAgentStore'
+import { AsideSplit } from './AsidePanel'
 import { VisualAgentPanel } from './VisualAgentPanel'
 import {
   AUDIT_TASK_ID,
@@ -18,7 +19,7 @@ import {
 function Seeded({ snapshot, ui }: { snapshot: VisualAgentSnapshot; ui?: Partial<VisualAgentUi> }) {
   const [ready, setReady] = useState(false)
   useLayoutEffect(() => {
-    useVisualAgentStore.getState().seed(snapshot, { draft: '', openForkId: null, subagentPath: [], answering: null, ...ui })
+    useVisualAgentStore.getState().seed(snapshot, { draft: '', openForkId: null, asideDrafts: {}, subagentPath: [], answering: null, ...ui })
     setReady(true)
     // Give the mock bridge a snapshot for this agent too, so the frames it
     // emits when you interact (send, /btw, answer) have something to build on.
@@ -29,11 +30,13 @@ function Seeded({ snapshot, ui }: { snapshot: VisualAgentSnapshot; ui?: Partial<
   if (!ready) return null
   return (
     <div className="flex h-screen w-full flex-col bg-bg">
-      <VisualAgentPanel
-        agentId={snapshot.agentId}
-        startOptions={{ agentId: snapshot.agentId, sessionId: 'story-session', cwd: DEMO_CWD }}
-        visible
-      />
+      <AsideSplit agentId={snapshot.agentId} visible>
+        <VisualAgentPanel
+          agentId={snapshot.agentId}
+          startOptions={{ agentId: snapshot.agentId, sessionId: 'story-session', cwd: DEMO_CWD }}
+          visible
+        />
+      </AsideSplit>
     </div>
   )
 }
@@ -89,16 +92,16 @@ export const SlashMenuRepoCommands: Story = {
   },
 }
 
-/** A /btw side question answered in the fork sheet. */
-export const ForkSheetOpen: Story = {
+/** A /btw aside answered in its own panel, slid out beside the conversation. */
+export const AsideOpen: Story = {
   args: {
     snapshot: { ...demoSnapshot('story-fork'), state: 'idle', turnStartedAt: null },
     ui: { openForkId: 'fork-demo-01' },
   },
 }
 
-/** A fork still answering. */
-export const ForkSheetRunning: Story = {
+/** An aside still answering. */
+export const AsideRunning: Story = {
   args: {
     snapshot: { ...conversationSnapshot('story-fork-running'), forks: [runningFork()] },
     ui: { openForkId: 'fork-fx-running' },

@@ -2,8 +2,9 @@
 //
 // Layout, top to bottom: a slim session bar, the conversation log (with the
 // sub-agent sheet sliding in over it from the right), the live turn status,
-// the sub-agent tray, and the composer (with the /btw fork sheet sliding up
-// over it from the bottom).
+// the sub-agent tray, and the composer. A /btw aside opens in its own
+// full-height panel beside all of this (AsideSplit, wrapped around the panel
+// by its host).
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { VisualAgentRunState, VisualAgentSnapshot, VisualAgentStartOptions } from '../../../shared/visual-agent'
@@ -17,7 +18,6 @@ import {
 import { sessionCommands } from './commands'
 import { Composer } from './Composer'
 import { useComposerFocus } from './composerFocus'
-import { ForkSheet } from './ForkSheet'
 import { Close, Power, Restart, Spinner, StopSquare } from './icons'
 import { modelLabel } from './ModelPicker'
 import { Rows, StreamingText, type RowsContext } from './parts'
@@ -231,13 +231,12 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
   const [behind, setBehind] = useState(false)
 
   const sheetOpen = ui.subagentPath.length > 0
-  const openFork = ui.openForkId ? (snap.forks.find((f) => f.id === ui.openForkId) ?? null) : null
 
   const focus = useComposerFocus({
     composer,
     root,
     onCharacter: (c) => setUi({ draft: (useVisualAgentStore.getState().ui[agentId]?.draft ?? '') + c }),
-    enabled: visible && !sheetOpen && !openFork,
+    enabled: visible && !sheetOpen,
   })
 
   // Follow the bottom only while the reader is already there.
@@ -423,14 +422,6 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
         />
       </div>
 
-      <ForkSheet
-        fork={openFork}
-        onStop={(forkId) => void actions.forkStop(agentId, forkId)}
-        onClose={() => {
-          setUi({ openForkId: null })
-          requestAnimationFrame(() => composer.current?.focus())
-        }}
-      />
     </div>
   )
 }

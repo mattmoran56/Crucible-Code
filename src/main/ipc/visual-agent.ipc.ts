@@ -7,6 +7,7 @@ import {
   forkVisualAgent,
   getVisualAgentState,
   interruptVisualAgent,
+  sendVisualAgentFork,
   sendVisualAgentMessage,
   setVisualAgentModel,
   setVisualAgentWindow,
@@ -39,6 +40,9 @@ export function registerVisualAgentHandlers(window: BrowserWindow): void {
   )
   handle(IPC.VISUAL_AGENT_FORK, async (_e, agentId: string, question: string) =>
     forkVisualAgent(agentId, question)
+  )
+  handle(IPC.VISUAL_AGENT_FORK_SEND, async (_e, agentId: string, forkId: string, text: string) =>
+    sendVisualAgentFork(agentId, forkId, text)
   )
   handle(IPC.VISUAL_AGENT_FORK_STOP, async (_e, agentId: string, forkId: string) =>
     stopVisualAgentFork(agentId, forkId)

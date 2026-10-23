@@ -5,16 +5,18 @@
 //   yet (teleported in an earlier run) → find it, then resume it visually
 // - anything else → the normal visual agent
 // Whichever it is sits beside the link browser (AgentBrowserSplit), which
-// slides in when a link in the conversation is clicked.
+// slides in when a link in the conversation is clicked, and a /btw aside
+// (AsideSplit) slides out beyond that: main chat | browser | aside.
 
 import React, { useEffect, useRef } from 'react'
 import type { Session } from '../../../shared/types'
-import { projectConfigDir } from '../../lib/visualAgents'
+import { projectConfigDir, visualAgentId } from '../../lib/visualAgents'
 import { resumeTeleportedSession } from '../../lib/cloudTeleport'
 import { useCloudSessionStore } from '../../stores/cloudSessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
-import { AgentBrowserSplit } from '../agent-browser/AgentBrowserSplit'
+import { AgentBrowserSplit, routeLinkClick } from '../agent-browser/AgentBrowserSplit'
+import { AsideSplit } from '../visual-agent/AsidePanel'
 import { VisualAgentHost } from '../visual-agent/VisualAgentHost'
 import { Spinner } from '../visual-agent/icons'
 import { CloudAgentHost } from './CloudAgentHost'
@@ -31,15 +33,21 @@ export function SessionAgentHost({ sessionId, visible }: { sessionId: string; vi
   const teleportedThisRun = useCloudSessionStore((s) => sessionId in s.teleports)
   if (!session) return null
   return (
-    <AgentBrowserSplit sessionId={sessionId} visible={visible}>
-      {session.location === 'cloud' || teleportedThisRun ? (
-        <CloudAgentHost sessionId={sessionId} visible={visible} />
-      ) : needsTeleportResume(session) ? (
-        <TeleportResume session={session} visible={visible} />
-      ) : (
-        <VisualAgentHost sessionId={sessionId} tabKey="agent" visible={visible} />
-      )}
-    </AgentBrowserSplit>
+    <AsideSplit
+      agentId={visualAgentId(sessionId, 'agent')}
+      visible={visible}
+      onLinkClickCapture={(e) => routeLinkClick(e, sessionId)}
+    >
+      <AgentBrowserSplit sessionId={sessionId} visible={visible}>
+        {session.location === 'cloud' || teleportedThisRun ? (
+          <CloudAgentHost sessionId={sessionId} visible={visible} />
+        ) : needsTeleportResume(session) ? (
+          <TeleportResume session={session} visible={visible} />
+        ) : (
+          <VisualAgentHost sessionId={sessionId} tabKey="agent" visible={visible} asideOutside />
+        )}
+      </AgentBrowserSplit>
+    </AsideSplit>
   )
 }
 

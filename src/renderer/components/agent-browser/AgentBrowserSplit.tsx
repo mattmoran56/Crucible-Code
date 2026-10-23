@@ -46,6 +46,19 @@ export function linkTarget(target: EventTarget | null): string | null {
   return isWebUrl(href) ? href : null
 }
 
+/**
+ * A click on a web link opens it in the session's link browser (with a
+ * modifier, in the default browser). Also used by the aside beside it.
+ */
+export function routeLinkClick(e: React.MouseEvent, sessionId: string): void {
+  if (e.defaultPrevented || e.button !== 0) return
+  const url = linkTarget(e.target)
+  if (!url) return
+  e.preventDefault()
+  if (e.metaKey || e.ctrlKey || e.shiftKey) openInDefaultBrowser(url)
+  else useAgentBrowserStore.getState().open(sessionId, url)
+}
+
 export interface AgentBrowserSplitProps {
   sessionId: string
   visible: boolean
@@ -88,14 +101,7 @@ export function AgentBrowserSplit({ sessionId, visible, children, embed }: Agent
     }, SLIDE_MS)
   }, [sessionId])
 
-  const onClickCapture = (e: React.MouseEvent): void => {
-    if (e.defaultPrevented || e.button !== 0) return
-    const url = linkTarget(e.target)
-    if (!url) return
-    e.preventDefault()
-    if (e.metaKey || e.ctrlKey || e.shiftKey) openInDefaultBrowser(url)
-    else useAgentBrowserStore.getState().open(sessionId, url)
-  }
+  const onClickCapture = (e: React.MouseEvent): void => routeLinkClick(e, sessionId)
 
   const ratio = page && shown ? page.ratio : 0
 

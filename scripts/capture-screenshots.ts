@@ -140,6 +140,12 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 1280, height: 720 },
   },
   {
+    name: 'agent-browser-with-aside',
+    storyId: 'agent-browser-agentbrowsersplit--link-open-with-aside',
+    delay: 1500,
+    viewport: { width: 1600, height: 760 },
+  },
+  {
     name: 'sandboxer-settings',
     storyId: 'settings-sandboxersettings--enabled',
     delay: 1000,
@@ -378,8 +384,8 @@ const targets: ScreenshotTarget[] = [
     delay: 2500,
   },
   {
-    name: 'visual-agent-fork-sheet',
-    storyId: 'app-full-layout--visual-agent-fork-sheet',
+    name: 'visual-agent-aside',
+    storyId: 'app-full-layout--visual-agent-aside',
     delay: 2500,
   },
   {

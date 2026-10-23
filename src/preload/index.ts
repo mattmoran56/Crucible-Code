@@ -518,6 +518,8 @@ const api = {
       ipcRenderer.invoke(IPC.VISUAL_AGENT_SET_MODEL, agentId, model),
     fork: (agentId: string, question: string): Promise<{ forkId: string }> =>
       ipcRenderer.invoke(IPC.VISUAL_AGENT_FORK, agentId, question),
+    forkSend: (agentId: string, forkId: string, text: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_FORK_SEND, agentId, forkId, text),
     forkStop: (agentId: string, forkId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.VISUAL_AGENT_FORK_STOP, agentId, forkId),
     getState: (agentId: string): Promise<VisualAgentSnapshot | null> =>
