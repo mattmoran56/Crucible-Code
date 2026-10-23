@@ -71,14 +71,19 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
   const menu = useCommandMenu({
     commands,
     draft,
-    onAccept: (command) => {
-      onDraft(`${command.name} `)
+    onAccept: (command, how) => {
       box.current?.focus()
+      // A command with a required `<arg>` can't run bare, so Enter only inserts it.
+      if (how === 'send' && !command.args?.startsWith('<')) {
+        submit(command.name)
+        return
+      }
+      onDraft(`${command.name} `)
     },
   })
 
-  const submit = (): void => {
-    const intent = intentOf(draft)
+  function submit(text: string = draft): void {
+    const intent = intentOf(text)
     setNotice(null)
     switch (intent.kind) {
       case 'empty':
@@ -174,7 +179,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
           </button>
           <button
             type="button"
-            onClick={submit}
+            onClick={() => submit()}
             disabled={!canSend}
             aria-label="Send"
             title="Send (Enter)"
