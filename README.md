@@ -19,6 +19,7 @@
 
 - **Multi-project management** — Open multiple git repos, switch with draggable tabs, per-project notifications
 - **Session isolation** — Each session gets its own git worktree and branch — no conflicts between parallel agents
+- **Agents without a worktree** — A second button next to **+** in Sessions starts a short-lived agent straight in the main checkout (no worktree, no branch) for PR reviews and other non-code work, listed alongside your other sessions
 - **Cloud sessions & Teleport** — New sessions start in Claude Code on the web by default, so heavy builds and CI-style test runs happen off your machine. Watch and chat with it on the real claude.ai page embedded in the Agent tab, then hit **Teleport** to pull it down into the local worktree and carry on there
 - **Embedded terminals** — Full xterm.js shell terminals per session, opened from the workspace tab bar
 - **Git integration** — Commit log, changed files, and a GitHub-style syntax-highlighted diff viewer (Shiki) with full-file syntax context, click-anywhere context expansion, per-hunk collapse, and side-by-side or unified modes
@@ -233,6 +234,7 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 - **Agent tab** — Every session opens on its Agent tab: a visual agent (see **Visual agents** below) running in the worktree, or for a cloud session, the claude.ai session page embedded in the app with a **Teleport** button that brings it down into a visual agent
 - **Links open beside the conversation** — Clicking a web link in the Agent tab (in a visual agent's reply, or on a cloud session's claude.ai page) slides a browser in from the right, and the conversation and message bar move over to make room. It starts half and half; drag the divider to resize (double-click it, or press Enter on it, to go back to half and half). The toolbar has back, forward and reload, **Open in browser** to send the page to your default browser, and **×** to close the panel. Cmd-click a link to skip the panel and open it in your default browser. The panel shares the embedded claude.ai page's browser profile, so you stay signed in wherever you signed in there. It runs sandboxed with no access to the app, loads only web pages (no `file:` or app links), and links that would open a new window load in the panel instead. Each session keeps its own panel, and it survives switching sessions or moving the Agent tab to another column
 - **Cloud badge** — Sessions running in the cloud show a small **Cloud** badge on their sidebar card
+- **Agents without a worktree** — The chat-bubble-with-a-plus button next to **+** opens a new agent in the project's main checkout straight away: no dialog, no worktree, no branch — the same thing as an agent tab in the Code workspace, but listed in Sessions so every agent is in one place. Handy for reviewing PRs, asking questions or other non-code work. It's named `agent-1`, `agent-2`, … (rename it from the `⋯` menu) and its card shows a **No worktree** badge next to the branch the main checkout is on. It opens on just its Agent tab; add more agents or terminals (also in the main checkout) from the column's **+** menu. Deleting it stops its agents and terminals and never touches the repo
 - **Import existing worktree** — Bring in worktrees created outside CodeCrucible
 - **Open remote branch** — Create a session from a remote branch with autocomplete
 - **Open as main branch** — Temporarily check out a session's branch on the main repo (useful for builds that need the real repo path)
@@ -240,6 +242,8 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 - **Delete a session** — Removes the worktree and the local branch the app created. For a cloud (or teleported) session the confirm dialog also offers, unticked by default, to delete the branch on origin. Any Sandboxer sandbox built from the worktree is destroyed first (see **Sandboxer sandboxes** below)
 
 ![Rename session dialog](docs/screenshots/rename-session-dialog.png)
+
+![An agent without a worktree, open on its Agent tab in the main checkout](docs/screenshots/repo-agent-session.png)
 
 ![A link from the conversation open in the Agent tab's link browser](docs/screenshots/agent-browser-link-open.png)
 

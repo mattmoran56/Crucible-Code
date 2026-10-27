@@ -113,3 +113,17 @@ export const Cloud: Story = {
     status: 'running',
   },
 }
+
+export const RepoAgent: Story = {
+  args: {
+    session: {
+      ...baseSession,
+      name: 'agent-1',
+      branchName: '',
+      worktreePath: '/mock/repo',
+      repoRoot: true,
+    },
+    repoBranch: 'main',
+    status: 'running',
+  },
+}

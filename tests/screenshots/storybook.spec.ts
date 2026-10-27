@@ -130,6 +130,7 @@ function sessionCardTargets(): Target[] {
     { name: 'session-card-with-pr', storyId: 'sessions-sessioncard--with-pr', viewport: { width: 280, height: 130 } },
     { name: 'session-card-with-draft-pr', storyId: 'sessions-sessioncard--with-draft-pr', viewport: { width: 280, height: 130 } },
     { name: 'session-card-with-merged-pr', storyId: 'sessions-sessioncard--with-merged-pr', viewport: { width: 280, height: 130 } },
+    { name: 'session-card-repo-agent', storyId: 'sessions-sessioncard--repo-agent', viewport: v },
   ]
 }
 

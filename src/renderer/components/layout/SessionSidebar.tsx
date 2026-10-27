@@ -30,9 +30,18 @@ import { useMultiPanelResize } from '../../hooks/useMultiPanelResize'
 
 const PR_POLL_INTERVAL = 30_000
 
+/** A chat bubble with a plus in its corner: a new agent in the main checkout, no worktree. */
+const NewRepoAgentIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 13v2a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h8" />
+    <line x1="19" y1="2" x2="19" y2="9" />
+    <line x1="15.5" y1="5.5" x2="22.5" y2="5.5" />
+  </svg>
+)
+
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, openPR, openAsMainBranch, reconcilePRWorktrees } =
+  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, openPR, openAsMainBranch, reconcilePRWorktrees, createRepoAgent } =
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, loadCurrentUser, markSeen, clear: clearPRs, currentUser } =
     usePRStore()
@@ -482,6 +491,15 @@ export function SessionSidebar() {
     pollIntervalRef.current = setInterval(refresh, PR_POLL_INTERVAL)
   }
 
+  const handleNewRepoAgent = async () => {
+    setEditorMode(false)
+    try {
+      await createRepoAgent(activeProject.id, activeProject.repoPath)
+    } catch (err) {
+      useToastStore.getState().addToast('error', err instanceof Error ? err.message : String(err))
+    }
+  }
+
   const handlePRClick = async (pr: (typeof pullRequests)[0]) => {
     setEditorMode(false)
     markSeen(activeProject.id, pr.number)
@@ -559,6 +577,13 @@ export function SessionSidebar() {
                 >
                   +
                 </IconButton>
+                <IconButton
+                  label="New agent (no worktree)"
+                  onClick={handleNewRepoAgent}
+                  className="text-accent hover:text-accent-hover"
+                >
+                  <NewRepoAgentIcon />
+                </IconButton>
                 <DropdownMenu
                   items={[
                     { label: 'Open existing branch', onClick: () => setShowOpenBranch(true) },
@@ -623,7 +648,8 @@ export function SessionSidebar() {
                       isActive={!editorMode && session.id === activeSessionId}
                       isOpenedAsMain={session.id === openedAsMainBranch}
                       status={getContextStatus(session.id)}
-                      pr={pullRequests.find((pr) => pr.headRefName === session.branchName)}
+                      pr={session.repoRoot ? undefined : pullRequests.find((pr) => pr.headRefName === session.branchName)}
+                      repoBranch={currentBranch}
                       onClick={() => {
                         setEditorMode(false)
                         setActiveSession(session.id, activeProject.repoPath)

@@ -260,6 +260,12 @@ export interface Session {
    * the session may delete it even when it does not use the `session/` prefix.
    */
   ownsBranch?: boolean
+  /**
+   * A repo-root agent: runs in the project's main checkout (`worktreePath` is
+   * the repo path) with no worktree or branch of its own, like an agent tab in
+   * the Code workspace. `branchName` is empty; deleting it never touches git.
+   */
+  repoRoot?: boolean
 }
 
 export interface Commit {

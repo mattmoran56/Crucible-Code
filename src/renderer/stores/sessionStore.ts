@@ -63,6 +63,11 @@ interface SessionState {
     notionTicket?: NotionTicketLink,
     options?: CreateSessionOptions
   ) => Promise<void>
+  /**
+   * Create a repo-root agent: a session with no worktree or branch that runs
+   * its agent in the project's main checkout, and open it.
+   */
+  createRepoAgent: (projectId: string, repoPath: string) => Promise<void>
   /** Merge `patch` into one session and persist it (location, cloud link, …). */
   patchSession: (projectId: string, sessionId: string, patch: Partial<Omit<Session, 'id' | 'projectId'>>) => Promise<void>
   /**
@@ -134,6 +139,14 @@ function sortByCreatedAtDesc(sessions: Session[]): Session[] {
 }
 
 let loadSessionsRequestId = 0
+
+/** The first free `agent-N` name, so a new repo-root agent never clashes with a session. */
+export function nextRepoAgentName(sessions: Session[]): string {
+  const taken = new Set(sessions.map((s) => s.name))
+  let n = 1
+  while (taken.has(`agent-${n}`)) n++
+  return `agent-${n}`
+}
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
@@ -292,6 +305,33 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
   },
 
+  createRepoAgent: async (projectId, repoPath) => {
+    const now = new Date().toISOString()
+    const session: Session = {
+      id: crypto.randomUUID(),
+      name: nextRepoAgentName(get().sessions),
+      branchName: '',
+      worktreePath: repoPath,
+      projectId,
+      createdAt: now,
+      lastActiveAt: now,
+      repoRoot: true,
+    }
+    const sessions = sortByCreatedAtDesc([...get().sessions, session])
+    await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId !== projectId) return
+    await restoreDetachedWorktree(get().detachedWorktree)
+    set({
+      sessions,
+      activeSessionId: session.id,
+      activePRNumber: null,
+      activePRWorktreePath: null,
+      activeWorkspaceTab: 'agent',
+      detachedWorktree: null,
+    })
+    saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+  },
+
   patchSession: async (projectId, sessionId, patch) => {
     if (!get().sessions.some((s) => s.id === sessionId)) return
     const sessions = get().sessions.map((s) => (s.id === sessionId ? { ...s, ...patch } : s))
@@ -341,7 +381,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.api.terminal.killSession(sessionId)
     await useVisualAgentStore.getState().releaseSession(sessionId)
 
-    if (session) {
+    // A repo-root agent runs in the main checkout: there is no worktree or
+    // branch to remove, and the repo itself must never be touched.
+    if (session && !session.repoRoot) {
       try {
         // session/* branches are always cleaned up by the main process; a
         // custom-named branch only when the app created it.
@@ -596,7 +638,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await restoreDetachedWorktree(get().detachedWorktree)
 
     const session = get().sessions.find((s) => s.id === sessionId)
-    if (!session) return
+    // A repo-root agent is already in the main checkout, on no branch of its own.
+    if (!session || session.repoRoot) return
 
     try {
       // Remember what branch main repo is on so we can restore later

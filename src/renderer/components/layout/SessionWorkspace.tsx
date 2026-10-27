@@ -86,9 +86,13 @@ export function SessionWorkspace() {
       if (prOnlyMode) {
         resetLayout(['pr', 'review'], 'pr', contextId)
       } else if (activeSessionId) {
-        const sessionTabs: WorkspaceTab[] = sessionPR
-          ? ['agent', 'git', 'pr', 'review', 'review-loop']
-          : ['agent', 'git', 'review', 'review-loop']
+        // A repo-root agent has no branch to diff or review: just the agent
+        // (more agents and terminals come from the column's + menu).
+        const sessionTabs: WorkspaceTab[] = activeSession?.repoRoot
+          ? ['agent']
+          : sessionPR
+            ? ['agent', 'git', 'pr', 'review', 'review-loop']
+            : ['agent', 'git', 'review', 'review-loop']
         resetLayout(sessionTabs, 'agent', activeSessionId)
       } else {
         resetLayout([])

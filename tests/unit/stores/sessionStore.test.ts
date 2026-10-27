@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCloudSessionStore } from '../../../src/renderer/stores/cloudSessionStore'
-import { useSessionStore } from '../../../src/renderer/stores/sessionStore'
+import { useSessionStore, nextRepoAgentName } from '../../../src/renderer/stores/sessionStore'
 import { useProjectStore } from '../../../src/renderer/stores/projectStore'
 
 const sessionApi = {
@@ -1041,5 +1041,41 @@ describe('sessionStore.patchSession', () => {
     await useSessionStore.getState().patchSession('p1', 's1', { location: 'local' })
     expect(useSessionStore.getState().sessions[0].location).toBe('local')
     expect(sessionApi.save).toHaveBeenCalledWith('p1', [expect.objectContaining({ id: 's1', location: 'local' })])
+  })
+})
+
+describe('sessionStore repo-root agents', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ currentProjectId: 'p1', sessions: [S('s1')], activeSessionId: 's1' } as any)
+    useTerminalStore.setState({ terminals: {} })
+  })
+
+  it('creates an agent in the main checkout without a worktree and makes it active', async () => {
+    await useSessionStore.getState().createRepoAgent('p1', '/repo')
+    expect(worktreeApi.create).not.toHaveBeenCalled()
+    const created = useSessionStore.getState().sessions.find((s) => s.repoRoot)!
+    expect(created).toMatchObject({ name: 'agent-1', branchName: '', worktreePath: '/repo', projectId: 'p1' })
+    expect(useSessionStore.getState().activeSessionId).toBe(created.id)
+    expect(useSessionStore.getState().activeWorkspaceTab).toBe('agent')
+    expect(sessionApi.save).toHaveBeenCalledWith('p1', expect.arrayContaining([expect.objectContaining({ repoRoot: true })]))
+  })
+
+  it('picks the first free agent-N name', () => {
+    expect(nextRepoAgentName([S('a', { name: 'agent-1' }), S('b', { name: 'agent-3' })] as any)).toBe('agent-2')
+  })
+
+  it('never removes the repo when a repo-root agent is deleted', async () => {
+    useSessionStore.setState({ sessions: [S('r1', { repoRoot: true, branchName: '', worktreePath: '/repo' })], activeSessionId: 'r1' } as any)
+    await useSessionStore.getState().removeSession('p1', '/repo', 'r1')
+    expect(worktreeApi.remove).not.toHaveBeenCalled()
+    expect(terminalApi.killSession).toHaveBeenCalledWith('r1')
+    expect(useSessionStore.getState().sessions).toEqual([])
+  })
+
+  it('does not check anything out for "open as main branch"', async () => {
+    useSessionStore.setState({ sessions: [S('r1', { repoRoot: true, branchName: '', worktreePath: '/repo' })] } as any)
+    await useSessionStore.getState().openAsMainBranch('/repo', 'r1')
+    expect(gitApi.checkout).not.toHaveBeenCalled()
+    expect(useSessionStore.getState().openedAsMainBranch).toBeNull()
   })
 })
