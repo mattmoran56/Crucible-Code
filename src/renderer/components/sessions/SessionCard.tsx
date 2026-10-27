@@ -14,6 +14,8 @@ interface Props {
   isOpenedAsMain: boolean
   status: SessionStatus | null
   pr?: PullRequest
+  /** The main checkout's branch, shown on a repo-root agent (which has none of its own). */
+  repoBranch?: string | null
   onClick: () => void
   onOpenAsMainBranch: () => void
   /** `deleteRemoteBranch` is only offered for cloud (or teleported) sessions. */
@@ -66,6 +68,23 @@ const CloudIcon = () => (
   </svg>
 )
 
+const RepoRootIcon = () => (
+  <svg
+    aria-hidden="true"
+    className="shrink-0"
+    width="10"
+    height="10"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />
+  </svg>
+)
+
 function StatusIndicator({ status }: { status: SessionStatus | null }) {
   if (!status) return null
 
@@ -88,7 +107,7 @@ function StatusIndicator({ status }: { status: SessionStatus | null }) {
   }
 }
 
-export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onClick, onOpenAsMainBranch, onDelete, onRename }: Props) {
+export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, repoBranch, onClick, onOpenAsMainBranch, onDelete, onRename }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [showRename, setShowRename] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
@@ -141,7 +160,16 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
           <StatusIndicator status={status} />
         </div>
         <div className="text-text-muted text-[10px] mt-1 flex items-center gap-1.5 pr-5">
-          <span className="truncate">{session.branchName}</span>
+          <span className="truncate">{session.repoRoot ? repoBranch ?? '' : session.branchName}</span>
+          {session.repoRoot && (
+            <span
+              title="Runs in the main checkout — no worktree or branch of its own"
+              className="shrink-0 inline-flex items-center gap-0.5 rounded border border-border px-1 text-[9px] font-semibold uppercase tracking-wide text-text-muted"
+            >
+              <RepoRootIcon />
+              No worktree
+            </span>
+          )}
           {session.location === 'cloud' && (
             <span
               title="Running in Claude Code on the web"
@@ -188,7 +216,7 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
         <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100">
           <DropdownMenu
             items={[
-              ...(!isOpenedAsMain ? [{ label: 'Open as main branch', onClick: onOpenAsMainBranch }] : []),
+              ...(!isOpenedAsMain && !session.repoRoot ? [{ label: 'Open as main branch', onClick: onOpenAsMainBranch }] : []),
               { label: 'Rename', onClick: openRename },
               {
                 label: 'Delete',
@@ -227,9 +255,11 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
             disabled={renaming}
             error={renameError || undefined}
             hint={
-              movesBranch
-                ? `The git branch will be renamed to ${defaultSessionBranch(renameValue.trim() || '<new name>')}`
-                : `The git branch stays ${session.branchName}`
+              session.repoRoot
+                ? 'Runs in the main checkout, so no git branch changes'
+                : movesBranch
+                  ? `The git branch will be renamed to ${defaultSessionBranch(renameValue.trim() || '<new name>')}`
+                  : `The git branch stays ${session.branchName}`
             }
           />
           <div className="flex gap-3 justify-end">
@@ -244,10 +274,17 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, onC
       </Dialog>
 
       <Dialog open={showConfirm} onClose={() => setShowConfirm(false)} title="Delete session?">
-        <p className="text-xs text-text-muted mb-5">
-          This will remove the worktree{deletesLocalBranch ? ' and local branch' : ''} for{' '}
-          <strong className="text-text">{session.name}</strong>. This cannot be undone.
-        </p>
+        {session.repoRoot ? (
+          <p className="text-xs text-text-muted mb-5">
+            This will stop the agent and remove <strong className="text-text">{session.name}</strong>. The repo
+            and its files are left as they are.
+          </p>
+        ) : (
+          <p className="text-xs text-text-muted mb-5">
+            This will remove the worktree{deletesLocalBranch ? ' and local branch' : ''} for{' '}
+            <strong className="text-text">{session.name}</strong>. This cannot be undone.
+          </p>
+        )}
         {remoteBranch && (
           <label className="flex items-center gap-2 text-xs text-text cursor-pointer select-none mb-5">
             <input

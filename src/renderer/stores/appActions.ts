@@ -247,6 +247,11 @@ export function getAppActions(): AppActionDef[] {
         const session = sessions.find((s) => s.id === activeSessionId)
         const project = projects.find((p) => p.id === activeProjectId)
         if (!session || !project) return
+        // A repo-root agent has no branch of its own to review.
+        if (session.repoRoot) {
+          useToastStore.getState().addToast('info', 'The review loop needs a session with its own worktree')
+          return
+        }
 
         const { pullRequests } = usePRStore.getState()
         const sessionPR = pullRequests.find((pr) => pr.headRefName === session.branchName)
