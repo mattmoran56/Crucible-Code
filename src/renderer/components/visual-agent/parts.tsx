@@ -5,7 +5,8 @@
 import React, { useState } from 'react'
 import { cn } from '../../lib/cn'
 import { AskCard, type AskDecide } from './AskCard'
-import { ChevronRight, Fold, Sparkle, Spinner } from './icons'
+import { splitAttachmentLines } from '../../../shared/visual-agent'
+import { ChevronRight, FileIcon, Fold, ImageIcon, Sparkle, Spinner } from './icons'
 import { Markdown } from './Markdown'
 import { ToolCard, ToolGroup } from './ToolCard'
 import {
@@ -44,14 +45,40 @@ export function StatusDot({ status, className }: { status: ThreadStatus; classNa
   )
 }
 
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|bmp|svg|heic|tiff?)$/i
+
+/** A saved attachment's display name: its file name without the `<stamp>-<n>-` the app prefixed. */
+const attachmentName = (path: string): string => {
+  if (!/[\\/]/.test(path)) return path
+  const name = path.split(/[\\/]/).pop() ?? path
+  return name.replace(/^[a-z0-9]{6,}-\d+-/, '')
+}
+
 /** Prose from either side. Only the assistant's is markdown; the person's is what they typed. */
 export function TextBubble({ event }: { event: EventOf<'text'> }) {
   if (event.role === 'user') {
+    const { text, files } = splitAttachmentLines(event.text)
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[12px] rounded-br-[4px] border border-accent/25 bg-accent/12 px-3! py-2! text-[13px] leading-relaxed text-text">
-          {event.text}
-        </div>
+      <div className="flex flex-col items-end gap-1">
+        {files.length > 0 ? (
+          <ul aria-label="Attached files" className="flex max-w-[85%] flex-wrap justify-end gap-1">
+            {files.map((file, i) => (
+              <li
+                key={`${i}-${file}`}
+                title={file}
+                className="flex max-w-[240px] items-center gap-1.5 rounded-md border border-accent/25 bg-accent/8 px-2! py-1! text-[11.5px] text-text"
+              >
+                {IMAGE_FILE.test(file) ? <ImageIcon size={12} className="shrink-0 text-accent" /> : <FileIcon size={12} className="shrink-0 text-accent" />}
+                <span className="min-w-0 truncate">{attachmentName(file)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {text.trim() ? (
+          <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[12px] rounded-br-[4px] border border-accent/25 bg-accent/12 px-3! py-2! text-[13px] leading-relaxed text-text">
+            {text}
+          </div>
+        ) : null}
       </div>
     )
   }

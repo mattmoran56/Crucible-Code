@@ -4,10 +4,16 @@
 // sub-agent sheet sliding in over it from the right), the live turn status,
 // the sub-agent tray, and the composer. A /btw aside opens in its own
 // full-height panel beside all of this (AsideSplit, wrapped around the panel
-// by its host).
+// by its host). Files dropped anywhere on the panel join the composer's
+// attachments.
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { VisualAgentRunState, VisualAgentSnapshot, VisualAgentStartOptions } from '../../../shared/visual-agent'
+import type {
+  VisualAgentAttachment,
+  VisualAgentRunState,
+  VisualAgentSnapshot,
+  VisualAgentStartOptions,
+} from '../../../shared/visual-agent'
 import { cn } from '../../lib/cn'
 import {
   EMPTY_VISUAL_AGENT_UI,
@@ -15,6 +21,7 @@ import {
   isAskPending,
   useVisualAgentStore,
 } from '../../stores/visualAgentStore'
+import { draggingFiles, readAttachments } from './attachments'
 import { sessionCommands } from './commands'
 import { Composer } from './Composer'
 import { useComposerFocus } from './composerFocus'
@@ -312,9 +319,61 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
     onDecide: (id, decision, answers) => void actions.answer(agentId, id, decision, answers),
   }
 
-  const send = (text: string): void => {
+  const send = (text: string, attachments: VisualAgentAttachment[] = []): void => {
     stick.current = true
-    void actions.send(agentId, text)
+    setAttachNotice(null)
+    if (attachments.length > 0) setUi({ attachments: [] })
+    void actions.send(agentId, text, attachments)
+  }
+
+  const [attachNotice, setAttachNotice] = useState<string | null>(null)
+  const addFiles = useCallback(
+    async (files: File[]): Promise<void> => {
+      const waiting = useVisualAgentStore.getState().ui[agentId]?.attachments ?? []
+      const { attachments, problems } = await readAttachments(files, waiting.length)
+      setAttachNotice(problems[0] ?? null)
+      if (attachments.length === 0) return
+      const now = useVisualAgentStore.getState().ui[agentId]?.attachments ?? []
+      setUi({ attachments: [...now, ...attachments] })
+      composer.current?.focus()
+    },
+    [agentId, setUi],
+  )
+  const removeAttachment = (index: number): void => {
+    setAttachNotice(null)
+    setUi({ attachments: ui.attachments.filter((_, i) => i !== index) })
+  }
+
+  // Dropping files anywhere on the panel attaches them. Enter/leave fire for
+  // every child crossed, so count depth rather than trusting one leave.
+  const dragDepth = useRef(0)
+  const [dropping, setDropping] = useState(false)
+  const canAttach = !ended && snap.state !== 'starting'
+  const drop = {
+    onDragEnter: (event: React.DragEvent) => {
+      if (!draggingFiles(event.dataTransfer?.types)) return
+      event.preventDefault()
+      dragDepth.current += 1
+      setDropping(true)
+    },
+    onDragOver: (event: React.DragEvent) => {
+      if (!draggingFiles(event.dataTransfer?.types)) return
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = canAttach ? 'copy' : 'none'
+    },
+    onDragLeave: (event: React.DragEvent) => {
+      if (!draggingFiles(event.dataTransfer?.types)) return
+      dragDepth.current = Math.max(0, dragDepth.current - 1)
+      if (dragDepth.current === 0) setDropping(false)
+    },
+    onDrop: (event: React.DragEvent) => {
+      if (!draggingFiles(event.dataTransfer?.types)) return
+      event.preventDefault()
+      dragDepth.current = 0
+      setDropping(false)
+      const files = Array.from(event.dataTransfer?.files ?? [])
+      if (canAttach && files.length > 0) void addFiles(files)
+    },
   }
 
   const mainRows = transcript.main.rows
@@ -326,7 +385,17 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
       className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden bg-bg text-text', !visible && 'hidden')}
       onMouseDown={focus.onMouseDown}
       onClick={focus.onClick}
+      {...drop}
     >
+      {dropping ? (
+        <div
+          aria-hidden="true"
+          data-testid="attachment-drop-zone"
+          className="pointer-events-none absolute inset-2 z-30 grid place-items-center rounded-xl border-2 border-dashed border-accent/70 bg-bg/85 text-[13px] font-medium text-text"
+        >
+          {canAttach ? 'Drop images or files to attach' : 'Start the session to attach files'}
+        </div>
+      ) : null}
       <SessionBar
         snap={snap}
         onInterrupt={() => void actions.interrupt(agentId)}
@@ -415,6 +484,10 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
           model={snap.model}
           onModel={(model) => void actions.setModel(agentId, model)}
           onSend={send}
+          attachments={ui.attachments}
+          onAddFiles={(files) => void addFiles(files)}
+          onRemoveAttachment={removeAttachment}
+          notice={attachNotice}
           onFork={(question) => void actions.fork(agentId, question)}
           onInterrupt={() => void actions.interrupt(agentId)}
           onClear={() => void actions.restart(agentId, true)}

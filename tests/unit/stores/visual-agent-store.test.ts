@@ -176,6 +176,19 @@ describe('store wiring', () => {
     expect(events[events.length - 1]).toMatchObject({ kind: 'text', role: 'user', text: 'do it' })
   })
 
+  it('send carries attachments: the local bubble names them and their echo replaces it', async () => {
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w' })
+    const shot = { name: 'shot.png', type: 'image/png', size: 3, data: 'cG5n' }
+    await useVisualAgentStore.getState().send('a1', '', [shot])
+    expect(api.send).toHaveBeenCalledWith('a1', '', [shot])
+    let events = useVisualAgentStore.getState().agents.a1.events
+    expect(events[events.length - 1]).toMatchObject({ kind: 'text', role: 'user', text: '[Attached file: shot.png]' })
+    emit('a1', { t: 'event', event: text('echo', 'user', '[Attached file: /tmp/x/abc123-0-shot.png]') })
+    events = useVisualAgentStore.getState().agents.a1.events
+    expect(events.filter((e) => e.kind === 'text' && e.role === 'user')).toHaveLength(1)
+    expect(events[events.length - 1].uuid).toBe('echo')
+  })
+
   it('answer tracks the in-flight ask until its result arrives', async () => {
     await useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w' })
     await useVisualAgentStore.getState().answer('a1', 'q', 'allow', { Q: 'A' })

@@ -111,3 +111,58 @@ export interface VisualAgentStartOptions {
    */
   fresh?: boolean
 }
+
+/**
+ * A file the person attached to a message (dropped, pasted or picked with the
+ * composer's paperclip). Carried to the main process as base64: it is saved
+ * under the agent's attachments folder and named in the message so Claude can
+ * read it, and a supported image also goes in as an image block so Claude
+ * sees it directly.
+ */
+export interface VisualAgentAttachment {
+  name: string
+  /** MIME type as the browser reported it; may be empty. */
+  type: string
+  size: number
+  /** Base64 file contents, no `data:` prefix. */
+  data: string
+}
+
+/** Largest file the composer accepts. */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+/** Most files one message can carry. */
+export const MAX_ATTACHMENTS = 10
+/** Image types Claude takes as image blocks; anything else is attached as a file only. */
+export const INLINE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
+/** The API's limit on one inline image; a larger one is attached as a file only. */
+export const MAX_INLINE_IMAGE_BYTES = 5 * 1024 * 1024
+
+export const isInlineImage = (attachment: Pick<VisualAgentAttachment, 'type' | 'size'>): boolean =>
+  (INLINE_IMAGE_TYPES as readonly string[]).includes(attachment.type) && attachment.size <= MAX_INLINE_IMAGE_BYTES
+
+const ATTACHMENT_LINE = /^\[Attached file: (.+)\]$/
+
+/** The line a message carries for one attached file (its saved path, or just its name). */
+export const attachmentLine = (path: string): string => `[Attached file: ${path}]`
+
+/** A message's text with its attached files' lines appended. */
+export const withAttachmentLines = (text: string, paths: readonly string[]): string => {
+  if (paths.length === 0) return text
+  const lines = paths.map(attachmentLine).join('\n')
+  return text.trim() ? `${text}\n\n${lines}` : lines
+}
+
+/**
+ * A user message split into what was typed and the files attached to it (the
+ * trailing `[Attached file: …]` lines). Inverse of `withAttachmentLines`.
+ */
+export const splitAttachmentLines = (text: string): { text: string; files: string[] } => {
+  const lines = text.split('\n')
+  let end = lines.length
+  while (end > 0 && lines[end - 1].trim() === '') end--
+  let start = end
+  while (start > 0 && ATTACHMENT_LINE.test(lines[start - 1].trim())) start--
+  if (start === end) return { text, files: [] }
+  const files = lines.slice(start, end).map((l) => l.trim().match(ATTACHMENT_LINE)![1])
+  return { text: lines.slice(0, start).join('\n').trimEnd(), files }
+}

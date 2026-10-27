@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import type { VisualAgentCommand, VisualAgentSnapshot } from '../../../shared/visual-agent'
+import type { VisualAgentAttachment, VisualAgentCommand, VisualAgentSnapshot } from '../../../shared/visual-agent'
 import { useVisualAgentStore, type VisualAgentUi } from '../../stores/visualAgentStore'
 import { AsideSplit } from './AsidePanel'
 import { VisualAgentPanel } from './VisualAgentPanel'
@@ -118,4 +118,45 @@ export const SubagentSheetOpen: Story = {
 
 export const Empty: Story = {
   args: { snapshot: emptySnapshotFixture('story-empty') },
+}
+
+/** A small gradient PNG standing in for a screenshot. */
+const SCREENSHOT_PNG = 'iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAIAAADbtmxLAAAAr0lEQVR42u3OCQoBARiAUTmmlJJS0qeUlJIi2ZosIdkiCU0iJCFLE5omsiXkMK4h/e8Ez2ThY+Vt42nn4eDu5Ori7Obk4ejF8KH7OQTYBdFCbMOso6ziLJPMFWYZpjkmBUYlhhUGNfoN1Ba9Np0ubZVWn+aQxpj6lOqM8oLSiuKGvEZuT1YnbaCcSF1I3Ig9iL6ImE0/RkISkpCEJCQhCUlIQhKSkIQkJCEJSei/Q1+5O1J/LxG+NQAAAABJRU5ErkJggg=='
+const ATTACHMENTS: VisualAgentAttachment[] = [
+  { name: 'login-bug.png', type: 'image/png', size: 232, data: SCREENSHOT_PNG },
+  { name: 'error-log.txt', type: 'text/plain', size: 1024, data: 'ZXJyb3I=' },
+]
+
+/** Files waiting in the composer (picked with +, pasted, or dropped), and an earlier message that carried some. */
+export const WithAttachments: Story = {
+  args: {
+    snapshot: {
+      ...emptySnapshotFixture('story-attachments'),
+      state: 'idle',
+      events: [
+        {
+          uuid: 'u-attach-1',
+          seq: 1,
+          threadId: 'main',
+          at: '2026-10-27T09:00:00.000Z',
+          kind: 'text',
+          role: 'user',
+          text:
+            'The sign-in button overlaps the footer on narrow screens — see the screenshot.\n\n' +
+            '[Attached file: /tmp/crucible-code-attachments/story/mh2k1x9a-0-narrow-viewport.png]\n' +
+            '[Attached file: /tmp/crucible-code-attachments/story/mh2k1x9a-1-design-spec.pdf]',
+        },
+        {
+          uuid: 'a-attach-1',
+          seq: 2,
+          threadId: 'main',
+          at: '2026-10-27T09:00:05.000Z',
+          kind: 'text',
+          role: 'assistant',
+          text: 'I can see it: the footer is `position: fixed` and the form has no bottom padding below 480px. The spec asks for 24px of clearance, so I\'ll add that to the auth layout.',
+        },
+      ],
+    },
+    ui: { draft: 'Here is the console output too', attachments: ATTACHMENTS },
+  },
 }

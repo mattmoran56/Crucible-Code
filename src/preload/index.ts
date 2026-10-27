@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
-import type { VisualAgentAskDecision, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
+import type { VisualAgentAskDecision, VisualAgentAttachment, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
 import type { AgentBrowserLinkEvent } from '../shared/agent-browser'
 import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, CloudSessionMode, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck } from '../shared/types'
 
@@ -502,8 +502,8 @@ const api = {
   visualAgent: {
     start: (opts: VisualAgentStartOptions): Promise<VisualAgentSnapshot> =>
       ipcRenderer.invoke(IPC.VISUAL_AGENT_START, opts),
-    send: (agentId: string, text: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.VISUAL_AGENT_SEND, agentId, text),
+    send: (agentId: string, text: string, attachments?: VisualAgentAttachment[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.VISUAL_AGENT_SEND, agentId, text, attachments),
     interrupt: (agentId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.VISUAL_AGENT_INTERRUPT, agentId),
     stop: (agentId: string): Promise<void> => ipcRenderer.invoke(IPC.VISUAL_AGENT_STOP, agentId),

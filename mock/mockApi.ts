@@ -161,7 +161,7 @@ function vaEvent(agentId: string, body: Record<string, unknown>, threadId = 'mai
 // Surface visual-agent starts and sent messages to Playwright, so e2e tests can
 // assert a startup prompt reached the Agent tab.
 const visualAgentStarts: VisualAgentStartOptions[] = []
-const visualAgentSends: Array<{ agentId: string; text: string }> = []
+const visualAgentSends: Array<{ agentId: string; text: string; attachments?: Array<{ name: string; type: string; size: number }> }> = []
 ;(window as any).__visualAgentStarts = visualAgentStarts
 ;(window as any).__visualAgentSends = visualAgentSends
 
@@ -483,9 +483,9 @@ export const mockApi = {
       }
       return { ...snap, events: [...snap.events], forks: [...snap.forks] }
     },
-    send: async (agentId: string, text: string) => {
-      visualAgentSends.push({ agentId, text })
-      vaReply(agentId, text)
+    send: async (agentId: string, text: string, attachments?: Array<{ name: string; type: string; size: number }>) => {
+      visualAgentSends.push({ agentId, text, ...(attachments ? { attachments: attachments.map(({ name, type, size }) => ({ name, type, size })) } : {}) })
+      vaReply(agentId, attachments?.length ? `${text}\n\n${attachments.map((a) => `[Attached file: /tmp/crucible-code-attachments/${agentId}/mock00-0-${a.name}]`).join('\n')}`.trim() : text)
     },
     interrupt: async (agentId: string) => {
       vaEmit(agentId, { t: 'event', event: vaEvent(agentId, { kind: 'note', source: 'interrupt', label: 'Interrupted', text: '[Request interrupted by user]' }) })

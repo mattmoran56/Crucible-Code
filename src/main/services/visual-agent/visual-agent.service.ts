@@ -13,6 +13,7 @@
  * in the UI.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -28,6 +29,7 @@ import {
   type VisualAgentRunState,
   type VisualAgentSnapshot,
   type VisualAgentStartOptions,
+  withAttachmentLines,
 } from '../../../shared/visual-agent'
 import type { HookType } from '../../../shared/types'
 import { emitToRenderer } from '../event-bus'
@@ -50,6 +52,7 @@ import {
   sideQuestionPreamble,
   userMessageFrame,
 } from './launch'
+import { attachmentsDir, checkAttachments, saveAttachments } from './attachments'
 import {
   assistantMessageIdIn,
   commandsIn,
@@ -397,7 +400,13 @@ function handleLine(held: LiveAgent, parsed: unknown, raw: string): void {
 /* --- process lifecycle ---------------------------------------------------- */
 
 function spawnMain(held: LiveAgent): void {
-  const argv = agentArgv({ model: held.model, resume: held.claudeSessionId })
+  const dir = attachmentsDir(held.opts.agentId)
+  try {
+    mkdirSync(dir, { recursive: true })
+  } catch (err) {
+    console.warn('[visual-agent] attachments folder failed:', (err as Error)?.message ?? err)
+  }
+  const argv = agentArgv({ model: held.model, resume: held.claudeSessionId, addDirs: [dir] })
   held.noise = []
   held.sawJson = false
   held.stopping = false
@@ -658,15 +667,18 @@ function requireAgent(agentId: string): LiveAgent {
   return held
 }
 
-export function sendVisualAgentMessage(agentId: string, text: string): void {
+export function sendVisualAgentMessage(agentId: string, text: string, attachments?: unknown): void {
   const held = requireAgent(agentId)
-  if (typeof text !== 'string' || !text.trim()) return
+  if (typeof text !== 'string') return
+  const files = checkAttachments(attachments)
+  if (!text.trim() && files.length === 0) return
+  const saved = saveAttachments(attachmentsDir(agentId), files)
   if (!isAlive(held.child)) {
     // Bring a finished/failed session back on the same conversation.
     prepWorktree(held.opts)
     spawnMain(held)
   }
-  writeOut(held, userMessageFrame(text))
+  writeOut(held, userMessageFrame(withAttachmentLines(text, saved.paths), saved.images))
   held.turnStartedAt = nowIso()
   const prev = held.state
   held.state = 'running'

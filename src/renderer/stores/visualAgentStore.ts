@@ -1,13 +1,14 @@
 import { create } from 'zustand'
 import type {
   VisualAgentAskDecision,
+  VisualAgentAttachment,
   VisualAgentEvent,
   VisualAgentFork,
   VisualAgentFrame,
   VisualAgentSnapshot,
   VisualAgentStartOptions,
 } from '../../shared/visual-agent'
-import { DEFAULT_VISUAL_AGENT_MODEL } from '../../shared/visual-agent'
+import { DEFAULT_VISUAL_AGENT_MODEL, splitAttachmentLines, withAttachmentLines } from '../../shared/visual-agent'
 
 /**
  * The preload surface this store drives. Declared locally (and read through a
@@ -16,7 +17,7 @@ import { DEFAULT_VISUAL_AGENT_MODEL } from '../../shared/visual-agent'
  */
 export interface VisualAgentApi {
   start(opts: VisualAgentStartOptions): Promise<VisualAgentSnapshot>
-  send(agentId: string, text: string): Promise<unknown> | void
+  send(agentId: string, text: string, attachments?: VisualAgentAttachment[]): Promise<unknown> | void
   interrupt(agentId: string): Promise<unknown> | void
   stop(agentId: string): Promise<unknown> | void
   answer(
@@ -67,6 +68,17 @@ export const localMessage = (text: string, n: number, at = new Date().toISOStrin
 })
 
 /**
+ * Whether an echoed user message is the one drawn locally. The local bubble
+ * names its attachments by file name while the echo carries their saved
+ * paths, so those lines compare by count.
+ */
+const sameMessage = (local: string, echo: string): boolean => {
+  const a = splitAttachmentLines(local)
+  const b = splitAttachmentLines(echo)
+  return a.text.trim() === b.text.trim() && a.files.length === b.files.length
+}
+
+/**
  * One event appended to a list: duplicates (same uuid) are dropped, and the
  * echo of a message drawn optimistically replaces the local bubble rather than
  * drawing a second one.
@@ -79,7 +91,7 @@ export const withEvent = (events: VisualAgentEvent[], event: VisualAgentEvent): 
         held.kind === 'text' &&
         held.role === 'user' &&
         held.uuid.startsWith(LOCAL_UUID) &&
-        held.text.trim() === event.text.trim(),
+        sameMessage(held.text, event.text),
     )
     if (at >= 0) {
       const next = events.slice()
@@ -184,6 +196,8 @@ export const isAskPending = (snap: VisualAgentSnapshot, askId: string): boolean 
 
 interface VisualAgentUi {
   draft: string
+  /** Files waiting in the composer to go with the next message. */
+  attachments: VisualAgentAttachment[]
   /** The fork whose aside panel is open, or null. */
   openForkId: string | null
   /** What is typed in each aside's chat bar, by fork id. */
@@ -194,7 +208,7 @@ interface VisualAgentUi {
   answering: string | null
 }
 
-const EMPTY_UI: VisualAgentUi = { draft: '', openForkId: null, asideDrafts: {}, subagentPath: [], answering: null }
+const EMPTY_UI: VisualAgentUi = { draft: '', attachments: [], openForkId: null, asideDrafts: {}, subagentPath: [], answering: null }
 
 interface VisualAgentStoreState {
   agents: Record<string, VisualAgentSnapshot>
@@ -215,7 +229,7 @@ interface VisualAgentStoreState {
   /** Replace an agent's snapshot outright (stories, tests). */
   seed: (snapshot: VisualAgentSnapshot, ui?: Partial<VisualAgentUi>) => void
 
-  send: (agentId: string, text: string) => Promise<void>
+  send: (agentId: string, text: string, attachments?: VisualAgentAttachment[]) => Promise<void>
   interrupt: (agentId: string) => Promise<void>
   stop: (agentId: string) => Promise<void>
   /** Stop and start again, resuming the same Claude conversation unless `fresh`. */
@@ -346,13 +360,13 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
       }))
     },
 
-    send: async (agentId, text) => {
-      const trimmed = text.trim()
-      if (!trimmed) return
-      const local = localMessage(text, ++localCount)
+    send: async (agentId, text, attachments = []) => {
+      if (!text.trim() && attachments.length === 0) return
+      const shown = withAttachmentLines(text, attachments.map((a) => a.name))
+      const local = localMessage(shown, ++localCount)
       patchSnap(agentId, (snap) => ({ ...snap, events: [...snap.events, local] }))
       try {
-        await api()?.send(agentId, text)
+        await (attachments.length > 0 ? api()?.send(agentId, text, attachments) : api()?.send(agentId, text))
       } catch (error) {
         fail(agentId, error)
       }
