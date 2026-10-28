@@ -99,6 +99,27 @@ export const Branch = ({ size = 12, className }: IconProps) => (
   </svg>
 )
 
+export const Plus = ({ size = 12, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M8 3v10M3 8h10" />
+  </svg>
+)
+
+export const FileIcon = ({ size = 12, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V6L9 2z" />
+    <path d="M9 2v4h4" />
+  </svg>
+)
+
+export const ImageIcon = ({ size = 12, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+    <circle cx="6" cy="6.5" r="1" />
+    <path d="M13.5 10.5L10.5 7.5 4 13" />
+  </svg>
+)
+
 /** A small spinner sized by font. Respects reduced motion via Tailwind's motion-reduce. */
 export const Spinner = ({ className }: { className?: string }) => (
   <span

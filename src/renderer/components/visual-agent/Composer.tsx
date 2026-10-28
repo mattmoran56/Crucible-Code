@@ -1,13 +1,15 @@
 // The composer: an autogrowing textarea with the slash menu sliding up above
 // it, the model pill and hints below it, and the panel's only filled button.
+// Files ride along as chips above the textarea: picked with the + button,
+// pasted, or dropped anywhere on the panel.
 
 import React, { forwardRef, useLayoutEffect, useRef, useState } from 'react'
-import type { VisualAgentModel } from '../../../shared/visual-agent'
+import { isInlineImage, type VisualAgentAttachment, type VisualAgentModel } from '../../../shared/visual-agent'
 import { cn } from '../../lib/cn'
 import { BUILTIN_COMMANDS, intentOf, type SlashCommand } from './commands'
 import { CommandMenu, useCommandMenu } from './CommandMenu'
 import { composerKeyAction } from './composerKeys'
-import { SendArrow, StopSquare } from './icons'
+import { Close, FileIcon, Plus, SendArrow, StopSquare } from './icons'
 import { ModelPicker, type ModelPickerHandle } from './ModelPicker'
 
 const MAX_HEIGHT = 220
@@ -26,11 +28,18 @@ export interface ComposerProps {
   model: string
   models?: readonly VisualAgentModel[]
   onModel: (model: string) => void
-  onSend: (text: string) => void
+  onSend: (text: string, attachments: VisualAgentAttachment[]) => void
   onFork: (question: string) => void
   onInterrupt: () => void
   onClear: () => void
   commands?: readonly SlashCommand[]
+  /** Files waiting to go with the next message. */
+  attachments?: readonly VisualAgentAttachment[]
+  /** Files picked or pasted: the owner reads them and adds them to `attachments`. */
+  onAddFiles?: (files: File[]) => void
+  onRemoveAttachment?: (index: number) => void
+  /** A notice from outside (a dropped file turned away); the composer's own wins. */
+  notice?: string | null
 }
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function Composer(
@@ -48,12 +57,19 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     onInterrupt,
     onClear,
     commands = BUILTIN_COMMANDS,
+    attachments = NO_ATTACHMENTS,
+    onAddFiles,
+    onRemoveAttachment,
+    notice: outsideNotice = null,
   },
   ref,
 ) {
   const box = useRef<HTMLTextAreaElement | null>(null)
+  const filePicker = useRef<HTMLInputElement>(null)
   const picker = useRef<ModelPickerHandle>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [ownNotice, setNotice] = useState<string | null>(null)
+  const notice = ownNotice ?? outsideNotice
+  const attaching = attachments.length > 0
 
   const setRefs = (element: HTMLTextAreaElement | null): void => {
     box.current = element
@@ -87,7 +103,9 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     setNotice(null)
     switch (intent.kind) {
       case 'empty':
-        return
+        if (attaching) onSend('', [...attachments])
+        else return
+        break
       case 'invalid':
         setNotice(intent.message)
         return
@@ -101,7 +119,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
         picker.current?.open()
         break
       case 'send':
-        onSend(intent.text)
+        onSend(intent.text, [...attachments])
         break
     }
     onDraft('')
@@ -140,7 +158,15 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     else if (action === 'interrupt') onInterrupt()
   }
 
-  const canSend = !disabled && draft.trim() !== ''
+  const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>): void => {
+    if (!onAddFiles) return
+    const files = Array.from(event.clipboardData?.files ?? [])
+    if (files.length === 0) return
+    event.preventDefault()
+    onAddFiles(files)
+  }
+
+  const canSend = !disabled && (draft.trim() !== '' || attaching)
 
   return (
     <div className="shrink-0 px-3! pb-2.5! pt-2!">
@@ -151,8 +177,46 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
             'flex items-end gap-2 rounded-xl border bg-bg-secondary px-3! py-2! transition-colors',
             'focus-within:border-accent/70',
             disabled ? 'border-border opacity-70' : 'border-border',
+            attaching && 'flex-wrap',
           )}
         >
+          {attaching ? (
+            <ul aria-label="Attachments" className="flex w-full flex-wrap gap-1.5 pb-1!">
+              {attachments.map((attachment, i) => (
+                <AttachmentChip
+                  key={`${i}-${attachment.name}`}
+                  attachment={attachment}
+                  onRemove={onRemoveAttachment ? () => onRemoveAttachment(i) : undefined}
+                />
+              ))}
+            </ul>
+          ) : null}
+          {onAddFiles ? (
+            <>
+              <button
+                type="button"
+                onClick={() => filePicker.current?.click()}
+                disabled={disabled}
+                aria-label="Attach files"
+                title="Attach images or files (or drop them here)"
+                className="mb-[1px]! grid size-7 shrink-0 place-items-center rounded-lg border border-border text-text-muted transition-colors hover:border-accent/60 hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40 disabled:hover:border-border disabled:hover:text-text-muted"
+              >
+                <Plus size={13} />
+              </button>
+              <input
+                ref={filePicker}
+                type="file"
+                multiple
+                hidden
+                data-testid="composer-file-input"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? [])
+                  e.target.value = ''
+                  if (files.length > 0) onAddFiles(files)
+                }}
+              />
+            </>
+          ) : null}
           <textarea
             ref={setRefs}
             rows={1}
@@ -163,6 +227,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
               onDraft(e.target.value)
             }}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             placeholder={placeholder ?? (running ? 'Queue a follow-up…' : 'Message Claude — / for commands')}
             aria-label="Message Claude"
             {...menu.field}
@@ -222,3 +287,38 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     </div>
   )
 })
+
+const NO_ATTACHMENTS: readonly VisualAgentAttachment[] = []
+
+/** One waiting file: a thumbnail for an image, an icon and name for anything else. */
+function AttachmentChip({ attachment, onRemove }: { attachment: VisualAgentAttachment; onRemove?: () => void }) {
+  const image = isInlineImage(attachment)
+  return (
+    <li className="flex max-w-[220px] items-center gap-1.5 rounded-lg border border-border bg-bg py-1! pl-1! pr-1.5! text-[11.5px] text-text">
+      {image ? (
+        <img
+          src={`data:${attachment.type};base64,${attachment.data}`}
+          alt=""
+          className="size-7 shrink-0 rounded object-cover"
+        />
+      ) : (
+        <span className="grid size-7 shrink-0 place-items-center rounded bg-bg-secondary text-text-muted">
+          <FileIcon size={13} />
+        </span>
+      )}
+      <span className="min-w-0 truncate" title={attachment.name}>
+        {attachment.name}
+      </span>
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${attachment.name}`}
+          className="grid size-4 shrink-0 place-items-center rounded text-text-muted hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <Close size={9} />
+        </button>
+      ) : null}
+    </li>
+  )
+}

@@ -108,4 +108,32 @@ describe('<VisualAgentPanel>', () => {
     fireEvent.scroll(log)
     expect(log.scrollTop).toBe(100)
   })
+
+  it('attaches files dropped anywhere on the panel and sends them with the message', async () => {
+    mount()
+    const log = screen.getByRole('log', { name: 'Conversation' })
+    const file = new File(['png'], 'shot.png', { type: 'image/png' })
+    const dataTransfer = { types: ['Files'], files: [file], dropEffect: 'none' }
+    fireEvent.dragEnter(log, { dataTransfer })
+    expect(screen.getByTestId('attachment-drop-zone')).toHaveTextContent('Drop images or files to attach')
+    fireEvent.drop(log, { dataTransfer })
+    expect(screen.queryByTestId('attachment-drop-zone')).toBeNull()
+    const chips = await screen.findByRole('list', { name: 'Attachments' })
+    expect(chips).toHaveTextContent('shot.png')
+
+    fireEvent.change(screen.getByLabelText('Message Claude'), { target: { value: 'what is this?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(api.send).toHaveBeenCalledWith('p1', 'what is this?', [
+      { name: 'shot.png', type: 'image/png', size: 3, data: btoa('png') },
+    ])
+    expect(screen.queryByRole('list', { name: 'Attachments' })).toBeNull()
+    expect(await screen.findByRole('list', { name: 'Attached files' })).toHaveTextContent('shot.png')
+  })
+
+  it('ignores drags that carry no files', () => {
+    mount()
+    fireEvent.dragEnter(screen.getByRole('log', { name: 'Conversation' }), { dataTransfer: { types: ['text/plain'], files: [] } })
+    expect(screen.queryByTestId('attachment-drop-zone')).toBeNull()
+  })
 })
+

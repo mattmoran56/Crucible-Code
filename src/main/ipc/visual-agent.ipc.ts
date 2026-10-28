@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { handle } from './handle'
 import { IPC } from '../../shared/constants'
-import type { VisualAgentAskDecision, VisualAgentStartOptions } from '../../shared/visual-agent'
+import type { VisualAgentAskDecision, VisualAgentAttachment, VisualAgentStartOptions } from '../../shared/visual-agent'
 import {
   answerVisualAgent,
   forkVisualAgent,
@@ -20,8 +20,10 @@ export function registerVisualAgentHandlers(window: BrowserWindow): void {
   setVisualAgentWindow(window)
 
   handle(IPC.VISUAL_AGENT_START, async (_e, opts: VisualAgentStartOptions) => startVisualAgent(opts))
-  handle(IPC.VISUAL_AGENT_SEND, async (_e, agentId: string, text: string) =>
-    sendVisualAgentMessage(agentId, text)
+  handle(
+    IPC.VISUAL_AGENT_SEND,
+    async (_e, agentId: string, text: string, attachments?: VisualAgentAttachment[]) =>
+      sendVisualAgentMessage(agentId, text, attachments)
   )
   handle(IPC.VISUAL_AGENT_INTERRUPT, async (_e, agentId: string) => interruptVisualAgent(agentId))
   handle(IPC.VISUAL_AGENT_STOP, async (_e, agentId: string) => stopVisualAgent(agentId))

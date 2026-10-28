@@ -88,7 +88,7 @@ describe('<Composer>', () => {
     render(<Harness initial="hello" onSend={onSend} />)
     const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
     fireEvent.keyDown(box, { key: 'Enter' })
-    expect(onSend).toHaveBeenCalledWith('hello')
+    expect(onSend).toHaveBeenCalledWith('hello', [])
     expect(box.value).toBe('')
   })
 
@@ -137,7 +137,7 @@ describe('<Composer>', () => {
     render(<Harness initial="/rev" onSend={onSend} />)
     const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
     fireEvent.keyDown(box, { key: 'Enter' })
-    expect(onSend).toHaveBeenCalledWith('/review')
+    expect(onSend).toHaveBeenCalledWith('/review', [])
     expect(box.value).toBe('')
   })
 
@@ -171,5 +171,54 @@ describe('<Composer>', () => {
   it('locks the model picker while a turn runs', () => {
     render(<Harness running />)
     expect(screen.getByRole('button', { name: /Opus 5.5/ })).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('sends attachments with the text, or on their own', () => {
+    const onSend = vi.fn()
+    const shot = { name: 'shot.png', type: 'image/png', size: 3, data: 'cG5n' }
+    const { unmount } = render(<Harness initial="see this" onSend={onSend} attachments={[shot]} onAddFiles={vi.fn()} />)
+    expect(screen.getByRole('list', { name: 'Attachments' })).toHaveTextContent('shot.png')
+    fireEvent.keyDown(screen.getByLabelText('Message Claude'), { key: 'Enter' })
+    expect(onSend).toHaveBeenCalledWith('see this', [shot])
+    unmount()
+    onSend.mockClear()
+    render(<Harness onSend={onSend} attachments={[shot]} onAddFiles={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(onSend).toHaveBeenCalledWith('', [shot])
+  })
+
+  it('the + button picks files, and a chip can be removed', () => {
+    const onAddFiles = vi.fn()
+    const onRemoveAttachment = vi.fn()
+    render(
+      <Harness
+        attachments={[{ name: 'notes.md', type: 'text/markdown', size: 2, data: 'aGk=' }]}
+        onAddFiles={onAddFiles}
+        onRemoveAttachment={onRemoveAttachment}
+      />,
+    )
+    const input = screen.getByTestId('composer-file-input') as HTMLInputElement
+    const click = vi.spyOn(input, 'click')
+    fireEvent.click(screen.getByRole('button', { name: 'Attach files' }))
+    expect(click).toHaveBeenCalled()
+    const file = new File(['x'], 'a.txt', { type: 'text/plain' })
+    fireEvent.change(input, { target: { files: [file] } })
+    expect(onAddFiles).toHaveBeenCalledWith([file])
+    fireEvent.click(screen.getByRole('button', { name: 'Remove notes.md' }))
+    expect(onRemoveAttachment).toHaveBeenCalledWith(0)
+  })
+
+  it('pasting an image adds it as an attachment', () => {
+    const onAddFiles = vi.fn()
+    render(<Harness onAddFiles={onAddFiles} />)
+    const file = new File(['png'], 'image.png', { type: 'image/png' })
+    fireEvent.paste(screen.getByLabelText('Message Claude'), { clipboardData: { files: [file] } })
+    expect(onAddFiles).toHaveBeenCalledWith([file])
+  })
+
+  it('has no + button when the owner takes no files', () => {
+    render(<Harness />)
+    expect(screen.queryByRole('button', { name: 'Attach files' })).toBeNull()
   })
 })

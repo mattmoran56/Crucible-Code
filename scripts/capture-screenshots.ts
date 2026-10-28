@@ -395,6 +395,12 @@ const targets: ScreenshotTarget[] = [
     delay: 1500,
   },
   {
+    name: 'visual-agent-attachments',
+    storyId: 'visual-agent-visualagentpanel--with-attachments',
+    viewport: { width: 900, height: 600 },
+    delay: 1500,
+  },
+  {
     name: 'visual-agent-add-tab',
     storyId: 'app-full-layout--visual-agent',
     delay: 2500,

@@ -11,6 +11,7 @@ import { AUTO_PERMISSION_MODE_ARGS } from '../terminal.service'
 import { DEFAULT_VISUAL_AGENT_MODEL } from '../../../shared/visual-agent'
 import type { VisualAgentAskDecision } from '../../../shared/visual-agent'
 import type { PermissionRequest } from './normalise'
+import type { ImageBlock } from './attachments'
 
 export const MODEL_PATTERN = /^claude-[a-z0-9-]+(\[1m\])?$/
 
@@ -33,6 +34,8 @@ const STREAM_ARGS = [
 export interface AgentArgvOptions {
   model: string
   resume?: string | null
+  /** Extra directories Claude may read (the agent's attachments folder). */
+  addDirs?: readonly string[]
 }
 
 /**
@@ -54,6 +57,7 @@ export const agentArgv = (opts: AgentArgvOptions): string[] => {
     resolveModel(opts.model),
   ]
   if (opts.resume) argv.push('--resume', opts.resume)
+  for (const dir of opts.addDirs ?? []) argv.push('--add-dir', dir)
   return argv
 }
 
@@ -109,10 +113,10 @@ export const forkFollowUpArgv = (opts: ForkFollowUpArgvOptions): string[] => [
 const line = (value: unknown): string => `${JSON.stringify(value)}\n`
 
 /** One user message in the shape `--input-format stream-json` expects. */
-export const userMessageFrame = (text: string): string =>
+export const userMessageFrame = (text: string, images: readonly ImageBlock[] = []): string =>
   line({
     type: 'user',
-    message: { role: 'user', content: [{ type: 'text', text }] },
+    message: { role: 'user', content: [...images, { type: 'text', text }] },
     parent_tool_use_id: null,
   })
 
