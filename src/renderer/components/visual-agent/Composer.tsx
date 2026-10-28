@@ -1,7 +1,8 @@
 // The composer: an autogrowing textarea with the slash menu sliding up above
 // it, the model pill and hints below it, and the panel's only filled button.
 // Files ride along as chips above the textarea: picked with the + button,
-// pasted, or dropped anywhere on the panel.
+// pasted, or dropped anywhere on the panel. In dictation mode, text pasted
+// into the box (how dictation apps hand over what you said) sends at once.
 
 import React, { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import { isInlineImage, type VisualAgentAttachment, type VisualAgentModel } from '../../../shared/visual-agent'
@@ -9,7 +10,7 @@ import { cn } from '../../lib/cn'
 import { BUILTIN_COMMANDS, intentOf, type SlashCommand } from './commands'
 import { CommandMenu, useCommandMenu } from './CommandMenu'
 import { composerKeyAction } from './composerKeys'
-import { Close, FileIcon, Plus, SendArrow, StopSquare } from './icons'
+import { Close, FileIcon, Mic, Plus, SendArrow, StopSquare } from './icons'
 import { ModelPicker, type ModelPickerHandle } from './ModelPicker'
 
 const MAX_HEIGHT = 220
@@ -40,6 +41,10 @@ export interface ComposerProps {
   onRemoveAttachment?: (index: number) => void
   /** A notice from outside (a dropped file turned away); the composer's own wins. */
   notice?: string | null
+  /** Dictation mode: pasted text is sent straight away, as if Enter were pressed. */
+  dictation?: boolean
+  /** Shows the dictation toggle beside the model pill. */
+  onDictation?: (enabled: boolean) => void
 }
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function Composer(
@@ -61,6 +66,8 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     onAddFiles,
     onRemoveAttachment,
     notice: outsideNotice = null,
+    dictation = false,
+    onDictation,
   },
   ref,
 ) {
@@ -68,6 +75,8 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
   const filePicker = useRef<HTMLInputElement>(null)
   const picker = useRef<ModelPickerHandle>(null)
   const [ownNotice, setNotice] = useState<string | null>(null)
+  // Set by a text paste so the change it causes can send in dictation mode.
+  const pasted = useRef(false)
   const notice = ownNotice ?? outsideNotice
   const attaching = attachments.length > 0
 
@@ -159,9 +168,17 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
   }
 
   const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>): void => {
-    if (!onAddFiles) return
     const files = Array.from(event.clipboardData?.files ?? [])
-    if (files.length === 0) return
+    if (files.length === 0 || !onAddFiles) {
+      if (dictation && event.clipboardData?.getData('text').trim()) {
+        pasted.current = true
+        // The input event follows in the same task; a paste that changed nothing must not linger.
+        setTimeout(() => {
+          pasted.current = false
+        })
+      }
+      return
+    }
     event.preventDefault()
     onAddFiles(files)
   }
@@ -224,6 +241,11 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
             disabled={disabled}
             onChange={(e) => {
               setNotice(null)
+              if (pasted.current) {
+                pasted.current = false
+                submit(e.target.value)
+                return
+              }
               onDraft(e.target.value)
             }}
             onKeyDown={onKeyDown}
@@ -263,6 +285,30 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
           disabled={running || disabled}
           disabledReason={running ? 'The model can be changed between turns' : 'Session is not running'}
         />
+        {onDictation ? (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={dictation}
+            aria-label="Dictation mode"
+            title={
+              dictation
+                ? 'Dictation mode on: pasted text sends straight away. Click to turn off'
+                : 'Dictation mode off: pasted text waits for Enter. Click to turn on'
+            }
+            onClick={() => onDictation(!dictation)}
+            className={cn(
+              'inline-flex shrink-0 items-center gap-1 rounded-full border px-2! py-[2px]! text-[11px] transition-colors',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+              dictation
+                ? 'border-accent/60 bg-accent/15 text-text'
+                : 'border-border text-text-muted hover:border-accent/50 hover:text-text',
+            )}
+          >
+            <Mic size={10} className={dictation ? 'text-accent' : undefined} />
+            <span className="font-medium">Dictation</span>
+          </button>
+        ) : null}
         {notice ? (
           <span role="status" className="text-warning">
             {notice}

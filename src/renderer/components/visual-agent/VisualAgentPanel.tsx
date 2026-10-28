@@ -15,6 +15,7 @@ import type {
   VisualAgentStartOptions,
 } from '../../../shared/visual-agent'
 import { cn } from '../../lib/cn'
+import { useDictationStore } from '../../stores/dictationStore'
 import {
   EMPTY_VISUAL_AGENT_UI,
   emptySnapshot,
@@ -205,6 +206,8 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
   const stored = useVisualAgentStore((s) => s.agents[agentId])
   const ui = useVisualAgentStore((s) => s.ui[agentId]) ?? EMPTY_VISUAL_AGENT_UI
   const error = useVisualAgentStore((s) => s.errors[agentId] ?? null)
+  const dictation = useDictationStore((s) => s.enabled)
+  const setDictation = useDictationStore((s) => s.setEnabled)
   const actions = useVisualAgentStore.getState()
 
   const snap = useMemo(
@@ -492,6 +495,8 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
           onInterrupt={() => void actions.interrupt(agentId)}
           onClear={() => void actions.restart(agentId, true)}
           commands={commands}
+          dictation={dictation}
+          onDictation={setDictation}
         />
       </div>
 

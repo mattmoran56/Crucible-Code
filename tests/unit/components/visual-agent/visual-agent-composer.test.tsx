@@ -222,3 +222,71 @@ describe('<Composer>', () => {
     expect(screen.queryByRole('button', { name: 'Attach files' })).toBeNull()
   })
 })
+
+describe('<Composer> dictation mode', () => {
+  const pasteText = (box: HTMLElement, text: string, value: string): void => {
+    fireEvent.paste(box, { clipboardData: { files: [], getData: () => text } })
+    fireEvent.change(box, { target: { value } })
+  }
+
+  it('sends pasted text straight away when on', () => {
+    const onSend = vi.fn()
+    render(<Harness dictation onDictation={vi.fn()} onSend={onSend} onAddFiles={vi.fn()} />)
+    const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
+    pasteText(box, 'fix the build', 'fix the build')
+    expect(onSend).toHaveBeenCalledWith('fix the build', [])
+    expect(box.value).toBe('')
+  })
+
+  it('sends the whole draft, including what was typed before the paste', () => {
+    const onSend = vi.fn()
+    render(<Harness initial="please " dictation onSend={onSend} />)
+    pasteText(screen.getByLabelText('Message Claude'), 'run the tests', 'please run the tests')
+    expect(onSend).toHaveBeenCalledWith('please run the tests', [])
+  })
+
+  it('leaves pasted text in the box when off', () => {
+    const onSend = vi.fn()
+    render(<Harness dictation={false} onDictation={vi.fn()} onSend={onSend} />)
+    const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
+    pasteText(box, 'fix the build', 'fix the build')
+    expect(onSend).not.toHaveBeenCalled()
+    expect(box.value).toBe('fix the build')
+  })
+
+  it('only sends for a paste: typing still waits for Enter', () => {
+    const onSend = vi.fn()
+    render(<Harness dictation onSend={onSend} />)
+    const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: 'h' } })
+    expect(onSend).not.toHaveBeenCalled()
+    expect(box.value).toBe('h')
+  })
+
+  it('a pasted image is still just attached', () => {
+    const onSend = vi.fn()
+    const onAddFiles = vi.fn()
+    render(<Harness dictation onSend={onSend} onAddFiles={onAddFiles} />)
+    const file = new File(['png'], 'image.png', { type: 'image/png' })
+    fireEvent.paste(screen.getByLabelText('Message Claude'), { clipboardData: { files: [file], getData: () => '' } })
+    expect(onAddFiles).toHaveBeenCalledWith([file])
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('the toggle shows its state and flips it', () => {
+    const onDictation = vi.fn()
+    const { rerender } = render(<Harness dictation onDictation={onDictation} />)
+    const toggle = screen.getByRole('switch', { name: 'Dictation mode' })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(toggle)
+    expect(onDictation).toHaveBeenCalledWith(false)
+    rerender(<Harness dictation={false} onDictation={onDictation} />)
+    fireEvent.click(screen.getByRole('switch', { name: 'Dictation mode' }))
+    expect(onDictation).toHaveBeenLastCalledWith(true)
+  })
+
+  it('has no toggle when the owner does not offer one', () => {
+    render(<Harness />)
+    expect(screen.queryByRole('switch', { name: 'Dictation mode' })).toBeNull()
+  })
+})
