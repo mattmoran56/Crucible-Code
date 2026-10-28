@@ -14,6 +14,7 @@ import type {
   VisualAgentSnapshot,
   VisualAgentStartOptions,
 } from '../../../shared/visual-agent'
+import { subagentRelayText } from '../../../shared/visual-agent'
 import { cn } from '../../lib/cn'
 import { useDictationStore } from '../../stores/dictationStore'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -31,7 +32,7 @@ import { Close, Power, Restart, Spinner, StopSquare } from './icons'
 import { modelLabel } from './ModelPicker'
 import { Rows, StreamingText, type RowsContext } from './parts'
 import { SubagentSheet, SubagentTray, useChips } from './SubagentTray'
-import { asideOf, buildTranscript, clockOf, costOf, tokensOf } from './transcript'
+import { asideOf, buildTranscript, clockOf, costOf, tokensOf, type Thread } from './transcript'
 import './visual-agent.css'
 
 export interface VisualAgentPanelProps {
@@ -332,6 +333,12 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
     void useSessionStore.getState().nameFromFirstMessage(startOptions.sessionId, text)
   }
 
+  // Goes through the main agent: `claude -p` has no way to write into a sub-agent.
+  const messageSubagent = (thread: Thread, text: string): void => {
+    if (!thread.agentId) return
+    void actions.send(agentId, subagentRelayText({ toolUseId: thread.id, agentId: thread.agentId, name: thread.brief || thread.tool }, text))
+  }
+
   const [attachNotice, setAttachNotice] = useState<string | null>(null)
   const addFiles = useCallback(
     async (files: File[]): Promise<void> => {
@@ -461,6 +468,8 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
           threads={transcript.threads}
           ctx={{ pendingAsks, answering: ui.answering, onDecide: ctx.onDecide }}
           onPath={(next) => setUi({ subagentPath: next })}
+          onMessage={messageSubagent}
+          canMessage={!ended && snap.state !== 'starting'}
           onClose={() => {
             const top = ui.subagentPath[0]
             setUi({ subagentPath: [] })

@@ -1,11 +1,12 @@
 // Sub-agents live in a tray under the conversation, one pill each, and open in
 // a sheet that slides in from the right — never spliced into the thread that
 // started them. Nested sub-agents are reached through the sheet's own tray,
-// with a breadcrumb back up.
+// with a breadcrumb back up. The sheet ends in a message box: what is typed
+// there goes to the main agent, which passes it on with SendMessage.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn'
-import { ChevronLeft, Close, Spinner } from './icons'
+import { ChevronLeft, Close, SendArrow, Spinner } from './icons'
 import { Rows, StatusDot, THREAD_STATUS, type RowsContext } from './parts'
 import type { Thread } from './transcript'
 
@@ -118,6 +119,8 @@ export function SubagentSheet({
   ctx,
   onPath,
   onClose,
+  onMessage,
+  canMessage = true,
 }: {
   open: boolean
   path: string[]
@@ -126,6 +129,10 @@ export function SubagentSheet({
   ctx: Omit<RowsContext, 'threads' | 'onFocusChip'>
   onPath: (next: string[]) => void
   onClose: () => void
+  /** Sends a message to the open sub-agent. No message box without it. */
+  onMessage?: (thread: Thread, text: string) => void
+  /** The session can take a message now (not starting, not ended). */
+  canMessage?: boolean
 }) {
   const frame = useRef<HTMLDivElement>(null)
   const shown = useLatched(open && path.length ? path : null)
@@ -236,8 +243,80 @@ export function SubagentSheet({
             onOpen={(id) => onPath([...shown, id])}
             register={register}
           />
+          {onMessage ? (
+            <SubagentMessageBox
+              key={thread.id}
+              thread={thread}
+              disabled={!canMessage}
+              onSend={(text) => onMessage(thread, text)}
+            />
+          ) : null}
         </>
       ) : null}
+    </div>
+  )
+}
+
+/** The sheet's message box. Remounted per sub-agent, so a draft stays with the one it was written to. */
+function SubagentMessageBox({
+  thread,
+  disabled,
+  onSend,
+}: {
+  thread: Thread
+  disabled: boolean
+  onSend: (text: string) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const name = thread.brief || thread.tool || 'sub-agent'
+  // SendMessage needs the CLI's id for it, which comes with its start.
+  const waiting = !thread.agentId
+  const blocked = disabled || waiting
+  const send = (): void => {
+    const text = draft.trim()
+    if (blocked || !text) return
+    onSend(text)
+    setDraft('')
+  }
+  return (
+    <div className="shrink-0 border-t border-border p-2!">
+      <div className="flex items-end gap-2 rounded-lg border border-border bg-bg px-2.5! py-1.5! focus-within:border-accent/60">
+        <textarea
+          rows={1}
+          value={draft}
+          disabled={disabled}
+          aria-label={`Message ${name}`}
+          placeholder={
+            disabled
+              ? 'The session is not running'
+              : waiting
+                ? 'Waiting for this sub-agent to start…'
+                : thread.status === 'running'
+                  ? `Message ${name}…`
+                  : `Message ${name} — it picks up where it left off…`
+          }
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              send()
+            }
+          }}
+          className="max-h-40 min-h-[22px] flex-1 resize-none bg-transparent text-[12.5px] leading-relaxed text-text outline-none placeholder:text-text-muted disabled:opacity-60"
+        />
+        <button
+          type="button"
+          onClick={send}
+          disabled={blocked || !draft.trim()}
+          aria-label={`Send to ${name}`}
+          className="grid size-6 shrink-0 place-items-center rounded-md bg-accent text-bg transition-colors hover:bg-accent-hover disabled:opacity-40 disabled:hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <SendArrow size={11} />
+        </button>
+      </div>
+      <p className="mt-1! px-1! text-[10.5px] text-text-muted">
+        Claude passes this on to the sub-agent · Enter to send · Shift+Enter for a new line
+      </p>
     </div>
   )
 }
