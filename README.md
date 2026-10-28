@@ -314,6 +314,9 @@ The agent interface: a chat UI for Claude Code, driven over `claude -p --input-f
 
   ![Attachments in the composer](docs/screenshots/visual-agent-attachments.png)
 - **Model picker** — Choose Opus, Fable, Sonnet or Haiku below the composer (or with `/model`); switching mid-conversation keeps the conversation
+- **Dictation mode** — The **Dictation** toggle beside the model picker (on by default) sends text pasted into the composer straight away, as if you had pressed Enter, so a dictation app that pastes what you said sends it hands-free. It sends the whole draft, including anything typed before the paste; pasted images are still just attached. Turn it off to have pasted text wait for Enter or **Send**. The setting applies to every agent and is remembered across restarts
+
+  ![Dictation toggle beside the model picker](docs/screenshots/visual-agent-dictation.png)
 - **Tool cards** — Each tool call is a card: edits render as syntax-highlighted diffs, Bash shows the command and its output, reads and searches collapse into a one-line summary you can expand
 - **Permission and question cards** — When Claude needs approval (or asks a question with options) the card appears inline with Allow / Always allow / Deny, and the status bar switches to **Needs you**
 - **Sub-agents** — Tasks Claude spawns appear in a tray above the composer; click one to open its full thread in a sheet that slides in from the right
