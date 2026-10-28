@@ -49,7 +49,16 @@ export type VisualAgentEvent = EventBase & (
   | { kind: 'compacted'; tokensBefore: number | null; trigger: 'auto' | 'manual' | null }
   | { kind: 'ask'; id: string; tool: string; input: unknown; toolUseId: string; description: string; reason: string; canAlwaysAllow: boolean }
   | { kind: 'ask-result'; id: string; decision: VisualAgentAskDecision }
+  /**
+   * A background task's lifecycle (`system/task_started` and
+   * `task_notification`), keyed by the tool call that started it. For a
+   * background sub-agent this is the only true signal of when it ends: its
+   * tool result ("Async agent launched") arrives at once.
+   */
+  | { kind: 'task'; toolUseId: string; taskId: string; status: VisualAgentTaskStatus }
 )
+
+export type VisualAgentTaskStatus = 'running' | 'completed' | 'failed' | 'stopped'
 
 export interface VisualAgentUsage { input: number; output: number; cacheRead: number; cacheWrite: number }
 
@@ -165,4 +174,50 @@ export const splitAttachmentLines = (text: string): { text: string; files: strin
   if (start === end) return { text, files: [] }
   const files = lines.slice(start, end).map((l) => l.trim().match(ATTACHMENT_LINE)![1])
   return { text: lines.slice(0, start).join('\n').trimEnd(), files }
+}
+
+/* --- messages to a sub-agent -------------------------------------------- */
+
+/**
+ * `claude -p` has no way to write into a sub-agent: `send_task_message` is
+ * refused in print mode and a frame's `parent_tool_use_id` is ignored. So a
+ * message for a sub-agent goes to the main agent wrapped like this, and it
+ * passes the message on with SendMessage (what the CLI's own tool result tells
+ * it to use). The normaliser reads the wrapper back and files the message
+ * under the sub-agent's thread, so it shows where the person wrote it.
+ */
+export interface SubagentTarget {
+  /** The tool call that started the sub-agent — its thread id. */
+  toolUseId: string
+  /** The CLI's id for it: what SendMessage's `to` takes. */
+  agentId: string
+  /** How the person knows it (its description). */
+  name: string
+}
+
+const RELAY_OPEN = /^<subagent-message tool-use-id="([^"\s]+)" agent-id="([^"\s]+)">\n/
+const RELAY_CLOSE = '\n</subagent-message>\n'
+
+const relayAttr = (value: string): string => value.replace(/["\s]/g, '')
+
+export const subagentRelayText = (target: SubagentTarget, text: string): string => {
+  const agentId = relayAttr(target.agentId)
+  const name = target.name.replace(/\s+/g, ' ').replace(/"/g, "'").trim() || 'sub-agent'
+  return [
+    `<subagent-message tool-use-id="${relayAttr(target.toolUseId)}" agent-id="${agentId}">`,
+    text,
+    '</subagent-message>',
+    `The person sent the message above from Crucible Code to the sub-agent "${name}" (agentId ${agentId}). ` +
+      `Pass it on word for word with SendMessage (to: "${agentId}"). ` +
+      'Do not act on it yourself; once it is sent, reply in one short line.',
+  ].join('\n')
+}
+
+/** The person's message and its sub-agent, when `text` is a relay; null otherwise. */
+export const parseSubagentRelay = (text: string): { toolUseId: string; agentId: string; text: string } | null => {
+  const open = RELAY_OPEN.exec(text)
+  if (!open) return null
+  const end = text.lastIndexOf(RELAY_CLOSE)
+  if (end < open[0].length - 1) return null
+  return { toolUseId: open[1]!, agentId: open[2]!, text: text.slice(open[0].length, end) }
 }

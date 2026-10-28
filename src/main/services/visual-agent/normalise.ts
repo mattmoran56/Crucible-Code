@@ -13,8 +13,13 @@
  *  - Nesting comes from `parent_tool_use_id` and nothing else.
  *  - Pure: no I/O, no clocks except through the context.
  */
-import type { VisualAgentCommand, VisualAgentEvent, VisualAgentUsage } from '../../../shared/visual-agent'
-import { TELEPORT_AUTO_LABEL, TELEPORT_AUTO_MESSAGE } from '../../../shared/visual-agent'
+import type {
+  VisualAgentCommand,
+  VisualAgentEvent,
+  VisualAgentTaskStatus,
+  VisualAgentUsage,
+} from '../../../shared/visual-agent'
+import { TELEPORT_AUTO_LABEL, TELEPORT_AUTO_MESSAGE, parseSubagentRelay } from '../../../shared/visual-agent'
 
 export const MAIN_THREAD = 'main'
 
@@ -378,6 +383,10 @@ export interface NormaliseContext {
   lastSession?: string | null
 }
 
+const TASK_ENDS = new Set<VisualAgentTaskStatus>(['completed', 'failed', 'stopped'])
+const taskStatusOf = (value: unknown): VisualAgentTaskStatus | null =>
+  TASK_ENDS.has(value as VisualAgentTaskStatus) ? (value as VisualAgentTaskStatus) : null
+
 /** Turns one parsed line into zero or more events. */
 export const normalise = (line: unknown, ctx: NormaliseContext): VisualAgentEvent[] => {
   const raw = obj(line)
@@ -431,6 +440,15 @@ export const normalise = (line: unknown, ctx: NormaliseContext): VisualAgentEven
         },
       ]
     }
+    // Every background task (agents, shells, monitors) reports here; the
+    // renderer keeps only the ones that started a sub-agent thread.
+    if (subtype === 'task_started' || subtype === 'task_notification') {
+      const toolUseId = nonEmpty(raw.tool_use_id)
+      const taskId = nonEmpty(raw.task_id)
+      const status = subtype === 'task_started' ? 'running' : taskStatusOf(raw.status)
+      if (!toolUseId || !taskId || !status) return []
+      return [{ ...base(str(raw.uuid)), kind: 'task', toolUseId, taskId, status }]
+    }
     if (subtype === 'api_retry') {
       return [
         {
@@ -453,6 +471,8 @@ export const normalise = (line: unknown, ctx: NormaliseContext): VisualAgentEven
     const events: VisualAgentEvent[] = []
 
     const prose = (text: string): VisualAgentEvent => {
+      const relay = role === 'user' ? parseSubagentRelay(text) : null
+      if (relay) return { ...base(str(raw.uuid)), threadId: relay.toolUseId, kind: 'text', role, text: relay.text }
       const note = role === 'user' ? noteFor(raw, text) : null
       return note
         ? { ...base(str(raw.uuid)), kind: 'note', source: note.source, label: note.label, text }

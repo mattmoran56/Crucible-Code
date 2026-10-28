@@ -29,6 +29,7 @@ export const THREAD_STATUS: Record<ThreadStatus, { dot: string; text: string; wo
   running: { dot: 'bg-accent', text: 'text-accent', word: 'working' },
   done: { dot: 'bg-success', text: 'text-success', word: 'finished' },
   failed: { dot: 'bg-danger', text: 'text-danger', word: 'failed' },
+  stopped: { dot: 'bg-text-muted', text: 'text-text-muted', word: 'stopped' },
 }
 
 export function StatusDot({ status, className }: { status: ThreadStatus; className?: string }) {

@@ -72,6 +72,58 @@ describe('buildTranscript', () => {
     expect(t.threads.get('agent')!.status).toBe('failed')
   })
 
+  it('keeps a background sub-agent running past its "launched" result until its task ends', () => {
+    const launched = (id: string) =>
+      ev({ kind: 'tool-result', id, ok: true, text: 'Async agent launched successfully.\nagentId: a63 (internal ID)' })
+    const task = (status: 'running' | 'completed' | 'failed' | 'stopped') =>
+      ev({ kind: 'task', toolUseId: 'bg', taskId: 'a63', status })
+    const spawn = tool('bg', 'Agent', MAIN_THREAD, true)
+
+    let t = buildTranscript([spawn, task('running'), launched('bg'), say('working', 'bg')])
+    expect(t.threads.get('bg')!.status).toBe('running')
+    expect(t.threads.get('bg')!.agentId).toBe('a63')
+    // Task events are bookkeeping, not rows.
+    expect(t.main.rows).toHaveLength(1)
+
+    t = buildTranscript([spawn, task('running'), launched('bg'), task('completed')])
+    expect(t.threads.get('bg')!.status).toBe('done')
+    // It can be resumed (by a message, or its own background work) and end again.
+    t = buildTranscript([spawn, launched('bg'), task('completed'), task('running')])
+    expect(t.threads.get('bg')!.status).toBe('running')
+    expect(buildTranscript([spawn, launched('bg'), task('failed')]).threads.get('bg')!.status).toBe('failed')
+    expect(buildTranscript([spawn, launched('bg'), task('stopped')]).threads.get('bg')!.status).toBe('stopped')
+  })
+
+  it('treats a "launched" result with no task events as still running, and reads the agent id from it', () => {
+    const t = buildTranscript([
+      tool('bg', 'Agent', MAIN_THREAD, true),
+      ev({ kind: 'tool-result', id: 'bg', ok: true, text: 'Async agent launched successfully.\nagentId: a63 (internal ID)' }),
+    ])
+    expect(t.threads.get('bg')!.status).toBe('running')
+    expect(t.threads.get('bg')!.agentId).toBe('a63')
+  })
+
+  it('reads a sub-agent ending from a <task-notification> note (Claude Code transcripts)', () => {
+    const t = buildTranscript([
+      tool('bg', 'Agent', MAIN_THREAD, true),
+      ev({ kind: 'tool-result', id: 'bg', ok: true, text: 'Async agent launched successfully.' }),
+      ev({
+        kind: 'note',
+        source: 'meta',
+        label: 'Background task update',
+        text: '<task-notification>\n<task-id>a63</task-id>\n<tool-use-id>bg</tool-use-id>\n<status>completed</status>\n</task-notification>',
+      }),
+    ])
+    expect(t.threads.get('bg')!.status).toBe('done')
+    expect(t.threads.get('bg')!.agentId).toBe('a63')
+  })
+
+  it('ignores task events for tool calls that are not sub-agents', () => {
+    const t = buildTranscript([tool('sh', 'Bash'), ev({ kind: 'task', toolUseId: 'sh', taskId: 'b1', status: 'running' }), result('sh')])
+    expect(t.threads.has('sh')).toBe(false)
+    expect(t.main.rows[0].result?.ok).toBe(true)
+  })
+
   it('nests sub-agents to any depth', () => {
     const t = buildTranscript([
       tool('outer', 'Task', MAIN_THREAD, true),
