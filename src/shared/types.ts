@@ -266,6 +266,12 @@ export interface Session {
    * the Code workspace. `branchName` is empty; deleting it never touches git.
    */
   repoRoot?: boolean
+  /**
+   * Still on its placeholder name (`agent-N`): the first message sent to it
+   * names it (a quick Haiku turn). Cleared once that has run or the user
+   * renames the session themselves.
+   */
+  namePending?: boolean
 }
 
 export interface Commit {

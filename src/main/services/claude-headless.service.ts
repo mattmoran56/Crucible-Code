@@ -36,6 +36,8 @@ export interface HeadlessClaudeResult {
   ok: boolean
   costUsd: number
   sessionId?: string
+  /** The final `result` event's text (the last assistant reply), when it sent one. */
+  resultText?: string
   error?: string
   transcript: string[]
   exitCode: number | null
@@ -85,6 +87,7 @@ export function runHeadlessClaude(opts: HeadlessClaudeOptions): Promise<Headless
     let lineBuf = ''
     let costUsd = 0
     let sessionId: string | undefined
+    let resultText: string | undefined
     let bufferOverflow = false
 
     const pushTranscript = (line: string): void => {
@@ -137,6 +140,7 @@ export function runHeadlessClaude(opts: HeadlessClaudeOptions): Promise<Headless
           break
         }
         case 'result':
+          if (typeof evt.result === 'string') resultText = evt.result
           if (typeof evt.total_cost_usd === 'number') costUsd = evt.total_cost_usd
           else if (typeof evt.cost === 'number') costUsd = evt.cost
           break
@@ -261,7 +265,7 @@ export function runHeadlessClaude(opts: HeadlessClaudeOptions): Promise<Headless
         })
         return
       }
-      resolve({ ok: true, costUsd, sessionId, transcript, exitCode: code, signal })
+      resolve({ ok: true, costUsd, sessionId, resultText, transcript, exitCode: code, signal })
     })
 
     child.stdin.write(opts.prompt)

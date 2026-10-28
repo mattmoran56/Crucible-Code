@@ -341,6 +341,9 @@ const api = {
       ipcRenderer.invoke(IPC.SESSION_CONTEXT_SAVE, projectId, context),
     getContext: (projectId: string): Promise<Record<string, unknown> | null> =>
       ipcRenderer.invoke(IPC.SESSION_CONTEXT_GET, projectId),
+    /** A short name for a session from its first message (one Haiku turn), or null. */
+    suggestName: (firstMessage: string, configDir?: string | null): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.SESSION_SUGGEST_NAME, firstMessage, configDir),
   },
 
   notes: {

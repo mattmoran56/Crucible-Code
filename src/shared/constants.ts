@@ -72,6 +72,7 @@ export const IPC = {
   SESSION_SAVE: 'session:save',
   SESSION_CONTEXT_SAVE: 'session:context:save',
   SESSION_CONTEXT_GET: 'session:context:get',
+  SESSION_SUGGEST_NAME: 'session:suggest-name',
 
   // Pull Requests
   PR_LIST: 'pr:list',
