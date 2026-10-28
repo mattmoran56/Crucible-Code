@@ -105,7 +105,14 @@ export const Plus = ({ size = 12, className }: IconProps) => (
   </svg>
 )
 
-export const FileIcon = ({ size = 12, className }: IconProps) => (
+export const Mic = ({ size = 12, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <rect x="6" y="2" width="4" height="7.5" rx="2" />
+    <path d="M3.75 7.5a4.25 4.25 0 008.5 0M8 11.75V14" />
+  </svg>
+)
+
+export const FileIcon =({ size = 12, className }: IconProps) => (
   <svg {...base(size, className)}>
     <path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V6L9 2z" />
     <path d="M9 2v4h4" />
