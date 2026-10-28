@@ -127,3 +127,18 @@ export const RepoAgent: Story = {
     status: 'running',
   },
 }
+
+/** A no-worktree agent after Haiku named it from its first message. */
+export const RepoAgentNamed: Story = {
+  args: {
+    session: {
+      ...baseSession,
+      name: 'pr-143-image-upload-check',
+      branchName: '',
+      worktreePath: '/mock/repo',
+      repoRoot: true,
+    },
+    repoBranch: 'main',
+    status: 'running',
+  },
+}

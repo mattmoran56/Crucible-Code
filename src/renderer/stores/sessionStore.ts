@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation, CloudSessionMode } from '../../shared/types'
 import { useToastStore } from './toastStore'
 import { defaultSessionBranch, renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name'
+import { uniqueSessionName } from '../../shared/session-name'
 import { useTerminalStore } from './terminalStore'
 import { useCloudSessionStore } from './cloudSessionStore'
 import { useVisualAgentStore } from './visualAgentStore'
@@ -83,6 +84,12 @@ interface SessionState {
   ) => Promise<void>
   renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
   /**
+   * Name a session still on its placeholder (`namePending`) from the first
+   * message sent to it, via a quick Haiku turn. No-op for any other session,
+   * or once the user has renamed it.
+   */
+  nameFromFirstMessage: (sessionId: string, message: string) => Promise<void>
+  /**
    * Record (or with `null`, forget) the Claude session + model a visual agent
    * tab is on, so the next app launch resumes the same conversation.
    */
@@ -139,6 +146,13 @@ function sortByCreatedAtDesc(sessions: Session[]): Session[] {
 }
 
 let loadSessionsRequestId = 0
+/** Sessions whose name is being suggested right now, so a second message doesn't ask twice. */
+const naming = new Set<string>()
+
+function withoutNamePending(session: Session): Session {
+  const { namePending: _, ...rest } = session
+  return rest
+}
 
 /** The first free `agent-N` name, so a new repo-root agent never clashes with a session. */
 export function nextRepoAgentName(sessions: Session[]): string {
@@ -316,6 +330,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       createdAt: now,
       lastActiveAt: now,
       repoRoot: true,
+      namePending: true,
     }
     const sessions = sortByCreatedAtDesc([...get().sessions, session])
     await window.api.session.save(projectId, sessions)
@@ -456,12 +471,44 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       ))
     }
 
+    // A name the user picked is never replaced by a suggested one.
     const sessions = get().sessions.map((s) =>
-      s.id === sessionId ? { ...s, name: trimmed, branchName: newBranch } : s
+      s.id === sessionId ? { ...withoutNamePending(s), name: trimmed, branchName: newBranch } : s
     )
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     set({ sessions })
+  },
+
+  nameFromFirstMessage: async (sessionId, message) => {
+    const session = get().sessions.find((s) => s.id === sessionId)
+    const text = message.trim()
+    // A slash command says nothing about the task: wait for a real message.
+    if (!session?.namePending || !text || text.startsWith('/') || naming.has(sessionId)) return
+    naming.add(sessionId)
+    const { projectId, name: placeholder } = session
+    try {
+      const project = useProjectStore.getState().projects.find((p) => p.id === projectId)
+      let suggested: string | null = null
+      try {
+        suggested = await window.api.session.suggestName(text, projectConfigDir(project, useProjectStore.getState().claudeAccounts))
+      } catch {
+        // Naming is best effort: the session keeps its placeholder.
+      }
+      if (get().currentProjectId !== projectId) return
+      const current = get().sessions.find((s) => s.id === sessionId)
+      // Renamed (or deleted) while Haiku was thinking: leave it be.
+      if (!current?.namePending || current.name !== placeholder) return
+      const name = suggested
+        ? uniqueSessionName(suggested, get().sessions.filter((s) => s.id !== sessionId).map((s) => s.name))
+        : placeholder
+      const sessions = get().sessions.map((s) => (s.id === sessionId ? { ...withoutNamePending(s), name } : s))
+      await window.api.session.save(projectId, sessions)
+      if (get().currentProjectId !== projectId) return
+      set({ sessions })
+    } finally {
+      naming.delete(sessionId)
+    }
   },
 
   setSessionVisualAgent: async (projectId, sessionId, tabKey, entry) => {

@@ -16,6 +16,7 @@ import type {
 } from '../../../shared/visual-agent'
 import { cn } from '../../lib/cn'
 import { useDictationStore } from '../../stores/dictationStore'
+import { useSessionStore } from '../../stores/sessionStore'
 import {
   EMPTY_VISUAL_AGENT_UI,
   emptySnapshot,
@@ -327,6 +328,8 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
     setAttachNotice(null)
     if (attachments.length > 0) setUi({ attachments: [] })
     void actions.send(agentId, text, attachments)
+    // A no-worktree agent still called agent-N takes its name from this message.
+    void useSessionStore.getState().nameFromFirstMessage(startOptions.sessionId, text)
   }
 
   const [attachNotice, setAttachNotice] = useState<string | null>(null)

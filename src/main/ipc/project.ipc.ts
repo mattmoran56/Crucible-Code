@@ -9,6 +9,7 @@ import { IPC } from '../../shared/constants'
 import type { Project, Session, ClaudeAccount } from '../../shared/types'
 import { getStorePath } from '../store-path'
 import { scrubInheritedClaudeSession } from '../services/claude-env'
+import { suggestSessionName } from '../services/session-namer.service'
 
 // Auth terminal instances (lightweight, separate from session terminals)
 const authTerminals = new Map<string, pty.IPty>()
@@ -180,4 +181,8 @@ export function registerProjectHandlers(window: BrowserWindow) {
   handle(IPC.SESSION_CONTEXT_GET, async (_e, projectId: string) => {
     return store.get(`sessionContexts.${projectId}` as any, null)
   })
+
+  handle(IPC.SESSION_SUGGEST_NAME, async (_e, firstMessage: string, configDir?: string | null) =>
+    suggestSessionName(firstMessage, configDir)
+  )
 }

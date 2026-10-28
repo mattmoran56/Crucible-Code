@@ -195,3 +195,15 @@ describe('killChildTree', () => {
     expect(() => killChildTree({ killed: false, pid: null } as any)).not.toThrow()
   })
 })
+
+describe('runHeadlessClaude — result text', () => {
+  it('returns the final result event text', async () => {
+    const p = runHeadlessClaude({ cwd: '/wt', prompt: 'name it' })
+    await Promise.resolve()
+    h.child._emitStdout(Buffer.from(JSON.stringify({ type: 'result', result: 'fix-login', total_cost_usd: 0.001 }) + '\n'))
+    h.child._exit(0)
+    const res = await p
+    expect(res.resultText).toBe('fix-login')
+    expect(res.costUsd).toBe(0.001)
+  })
+})

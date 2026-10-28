@@ -6,6 +6,7 @@ import { useProjectStore } from '../../../src/renderer/stores/projectStore'
 const sessionApi = {
   list: vi.fn(),
   save: vi.fn(),
+  suggestName: vi.fn(),
   saveContext: vi.fn(),
   getContext: vi.fn(),
 }
@@ -1054,7 +1055,7 @@ describe('sessionStore repo-root agents', () => {
     await useSessionStore.getState().createRepoAgent('p1', '/repo')
     expect(worktreeApi.create).not.toHaveBeenCalled()
     const created = useSessionStore.getState().sessions.find((s) => s.repoRoot)!
-    expect(created).toMatchObject({ name: 'agent-1', branchName: '', worktreePath: '/repo', projectId: 'p1' })
+    expect(created).toMatchObject({ name: 'agent-1', branchName: '', worktreePath: '/repo', projectId: 'p1', namePending: true })
     expect(useSessionStore.getState().activeSessionId).toBe(created.id)
     expect(useSessionStore.getState().activeWorkspaceTab).toBe('agent')
     expect(sessionApi.save).toHaveBeenCalledWith('p1', expect.arrayContaining([expect.objectContaining({ repoRoot: true })]))
@@ -1077,5 +1078,69 @@ describe('sessionStore repo-root agents', () => {
     await useSessionStore.getState().openAsMainBranch('/repo', 'r1')
     expect(gitApi.checkout).not.toHaveBeenCalled()
     expect(useSessionStore.getState().openedAsMainBranch).toBeNull()
+  })
+})
+
+describe('sessionStore.nameFromFirstMessage', () => {
+  const pending = () => S('r1', { name: 'agent-1', repoRoot: true, branchName: '', worktreePath: '/repo', namePending: true })
+  beforeEach(() => {
+    useSessionStore.setState({ currentProjectId: 'p1', sessions: [pending(), S('s2', { name: 'fix-login' })] } as any)
+    useProjectStore.setState({
+      projects: [{ id: 'p1', name: 'acme', repoPath: '/repo', claudeAccountId: 'a1' }],
+      claudeAccounts: [{ id: 'a1', label: 'Work', configDir: '/cfg/work' }],
+    } as any)
+  })
+  const r1 = () => useSessionStore.getState().sessions.find((s) => s.id === 'r1')!
+
+  it('renames a pending session to the suggested name, on the project account, and clears the flag', async () => {
+    sessionApi.suggestName.mockResolvedValue('review-pr-42')
+    await useSessionStore.getState().nameFromFirstMessage('r1', 'Review PR 42 please')
+    expect(sessionApi.suggestName).toHaveBeenCalledWith('Review PR 42 please', '/cfg/work')
+    expect(r1().name).toBe('review-pr-42')
+    expect(r1()).not.toHaveProperty('namePending')
+    expect(sessionApi.save).toHaveBeenCalledWith('p1', expect.arrayContaining([expect.objectContaining({ id: 'r1', name: 'review-pr-42' })]))
+  })
+
+  it('only names a session once', async () => {
+    sessionApi.suggestName.mockResolvedValue('first-task')
+    await useSessionStore.getState().nameFromFirstMessage('r1', 'first')
+    await useSessionStore.getState().nameFromFirstMessage('r1', 'second')
+    expect(sessionApi.suggestName).toHaveBeenCalledTimes(1)
+    expect(r1().name).toBe('first-task')
+  })
+
+  it('never asks for sessions without the flag', async () => {
+    await useSessionStore.getState().nameFromFirstMessage('s2', 'hello')
+    expect(sessionApi.suggestName).not.toHaveBeenCalled()
+  })
+
+  it('waits past slash commands for a real message', async () => {
+    await useSessionStore.getState().nameFromFirstMessage('r1', '/model haiku')
+    expect(sessionApi.suggestName).not.toHaveBeenCalled()
+    expect(r1().namePending).toBe(true)
+  })
+
+  it('makes the name unique against other sessions', async () => {
+    sessionApi.suggestName.mockResolvedValue('fix-login')
+    await useSessionStore.getState().nameFromFirstMessage('r1', 'fix the login')
+    expect(r1().name).toBe('fix-login-2')
+  })
+
+  it('keeps a name the user picked while the suggestion was in flight', async () => {
+    let resolve!: (name: string) => void
+    sessionApi.suggestName.mockReturnValue(new Promise((r) => (resolve = r)))
+    const naming = useSessionStore.getState().nameFromFirstMessage('r1', 'do a thing')
+    await useSessionStore.getState().renameSession('p1', '/repo', 'r1', 'mine')
+    resolve('suggested-name')
+    await naming
+    expect(r1().name).toBe('mine')
+    expect(r1()).not.toHaveProperty('namePending')
+  })
+
+  it('keeps the placeholder and stops asking when naming fails', async () => {
+    sessionApi.suggestName.mockRejectedValue(new Error('claude not found'))
+    await useSessionStore.getState().nameFromFirstMessage('r1', 'hello there')
+    expect(r1().name).toBe('agent-1')
+    expect(r1()).not.toHaveProperty('namePending')
   })
 })
