@@ -35,6 +35,14 @@ export const MAX_CLOUD_WEB_ENTRIES = 8
 interface CloudWebPoolState {
   entries: Record<string, CloudWebEntry>
   claims: Record<string, CloudWebClaim>
+  /** The live <webview> element per session (lib/cloudKickoff drives it). */
+  webviews: Record<string, HTMLElement>
+  /** Sessions whose page must stay alive though not shown (a kickoff is pending). */
+  pinned: Record<string, true>
+  /** Create a session's page without showing it, and keep it until unpinned. */
+  preload: (sessionId: string, url: string) => void
+  unpin: (sessionId: string) => void
+  setWebview: (sessionId: string, el: HTMLElement | null) => void
   /**
    * A placeholder claims (or updates its claim on) its session's page. The
    * page is created the first time the placeholder is visible; a different
@@ -65,6 +73,27 @@ const without = <T>(rec: Record<string, T>, key: string): Record<string, T> => {
 export const useCloudWebPoolStore = create<CloudWebPoolState>((set, get) => ({
   entries: {},
   claims: {},
+  webviews: {},
+  pinned: {},
+
+  preload: (sessionId, url) =>
+    set((s) => {
+      const pinned = s.pinned[sessionId] ? s.pinned : { ...s.pinned, [sessionId]: true as const }
+      const prev = s.entries[sessionId]
+      if (prev && prev.url === url) return pinned === s.pinned ? s : { pinned }
+      const entry: CloudWebEntry = prev
+        ? { sessionId, url, lastUsed: tick(), attempt: prev.attempt + 1, load: { kind: 'loading' } }
+        : { sessionId, url, lastUsed: tick(), attempt: 0, load: { kind: 'loading' } }
+      return { pinned, entries: { ...s.entries, [sessionId]: entry } }
+    }),
+
+  unpin: (sessionId) => set((s) => (s.pinned[sessionId] ? { pinned: without(s.pinned, sessionId) } : s)),
+
+  setWebview: (sessionId, el) =>
+    set((s) => {
+      if (el) return s.webviews[sessionId] === el ? s : { webviews: { ...s.webviews, [sessionId]: el } }
+      return sessionId in s.webviews ? { webviews: without(s.webviews, sessionId) } : s
+    }),
 
   claim: (sessionId, url, el, visible) =>
     set((s) => {
@@ -108,13 +137,14 @@ export const useCloudWebPoolStore = create<CloudWebPoolState>((set, get) => ({
       return prev ? { entries: { ...s.entries, [sessionId]: { ...prev, attempt: prev.attempt + 1, load: { kind: 'loading' } } } } : s
     }),
 
-  remove: (sessionId) => set((s) => ({ entries: without(s.entries, sessionId) })),
+  remove: (sessionId) => set((s) => ({ entries: without(s.entries, sessionId), pinned: without(s.pinned, sessionId) })),
 
   evict: (keep) => {
     const all = Object.values(get().entries)
     if (all.length <= MAX_CLOUD_WEB_ENTRIES) return
+    const { pinned } = get()
     const victims = all
-      .filter((e) => !keep.has(e.sessionId))
+      .filter((e) => !keep.has(e.sessionId) && !pinned[e.sessionId])
       .sort((a, b) => a.lastUsed - b.lastUsed)
       .slice(0, all.length - MAX_CLOUD_WEB_ENTRIES)
     if (victims.length === 0) return

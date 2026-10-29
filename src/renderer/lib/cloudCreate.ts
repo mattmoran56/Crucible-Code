@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import type { CloudCreateState, Session } from '../../shared/types'
 import { useCloudSessionStore } from '../stores/cloudSessionStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useCloudKickoffBootstrap } from './cloudKickoff'
 import { useCloudTeleportBootstrap } from './cloudTeleport'
 
 /** The patch that makes a pending session a ready cloud session, or null when there is nothing to do. */
@@ -19,6 +20,8 @@ export function cloudCreatedPatch(session: Session, state: CloudCreateState): Pa
       sessionId: state.result.sessionId,
       url: state.result.url,
       branch: state.result.branch ?? session.cloudPending?.branch ?? session.branchName,
+      // The create task holds until lib/cloudKickoff sends the kickoff message.
+      kickoffPending: true,
     },
     cloudPending: undefined,
   }
@@ -50,6 +53,7 @@ export async function applyCloudCreated(state: CloudCreateState): Promise<void> 
  */
 export function useCloudCreateBootstrap(): void {
   useCloudTeleportBootstrap()
+  useCloudKickoffBootstrap()
   useEffect(() => {
     const off = window.api.cloudSession?.onCreateEvent?.((state) => {
       useCloudSessionStore.getState().setCreate(state)

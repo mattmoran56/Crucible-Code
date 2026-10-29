@@ -90,7 +90,9 @@ describe('startCloudCreate', () => {
     expect(state).toMatchObject({ sessionId: 'app-1', projectId: 'p1', terminalId: 'term-1', status: 'running', attached: true })
     const spawn = h.state.spawns[0]
     expect(spawn).toMatchObject({ sessionId: 'app-1', cwd: '/wt/fix', mode: 'command', configDir: '/cfg', tabId: 'agent' })
-    expect(spawn.command.startsWith("claude --cloud 'Work on the git branch")).toBe(true)
+    // Holds for the kickoff (claude.ai connectors), then the branch instruction and task.
+    expect(spawn.command.startsWith("claude --cloud 'Do not start on this task yet.")).toBe(true)
+    expect(spawn.command).toContain('Work on the git branch')
     expect(spawn.command).toContain('fix the login bug')
     expect(spawn.command.endsWith(' --on-branch session/fix')).toBe(true)
     for (const bad of [' -p ', '--print', '--output-format', '--permission-mode', '--dangerously-skip-permissions']) {
@@ -102,7 +104,8 @@ describe('startCloudCreate', () => {
     await startCloudCreate(win, { ...opts, mode: 'orchestrator' })
     expect(h.state.gitCalls[0]).toEqual({ args: ['push', '-u', 'origin', 'session/fix'], cwd: '/wt/fix' })
     const spawn = h.state.spawns[0]
-    expect(spawn.command.startsWith("claude --cloud 'You are an orchestrator session")).toBe(true)
+    expect(spawn.command.startsWith("claude --cloud 'Do not start on this task yet.")).toBe(true)
+    expect(spawn.command).toContain('You are an orchestrator session')
     expect(spawn.command).toContain('fix the login bug')
     expect(spawn.command).not.toContain('--on-branch')
     expect(spawn.command).not.toContain('do not create or push to any other branch')

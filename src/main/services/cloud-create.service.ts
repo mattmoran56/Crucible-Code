@@ -31,6 +31,7 @@ import {
   pushSessionBranch,
   summarizeCreateFailure,
   withBranchInstruction,
+  withConnectorHold,
   withOrchestratorInstruction,
 } from './cloud-session.service'
 
@@ -83,12 +84,16 @@ export function forgetCloudCreate(sessionId: string): void {
 
 /**
  * The `--cloud` task for a run. A single-branch session is told to push only
- * to its branch; an orchestrator is told it may move between branches.
+ * to its branch; an orchestrator is told it may move between branches. Either
+ * way it holds until the renderer's kickoff message, which brings the claude.ai
+ * connectors with it (see withConnectorHold).
  */
 const createTask = (opts: Pick<StartCloudCreateOptions, 'task' | 'branch' | 'mode'>): string =>
-  opts.mode === 'orchestrator'
-    ? withOrchestratorInstruction(opts.task, opts.branch)
-    : withBranchInstruction(opts.task, opts.branch)
+  withConnectorHold(
+    opts.mode === 'orchestrator'
+      ? withOrchestratorInstruction(opts.task, opts.branch)
+      : withBranchInstruction(opts.task, opts.branch)
+  )
 
 function spawnCreatePty(run: Run, opts: StartCloudCreateOptions, withOnBranch: boolean): void {
   // An orchestrator is never pinned with --on-branch: it starts on the pushed

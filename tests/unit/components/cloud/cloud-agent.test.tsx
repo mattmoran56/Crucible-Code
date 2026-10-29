@@ -569,7 +569,7 @@ describe('creating a cloud session in the Agent tab', () => {
     emit({ ...running, status: 'created', result: { sessionId: ID, url: `https://claude.ai/code/${ID}`, branch: 'session/feat' } })
     await waitFor(() => expect(screen.getByTestId('cloud-web-stub').textContent).toMatch(ID))
     const saved = useSessionStore.getState().sessions[0]
-    expect(saved.cloud).toEqual({ sessionId: ID, url: `https://claude.ai/code/${ID}`, branch: 'session/feat' })
+    expect(saved.cloud).toEqual({ sessionId: ID, url: `https://claude.ai/code/${ID}`, branch: 'session/feat', kickoffPending: true })
     expect(saved.cloudPending).toBeUndefined()
     expect(save).toHaveBeenCalled()
 
@@ -636,7 +636,7 @@ describe('cloudCreatedPatch', () => {
     const patch = cloudCreatedPatch({ ...base, location: 'cloud', cloudPending: { task: 't', branch: 'session/n', createdAt: '' } }, created)
     expect(patch).toEqual({
       location: 'cloud',
-      cloud: { sessionId: 'session_01x', url: 'https://claude.ai/code/session_01x', branch: 'session/n' },
+      cloud: { sessionId: 'session_01x', url: 'https://claude.ai/code/session_01x', branch: 'session/n', kickoffPending: true },
       cloudPending: undefined,
     })
   })
