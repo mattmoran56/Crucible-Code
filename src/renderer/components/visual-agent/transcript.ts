@@ -13,8 +13,15 @@
 //   is false.
 // - **A thread nobody claims hangs off the main thread**, so a sub-agent whose
 //   spawning call was never seen is still reachable from the tray.
+// - **A tool result does not mean a sub-agent finished.** A background one
+//   answers "Async agent launched" at once; its end is the task notification.
 
-import type { VisualAgentEvent, VisualAgentFork, VisualAgentRunState } from '../../../shared/visual-agent'
+import type {
+  VisualAgentEvent,
+  VisualAgentFork,
+  VisualAgentRunState,
+  VisualAgentTaskStatus,
+} from '../../../shared/visual-agent'
 
 export const MAIN_THREAD = 'main'
 
@@ -23,8 +30,9 @@ export type ToolEvent = EventOf<'tool'>
 export type ToolResultEvent = EventOf<'tool-result'>
 export type AskEvent = EventOf<'ask'>
 export type AskResultEvent = EventOf<'ask-result'>
+export type TaskEvent = EventOf<'task'>
 
-export type ThreadStatus = 'running' | 'done' | 'failed'
+export type ThreadStatus = 'running' | 'done' | 'failed' | 'stopped'
 
 /** One row of a conversation: an event, and what came back for it. */
 export interface Row {
@@ -53,11 +61,46 @@ export interface Thread {
   status: ThreadStatus
   /** Rows in it — what a tray pill counts. */
   steps: number
+  /** The CLI's id for the sub-agent (SendMessage's `to`), once it is known. */
+  agentId: string | null
+}
+
+const TASK_STATUS: Record<VisualAgentTaskStatus, ThreadStatus> = {
+  running: 'running',
+  completed: 'done',
+  failed: 'failed',
+  stopped: 'stopped',
+}
+
+/** What a background sub-agent's tool result says the moment it starts. */
+const LAUNCHED = /^Async agent launched\b/
+const AGENT_ID = /\bagentId: ([A-Za-z0-9_-]+)/
+
+/**
+ * The task lifecycle a `<task-notification>` note carries. Claude Code's own
+ * transcript (teleported or terminal sessions) has these rather than the
+ * stream's task events.
+ */
+const notifiedTask = (event: VisualAgentEvent): Pick<TaskEvent, 'toolUseId' | 'taskId' | 'status'> | null => {
+  if (event.kind !== 'note' || !event.text.includes('<task-notification>')) return null
+  const tag = (name: string): string | null =>
+    new RegExp(`<${name}>([^<]+)</${name}>`).exec(event.text)?.[1]?.trim() || null
+  const toolUseId = tag('tool-use-id')
+  const status = tag('status') as VisualAgentTaskStatus | null
+  if (!toolUseId || !status || !(status in TASK_STATUS)) return null
+  return { toolUseId, taskId: tag('task-id') ?? '', status }
 }
 
 export interface Transcript {
   threads: Map<string, Thread>
   main: Thread
+}
+
+const statusOf = (result: ToolResultEvent | null, task: Pick<TaskEvent, 'status'> | undefined): ThreadStatus => {
+  if (task) return TASK_STATUS[task.status]
+  if (!result) return 'running'
+  if (!result.ok) return 'failed'
+  return LAUNCHED.test(result.text) ? 'running' : 'done'
 }
 
 export const buildTranscript = (events: readonly VisualAgentEvent[]): Transcript => {
@@ -75,7 +118,11 @@ export const buildTranscript = (events: readonly VisualAgentEvent[]): Transcript
   const calls = new Map<string, ToolEvent>()
   const decisions = new Map<string, AskResultEvent>()
   const asks = new Map<string, AskEvent>()
+  // The latest lifecycle report per spawning tool call.
+  const tasks = new Map<string, Pick<TaskEvent, 'taskId' | 'status'>>()
   for (const event of events) {
+    const notified = event.kind === 'task' ? event : notifiedTask(event)
+    if (notified) tasks.set(notified.toolUseId, notified)
     if (event.kind === 'tool-result') results.set(event.id, event)
     else if (event.kind === 'tool') calls.set(event.id, event)
     else if (event.kind === 'ask-result') decisions.set(event.id, event)
@@ -86,7 +133,7 @@ export const buildTranscript = (events: readonly VisualAgentEvent[]): Transcript
   const thread = (id: string): Thread => {
     const held = threads.get(id)
     if (held) return held
-    const made: Thread = { id, tool: '', brief: '', rows: [], children: [], status: 'done', steps: 0 }
+    const made: Thread = { id, tool: '', brief: '', rows: [], children: [], status: 'done', steps: 0, agentId: null }
     threads.set(id, made)
     return made
   }
@@ -95,6 +142,7 @@ export const buildTranscript = (events: readonly VisualAgentEvent[]): Transcript
   for (const [id, bucket] of byThread) {
     const held = thread(id)
     for (const event of bucket) {
+      if (event.kind === 'task') continue
       if (event.kind === 'tool-result' && calls.has(event.id)) continue
       if (event.kind === 'ask-result' && asks.has(event.id)) continue
 
@@ -113,7 +161,8 @@ export const buildTranscript = (events: readonly VisualAgentEvent[]): Transcript
           const child = thread(event.id)
           child.tool = event.name
           child.brief = oneLine(toolDigest(event.input), 60)
-          child.status = row.result ? (row.result.ok ? 'done' : 'failed') : 'running'
+          child.status = statusOf(row.result, tasks.get(event.id))
+          child.agentId = tasks.get(event.id)?.taskId || AGENT_ID.exec(row.result?.text ?? '')?.[1] || null
           if (!held.children.includes(event.id)) held.children.push(event.id)
         }
       }

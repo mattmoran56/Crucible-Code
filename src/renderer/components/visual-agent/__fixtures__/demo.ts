@@ -427,3 +427,40 @@ export const emptySnapshotFixture = (agentId: string): VisualAgentSnapshot => ({
   forks: [],
   turnStartedAt: null,
 })
+
+export const BACKGROUND_TASK_ID = 'toolu_fx_task_background'
+
+/**
+ * A background sub-agent mid-run: its "launched" tool result came back at
+ * once, it has started but not ended, and the person has sent it a message
+ * from its sheet.
+ */
+export const backgroundSubagentSnapshot = (agentId: string): VisualAgentSnapshot => ({
+  ...emptySnapshotFixture(agentId),
+  claudeSessionId: DEMO_CLAUDE_SESSION_ID,
+  state: 'idle',
+  events: [
+    ev(0, { kind: 'text', role: 'user', text: 'Kick off a background audit of every form for pointer-only handlers.' }),
+    ev(1, {
+      kind: 'tool',
+      id: BACKGROUND_TASK_ID,
+      name: 'Agent',
+      input: { description: 'Audit forms for pointer handlers', subagent_type: 'general-purpose', run_in_background: true, prompt: 'Audit every form in src/ for pointer-only submit handlers.' },
+      spawnsThread: true,
+    }),
+    ev(1, { kind: 'task', toolUseId: BACKGROUND_TASK_ID, taskId: 'a630f81b1da91f49f', status: 'running' }),
+    ev(1, {
+      kind: 'tool-result',
+      id: BACKGROUND_TASK_ID,
+      ok: true,
+      text: 'Async agent launched successfully.\nagentId: a630f81b1da91f49f (internal ID)\nThe agent is working in the background.',
+    }),
+    ev(2, { kind: 'text', role: 'assistant', text: 'The audit is running in the background. I will tell you what it finds.' }),
+    ev(2, { kind: 'result', ok: true, costUsd: 0.004, durationMs: 2100, usage: null, text: '' }),
+    ev(3, { kind: 'tool', id: 'toolu_fx_bg_glob', name: 'Glob', input: { pattern: 'src/**/*Form*.tsx' }, spawnsThread: false }, BACKGROUND_TASK_ID),
+    ev(4, { kind: 'tool-result', id: 'toolu_fx_bg_glob', ok: true, text: 'src/components/ContactForm.tsx\nsrc/components/NewsletterForm.tsx\nsrc/pages/SignIn.tsx' }, BACKGROUND_TASK_ID),
+    ev(5, { kind: 'text', role: 'assistant', text: 'Three forms. Reading each one for `onPointerUp`.' }, BACKGROUND_TASK_ID),
+    ev(6, { kind: 'text', role: 'user', text: 'Skip SignIn.tsx — that one is already fixed.' }, BACKGROUND_TASK_ID),
+    ev(7, { kind: 'tool', id: 'toolu_fx_bg_read', name: 'Read', input: { file_path: `${DEMO_CWD}/src/components/ContactForm.tsx` }, spawnsThread: false }, BACKGROUND_TASK_ID),
+  ],
+})

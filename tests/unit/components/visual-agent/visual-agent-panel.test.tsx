@@ -5,11 +5,14 @@ import { AsideSplit } from '../../../../src/renderer/components/visual-agent/Asi
 import { VisualAgentPanel } from '../../../../src/renderer/components/visual-agent/VisualAgentPanel'
 import { __resetVisualAgentSubscription, useVisualAgentStore } from '../../../../src/renderer/stores/visualAgentStore'
 import {
+  BACKGROUND_TASK_ID,
   DEMO_ASK_ID,
+  backgroundSubagentSnapshot,
   DEMO_CWD,
   DEMO_TASK_TOOL_ID,
   demoVisualAgentSnapshot,
 } from '../../../../src/renderer/components/visual-agent/__fixtures__/demo'
+import { parseSubagentRelay } from '../../../../src/shared/visual-agent'
 
 const api = {
   start: vi.fn(),
@@ -64,6 +67,29 @@ describe('<VisualAgentPanel>', () => {
     expect(within(sheet).getByText(/Searching for pointer handlers/)).toBeInTheDocument()
     fireEvent.keyDown(sheet, { key: 'Escape' })
     expect(useVisualAgentStore.getState().ui.p1.subagentPath).toEqual([])
+  })
+
+  it('shows a background sub-agent as working, and messages it through the main agent', () => {
+    useVisualAgentStore.getState().seed(backgroundSubagentSnapshot('p1'))
+    render(<VisualAgentPanel agentId="p1" startOptions={{ agentId: 'p1', sessionId: 's', cwd: DEMO_CWD }} visible />)
+    const tray = screen.getByRole('group', { name: 'Subagents' })
+    const pill = within(tray).getByRole('button', { name: /Agent/ })
+    expect(pill).toHaveAccessibleName(/working/)
+    fireEvent.click(pill)
+    expect(useVisualAgentStore.getState().ui.p1.subagentPath).toEqual([BACKGROUND_TASK_ID])
+
+    const sheet = screen.getByRole('dialog', { name: /Agent transcript/ })
+    expect(within(sheet).getByText('working')).toBeInTheDocument()
+    // What the person sent it earlier shows in its own conversation.
+    expect(within(sheet).getByText(/Skip SignIn.tsx/)).toBeInTheDocument()
+    const box = within(sheet).getByRole('textbox', { name: /Message Audit forms/ })
+    fireEvent.change(box, { target: { value: 'Also check NewsletterForm' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(api.send).toHaveBeenCalledTimes(1)
+    const [id, text] = api.send.mock.calls[0] as unknown as [string, string]
+    expect(id).toBe('p1')
+    expect(parseSubagentRelay(text)).toEqual({ toolUseId: BACKGROUND_TASK_ID, agentId: 'a630f81b1da91f49f', text: 'Also check NewsletterForm' })
+    expect(box).toHaveValue('')
   })
 
   it('reopens an aside from its marker in a panel beside the conversation, and closes it with Esc', () => {

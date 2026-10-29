@@ -6,7 +6,9 @@ import { AsideSplit } from './AsidePanel'
 import { VisualAgentPanel } from './VisualAgentPanel'
 import {
   AUDIT_TASK_ID,
+  BACKGROUND_TASK_ID,
   DEMO_CWD,
+  backgroundSubagentSnapshot,
   NESTED_TASK_ID,
   conversationSnapshot,
   demoSnapshot,
@@ -114,6 +116,19 @@ export const SubagentSheetOpen: Story = {
     snapshot: conversationSnapshot('story-subagent'),
     ui: { subagentPath: [AUDIT_TASK_ID, NESTED_TASK_ID] },
   },
+}
+
+/** A background sub-agent still working after its "launched" result, open with a message sent to it. */
+export const BackgroundSubagentWorking: Story = {
+  args: {
+    snapshot: backgroundSubagentSnapshot('story-background'),
+    ui: { subagentPath: [BACKGROUND_TASK_ID] },
+  },
+}
+
+/** The same run with the sheet closed: the tray pill still says it is working. */
+export const BackgroundSubagentTray: Story = {
+  args: { snapshot: backgroundSubagentSnapshot('story-background-tray') },
 }
 
 export const Empty: Story = {

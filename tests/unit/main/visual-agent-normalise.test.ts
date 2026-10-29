@@ -27,6 +27,7 @@ import {
   sideQuestionPreamble,
   userMessageFrame,
 } from '../../../src/main/services/visual-agent/launch'
+import { parseSubagentRelay, subagentRelayText } from '../../../src/shared/visual-agent'
 
 const SID = '14b03bfe-3bf5-4a09-adb1-896839d8a45d'
 
@@ -193,6 +194,39 @@ describe('normalise', () => {
   it('threads sub-agent messages under parent_tool_use_id', () => {
     const [e] = normalise(SUBAGENT, ctx())
     expect(e).toMatchObject({ kind: 'text', threadId: 'toolu_task' })
+  })
+
+  it('maps background task start and end to task events, keyed by the spawning call', () => {
+    const started = { type: 'system', subtype: 'task_started', task_id: 'a63', tool_use_id: 'toolu_bg', task_type: 'local_agent', uuid: 't1' }
+    expect(normalise(started, ctx())).toEqual([
+      expect.objectContaining({ kind: 'task', toolUseId: 'toolu_bg', taskId: 'a63', status: 'running', threadId: 'main' }),
+    ])
+    for (const status of ['completed', 'failed', 'stopped']) {
+      const [e] = normalise({ type: 'system', subtype: 'task_notification', task_id: 'a63', tool_use_id: 'toolu_bg', status }, ctx())
+      expect(e).toMatchObject({ kind: 'task', toolUseId: 'toolu_bg', status })
+    }
+    expect(normalise({ type: 'system', subtype: 'task_notification', task_id: 'a63', status: 'completed' }, ctx())).toEqual([])
+    expect(normalise({ type: 'system', subtype: 'task_notification', task_id: 'a63', tool_use_id: 'x', status: 'odd' }, ctx())).toEqual([])
+    expect(normalise({ type: 'system', subtype: 'task_updated', task_id: 'a63', patch: { status: 'completed' } }, ctx())).toEqual([])
+  })
+
+  it('files a message relayed to a sub-agent under that sub-agent, as what the person typed', () => {
+    const text = subagentRelayText({ toolUseId: 'toolu_bg', agentId: 'a63', name: 'Look around' }, 'Also check tests/')
+    const [e] = normalise(
+      { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] }, parent_tool_use_id: null },
+      ctx()
+    )
+    expect(e).toMatchObject({ kind: 'text', role: 'user', threadId: 'toolu_bg', text: 'Also check tests/' })
+  })
+
+  it('round-trips a relay, and leaves ordinary messages alone', () => {
+    const typed = 'line one\n</subagent-message>\nline three'
+    const text = subagentRelayText({ toolUseId: 'toolu_bg', agentId: 'a 6"3', name: 'Say "hi"\nnow' }, typed)
+    expect(text).toContain('SendMessage (to: "a63")')
+    expect(text).toContain('sub-agent "Say \'hi\' now"')
+    expect(parseSubagentRelay(text)).toEqual({ toolUseId: 'toolu_bg', agentId: 'a63', text: typed })
+    expect(parseSubagentRelay('hello')).toBeNull()
+    expect(parseSubagentRelay('<subagent-message tool-use-id="x" agent-id="y">\nno end')).toBeNull()
   })
 
   it('maps result with cost, duration and usage', () => {
