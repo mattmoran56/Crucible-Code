@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { composerKeyAction, typedKey } from '../../../../src/renderer/components/visual-agent/composerKeys'
 import { BUILTIN_COMMANDS, commandQuery, intentOf, matchCommands, sessionCommands } from '../../../../src/renderer/components/visual-agent/commands'
 import { Composer, type ComposerProps } from '../../../../src/renderer/components/visual-agent/Composer'
@@ -286,37 +286,45 @@ describe('<Composer> dictation mode', () => {
   })
 
   describe('smart', () => {
-    it('sends a paste that follows a press of the Fn key', () => {
+    it('sends a paste the clipboard shows a dictation app made', async () => {
       const onSend = vi.fn()
-      render(<Harness dictation smartDictation onSend={onSend} />)
+      const isDictatedPaste = vi.fn().mockResolvedValue(true)
+      render(<Harness initial="please " dictation smartDictation isDictatedPaste={isDictatedPaste} onSend={onSend} />)
       const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
-      fireEvent.keyDown(window, { key: 'Fn', code: 'Fn' })
-      fireEvent.keyUp(window, { key: 'Fn', code: 'Fn' })
-      fireEvent.keyDown(window, { key: 'Meta' })
-      fireEvent.keyDown(window, { key: 'v', metaKey: true })
-      pasteText(box, 'fix the build', 'fix the build')
-      expect(onSend).toHaveBeenCalledWith('fix the build', [])
+      pasteText(box, 'fix the build', 'please fix the build')
+      await waitFor(() => expect(onSend).toHaveBeenCalledWith('please fix the build', []))
+      expect(isDictatedPaste).toHaveBeenCalledTimes(1)
       expect(box.value).toBe('')
     })
 
-    it('leaves a paste of your own in the box', () => {
+    it('leaves a paste of your own in the box', async () => {
       const onSend = vi.fn()
-      render(<Harness dictation smartDictation onSend={onSend} />)
+      const isDictatedPaste = vi.fn().mockResolvedValue(false)
+      render(<Harness dictation smartDictation isDictatedPaste={isDictatedPaste} onSend={onSend} />)
       const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
       pasteText(box, 'some copied text', 'some copied text')
+      await waitFor(() => expect(isDictatedPaste).toHaveBeenCalled())
+      await Promise.resolve()
       expect(onSend).not.toHaveBeenCalled()
       expect(box.value).toBe('some copied text')
     })
 
-    it('one Fn press covers one paste', () => {
+    it('keeps the paste when the clipboard cannot be asked', async () => {
       const onSend = vi.fn()
-      render(<Harness dictation smartDictation onSend={onSend} />)
+      const isDictatedPaste = vi.fn().mockRejectedValue(new Error('no ipc'))
+      render(<Harness dictation smartDictation isDictatedPaste={isDictatedPaste} onSend={onSend} />)
       const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
-      fireEvent.keyUp(window, { key: 'Fn', code: 'Fn' })
       pasteText(box, 'dictated', 'dictated')
-      pasteText(box, 'copied', 'copied')
-      expect(onSend).toHaveBeenCalledTimes(1)
-      expect(box.value).toBe('copied')
+      await waitFor(() => expect(isDictatedPaste).toHaveBeenCalled())
+      expect(onSend).not.toHaveBeenCalled()
+      expect(box.value).toBe('dictated')
+    })
+
+    it('does not ask when dictation mode is off', () => {
+      const isDictatedPaste = vi.fn().mockResolvedValue(true)
+      render(<Harness dictation={false} smartDictation isDictatedPaste={isDictatedPaste} />)
+      pasteText(screen.getByLabelText('Message Claude'), 'text', 'text')
+      expect(isDictatedPaste).not.toHaveBeenCalled()
     })
   })
 

@@ -3,7 +3,7 @@
 // Files ride along as chips above the textarea: picked with the + button,
 // pasted, or dropped anywhere on the panel. In dictation mode, text pasted
 // into the box (how dictation apps hand over what you said) sends at once;
-// smart dictation only sends a paste that follows a press of the Fn key.
+// smart dictation only sends a paste the clipboard shows a dictation app made.
 
 import React, { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import { isInlineImage, type VisualAgentAttachment, type VisualAgentModel } from '../../../shared/visual-agent'
@@ -11,7 +11,6 @@ import { cn } from '../../lib/cn'
 import { BUILTIN_COMMANDS, intentOf, type SlashCommand } from './commands'
 import { CommandMenu, useCommandMenu } from './CommandMenu'
 import { composerKeyAction } from './composerKeys'
-import { dictationKeyTracker, type DictationKeyTracker } from './dictationKey'
 import { Close, FileIcon, Mic, Plus, SendArrow, StopSquare } from './icons'
 import { ModelPicker, type ModelPickerHandle } from './ModelPicker'
 
@@ -47,10 +46,10 @@ export interface ComposerProps {
   dictation?: boolean
   /** Shows the dictation toggle beside the model pill. */
   onDictation?: (enabled: boolean) => void
-  /** Smart dictation: only a paste that follows the Fn dictation key sends. */
+  /** Smart dictation: only a paste made by a dictation app sends; your own waits for Enter. */
   smartDictation?: boolean
-  /** Where Fn presses are tracked; the app-wide window listener unless a test passes one. */
-  dictationKey?: DictationKeyTracker
+  /** Asks whether the clipboard holds a dictation app's paste; the main process unless a test passes one. */
+  isDictatedPaste?: () => Promise<boolean>
 }
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function Composer(
@@ -75,7 +74,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     dictation = false,
     onDictation,
     smartDictation = false,
-    dictationKey,
+    isDictatedPaste = askClipboard,
   },
   ref,
 ) {
@@ -85,8 +84,6 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
   const [ownNotice, setNotice] = useState<string | null>(null)
   // Set by a text paste so the change it causes can send in dictation mode.
   const pasted = useRef(false)
-  const fnKey = useRef<DictationKeyTracker | null>(null)
-  if (smartDictation && !fnKey.current) fnKey.current = dictationKey ?? dictationKeyTracker()
   const notice = ownNotice ?? outsideNotice
   const attaching = attachments.length > 0
 
@@ -144,6 +141,10 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     onDraft('')
   }
 
+  // For the smart dictation answer, which arrives after the paste has rendered.
+  const latest = useRef({ draft, submit })
+  latest.current = { draft, submit }
+
   const askAside = (): void => {
     const intent = intentOf(draft)
     const question = intent.kind === 'fork' ? intent.question : draft.trim()
@@ -181,8 +182,15 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     const files = Array.from(event.clipboardData?.files ?? [])
     if (files.length === 0 || !onAddFiles) {
       const text = dictation && event.clipboardData?.getData('text').trim()
-      // Smart mode: only a paste right after the Fn dictation key, not one of your own.
-      if (text && (!smartDictation || fnKey.current?.consume(Date.now()))) {
+      if (text && smartDictation) {
+        // The paste lands as usual, then sends once the clipboard shows a dictation
+        // app made it. Asked now: the app puts your own clipboard back soon after.
+        void isDictatedPaste()
+          .then((dictated) => {
+            if (dictated) latest.current.submit(latest.current.draft)
+          })
+          .catch(() => {})
+      } else if (text) {
         pasted.current = true
         // The input event follows in the same task; a paste that changed nothing must not linger.
         setTimeout(() => {
@@ -306,7 +314,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
             title={
               dictation
                 ? smartDictation
-                  ? 'Dictation mode on (smart): text dictated with the Fn key sends straight away; your own pastes wait for Enter. Click to turn off'
+                  ? 'Dictation mode on (smart): text your dictation app pastes sends straight away; your own pastes wait for Enter. Click to turn off'
                   : 'Dictation mode on: pasted text sends straight away. Click to turn off'
                 : 'Dictation mode off: pasted text waits for Enter. Click to turn on'
             }
@@ -349,6 +357,9 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
 })
 
 const NO_ATTACHMENTS: readonly VisualAgentAttachment[] = []
+
+const askClipboard = (): Promise<boolean> =>
+  window.api?.dictation?.isDictatedPaste() ?? Promise.resolve(false)
 
 /** One waiting file: a thumbnail for an image, an icon and name for anything else. */
 function AttachmentChip({ attachment, onRemove }: { attachment: VisualAgentAttachment; onRemove?: () => void }) {

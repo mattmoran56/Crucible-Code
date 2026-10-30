@@ -459,6 +459,10 @@ export const mockApi = {
     save: async () => {},
   },
 
+  dictation: {
+    isDictatedPaste: async () => false,
+  },
+
   visualAgent: {
     start: async (opts: VisualAgentStartOptions): Promise<VisualAgentSnapshot> => {
       visualAgentStarts.push(opts)

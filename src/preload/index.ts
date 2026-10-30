@@ -531,6 +531,11 @@ const api = {
       onVisualAgentFrame(cb),
   },
 
+  dictation: {
+    /** Whether the clipboard right now holds a dictation app's paste (smart dictation). */
+    isDictatedPaste: (): Promise<boolean> => ipcRenderer.invoke(IPC.DICTATION_IS_DICTATED_PASTE),
+  },
+
   cloudSession: {
     /**
      * Push the session branch, then run the interactive `claude --cloud <task>`

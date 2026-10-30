@@ -546,7 +546,7 @@ export function SettingsPage() {
                   <p className="text-xs font-medium text-text">Dictation style</p>
                   <p className="text-[11px] text-text-muted">
                     {smartDictation
-                      ? 'Smart: only text your dictation app pastes after you press the Fn key sends; your own pastes wait for Enter'
+                      ? 'Smart: only text your dictation app pastes sends; your own pastes wait for Enter'
                       : 'Normal: every text paste sends straight away'}
                   </p>
                 </div>

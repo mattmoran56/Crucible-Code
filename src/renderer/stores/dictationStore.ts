@@ -3,7 +3,7 @@
 // as if Enter had been pressed. One app-wide switch, on by default.
 //
 // Smart dictation (Settings → Dictation, on by default) narrows that to pastes
-// that follow a press of the Fn dictation key, so a paste of your own waits
+// a dictation app made (it marks the clipboard), so a paste of your own waits
 // for Enter. Normal dictation sends every text paste.
 
 import { create } from 'zustand'
@@ -27,7 +27,7 @@ function save(key: string, value: boolean) {
 
 interface DictationState {
   enabled: boolean
-  /** Only send pastes that follow the Fn dictation key. */
+  /** Only send pastes a dictation app made. */
   smart: boolean
   setEnabled: (enabled: boolean) => void
   setSmart: (smart: boolean) => void

@@ -237,6 +237,8 @@ export const IPC = {
   VISUAL_AGENT_FORK_STOP: 'visual-agent:fork-stop',
   VISUAL_AGENT_GET_STATE: 'visual-agent:get-state',
   VISUAL_AGENT_FRAME: 'visual-agent:frame',
+  /** Smart dictation: whether the clipboard holds a dictation app's paste. */
+  DICTATION_IS_DICTATED_PASTE: 'dictation:is-dictated-paste',
 
   // Cloud sessions — Claude Code on the web, watched and teleported from here
   /** Push the branch and run the interactive `claude --cloud <task>` PTY in the Agent tab. */
