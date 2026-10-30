@@ -407,6 +407,12 @@ const targets: ScreenshotTarget[] = [
     delay: 1500,
   },
   {
+    name: 'dictation-settings',
+    storyId: 'app-full-layout--button-settings',
+    delay: 2000,
+    clickNav: 'Dictation',
+  },
+  {
     name: 'visual-agent-add-tab',
     storyId: 'app-full-layout--visual-agent',
     delay: 2500,

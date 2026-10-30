@@ -210,6 +210,7 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
   const error = useVisualAgentStore((s) => s.errors[agentId] ?? null)
   const dictation = useDictationStore((s) => s.enabled)
   const setDictation = useDictationStore((s) => s.setEnabled)
+  const smartDictation = useDictationStore((s) => s.smart)
   const actions = useVisualAgentStore.getState()
 
   const snap = useMemo(
@@ -509,6 +510,7 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
           commands={commands}
           dictation={dictation}
           onDictation={setDictation}
+          smartDictation={smartDictation}
         />
       </div>
 

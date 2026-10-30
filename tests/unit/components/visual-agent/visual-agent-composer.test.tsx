@@ -285,6 +285,41 @@ describe('<Composer> dictation mode', () => {
     expect(onDictation).toHaveBeenLastCalledWith(true)
   })
 
+  describe('smart', () => {
+    it('sends a paste that follows a press of the Fn key', () => {
+      const onSend = vi.fn()
+      render(<Harness dictation smartDictation onSend={onSend} />)
+      const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
+      fireEvent.keyDown(window, { key: 'Fn', code: 'Fn' })
+      fireEvent.keyUp(window, { key: 'Fn', code: 'Fn' })
+      fireEvent.keyDown(window, { key: 'Meta' })
+      fireEvent.keyDown(window, { key: 'v', metaKey: true })
+      pasteText(box, 'fix the build', 'fix the build')
+      expect(onSend).toHaveBeenCalledWith('fix the build', [])
+      expect(box.value).toBe('')
+    })
+
+    it('leaves a paste of your own in the box', () => {
+      const onSend = vi.fn()
+      render(<Harness dictation smartDictation onSend={onSend} />)
+      const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
+      pasteText(box, 'some copied text', 'some copied text')
+      expect(onSend).not.toHaveBeenCalled()
+      expect(box.value).toBe('some copied text')
+    })
+
+    it('one Fn press covers one paste', () => {
+      const onSend = vi.fn()
+      render(<Harness dictation smartDictation onSend={onSend} />)
+      const box = screen.getByLabelText('Message Claude') as HTMLTextAreaElement
+      fireEvent.keyUp(window, { key: 'Fn', code: 'Fn' })
+      pasteText(box, 'dictated', 'dictated')
+      pasteText(box, 'copied', 'copied')
+      expect(onSend).toHaveBeenCalledTimes(1)
+      expect(box.value).toBe('copied')
+    })
+  })
+
   it('has no toggle when the owner does not offer one', () => {
     render(<Harness />)
     expect(screen.queryByRole('switch', { name: 'Dictation mode' })).toBeNull()
