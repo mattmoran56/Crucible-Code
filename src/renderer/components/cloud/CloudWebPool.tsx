@@ -191,7 +191,8 @@ function PooledPage({ entry, slot }: { entry: CloudWebEntry; slot: Slot }) {
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const { setLoad } = useCloudWebPoolStore.getState()
+    const { setLoad, setWebview } = useCloudWebPoolStore.getState()
+    setWebview(sessionId, el)
     const onStop = () => setLoad(sessionId, attempt, { kind: 'ready' })
     const onFail = (e: Event) => {
       const { errorCode, errorDescription, isMainFrame } = e as FailLoadEvent
@@ -208,6 +209,7 @@ function PooledPage({ entry, slot }: { entry: CloudWebEntry; slot: Slot }) {
       el.removeEventListener('did-stop-loading', onStop)
       el.removeEventListener('did-fail-load', onFail)
       el.removeEventListener('render-process-gone', onGone)
+      if (useCloudWebPoolStore.getState().webviews[sessionId] === el) setWebview(sessionId, null)
     }
   }, [sessionId, attempt])
 

@@ -95,6 +95,17 @@ export const withBranchInstruction = (prompt: string, branch: string): string =>
 export const withOrchestratorInstruction = (prompt: string, branch: string): string =>
   `You are an orchestrator session. You start on the git branch \`${branch}\`, but you are not limited to it: create, check out, merge and push to whichever branches the task needs, and split the work across branches where that helps. When you finish, list every branch you created or pushed and what is on each.\n\n${prompt}`
 
+/**
+ * Prepend an instruction to hold until the app's kickoff message. claude.ai
+ * connectors (Notion, Slack, Gmail…) reach a cloud session only with its first
+ * message from the claude.ai web client — never with the CLI's create message —
+ * so a turn started by `--cloud <task>` runs without them. The renderer sends
+ * CLOUD_KICKOFF_MESSAGE from the embedded page once the session exists (or
+ * through the CLI if the page can't), and the agent starts then.
+ */
+export const withConnectorHold = (prompt: string): string =>
+  `Do not start on this task yet. Your claude.ai connectors (Notion, Slack, Gmail and the rest) attach to this session only when its first message from the claude.ai page arrives, and Crucible sends that message in a moment. Until it arrives, run no tools: reply with one short line saying you are ready, and stop. When it arrives, start the task below.\n\n${prompt}`
+
 /** True when claude rejected `--on-branch` as an unknown option (older CLI). */
 export const isUnknownOnBranchError = (text: string): boolean =>
   /(unknown|unrecognized) (option|argument|flag)[^\n]*--on-branch/i.test(text)

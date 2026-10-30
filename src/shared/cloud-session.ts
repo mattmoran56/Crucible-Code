@@ -17,5 +17,16 @@ export const resolveDefaultSessionLocation = (project: Pick<Project, 'defaultSes
  */
 export const CLAUDE_WEB_PARTITION = 'persist:claude-web'
 
+/**
+ * The message the app sends from the embedded claude.ai page right after a
+ * cloud session is created, to start its work. claude.ai attaches the user's
+ * connectors (Notion, Slack, Gmail…) to a cloud session only when a message
+ * from the claude.ai web client arrives; the CLI's create message carries none.
+ * So the create task tells the agent to hold, and this message starts it with
+ * the connectors attached (see renderer lib/cloudKickoff).
+ */
+export const CLOUD_KICKOFF_MESSAGE =
+  'Start the task now. (Sent automatically by Crucible from the claude.ai page, so your claude.ai connectors are attached to this session.)'
+
 /** Short form of a cloud session id for toolbars: `session_01AbCdEf…` → `01AbCdEf`. */
 export const shortCloudId = (id: string): string => id.replace(/^session_/, '').slice(0, 8)

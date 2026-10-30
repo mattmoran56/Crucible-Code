@@ -119,6 +119,12 @@ export interface CloudSessionLink {
   teleportIncomplete?: boolean
   /** The branch the cloud agent was told to work on and push to. */
   branch?: string
+  /**
+   * The session was created holding for its kickoff message (sent from the
+   * embedded claude.ai page so claude.ai connectors attach), which has not been
+   * sent yet. Cleared once it is sent, through the page or the CLI fallback.
+   */
+  kickoffPending?: boolean
 }
 
 /** Result of creating a cloud session or queuing a message to one. */

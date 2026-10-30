@@ -69,6 +69,7 @@ import {
   sendCloudMessage,
   teleportArgv,
   withBranchInstruction,
+  withConnectorHold,
   withOrchestratorInstruction,
   worktreeDirtyFiles,
 } from '../../../src/main/services/cloud-session.service'
@@ -113,6 +114,14 @@ describe('argv builders', () => {
     const task = "it's $(rm -rf ~) `x` \"q\"\nline two; echo $HOME"
     const cmd = claudeShellCommand(cloudStartArgv(task, 'session/x'))
     expect(cmd).toBe(`claude --cloud '${task.replace(/'/g, `'\\''`)}' --on-branch session/x`)
+  })
+
+  it('connector hold: the agent waits for the kickoff, with the task kept after it', () => {
+    const task = withConnectorHold('fix the login bug')
+    expect(task.startsWith('Do not start on this task yet.')).toBe(true)
+    expect(task).toMatch(/connectors/)
+    expect(task).toMatch(/run no tools/)
+    expect(task.endsWith('\n\nfix the login bug')).toBe(true)
   })
 
   it('send: -p <msg> --cloud <id> --output-format json', () => {
