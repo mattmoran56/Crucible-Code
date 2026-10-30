@@ -32,8 +32,8 @@ describe('IPC channel constants', () => {
 describe('IPC channel naming conventions', () => {
   const entries = Object.entries(IPC) as Array<[string, string]>
 
-  it('exposes exactly 208 channels (update this count when adding channels)', () => {
-    expect(entries.length).toBe(208)
+  it('exposes exactly 209 channels (update this count when adding channels)', () => {
+    expect(entries.length).toBe(209)
   })
 
   it('every key is SCREAMING_SNAKE_CASE', () => {
@@ -65,7 +65,7 @@ describe('IPC channel naming conventions', () => {
   it('uses exactly the known set of namespaces', () => {
     const namespaces = [...new Set(entries.map(([, v]) => v.split(':')[0]))].sort()
     expect(namespaces).toEqual([
-      'account', 'agent-browser', 'button', 'button-group', 'cloud-session', 'file',
+      'account', 'agent-browser', 'button', 'button-group', 'cloud-session', 'dictation', 'file',
       'git', 'notes', 'notification', 'notion', 'pr', 'project',
       'remote', 'review-loop', 'sandboxer', 'scheduler', 'session', 'startup-prompt',
       'terminal', 'update', 'usage', 'visual-agent', 'worktree',
