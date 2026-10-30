@@ -17,6 +17,7 @@ import { registerSchedulerHandlers } from './scheduler.ipc'
 import { registerNotionHandlers } from './notion.ipc'
 import { registerRemoteHandlers } from './remote.ipc'
 import { registerVisualAgentHandlers } from './visual-agent.ipc'
+import { registerDictationHandlers } from './dictation.ipc'
 import { registerCloudSessionHandlers } from './cloud-session.ipc'
 import { registerSandboxerHandlers } from './sandboxer.ipc'
 import { registerAgentBrowserHandlers } from './agent-browser.ipc'
@@ -44,6 +45,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerNotionHandlers(window)
   registerRemoteHandlers(window)
   registerVisualAgentHandlers(window)
+  registerDictationHandlers()
   registerCloudSessionHandlers(window)
   registerSandboxerHandlers(window)
   registerAgentBrowserHandlers()

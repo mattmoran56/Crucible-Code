@@ -2,7 +2,8 @@
 // it, the model pill and hints below it, and the panel's only filled button.
 // Files ride along as chips above the textarea: picked with the + button,
 // pasted, or dropped anywhere on the panel. In dictation mode, text pasted
-// into the box (how dictation apps hand over what you said) sends at once.
+// into the box (how dictation apps hand over what you said) sends at once;
+// smart dictation only sends a paste the clipboard shows a dictation app made.
 
 import React, { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import { isInlineImage, type VisualAgentAttachment, type VisualAgentModel } from '../../../shared/visual-agent'
@@ -45,6 +46,10 @@ export interface ComposerProps {
   dictation?: boolean
   /** Shows the dictation toggle beside the model pill. */
   onDictation?: (enabled: boolean) => void
+  /** Smart dictation: only a paste made by a dictation app sends; your own waits for Enter. */
+  smartDictation?: boolean
+  /** Asks whether the clipboard holds a dictation app's paste; the main process unless a test passes one. */
+  isDictatedPaste?: () => Promise<boolean>
 }
 
 export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function Composer(
@@ -68,6 +73,8 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     notice: outsideNotice = null,
     dictation = false,
     onDictation,
+    smartDictation = false,
+    isDictatedPaste = askClipboard,
   },
   ref,
 ) {
@@ -134,6 +141,10 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
     onDraft('')
   }
 
+  // For the smart dictation answer, which arrives after the paste has rendered.
+  const latest = useRef({ draft, submit })
+  latest.current = { draft, submit }
+
   const askAside = (): void => {
     const intent = intentOf(draft)
     const question = intent.kind === 'fork' ? intent.question : draft.trim()
@@ -170,7 +181,16 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
   const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>): void => {
     const files = Array.from(event.clipboardData?.files ?? [])
     if (files.length === 0 || !onAddFiles) {
-      if (dictation && event.clipboardData?.getData('text').trim()) {
+      const text = dictation && event.clipboardData?.getData('text').trim()
+      if (text && smartDictation) {
+        // The paste lands as usual, then sends once the clipboard shows a dictation
+        // app made it. Asked now: the app puts your own clipboard back soon after.
+        void isDictatedPaste()
+          .then((dictated) => {
+            if (dictated) latest.current.submit(latest.current.draft)
+          })
+          .catch(() => {})
+      } else if (text) {
         pasted.current = true
         // The input event follows in the same task; a paste that changed nothing must not linger.
         setTimeout(() => {
@@ -293,7 +313,9 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
             aria-label="Dictation mode"
             title={
               dictation
-                ? 'Dictation mode on: pasted text sends straight away. Click to turn off'
+                ? smartDictation
+                  ? 'Dictation mode on (smart): text your dictation app pastes sends straight away; your own pastes wait for Enter. Click to turn off'
+                  : 'Dictation mode on: pasted text sends straight away. Click to turn off'
                 : 'Dictation mode off: pasted text waits for Enter. Click to turn on'
             }
             onClick={() => onDictation(!dictation)}
@@ -335,6 +357,9 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
 })
 
 const NO_ATTACHMENTS: readonly VisualAgentAttachment[] = []
+
+const askClipboard = (): Promise<boolean> =>
+  window.api?.dictation?.isDictatedPaste() ?? Promise.resolve(false)
 
 /** One waiting file: a thumbnail for an image, an icon and name for anything else. */
 function AttachmentChip({ attachment, onRemove }: { attachment: VisualAgentAttachment; onRemove?: () => void }) {

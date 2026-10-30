@@ -35,4 +35,14 @@ describe('dictationStore', () => {
     const store = await freshStore()
     expect(store.getState().enabled).toBe(true)
   })
+
+  it('uses smart dictation by default and remembers switching to normal', async () => {
+    let store = await freshStore()
+    expect(store.getState().smart).toBe(true)
+    store.getState().setSmart(false)
+    expect(localStorage.getItem('codecrucible-dictation-smart')).toBe('false')
+    store = await freshStore()
+    expect(store.getState().smart).toBe(false)
+    expect(store.getState().enabled).toBe(true)
+  })
 })

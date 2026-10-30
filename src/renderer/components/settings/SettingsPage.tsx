@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useUpdateStore } from '../../stores/updateStore'
+import { useDictationStore } from '../../stores/dictationStore'
 import { THEMES, type ThemeName, type ClaudeTheme } from '../../../shared/themes'
 import type { ClaudeAccount, Project } from '../../../shared/types'
 import { Button } from '../ui/Button'
@@ -41,6 +42,9 @@ export function SettingsPage() {
     activeProjectId,
     claudeAccounts, saveAccounts, updateProject,
   } = useProjectStore()
+
+  const smartDictation = useDictationStore((s) => s.smart)
+  const setSmartDictation = useDictationStore((s) => s.setSmart)
 
   const builtCommitFromStatus = useUpdateStore((s) => s.status.builtCommit)
   const [builtCommit, setBuiltCommit] = useState<string | null>(null)
@@ -524,6 +528,36 @@ export function SettingsPage() {
                     style={{ padding: '6px 10px', width: 80 }}
                   />
                 </div>
+              </div>
+            </Panel>
+
+            {/* Dictation */}
+            <Panel visible={activeSection === 'dictation'}>
+              <SectionHeader
+                title="Dictation"
+                description="How the Dictation toggle in an agent's composer decides which pasted text to send straight away."
+              />
+
+              <div
+                className="flex items-center justify-between border border-border rounded-md"
+                style={{ padding: '10px 14px' }}
+              >
+                <div>
+                  <p className="text-xs font-medium text-text">Dictation style</p>
+                  <p className="text-[11px] text-text-muted">
+                    {smartDictation
+                      ? 'Smart: only text your dictation app pastes sends; your own pastes wait for Enter'
+                      : 'Normal: every text paste sends straight away'}
+                  </p>
+                </div>
+                <ToggleGroup
+                  options={[
+                    { value: 'smart', label: 'Smart' },
+                    { value: 'normal', label: 'Normal' },
+                  ]}
+                  value={smartDictation ? 'smart' : 'normal'}
+                  onChange={(v) => setSmartDictation(v === 'smart')}
+                />
               </div>
             </Panel>
 
