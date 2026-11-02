@@ -21,6 +21,7 @@ import { registerDictationHandlers } from './dictation.ipc'
 import { registerCloudSessionHandlers } from './cloud-session.ipc'
 import { registerSandboxerHandlers } from './sandboxer.ipc'
 import { registerAgentBrowserHandlers } from './agent-browser.ipc'
+import { registerWindowHandlers } from './window.ipc'
 import {
   registerContextMapping,
   removeContextMapping,
@@ -49,6 +50,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerCloudSessionHandlers(window)
   registerSandboxerHandlers(window)
   registerAgentBrowserHandlers()
+  registerWindowHandlers()
 
   // Context mapping management for notification routing.
   // The renderer registers sessions, the Code editor (per-project) and individual

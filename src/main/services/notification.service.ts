@@ -2,10 +2,17 @@ import { BrowserWindow, Notification } from 'electron'
 import { IPC } from '../../shared/constants'
 import { eventBus } from './event-bus'
 
-let mainWindow: BrowserWindow | null = null
+/**
+ * Picks (and brings forward) the window that should handle a click on a
+ * notification about `contextId`. With several windows open this is the one
+ * showing that context's project.
+ */
+type FocusTargetResolver = (contextId: string) => BrowserWindow | null | undefined
 
-export function setNotificationWindow(window: BrowserWindow) {
-  mainWindow = window
+let resolveTarget: FocusTargetResolver = () => null
+
+export function setNotificationFocusResolver(resolver: FocusTargetResolver): void {
+  resolveTarget = resolver
 }
 
 export interface NotificationFocusTarget {
@@ -21,7 +28,7 @@ export function showNotification(
   const notification = new Notification({ title, body })
   if (focus) {
     notification.on('click', () => {
-      const w = mainWindow
+      const w = resolveTarget(focus.contextId)
       if (!w || w.isDestroyed()) return
       if (w.isMinimized()) w.restore()
       w.show()

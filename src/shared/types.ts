@@ -4,6 +4,20 @@ export interface ClaudeAccount {
   configDir: string
 }
 
+/** One app window's project tabs. Every project is open in at least one window. */
+export interface WindowLayout {
+  windowId: string
+  /** Project ids shown as tabs in this window, in tab order. */
+  projectIds: string[]
+  activeProjectId: string | null
+}
+
+/** Summary of an open window, for the tab context menu's "Move to window". */
+export interface WindowSummary extends WindowLayout {
+  /** True for the window asking. */
+  isCurrent: boolean
+}
+
 export interface Project {
   id: string
   name: string

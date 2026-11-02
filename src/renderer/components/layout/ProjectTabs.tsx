@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react'
-import { useProjectStore } from '../../stores/projectStore'
+import React, { useEffect, useRef, useState } from 'react'
+import { useProjectStore, selectTabProjects } from '../../stores/projectStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { useUpdateStore } from '../../stores/updateStore'
 import { Button } from '../ui/Button'
@@ -7,18 +7,61 @@ import { Dialog } from '../ui/Dialog'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { CustomButtonBar } from '../buttons/CustomButtonBar'
 import { RemoteTogglePopover } from './RemoteTogglePopover'
-import type { Project } from '../../../../shared/types'
+import { useContextMenu, type ContextMenuItem } from '../ui/ContextMenu'
+import {
+  PROJECT_TAB_MIME,
+  moveToInsertionPoint,
+  parseTabDragPayload,
+} from '../../lib/tabOrder'
+import type { Project, WindowSummary } from '../../../shared/types'
+
+/** The tab drag that started in this window, if any. */
+interface LocalDrag {
+  token: string
+  projectId: string
+  index: number
+  /** Set when the drop landed on this window's own tab strip (a reorder). */
+  handledLocally: boolean
+}
+
+/** Insertion point (0..n) for a drag over tab `index`: before it, or after it past its midpoint. */
+function insertionIndex(e: React.DragEvent, index: number): number {
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  return e.clientX > rect.left + rect.width / 2 ? index + 1 : index
+}
+
+function windowLabel(w: WindowSummary, projects: Project[]): string {
+  const names = w.projectIds
+    .map((id) => projects.find((p) => p.id === id)?.name)
+    .filter(Boolean) as string[]
+  if (names.length === 0) return 'Empty window'
+  return names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} +${names.length - 3}`
+}
 
 export function ProjectTabs() {
-  const { projects, activeProjectId, setActiveProject, addProject, removeProject, reorderProjects } =
-    useProjectStore()
+  const {
+    projects,
+    activeProjectId,
+    windowId,
+    tabIds,
+    setActiveProject,
+    addProject,
+    removeProject,
+    reorderTabs,
+    closeTab,
+  } = useProjectStore()
+  const tabs = selectTabProjects({ projects, windowId, tabIds })
   const { getNotificationCountForProject } = useNotificationStore()
   const { status, log, setStatus, appendLog, reset } = useUpdateStore()
   const { openSettings } = useSettingsStore()
 
   const [projectToClose, setProjectToClose] = useState<Project | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+  /** Insertion point (0..tabs.length) under a tab drag, from this or another window. */
   const [overIndex, setOverIndex] = useState<number | null>(null)
+  const localDrag = useRef<LocalDrag | null>(null)
+  const { onContextMenu, menu } = useContextMenu()
+  const multiWindow = !!windowId && !!window.api?.windows
 
   useEffect(() => {
     const removeStatus = window.api.update.onStatus(setStatus)
@@ -47,35 +90,135 @@ export function ProjectTabs() {
     return ''
   })()
 
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDragIndex(index)
-    e.dataTransfer.effectAllowed = 'move'
+  const resetDrag = () => {
+    setDragIndex(null)
+    setOverIndex(null)
   }
 
+  const handleDragStart = (e: React.DragEvent, index: number, project: Project) => {
+    const token = crypto.randomUUID()
+    localDrag.current = { token, projectId: project.id, index, handledLocally: false }
+    setDragIndex(index)
+    e.dataTransfer.effectAllowed = 'copyMove'
+    // Custom MIME so the tab can be dropped on another window's tab strip, and
+    // so editors/terminals don't treat it as text.
+    e.dataTransfer.setData(
+      PROJECT_TAB_MIME,
+      JSON.stringify({ token, projectId: project.id, fromWindowId: windowId })
+    )
+  }
+
+  const isTabDrag = (e: React.DragEvent) =>
+    localDrag.current !== null || Array.from(e.dataTransfer.types).includes(PROJECT_TAB_MIME)
+
   const handleDragOver = (e: React.DragEvent, index: number) => {
+    if (!isTabDrag(e)) return
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    setOverIndex(index)
+    e.stopPropagation()
+    // Option/Alt-drag into another window keeps the tab here too.
+    e.dataTransfer.dropEffect = !localDrag.current && e.altKey ? 'copy' : 'move'
+    setOverIndex(insertionIndex(e, index))
   }
 
   const handleDrop = (e: React.DragEvent, index: number) => {
+    if (!isTabDrag(e)) return
     e.preventDefault()
-    if (dragIndex === null || dragIndex === index) {
-      setDragIndex(null)
-      setOverIndex(null)
+    e.stopPropagation()
+    const insertAt = insertionIndex(e, index)
+    const local = localDrag.current
+    if (local) {
+      // Reorder within this window.
+      local.handledLocally = true
+      const ids = tabs.map((p) => p.id)
+      const from = ids.indexOf(local.projectId)
+      if (from >= 0) {
+        const reordered = moveToInsertionPoint(ids, from, insertAt)
+        if (reordered.join() !== ids.join()) void reorderTabs(reordered)
+      }
+      resetDrag()
       return
     }
-    const reordered = [...projects]
-    const [moved] = reordered.splice(dragIndex, 1)
-    reordered.splice(index, 0, moved)
-    reorderProjects(reordered.map((p) => p.id))
-    setDragIndex(null)
-    setOverIndex(null)
+    // A tab dragged in from another window.
+    const payload = parseTabDragPayload(e.dataTransfer.getData(PROJECT_TAB_MIME))
+    resetDrag()
+    if (!payload || !payload.fromWindowId || !multiWindow) return
+    void window.api.windows.moveTab(payload.token, payload.projectId, payload.fromWindowId, insertAt, e.altKey)
   }
 
-  const handleDragEnd = () => {
-    setDragIndex(null)
-    setOverIndex(null)
+  const handleDragLeave = (e: React.DragEvent) => {
+    // Only clear when leaving the strip, not when moving between tabs.
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOverIndex(null)
+  }
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    const local = localDrag.current
+    localDrag.current = null
+    resetDrag()
+    if (!local || local.handledLocally || !multiWindow) return
+    // Dropped somewhere other than this window's tab strip: another window's
+    // strip (it reports the drop), over another window, or outside every
+    // window — which tears the tab off into a new window.
+    void window.api.windows.tabDragEnd(local.token, local.projectId, e.altKey)
+  }
+
+  /** Close the tab here if another window still shows the project; otherwise offer to remove it. */
+  const requestClose = async (project: Project) => {
+    if (multiWindow) {
+      try {
+        const all = await window.api.windows.list()
+        const elsewhere = all.some((w) => !w.isCurrent && w.projectIds.includes(project.id))
+        if (elsewhere) {
+          closeTab(project.id)
+          return
+        }
+      } catch {
+        // Fall through to the remove dialog.
+      }
+    }
+    setProjectToClose(project)
+  }
+
+  const handleTabContextMenu = async (e: React.MouseEvent, project: Project) => {
+    if (!multiWindow) return
+    e.preventDefault()
+    e.stopPropagation()
+    const { clientX, clientY } = e
+    let others: WindowSummary[] = []
+    let openElsewhere = false
+    try {
+      const all = await window.api.windows.list()
+      others = all.filter((w) => !w.isCurrent)
+      openElsewhere = others.some((w) => w.projectIds.includes(project.id))
+    } catch {
+      others = []
+    }
+    const items: ContextMenuItem[] = [
+      {
+        label: 'Move to New Window',
+        onClick: () => void window.api.windows.openProject(project.id, 'move'),
+        disabled: tabs.length <= 1,
+      },
+      {
+        label: 'Open in Another Window',
+        onClick: () => void window.api.windows.openProject(project.id, 'copy'),
+        separatorAfter: others.length === 0,
+      },
+      ...others.map((w, i) => ({
+        label: `Move to Window: ${windowLabel(w, projects)}`,
+        onClick: () => void window.api.windows.sendTab(project.id, w.windowId),
+        separatorAfter: i === others.length - 1,
+      })),
+      ...(openElsewhere ? [{ label: 'Close Tab', onClick: () => closeTab(project.id) }] : []),
+      {
+        label: 'Remove Project…',
+        variant: 'danger' as const,
+        onClick: () => setProjectToClose(project),
+      },
+    ]
+    onContextMenu(
+      { clientX, clientY, preventDefault: () => {}, stopPropagation: () => {} } as React.MouseEvent,
+      items
+    )
   }
 
   return (
@@ -89,12 +232,17 @@ export function ProjectTabs() {
         aria-label="Projects"
         aria-orientation="horizontal"
         className="flex items-center h-full gap-px min-w-0"
+        onDragLeave={handleDragLeave}
       >
-        {projects.map((project, index) => {
+        {tabs.map((project, index) => {
           const count = getPendingCount(project.id)
           const isActive = project.id === activeProjectId
-          const isDraggingOver = overIndex === index && dragIndex !== null && dragIndex !== index
           const isDragging = dragIndex === index
+          // Drop indicator: a bar on the tab's left edge, or the last tab's right edge.
+          const showBefore =
+            overIndex === index && !(dragIndex !== null && (dragIndex === index || dragIndex === index - 1))
+          const showAfter =
+            index === tabs.length - 1 && overIndex === tabs.length && dragIndex !== tabs.length - 1
 
           return (
             <button
@@ -102,19 +250,26 @@ export function ProjectTabs() {
               role="tab"
               aria-selected={isActive}
               draggable
-              onDragStart={(e) => handleDragStart(e, index)}
+              onDragStart={(e) => handleDragStart(e, index, project)}
               onDragOver={(e) => handleDragOver(e, index)}
               onDrop={(e) => handleDrop(e, index)}
               onDragEnd={handleDragEnd}
               onClick={() => setActiveProject(project.id)}
+              onContextMenu={(e) => void handleTabContextMenu(e, project)}
+              title={multiWindow ? `${project.name} — drag out to open in a new window` : project.name}
               className={[
                 'titlebar-no-drag group relative flex items-center h-full w-44 text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset cursor-grab active:cursor-grabbing',
                 isActive ? 'bg-bg text-text' : 'text-text-muted hover:text-text hover:bg-bg-secondary',
                 isDragging ? 'opacity-50' : '',
-                isDraggingOver ? 'ring-l-2 border-l-2 border-accent' : '',
               ].join(' ')}
               style={{ paddingLeft: 16, paddingRight: 32 }}
             >
+              {showBefore && (
+                <span aria-hidden className="absolute left-0 top-1 bottom-1 w-[2px] bg-accent pointer-events-none" />
+              )}
+              {showAfter && (
+                <span aria-hidden className="absolute right-0 top-1 bottom-1 w-[2px] bg-accent pointer-events-none" />
+              )}
               <span className="truncate min-w-0">{project.name}</span>
 
               {/* Right slot: badge or X, share same position */}
@@ -130,7 +285,7 @@ export function ProjectTabs() {
                       role="button"
                       aria-label={`Close ${project.name}`}
                       tabIndex={-1}
-                      onClick={(e) => { e.stopPropagation(); setProjectToClose(project) }}
+                      onClick={(e) => { e.stopPropagation(); void requestClose(project) }}
                       className="hidden group-hover:flex items-center justify-center w-4 h-4 text-[12px] hover:text-danger cursor-pointer"
                     >
                       ×
@@ -142,7 +297,7 @@ export function ProjectTabs() {
                     role="button"
                     aria-label={`Close ${project.name}`}
                     tabIndex={-1}
-                    onClick={(e) => { e.stopPropagation(); setProjectToClose(project) }}
+                    onClick={(e) => { e.stopPropagation(); void requestClose(project) }}
                     className="opacity-0 group-hover:opacity-100 flex items-center justify-center w-4 h-4 text-[12px] hover:text-danger cursor-pointer"
                   >
                     ×
@@ -208,6 +363,8 @@ export function ProjectTabs() {
           <circle cx="12" cy="12" r="3" />
         </svg>
       </Button>
+
+      {menu}
 
       {/* Close project confirm dialog */}
       <Dialog
