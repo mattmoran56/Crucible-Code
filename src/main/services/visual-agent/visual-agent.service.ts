@@ -406,7 +406,12 @@ function spawnMain(held: LiveAgent): void {
   } catch (err) {
     console.warn('[visual-agent] attachments folder failed:', (err as Error)?.message ?? err)
   }
-  const argv = agentArgv({ model: held.model, resume: held.claudeSessionId, addDirs: [dir] })
+  const argv = agentArgv({
+    model: held.model,
+    resume: held.claudeSessionId,
+    addDirs: [dir],
+    orchestratorBranch: held.opts.orchestratorBranch,
+  })
   held.noise = []
   held.sawJson = false
   held.stopping = false

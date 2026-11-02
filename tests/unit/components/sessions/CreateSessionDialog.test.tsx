@@ -51,8 +51,8 @@ describe('<CreateSessionDialog> location toggle', () => {
     await waitFor(() => expect(createSession).toHaveBeenCalled())
     expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'fix-auth', 'main', 'Fix the auth bug', undefined, {
       branchName: 'session/fix-auth',
+      mode: 'single-branch',
       location: 'cloud',
-      cloudMode: 'single-branch',
     })
     await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
@@ -68,14 +68,30 @@ describe('<CreateSessionDialog> location toggle', () => {
     await waitFor(() =>
       expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'Big Refactor', 'main', 'Split it up', undefined, {
         branchName: 'session/big-refactor',
+        mode: 'orchestrator',
         location: 'cloud',
-        cloudMode: 'orchestrator',
       })
     )
   })
 
-  it('hides the cloud session type for a local session', () => {
+  it('offers an orchestrator local session and passes the mode through', async () => {
     render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    expect(radio('Single branch').getAttribute('aria-checked')).toBe('true')
+    fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'Big Refactor' } })
+    fireEvent.click(radio('Orchestrator'))
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'Big Refactor', 'main', undefined, undefined, {
+        branchName: 'session/big-refactor',
+        mode: 'orchestrator',
+      })
+    )
+  })
+
+  it('hides the session type for scheduled sessions', () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    fireEvent.click(screen.getByLabelText('Schedule for later'))
     expect(screen.queryByRole('radio', { name: 'Orchestrator' })).toBeNull()
   })
 
@@ -88,6 +104,7 @@ describe('<CreateSessionDialog> location toggle', () => {
     await waitFor(() =>
       expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'fix-auth', 'main', undefined, undefined, {
         branchName: 'session/fix-auth',
+        mode: 'single-branch',
       })
     )
   })
@@ -115,6 +132,7 @@ describe('<CreateSessionDialog> branch field', () => {
     await waitFor(() =>
       expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'login-2', 'main', undefined, undefined, {
         branchName: 'feature/login',
+        mode: 'single-branch',
       })
     )
   })

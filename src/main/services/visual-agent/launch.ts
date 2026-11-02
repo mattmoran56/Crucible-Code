@@ -10,6 +10,7 @@
 import { AUTO_PERMISSION_MODE_ARGS } from '../terminal.service'
 import { DEFAULT_VISUAL_AGENT_MODEL } from '../../../shared/visual-agent'
 import type { VisualAgentAskDecision } from '../../../shared/visual-agent'
+import { validateBranchName } from '../../../shared/branch-name'
 import type { PermissionRequest } from './normalise'
 import type { ImageBlock } from './attachments'
 
@@ -36,7 +37,18 @@ export interface AgentArgvOptions {
   resume?: string | null
   /** Extra directories Claude may read (the agent's attachments folder). */
   addDirs?: readonly string[]
+  /** A local orchestrator session's branch: adds the orchestrator system prompt. */
+  orchestratorBranch?: string | null
 }
+
+/**
+ * Appended to a local orchestrator agent's system prompt. Same freedom as a
+ * cloud orchestrator (cloud-session.service withOrchestratorInstruction), but
+ * as a system prompt so it holds with or without a startup prompt and across
+ * restarts and resumes.
+ */
+export const localOrchestratorSystemPrompt = (branch: string): string =>
+  `You are an orchestrator session. You start on the git branch \`${branch}\` in this worktree, but you are not limited to it: create, check out, merge and push to whichever branches the task needs, and split the work across branches where that helps. When you finish, list every branch you created or pushed and what is on each.`
 
 /**
  * The long-lived main process.
@@ -58,6 +70,10 @@ export const agentArgv = (opts: AgentArgvOptions): string[] => {
   ]
   if (opts.resume) argv.push('--resume', opts.resume)
   for (const dir of opts.addDirs ?? []) argv.push('--add-dir', dir)
+  const branch = opts.orchestratorBranch?.trim()
+  if (branch && !validateBranchName(branch)) {
+    argv.push('--append-system-prompt', localOrchestratorSystemPrompt(branch))
+  }
   return argv
 }
 

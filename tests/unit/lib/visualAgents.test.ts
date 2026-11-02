@@ -33,7 +33,15 @@ describe('buildVisualAgentStartOptions', () => {
       resumeClaudeSessionId: null,
       claudeConfigDir: '/cfg/two',
       initialPrompt: 'fix it',
+      orchestratorBranch: null,
     })
+  })
+
+  it('passes a local orchestrator session its branch', () => {
+    const orch: Session = { ...session, mode: 'orchestrator' }
+    expect(buildVisualAgentStartOptions({ session: orch, project, accounts, tabKey: 'agent' }).orchestratorBranch).toBe('session/feat')
+    expect(buildVisualAgentStartOptions({ session: orch, project, accounts, tabKey: 'agent:2' }).orchestratorBranch).toBe('session/feat')
+    expect(buildVisualAgentStartOptions({ session, project, accounts, tabKey: 'agent' }).orchestratorBranch).toBeNull()
   })
 
   it('resumes the persisted conversation and model for the tab', () => {

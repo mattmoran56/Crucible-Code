@@ -17,6 +17,7 @@ import {
 } from '../../../src/main/services/visual-agent/normalise'
 import {
   agentArgv,
+  localOrchestratorSystemPrompt,
   forkArgv,
   interruptFrame,
   isValidModel,
@@ -346,6 +347,18 @@ describe('launch argv', () => {
     expect(argv[argv.indexOf('--permission-prompt-tool') + 1]).toBe('stdio')
     expect(argv[argv.indexOf('--model') + 1]).toBe('claude-opus-5-5')
     expect(argv).not.toContain('--resume')
+    for (const f of FORBIDDEN) expect(argv).not.toContain(f)
+  })
+
+  it('appends the orchestrator system prompt only for a local orchestrator with a valid branch', () => {
+    expect(agentArgv({ model: 'claude-opus-5-5' })).not.toContain('--append-system-prompt')
+    expect(agentArgv({ model: 'claude-opus-5-5', orchestratorBranch: null })).not.toContain('--append-system-prompt')
+    const argv = agentArgv({ model: 'claude-opus-5-5', orchestratorBranch: 'session/big' })
+    const prompt = argv[argv.indexOf('--append-system-prompt') + 1]
+    expect(prompt).toBe(localOrchestratorSystemPrompt('session/big'))
+    expect(prompt).toContain('You are an orchestrator session')
+    expect(prompt).toContain('`session/big`')
+    expect(agentArgv({ model: 'claude-opus-5-5', orchestratorBranch: '--evil' })).not.toContain('--append-system-prompt')
     for (const f of FORBIDDEN) expect(argv).not.toContain(f)
   })
 
