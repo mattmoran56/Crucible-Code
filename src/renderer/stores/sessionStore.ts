@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation, CloudSessionMode } from '../../shared/types'
+import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation, SessionMode } from '../../shared/types'
 import { useToastStore } from './toastStore'
 import { defaultSessionBranch, renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name'
 import { uniqueSessionName } from '../../shared/session-name'
@@ -126,8 +126,12 @@ export interface CreateSessionOptions {
   location?: SessionLocation
   /** Branch to create for the session. Defaults to `session/<name>`. */
   branchName?: string
-  /** How a cloud session treats branches. Default 'single-branch'. */
-  cloudMode?: CloudSessionMode
+  /**
+   * How the session treats branches, cloud or local. Default 'single-branch'.
+   * A cloud orchestrator is told so in its task; a local one is saved with
+   * `mode` and its agents get the orchestrator system prompt.
+   */
+  mode?: SessionMode
 }
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
@@ -294,9 +298,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       session.cloudPending = {
         task: startupCommand!.trim(),
         branch: worktreeInfo.branch,
-        ...(options?.cloudMode === 'orchestrator' ? { mode: 'orchestrator' as const } : {}),
+        ...(options?.mode === 'orchestrator' ? { mode: 'orchestrator' as const } : {}),
         createdAt: new Date().toISOString(),
       }
+    } else if (options?.mode === 'orchestrator') {
+      session.mode = 'orchestrator'
     }
 
     const sessions = sortByCreatedAtDesc([...get().sessions, session])

@@ -156,11 +156,15 @@ export interface CloudSessionResult {
  * new session's URL; then `cloud` is set and this is cleared.
  */
 /**
- * How a cloud session treats branches. 'single-branch' pins it to the session
- * branch and tells it to push only there; 'orchestrator' starts it on that
- * branch but lets it create, switch between and push any branches it needs.
+ * How a session treats branches. 'single-branch' keeps it on the session
+ * branch (a cloud one is pinned to it and told to push only there);
+ * 'orchestrator' starts it on that branch but lets it create, switch between
+ * and push any branches it needs. Offered for both cloud and local sessions.
  */
-export type CloudSessionMode = 'single-branch' | 'orchestrator'
+export type SessionMode = 'single-branch' | 'orchestrator'
+
+/** How a cloud session treats branches (see SessionMode). */
+export type CloudSessionMode = SessionMode
 
 export interface CloudSessionPending {
   /** The task the cloud session starts with (without the branch instruction). */
@@ -275,6 +279,13 @@ export interface Session {
   cloud?: CloudSessionLink
   /** Set while the cloud session is being created (location 'cloud', no `cloud` yet). */
   cloudPending?: CloudSessionPending
+  /**
+   * A local session's branch mode. Missing means 'single-branch' (every
+   * session before local orchestrators). An orchestrator's local agents start
+   * with an appended system prompt saying they may work across branches. A
+   * cloud session keeps its mode on `cloudPending` instead.
+   */
+  mode?: SessionMode
   /**
    * True when the app created `branchName` (via createWorktree), so removing
    * the session may delete it even when it does not use the `session/` prefix.
