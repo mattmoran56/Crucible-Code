@@ -18,7 +18,7 @@
 ## Features
 
 - **Multi-project management** — Open multiple git repos, switch with draggable tabs, per-project notifications
-- **Multiple windows** — Split your projects across windows: drag a tab out of the strip to tear it off into a new window, or onto another window to move it there (like Chrome). Open the same project in two windows to work on two worktrees side by side
+- **Multiple windows** — Split your projects across windows: drag a tab out of the strip to tear it off into a new window that follows the cursor, or onto another window's tabs to move it there (like Chrome). Open the same project in two windows to work on two worktrees side by side
 - **Session isolation** — Each session gets its own git worktree and branch — no conflicts between parallel agents
 - **Agents without a worktree** — A second button next to **+** in Sessions starts a short-lived agent straight in the main checkout (no worktree, no branch) for PR reviews and other non-code work, listed alongside your other sessions and named by Haiku from your first message
 - **Cloud sessions & Teleport** — New sessions start in Claude Code on the web by default, so heavy builds and CI-style test runs happen off your machine. Watch and chat with it on the real claude.ai page embedded in the Agent tab, then hit **Teleport** to pull it down into the local worktree and carry on there
@@ -227,9 +227,11 @@ Projects can be split across as many windows as you like, each with its own tab 
 
 ![Two windows, with web-app open in both on different worktrees](docs/screenshots/multi-window-side-by-side.png)
 
-- **Tear off** — Drag a tab out of the tab strip and drop it outside any window to open it in a new window under the cursor. Dragging a window's only tab moves that window
-- **Move between windows** — Drop a tab on another window's tab strip (or anywhere over that window) to move it there. Hold **Option** while dropping to copy it instead, keeping it in both windows
-- **Tab menu** — Right-click a tab for **Move to New Window**, **Open in Another Window** (a second copy), **Move to Window: …**, **Close Tab** (when another window still shows the project) and **Remove Project…**
+- **Reorder** — Drag a tab along the strip; the other tabs make room as you go
+- **Tear off** — Drag a tab up or down out of the strip and it pops out into its own window straight away, which follows the cursor until you let go. The tab leaves the old window. Dragging a window's only tab just moves that window
+- **Move between windows** — While dragging, move over another window's tab strip and the tab joins it at that spot (you can keep reordering there); let go to leave it. It's a move: the tab leaves the old window, and a window left with no tabs closes. Drag back out to tear it off again. Hold **Option** as you let go to copy instead, keeping it in both windows
+- **Cancel** — Press **Escape** mid-drag to put everything back where it was
+- **Tab menu** — Right-click a tab for **Move to New Window** (moves it), **Duplicate in New Window** (a second copy, kept here too), **Move to Window: …**, **Close Tab** (when another window still shows the project) and **Remove Project…**
 - **Never loses a project** — Closing a window moves any project only it showed into the window you used last. Removing a project closes its tab in every window
 - **Remembered** — Each window's tabs, active project, size and position are restored on the next launch
 - **Kept in sync** — Adding or editing a project, or creating a session, in one window updates the others. Each window is titled after its active project, so windows are easy to tell apart in the Window menu and Mission Control. Notification clicks bring forward the window showing that project
