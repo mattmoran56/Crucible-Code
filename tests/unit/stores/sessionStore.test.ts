@@ -347,6 +347,19 @@ describe('sessionStore.createSession', () => {
     expect(useSessionStore.getState().sessions[0]).toMatchObject({ branchName: 'feature/login', ownsBranch: true })
   })
 
+  it('saves a local orchestrator session with its mode', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', 'feat', 'main', undefined, undefined, { mode: 'orchestrator' })
+    const s = useSessionStore.getState().sessions[0]
+    expect(s.mode).toBe('orchestrator')
+    expect(s.location).toBeUndefined()
+    expect(s.cloudPending).toBeUndefined()
+  })
+
+  it('leaves a single-branch local session without a mode', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', 'feat', 'main', undefined, undefined, { mode: 'single-branch' })
+    expect(useSessionStore.getState().sessions[0].mode).toBeUndefined()
+  })
+
   it('sorts the new session ahead of older ones', async () => {
     useSessionStore.setState({
       sessions: [S('old', { createdAt: '2000-01-01T00:00:00.000Z' })],

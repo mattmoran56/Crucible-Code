@@ -184,6 +184,13 @@ const targets: ScreenshotTarget[] = [
     clickSelector: '[role="radio"]:has-text("Orchestrator")',
   },
   {
+    name: 'new-session-dialog-local-orchestrator',
+    storyId: 'sessions-createsessiondialog--local',
+    delay: 1000,
+    viewport: { width: 900, height: 700 },
+    clickSelector: '[role="radio"]:has-text("Orchestrator")',
+  },
+  {
     name: 'rename-session-dialog',
     storyId: 'app-full-layout--rename-session-dialog',
     delay: 3500,

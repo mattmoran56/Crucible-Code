@@ -114,6 +114,12 @@ export interface VisualAgentStartOptions {
   claudeConfigDir?: string | null
   initialPrompt?: string | null
   /**
+   * The session is a local orchestrator starting on this branch: the agent
+   * gets a system prompt saying it may create, switch between and push any
+   * branches the task needs. Unset for a single-branch session.
+   */
+  orchestratorBranch?: string | null
+  /**
    * Restart only: when the agent already exists but its process has ended,
    * drop the held conversation and begin a new Claude session instead of
    * resuming the old one.
