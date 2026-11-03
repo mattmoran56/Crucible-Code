@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   addProjectToWindow,
   closeWindow,
-  containsPoint,
   moveProject,
   projectsOnlyIn,
   reconcileLayouts,
   removeProjectEverywhere,
   removeProjectFromWindow,
   setWindowTabs,
-  tearOffBounds,
   type LayoutEntry,
 } from '../../../src/main/services/window-layout'
 
@@ -153,35 +151,5 @@ describe('closing a window', () => {
   it('drops the window when everything it shows is open elsewhere', () => {
     const out = closeWindow([W('w1', ['a']), W('w2', ['a', 'c'])], 'w1', 'w2')
     expect(out).toEqual([W('w2', ['a', 'c'])])
-  })
-})
-
-describe('geometry helpers', () => {
-  it('containsPoint is inclusive of the top-left edge only', () => {
-    const b = { x: 10, y: 10, width: 100, height: 50 }
-    expect(containsPoint(b, { x: 10, y: 10 })).toBe(true)
-    expect(containsPoint(b, { x: 109, y: 59 })).toBe(true)
-    expect(containsPoint(b, { x: 110, y: 30 })).toBe(false)
-    expect(containsPoint(b, { x: 50, y: 5 })).toBe(false)
-  })
-
-  it('tearOffBounds puts the window under the cursor', () => {
-    const work = { x: 0, y: 25, width: 2000, height: 1400 }
-    expect(tearOffBounds({ x: 800, y: 400 }, { width: 1400, height: 900 }, work)).toEqual({
-      x: 600,
-      y: 380,
-      width: 1400,
-      height: 900,
-    })
-  })
-
-  it('tearOffBounds clamps to the work area and shrinks oversized windows', () => {
-    const work = { x: 0, y: 25, width: 1000, height: 700 }
-    expect(tearOffBounds({ x: 5, y: 0 }, { width: 1400, height: 900 }, work)).toEqual({
-      x: 0,
-      y: 25,
-      width: 1000,
-      height: 700,
-    })
   })
 })

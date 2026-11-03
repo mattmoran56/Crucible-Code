@@ -17,19 +17,19 @@ export function registerWindowHandlers(): void {
 
   handle(IPC.WINDOW_LIST, async (e) => windows.listWindows(e?.sender))
 
-  handle(
-    IPC.WINDOW_MOVE_TAB,
-    async (e, dragToken: string, projectId: string, fromWindowId: string, index: number, copy?: boolean) =>
-      windows.dropTab(e?.sender, dragToken, projectId, fromWindowId, index, !!copy)
-  )
-
   handle(IPC.WINDOW_SEND_TAB, async (e, projectId: string, toWindowId: string) =>
     windows.sendTab(e?.sender, projectId, toWindowId)
   )
 
-  handle(IPC.WINDOW_TAB_DRAG_END, async (e, dragToken: string, projectId: string, copy?: boolean) =>
-    windows.tabDragEnded(e?.sender, dragToken, projectId, !!copy)
+  handle(IPC.WINDOW_TAB_DRAG_START, async (e, projectId: string, grab?: { x: number; y: number }) =>
+    windows.startTabDrag(e?.sender, projectId, grab)
   )
+
+  handle(IPC.WINDOW_TAB_DRAG_END, async (e, opts?: { cancel?: boolean; copy?: boolean }) =>
+    windows.endTabDrag(e?.sender, opts)
+  )
+
+  handle(IPC.WINDOW_TAB_STRIP, async (e, geometry: unknown) => windows.reportTabStrip(e?.sender, geometry))
 
   handle(IPC.WINDOW_OPEN_PROJECT, async (e, projectId: string, mode?: 'move' | 'copy') =>
     windows.openProjectInNewWindow(e?.sender, projectId, mode === 'copy' ? 'copy' : 'move')

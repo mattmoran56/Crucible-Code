@@ -163,26 +163,3 @@ export function closeWindow(layouts: LayoutEntry[], windowId: string, intoWindow
     w.id === intoWindowId ? withActive({ ...w, projectIds: dedupe([...w.projectIds, ...orphans]) }) : w
   )
 }
-
-/** True when a screen point falls inside a window's bounds. */
-export function containsPoint(b: WindowBounds, p: { x: number; y: number }): boolean {
-  return p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height
-}
-
-/**
- * Where to put a torn-off window so the dragged tab lands under the cursor:
- * the window's top-left sits a little up-left of the drop point, clamped to the
- * display's work area.
- */
-export function tearOffBounds(
-  cursor: { x: number; y: number },
-  size: { width: number; height: number },
-  workArea: WindowBounds
-): WindowBounds {
-  const width = Math.min(size.width, workArea.width)
-  const height = Math.min(size.height, workArea.height)
-  // ~100px in from the left skips the macOS traffic lights so the cursor sits on the first tab.
-  const x = Math.round(Math.min(Math.max(cursor.x - 160, workArea.x), workArea.x + workArea.width - width))
-  const y = Math.round(Math.min(Math.max(cursor.y - 20, workArea.y), workArea.y + workArea.height - height))
-  return { x, y, width, height }
-}

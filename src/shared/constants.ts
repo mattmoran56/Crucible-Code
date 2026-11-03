@@ -290,12 +290,14 @@ export const IPC = {
   WINDOW_LAYOUT_CHANGED: 'window:layout-changed',
   /** Every open window's id, title and tabs (for "Move to window"). */
   WINDOW_LIST: 'window:list',
-  /** Dropped a project tab dragged from another window onto this window's tab strip. */
-  WINDOW_MOVE_TAB: 'window:move-tab',
   /** Move a project tab into an existing window (from the tab context menu). */
   WINDOW_SEND_TAB: 'window:send-tab',
-  /** A tab drag from this window ended; main decides whether to tear it off into a new window. */
+  /** A press on a project tab became a drag; main runs it (reorder, tear off, move between windows). */
+  WINDOW_TAB_DRAG_START: 'window:tab-drag-start',
+  /** The tab drag started in this window was released (or cancelled with Escape). */
   WINDOW_TAB_DRAG_END: 'window:tab-drag-end',
+  /** This window's tab-strip geometry, for hit-testing tab drags. */
+  WINDOW_TAB_STRIP: 'window:tab-strip',
   /** Open a project in a brand-new window (moving it, or as a second copy). */
   WINDOW_OPEN_PROJECT: 'window:open-project',
   /** main → renderer: the project list changed in another window. */

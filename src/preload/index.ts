@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
 import type { VisualAgentAskDecision, VisualAgentAttachment, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
 import type { AgentBrowserLinkEvent } from '../shared/agent-browser'
+import type { TabStripGeometry } from '../shared/tab-drag'
 import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, CloudSessionMode, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck, WindowLayout, WindowSummary } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
@@ -235,12 +236,15 @@ const api = {
     setLayout: (projectIds: string[], activeProjectId: string | null): Promise<WindowLayout | null> =>
       ipcRenderer.invoke(IPC.WINDOW_SET_LAYOUT, projectIds, activeProjectId),
     list: (): Promise<WindowSummary[]> => ipcRenderer.invoke(IPC.WINDOW_LIST),
-    moveTab: (dragToken: string, projectId: string, fromWindowId: string, index: number, copy = false): Promise<void> =>
-      ipcRenderer.invoke(IPC.WINDOW_MOVE_TAB, dragToken, projectId, fromWindowId, index, copy),
     sendTab: (projectId: string, toWindowId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.WINDOW_SEND_TAB, projectId, toWindowId),
-    tabDragEnd: (dragToken: string, projectId: string, copy = false): Promise<void> =>
-      ipcRenderer.invoke(IPC.WINDOW_TAB_DRAG_END, dragToken, projectId, copy),
+    /** Hand a tab drag to main; `grab` is where in the tab the pointer pressed. */
+    tabDragStart: (projectId: string, grab: { x: number; y: number }): Promise<void> =>
+      ipcRenderer.invoke(IPC.WINDOW_TAB_DRAG_START, projectId, grab),
+    tabDragEnd: (opts: { cancel?: boolean; copy?: boolean }): Promise<void> =>
+      ipcRenderer.invoke(IPC.WINDOW_TAB_DRAG_END, opts),
+    reportTabStrip: (geometry: TabStripGeometry): Promise<void> =>
+      ipcRenderer.invoke(IPC.WINDOW_TAB_STRIP, geometry),
     openProject: (projectId: string, mode: 'move' | 'copy'): Promise<void> =>
       ipcRenderer.invoke(IPC.WINDOW_OPEN_PROJECT, projectId, mode),
     onLayoutChanged: (callback: (layout: WindowLayout) => void) => {
