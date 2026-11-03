@@ -101,7 +101,9 @@ export function SubagentTray({
       className="flex shrink-0 items-center gap-2 overflow-x-auto border-t border-dashed border-border bg-bg-secondary/50 px-3! py-1.5!"
     >
       <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">Subagents</span>
-      {ids.map((id) => {
+      {/* Newest first: `ids` is in start order, so the agents still working sit at
+          the front of the tray rather than off the end of a long scroll. */}
+      {[...ids].reverse().map((id) => {
         const thread = threads.get(id)
         return thread ? (
           <Chip key={id} thread={thread} open={openId === id} onOpen={() => onOpen(id)} register={register} />
