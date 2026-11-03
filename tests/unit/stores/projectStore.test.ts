@@ -210,3 +210,88 @@ describe('projectStore accounts (extended)', () => {
     expect(useProjectStore.getState().claudeAccounts).toEqual([])
   })
 })
+
+describe('projectStore with multiple windows', () => {
+  const getLayout = vi.fn()
+  const setLayout = vi.fn()
+
+  beforeEach(() => {
+    getLayout.mockReset()
+    setLayout.mockReset().mockResolvedValue(null)
+    ;(window as any).api.windows = { getLayout, setLayout }
+    useProjectStore.setState({ windowId: null, tabIds: [] } as any)
+  })
+
+  it('loads this window\'s tabs and active project from the layout', async () => {
+    list.mockResolvedValue([P({ id: 'p1' }), P({ id: 'p2' }), P({ id: 'p3' })])
+    getLayout.mockResolvedValue({ windowId: 'w2', projectIds: ['p3', 'p1', 'gone'], activeProjectId: 'p1' })
+    await useProjectStore.getState().loadProjects()
+    const s = useProjectStore.getState()
+    expect(s.windowId).toBe('w2')
+    expect(s.tabIds).toEqual(['p3', 'p1'])
+    expect(s.activeProjectId).toBe('p1')
+  })
+
+  it('selectTabProjects returns the window\'s tabs in tab order', async () => {
+    const { selectTabProjects } = await import('../../../src/renderer/stores/projectStore')
+    const projects = [P({ id: 'p1' }), P({ id: 'p2' }), P({ id: 'p3' })]
+    expect(selectTabProjects({ projects, windowId: 'w', tabIds: ['p3', 'p1'] }).map((p) => p.id)).toEqual(['p3', 'p1'])
+    expect(selectTabProjects({ projects, windowId: null, tabIds: [] }).map((p) => p.id)).toEqual(['p1', 'p2', 'p3'])
+  })
+
+  it('activating a project not shown here opens it as a tab and saves the layout', () => {
+    useProjectStore.setState({ windowId: 'w1', tabIds: ['p1'], activeProjectId: 'p1' } as any)
+    useProjectStore.getState().setActiveProject('p2')
+    expect(useProjectStore.getState().tabIds).toEqual(['p1', 'p2'])
+    expect(setLayout).toHaveBeenCalledWith(['p1', 'p2'], 'p2')
+  })
+
+  it('closeTab removes the tab here only and activates its neighbour', () => {
+    useProjectStore.setState({ windowId: 'w1', tabIds: ['p1', 'p2', 'p3'], activeProjectId: 'p2' } as any)
+    useProjectStore.getState().closeTab('p2')
+    expect(useProjectStore.getState().tabIds).toEqual(['p1', 'p3'])
+    expect(useProjectStore.getState().activeProjectId).toBe('p3')
+    expect(remove).not.toHaveBeenCalled()
+    expect(setLayout).toHaveBeenCalledWith(['p1', 'p3'], 'p3')
+  })
+
+  it('reorderTabs reorders this window without touching the global project order', async () => {
+    useProjectStore.setState({ windowId: 'w1', tabIds: ['p1', 'p2'], activeProjectId: 'p1' } as any)
+    await useProjectStore.getState().reorderTabs(['p2', 'p1'])
+    expect(useProjectStore.getState().tabIds).toEqual(['p2', 'p1'])
+    expect(reorder).not.toHaveBeenCalled()
+    expect(setLayout).toHaveBeenCalledWith(['p2', 'p1'], 'p1')
+  })
+
+  it('reorderTabs falls back to the global order without a window manager', async () => {
+    reorder.mockResolvedValue([P({ id: 'p2' }), P({ id: 'p1' })])
+    await useProjectStore.getState().reorderTabs(['p2', 'p1'])
+    expect(reorder).toHaveBeenCalledWith(['p2', 'p1'])
+  })
+
+  it('applyWindowLayout replaces tabs and active project', () => {
+    useProjectStore.getState().applyWindowLayout({ windowId: 'w9', projectIds: ['p2'], activeProjectId: 'p2' })
+    const s = useProjectStore.getState()
+    expect(s.windowId).toBe('w9')
+    expect(s.tabIds).toEqual(['p2'])
+    expect(s.activeProjectId).toBe('p2')
+  })
+
+  it('addProject opens the new project as a tab in this window', async () => {
+    useProjectStore.setState({ windowId: 'w1', tabIds: ['p1'], activeProjectId: 'p1' } as any)
+    selectFolder.mockResolvedValue('/x/new-app')
+    add.mockImplementation(async (p: any) => [P({ id: 'p1' }), p])
+    await useProjectStore.getState().addProject()
+    const s = useProjectStore.getState()
+    expect(s.tabIds).toHaveLength(2)
+    expect(s.activeProjectId).toBe(s.tabIds[1])
+  })
+
+  it('removeProject drops the tab and activates its neighbour', async () => {
+    useProjectStore.setState({ windowId: 'w1', tabIds: ['p1', 'p2'], activeProjectId: 'p1' } as any)
+    remove.mockResolvedValue([P({ id: 'p2' })])
+    await useProjectStore.getState().removeProject('p1')
+    expect(useProjectStore.getState().tabIds).toEqual(['p2'])
+    expect(useProjectStore.getState().activeProjectId).toBe('p2')
+  })
+})

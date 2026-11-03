@@ -90,6 +90,38 @@ export default function App() {
     })
   }, [loadProjects, loadAccounts, loadButtons, loadGroups, loadReviewLoopSettings])
 
+  // Multiple windows: this window's tabs change when a tab is dragged in or
+  // out, and other windows can add/remove projects or save sessions for a
+  // project shown here too.
+  useEffect(() => {
+    const api = window.api.windows
+    if (!api) return
+    const offLayout = api.onLayoutChanged((layout) => {
+      useProjectStore.getState().applyWindowLayout(layout)
+    })
+    const offProjects = api.onProjectsChanged(() => {
+      void useProjectStore.getState().loadProjects()
+    })
+    const offSessions = api.onSessionsChanged((projectId) => {
+      const { currentProjectId, loadSessions } = useSessionStore.getState()
+      if (currentProjectId === projectId) void loadSessions(projectId)
+    })
+    return () => {
+      offLayout()
+      offProjects()
+      offSessions()
+    }
+  }, [])
+
+  // Name the window after its active project so windows are told apart in
+  // the Window menu, Mission Control and the Dock.
+  const activeProjectName = useProjectStore(
+    (s) => s.projects.find((p) => p.id === s.activeProjectId)?.name
+  )
+  useEffect(() => {
+    document.title = activeProjectName ? `${activeProjectName} — Crucible Code` : 'Crucible Code'
+  }, [activeProjectName])
+
   // Stream review-loop progress events from the main process into the store.
   useEffect(() => {
     const remove = window.api.reviewLoop.onStateUpdate((state) => {

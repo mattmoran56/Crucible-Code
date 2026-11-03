@@ -280,4 +280,28 @@ export const IPC = {
   AGENT_BROWSER_OPEN_LINK: 'agent-browser:open-link',
   /** Open the link browser's page in the user's default browser. */
   AGENT_BROWSER_OPEN_EXTERNAL: 'agent-browser:open-external',
+
+  // Multiple app windows (each window holds its own set of project tabs)
+  /** This window's id, project tabs and active project. */
+  WINDOW_GET_LAYOUT: 'window:get-layout',
+  /** Save this window's project tabs (order) and active project. */
+  WINDOW_SET_LAYOUT: 'window:set-layout',
+  /** main → renderer: this window's tabs changed (a tab was moved in or out). */
+  WINDOW_LAYOUT_CHANGED: 'window:layout-changed',
+  /** Every open window's id, title and tabs (for "Move to window"). */
+  WINDOW_LIST: 'window:list',
+  /** Move a project tab into an existing window (from the tab context menu). */
+  WINDOW_SEND_TAB: 'window:send-tab',
+  /** A press on a project tab became a drag; main runs it (reorder, tear off, move between windows). */
+  WINDOW_TAB_DRAG_START: 'window:tab-drag-start',
+  /** The tab drag started in this window was released (or cancelled with Escape). */
+  WINDOW_TAB_DRAG_END: 'window:tab-drag-end',
+  /** This window's tab-strip geometry, for hit-testing tab drags. */
+  WINDOW_TAB_STRIP: 'window:tab-strip',
+  /** Open a project in a brand-new window (moving it, or as a second copy). */
+  WINDOW_OPEN_PROJECT: 'window:open-project',
+  /** main → renderer: the project list changed in another window. */
+  WINDOW_PROJECTS_CHANGED: 'window:projects-changed',
+  /** main → renderer: another window saved a project's sessions. */
+  WINDOW_SESSIONS_CHANGED: 'window:sessions-changed',
 } as const

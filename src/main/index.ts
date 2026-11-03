@@ -1,18 +1,23 @@
-import { app, BrowserWindow } from 'electron'
-import { join } from 'path'
+import { app } from 'electron'
 import fixPath from 'fix-path'
 import { registerAllHandlers } from './ipc/register'
 import {
+  findContextById,
   startNotificationServer,
   stopNotificationServer,
 } from './services/notification-server'
-import { setNotificationWindow } from './services/notification.service'
+import { setNotificationFocusResolver } from './services/notification.service'
 import { killAllTerminals } from './services/terminal.service'
 import { killAllVisualAgents } from './services/visual-agent/visual-agent.service'
 import { stopScheduler } from './services/scheduler.service'
 import { startKeepAwake, stopKeepAwake } from './services/keep-awake.service'
-import { eventBus } from './services/event-bus'
-import { installClaudeWebGuards } from './services/claude-web.service'
+import {
+  appWindows,
+  focusWindowForProject,
+  openInitialWindows,
+  reopenWindows,
+} from './services/window-manager.service'
+import { listProjectIds } from './ipc/project.ipc'
 import { startRelayIfEnabled, stopRelayServer } from '../../remote/server/relay-server'
 import { unregisterCloud } from '../../remote/server/cloud-client'
 import { scrubInheritedClaudeSession } from './services/claude-env'
@@ -30,55 +35,29 @@ fixPath()
 // claude-env.ts.
 scrubInheritedClaudeSession(process.env)
 
-let mainWindow: BrowserWindow | null = null
-
-async function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 800,
-    minHeight: 600,
-    titleBarStyle: 'hiddenInset',
-    backgroundColor: '#faf6f1',
-    show: false,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      // For the embedded claude.ai/code page in cloud sessions' Agent tab.
-      // Every webview is hardened (and restricted to claude.ai on its own
-      // partition) by installClaudeWebGuards below.
-      webviewTag: true,
-    },
-  })
-  installClaudeWebGuards(mainWindow.webContents)
-
-  mainWindow.once('ready-to-show', () => mainWindow!.show())
-
-  // Dual-emit every renderer message onto the in-process event bus so the
-  // embedded relay server can fan the same events out to paired remote
-  // receivers. Zero touch on existing webContents.send call sites.
-  const origSend = mainWindow.webContents.send.bind(mainWindow.webContents)
-  mainWindow.webContents.send = ((channel: string, ...args: unknown[]) => {
-    origSend(channel, ...(args as []))
-    eventBus.emit(channel, ...args)
-  }) as typeof mainWindow.webContents.send
-
+// The app can have several windows, each showing its own set of project tabs
+// (see window-manager.service.ts). Handlers and services get `appWindows`,
+// which delivers their events to every window.
+async function startApp() {
   // Start the notification HTTP server before registering handlers
-  await startNotificationServer(mainWindow)
-  setNotificationWindow(mainWindow)
+  await startNotificationServer(appWindows)
+  // A notification click brings forward the window showing that project.
+  setNotificationFocusResolver((contextId) =>
+    focusWindowForProject(findContextById(contextId)?.projectId ?? projectIdFromContext(contextId))
+  )
 
-  registerAllHandlers(mainWindow)
+  registerAllHandlers(appWindows)
 
   // Start the embedded LAN relay if the user has previously enabled it.
   // The Remote toggle in the renderer top bar controls this flag.
   await startRelayIfEnabled()
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  openInitialWindows(listProjectIds)
+}
+
+/** Code-editor contexts carry their project id (`code-editor:<projectId>`). */
+function projectIdFromContext(contextId: string): string | undefined {
+  return contextId.startsWith('code-editor:') ? contextId.slice('code-editor:'.length) : undefined
 }
 
 app.whenReady().then(() => {
@@ -89,7 +68,7 @@ app.whenReady().then(() => {
   // Destroy sandboxes whose session worktree is already gone (deleted while
   // Docker was down, or the app quit mid-delete). Off the startup path.
   setTimeout(() => void reapOrphanedSessionSandboxes(), 15_000)
-  return createWindow()
+  return startApp()
 })
 
 let cloudUnregistered = false
@@ -122,7 +101,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
-  }
+  reopenWindows()
 })

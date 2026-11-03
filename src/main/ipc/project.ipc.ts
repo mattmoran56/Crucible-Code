@@ -10,6 +10,12 @@ import type { Project, Session, ClaudeAccount } from '../../shared/types'
 import { getStorePath } from '../store-path'
 import { scrubInheritedClaudeSession } from '../services/claude-env'
 import { suggestSessionName } from '../services/session-namer.service'
+import {
+  browserWindowFor,
+  notifyOtherWindows,
+  projectAdded,
+  projectRemoved,
+} from '../services/window-manager.service'
 
 // Auth terminal instances (lightweight, separate from session terminals)
 const authTerminals = new Map<string, pty.IPty>()
@@ -36,46 +42,62 @@ function resolveConfigDir(configDir: string): string {
   return configDir
 }
 
+/** Ids of every registered project (the window manager opens each in some window). */
+export function listProjectIds(): string[] {
+  return store.get('projects', []).map((p) => p.id)
+}
+
 export function registerProjectHandlers(window: BrowserWindow) {
   handle(IPC.PROJECT_LIST, async () => {
     return store.get('projects', [])
   })
 
-  handle(IPC.PROJECT_ADD, async (_e, project: Project) => {
+  // Project list changes are pushed to the other windows so their tab strips
+  // and project settings stay current.
+  handle(IPC.PROJECT_ADD, async (e, project: Project) => {
     const projects = store.get('projects', [])
     projects.push(project)
     store.set('projects', projects)
+    projectAdded(e?.sender, project.id)
+    notifyOtherWindows(e?.sender, IPC.WINDOW_PROJECTS_CHANGED)
     return projects
   })
 
-  handle(IPC.PROJECT_REMOVE, async (_e, projectId: string) => {
+  handle(IPC.PROJECT_REMOVE, async (e, projectId: string) => {
     const projects = store.get('projects', []).filter((p) => p.id !== projectId)
     store.set('projects', projects)
+    projectRemoved(projectId)
+    notifyOtherWindows(e?.sender, IPC.WINDOW_PROJECTS_CHANGED)
     return projects
   })
 
-  handle(IPC.PROJECT_REORDER, async (_e, projectIds: string[]) => {
+  handle(IPC.PROJECT_REORDER, async (e, projectIds: string[]) => {
     const projects = store.get('projects', [])
     const reordered = projectIds.map((id) => projects.find((p) => p.id === id)!).filter(Boolean)
     store.set('projects', reordered)
+    notifyOtherWindows(e?.sender, IPC.WINDOW_PROJECTS_CHANGED)
     return reordered
   })
 
-  handle(IPC.PROJECT_SELECT_FOLDER, async () => {
-    const result = await dialog.showOpenDialog(window, {
+  handle(IPC.PROJECT_SELECT_FOLDER, async (e) => {
+    // Parent the dialog to the window that asked (there may be several).
+    const parent = browserWindowFor(e?.sender)
+    const options: Electron.OpenDialogOptions = {
       properties: ['openDirectory'],
       title: 'Select a Git repository folder',
-    })
+    }
+    const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
   })
 
-  handle(IPC.PROJECT_UPDATE, async (_e, project: Project) => {
+  handle(IPC.PROJECT_UPDATE, async (e, project: Project) => {
     const projects = store.get('projects', [])
     const index = projects.findIndex((p) => p.id === project.id)
     if (index >= 0) {
       projects[index] = project
       store.set('projects', projects)
+      notifyOtherWindows(e?.sender, IPC.WINDOW_PROJECTS_CHANGED)
     }
     return projects
   })
@@ -169,8 +191,11 @@ export function registerProjectHandlers(window: BrowserWindow) {
     return list
   })
 
-  handle(IPC.SESSION_SAVE, async (_e, projectId: string, sessionList: Session[]) => {
+  handle(IPC.SESSION_SAVE, async (e, projectId: string, sessionList: Session[]) => {
     store.set(`sessions.${projectId}`, sessionList)
+    // Another window showing this project reloads its session list, so a
+    // session made here appears there (and its next save doesn't drop it).
+    notifyOtherWindows(e?.sender, IPC.WINDOW_SESSIONS_CHANGED, projectId)
   })
 
   // Session context persistence (crash-safe alternative to localStorage)

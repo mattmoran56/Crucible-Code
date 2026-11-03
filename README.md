@@ -18,6 +18,7 @@
 ## Features
 
 - **Multi-project management** — Open multiple git repos, switch with draggable tabs, per-project notifications
+- **Multiple windows** — Split your projects across windows: drag a tab out of the strip to tear it off into a new window that follows the cursor, or onto another window's tabs to move it there (like Chrome). Open the same project in two windows to work on two worktrees side by side
 - **Session isolation** — Each session gets its own git worktree and branch — no conflicts between parallel agents
 - **Agents without a worktree** — A second button next to **+** in Sessions starts a short-lived agent straight in the main checkout (no worktree, no branch) for PR reviews and other non-code work, listed alongside your other sessions and named by Haiku from your first message
 - **Cloud sessions & Teleport** — New sessions start in Claude Code on the web by default, so heavy builds and CI-style test runs happen off your machine. Watch and chat with it on the real claude.ai page embedded in the Agent tab, then hit **Teleport** to pull it down into the local worktree and carry on there
@@ -218,7 +219,23 @@ Open multiple git repositories as projects. Each project gets its own tab in the
 - **Per-project state** — Active session, PR selection, and workspace layout persist when switching between projects
 - **Per-project accounts** — Assign different Claude accounts to different projects for isolated billing and auth
 - **Notification badges** — Tab badges show how many sessions need attention across all projects
-- **Confirm close** — Closing a project tab prompts for confirmation to prevent accidental removal
+- **Confirm close** — Closing a project's last tab prompts for confirmation to prevent accidental removal
+
+### Multiple windows
+
+Projects can be split across as many windows as you like, each with its own tab strip, and the same project can be open in more than one window — e.g. one worktree (session) in each, side by side.
+
+![Two windows, with web-app open in both on different worktrees](docs/screenshots/multi-window-side-by-side.png)
+
+- **Reorder** — Drag a tab along the strip; the other tabs make room as you go
+- **Tear off** — Drag a tab up or down out of the strip and it pops out into its own window straight away, which follows the cursor until you let go. The tab leaves the old window. Dragging a window's only tab just moves that window
+- **Move between windows** — While dragging, move over another window's tab strip and the tab joins it at that spot (you can keep reordering there); let go to leave it. It's a move: the tab leaves the old window, and a window left with no tabs closes. Drag back out to tear it off again. Hold **Option** as you let go to copy instead, keeping it in both windows
+- **Cancel** — Press **Escape** mid-drag to put everything back where it was
+- **Tab menu** — Right-click a tab for **Move to New Window** (moves it), **Duplicate in New Window** (a second copy, kept here too), **Move to Window: …**, **Close Tab** (when another window still shows the project) and **Remove Project…**
+- **Never loses a project** — Closing a window moves any project only it showed into the window you used last. Removing a project closes its tab in every window
+- **Remembered** — Each window's tabs, active project, size and position are restored on the next launch
+- **Kept in sync** — Adding or editing a project, or creating a session, in one window updates the others. Each window is titled after its active project, so windows are easy to tell apart in the Window menu and Mission Control. Notification clicks bring forward the window showing that project
+- **Same worktree in two windows** — Both windows share the worktree's terminal, so both show the same live output. Each window resizes it to fit, though, so the shell's size follows whichever window last resized it
 
 </details>
 
@@ -614,6 +631,10 @@ src/
 ### IPC
 
 All communication between renderer and main process goes through typed IPC channels defined in `src/shared/constants.ts`. The renderer has no Node.js access — it communicates exclusively via `window.api`, exposed by the preload script with `contextIsolation: true`.
+
+### Windows
+
+`src/main/services/window-manager.service.ts` owns every app window and which project tabs each shows (saved to `window-layout.json`). IPC handlers and services send events through `appWindows`, a stand-in window that broadcasts to every open window, and each renderer filters for the terminals, agents and sessions it shows. Events that trigger one-time work in the renderer (a scheduled session firing, a Notion task being picked up) go to one window only.
 
 ### Stays awake while running
 

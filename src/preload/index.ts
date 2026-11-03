@@ -2,7 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
 import type { VisualAgentAskDecision, VisualAgentAttachment, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
 import type { AgentBrowserLinkEvent } from '../shared/agent-browser'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, CloudSessionMode, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck } from '../shared/types'
+import type { TabStripGeometry } from '../shared/tab-drag'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, CloudSessionMode, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck, WindowLayout, WindowSummary } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -227,6 +228,40 @@ const api = {
     selectFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.PROJECT_SELECT_FOLDER),
     update: (project: Project): Promise<Project[]> =>
       ipcRenderer.invoke(IPC.PROJECT_UPDATE, project),
+  },
+
+  /** Multiple app windows — each with its own project tabs. */
+  windows: {
+    getLayout: (): Promise<WindowLayout | null> => ipcRenderer.invoke(IPC.WINDOW_GET_LAYOUT),
+    setLayout: (projectIds: string[], activeProjectId: string | null): Promise<WindowLayout | null> =>
+      ipcRenderer.invoke(IPC.WINDOW_SET_LAYOUT, projectIds, activeProjectId),
+    list: (): Promise<WindowSummary[]> => ipcRenderer.invoke(IPC.WINDOW_LIST),
+    sendTab: (projectId: string, toWindowId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.WINDOW_SEND_TAB, projectId, toWindowId),
+    /** Hand a tab drag to main; `grab` is where in the tab the pointer pressed. */
+    tabDragStart: (projectId: string, grab: { x: number; y: number }): Promise<void> =>
+      ipcRenderer.invoke(IPC.WINDOW_TAB_DRAG_START, projectId, grab),
+    tabDragEnd: (opts: { cancel?: boolean; copy?: boolean }): Promise<void> =>
+      ipcRenderer.invoke(IPC.WINDOW_TAB_DRAG_END, opts),
+    reportTabStrip: (geometry: TabStripGeometry): Promise<void> =>
+      ipcRenderer.invoke(IPC.WINDOW_TAB_STRIP, geometry),
+    openProject: (projectId: string, mode: 'move' | 'copy'): Promise<void> =>
+      ipcRenderer.invoke(IPC.WINDOW_OPEN_PROJECT, projectId, mode),
+    onLayoutChanged: (callback: (layout: WindowLayout) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, layout: WindowLayout) => callback(layout)
+      ipcRenderer.on(IPC.WINDOW_LAYOUT_CHANGED, listener)
+      return () => { ipcRenderer.removeListener(IPC.WINDOW_LAYOUT_CHANGED, listener) }
+    },
+    onProjectsChanged: (callback: () => void) => {
+      const listener = () => callback()
+      ipcRenderer.on(IPC.WINDOW_PROJECTS_CHANGED, listener)
+      return () => { ipcRenderer.removeListener(IPC.WINDOW_PROJECTS_CHANGED, listener) }
+    },
+    onSessionsChanged: (callback: (projectId: string) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, projectId: string) => callback(projectId)
+      ipcRenderer.on(IPC.WINDOW_SESSIONS_CHANGED, listener)
+      return () => { ipcRenderer.removeListener(IPC.WINDOW_SESSIONS_CHANGED, listener) }
+    },
   },
 
   account: {
