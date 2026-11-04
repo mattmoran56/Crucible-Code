@@ -1097,7 +1097,7 @@ describe('sessionStore repo-root agents', () => {
 describe('sessionStore.nameFromFirstMessage', () => {
   const pending = () => S('r1', { name: 'agent-1', repoRoot: true, branchName: '', worktreePath: '/repo', namePending: true })
   beforeEach(() => {
-    useSessionStore.setState({ currentProjectId: 'p1', sessions: [pending(), S('s2', { name: 'fix-login' })] } as any)
+    useSessionStore.setState({ currentProjectId: 'p1', sessions: [pending(), S('s2', { name: 'Fix login' })] } as any)
     useProjectStore.setState({
       projects: [{ id: 'p1', name: 'acme', repoPath: '/repo', claudeAccountId: 'a1' }],
       claudeAccounts: [{ id: 'a1', label: 'Work', configDir: '/cfg/work' }],
@@ -1134,9 +1134,9 @@ describe('sessionStore.nameFromFirstMessage', () => {
   })
 
   it('makes the name unique against other sessions', async () => {
-    sessionApi.suggestName.mockResolvedValue('fix-login')
+    sessionApi.suggestName.mockResolvedValue('Fix login')
     await useSessionStore.getState().nameFromFirstMessage('r1', 'fix the login')
-    expect(r1().name).toBe('fix-login-2')
+    expect(r1().name).toBe('Fix login 2')
   })
 
   it('keeps a name the user picked while the suggestion was in flight', async () => {

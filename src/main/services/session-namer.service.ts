@@ -13,8 +13,8 @@ const NAMER_TIMEOUT_MS = 60_000
 const MAX_PROMPT_CHARS = 2000
 
 const SYSTEM_PROMPT =
-  'You name coding-agent sessions. Reply with only the name: 2 to 4 lowercase words joined by hyphens, ' +
-  'like fix-login-redirect. No quotes, punctuation or explanation.'
+  'You name coding-agent sessions. Reply with only the name: 2 to 4 words separated by spaces, ' +
+  'like Fix login redirect. No quotes, punctuation or explanation.'
 
 export function buildNamerPrompt(firstMessage: string): string {
   const message = firstMessage.trim().slice(0, MAX_PROMPT_CHARS)
@@ -22,7 +22,7 @@ export function buildNamerPrompt(firstMessage: string): string {
 }
 
 /**
- * A short kebab-case name for a session whose first message is `firstMessage`,
+ * A short human-readable name (`Fix login redirect`) for a session whose first message is `firstMessage`,
  * or null when the run fails or replies with nothing usable.
  */
 export async function suggestSessionName(firstMessage: string, configDir?: string | null): Promise<string | null> {
