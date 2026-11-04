@@ -169,7 +169,7 @@ export function PRDeskBar() {
 
       {showBody && (
         !data.hasLoaded ? (
-          <p className="text-text-muted text-xs text-center py-4">Loading…</p>
+          <p className="text-text-muted text-xs text-center" style={{ padding: 16 }}>Loading…</p>
         ) : (
           <PRDeskBoard
             prs={data.prs}

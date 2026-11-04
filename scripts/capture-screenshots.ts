@@ -89,6 +89,16 @@ const targets: ScreenshotTarget[] = [
     delay: 2000,
   },
   {
+    name: 'pr-desk-compact',
+    storyId: 'app-full-layout--pr-desk-compact',
+    delay: 2000,
+  },
+  {
+    name: 'pr-desk-expanded',
+    storyId: 'app-full-layout--pr-desk-expanded',
+    delay: 2000,
+  },
+  {
     name: 'editor',
     storyId: 'app-full-layout--editor-view',
     delay: 2000,

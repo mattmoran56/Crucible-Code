@@ -97,7 +97,7 @@ function ReviewChip({ pr }: { pr: DeskPR }) {
   return (
     <>
       {chips.map((c) => (
-        <span key={c.text} title={c.title} className={`text-[10px] leading-none rounded border px-1.5 py-[3px] ${c.cls}`}>
+        <span key={c.text} title={c.title} className={`text-[10px] leading-none rounded border ${c.cls}`} style={{ padding: '3px 6px' }}>
           {c.text}
         </span>
       ))}
@@ -135,7 +135,8 @@ function CompactCard({ placed, active, attention, onOpen }: CardProps) {
       onClick={onOpen}
       onKeyDown={cardKeyDown(onOpen)}
       title={`#${pr.number} ${pr.title}${ticket ? `\n${ticket.ticketId ?? ''} ${ticket.status ?? ''}` : ''}\nby ${pr.author}`}
-      className={`flex items-center gap-1.5 rounded px-2 py-1 text-[11px] cursor-pointer transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+      style={{ padding: '4px 8px' }}
+      className={`flex items-center gap-1.5 rounded text-[11px] cursor-pointer transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
         active ? 'bg-accent/15 text-accent' : 'text-text hover:bg-bg-tertiary'
       }`}
     >
@@ -164,7 +165,8 @@ function ExpandedCard({ placed, active, attention, isParkedByMe, onOpen, onOpenE
       data-testid={`pr-desk-card-${pr.number}`}
       onClick={onOpen}
       onKeyDown={cardKeyDown(onOpen)}
-      className={`rounded-md border px-2.5 py-2 text-xs cursor-pointer transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+      style={{ padding: '8px 10px' }}
+      className={`rounded-md border text-xs cursor-pointer transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
         active ? 'border-accent bg-accent/10' : 'border-border bg-bg hover:bg-bg-tertiary'
       }`}
     >
@@ -175,19 +177,19 @@ function ExpandedCard({ placed, active, attention, isParkedByMe, onOpen, onOpenE
         <span className="ml-auto" title={new Date(pr.updatedAt).toLocaleString()}>{relativeTime(pr.updatedAt)}</span>
       </div>
 
-      <div className={`mt-1 font-medium leading-snug line-clamp-2 ${active ? 'text-accent' : 'text-text'}`}>{pr.title}</div>
+      <div style={{ marginTop: 4 }} className={`font-medium leading-snug line-clamp-2 ${active ? 'text-accent' : 'text-text'}`}>{pr.title}</div>
 
-      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-text-muted min-w-0">
+      <div className="flex items-center gap-1.5 text-[10px] text-text-muted min-w-0" style={{ marginTop: 6 }}>
         <Avatar login={pr.author} size={14} />
         <span className="shrink-0">{pr.author}</span>
         <span className="truncate" title={`${pr.headRefName} → ${pr.baseRefName}`}>· {pr.headRefName}</span>
       </div>
 
       {(ticketId || ticket) && (
-        <div className="flex items-center gap-1.5 mt-1.5 text-[10px] min-w-0">
+        <div className="flex items-center gap-1.5 text-[10px] min-w-0" style={{ marginTop: 6 }}>
           {ticketId && <span className="shrink-0 font-mono text-text-muted">{ticketId}</span>}
           {ticket?.status && (
-            <span className="shrink-0 rounded bg-bg-tertiary px-1.5 py-[2px] text-text">{ticket.status}</span>
+            <span className="shrink-0 rounded bg-bg-tertiary text-text" style={{ padding: '2px 6px' }}>{ticket.status}</span>
           )}
           {ticket?.title && ticket.title !== pr.title && (
             <span className="truncate text-text-muted" title={ticket.title}>{ticket.title}</span>
@@ -195,21 +197,22 @@ function ExpandedCard({ placed, active, attention, isParkedByMe, onOpen, onOpenE
         </div>
       )}
 
-      {parkedWhy && <div className="mt-1.5 text-[10px] text-warning">{parkedWhy}</div>}
+      {parkedWhy && <div className="text-[10px] text-warning" style={{ marginTop: 6 }}>{parkedWhy}</div>}
 
-      <div className="flex flex-wrap items-center gap-1 mt-1.5">
+      <div className="flex flex-wrap items-center gap-1" style={{ marginTop: 6 }}>
         <ReviewChip pr={pr} />
         {labels.slice(0, 4).map((l) => (
           <PRLabelChip key={l.name} label={l} />
         ))}
       </div>
 
-      <div className="flex items-center gap-1 mt-2">
+      <div className="flex items-center gap-1" style={{ marginTop: 8 }}>
         {ticketUrl && (
           <button
             type="button"
             onClick={stop(() => onOpenExternal(ticketUrl))}
-            className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-[3px] text-[10px] text-text-muted hover:text-text hover:bg-bg-tertiary"
+            style={{ padding: '3px 6px' }}
+            className="inline-flex items-center gap-1 rounded border border-border text-[10px] text-text-muted hover:text-text hover:bg-bg-tertiary"
             title="Open the ticket in your browser"
           >
             Notion <ExternalIcon />
@@ -218,7 +221,8 @@ function ExpandedCard({ placed, active, attention, isParkedByMe, onOpen, onOpenE
         <button
           type="button"
           onClick={stop(() => onOpenExternal(pr.url))}
-          className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-[3px] text-[10px] text-text-muted hover:text-text hover:bg-bg-tertiary"
+          style={{ padding: '3px 6px' }}
+            className="inline-flex items-center gap-1 rounded border border-border text-[10px] text-text-muted hover:text-text hover:bg-bg-tertiary"
           title="Open the PR on GitHub in your browser"
         >
           GitHub <ExternalIcon />
@@ -226,7 +230,8 @@ function ExpandedCard({ placed, active, attention, isParkedByMe, onOpen, onOpenE
         <button
           type="button"
           onClick={stop(onTogglePark)}
-          className="ml-auto rounded px-1.5 py-[3px] text-[10px] text-text-muted hover:text-text hover:bg-bg-tertiary"
+          style={{ padding: '3px 6px' }}
+          className="ml-auto rounded text-[10px] text-text-muted hover:text-text hover:bg-bg-tertiary"
           title={isParkedByMe ? 'Move it back to its stage' : 'Put this PR on hold'}
         >
           {isParkedByMe ? 'Unpark' : 'Park'}
@@ -248,11 +253,14 @@ export function PRDeskBoard(props: PRDeskBoardProps) {
         const list = placed[stage.id]
         return (
           <section key={stage.id} className="flex flex-col min-h-0 min-w-0" aria-label={stage.label}>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border flex-shrink-0">
+            <div className="flex items-center gap-1.5 border-b border-border flex-shrink-0" style={{ padding: '6px 12px' }}>
               <h3 className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">{stage.label}</h3>
               <span className="text-[10px] text-text-muted tabular-nums">{list.length}</span>
             </div>
-            <div className={`flex-1 min-h-0 overflow-y-auto ${view === 'compact' ? 'p-1 space-y-0.5' : 'p-2 space-y-2'}`}>
+            <div
+              className="flex-1 min-h-0 overflow-y-auto flex flex-col"
+              style={view === 'compact' ? { padding: 4, gap: 2 } : { padding: 8, gap: 8 }}
+            >
               {list.map((p) => (
                 <Card
                   key={p.pr.number}
@@ -265,7 +273,7 @@ export function PRDeskBoard(props: PRDeskBoardProps) {
                   onTogglePark={() => onTogglePark(p.pr.number)}
                 />
               ))}
-              {list.length === 0 && <p className="text-[10px] text-text-muted text-center py-3">None</p>}
+              {list.length === 0 && <p className="text-[10px] text-text-muted text-center" style={{ padding: '12px 0' }}>None</p>}
             </div>
           </section>
         )
