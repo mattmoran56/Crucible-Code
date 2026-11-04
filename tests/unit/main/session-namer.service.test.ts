@@ -10,7 +10,7 @@ beforeEach(() => run.mockReset())
 describe('suggestSessionName', () => {
   it('runs one tool-less, unsaved Haiku turn outside any repo', async () => {
     run.mockResolvedValue({ ok: true, resultText: 'Fix-Login-Redirect', transcript: [] })
-    await expect(suggestSessionName('the login redirect loops', '/cfg')).resolves.toBe('fix-login-redirect')
+    await expect(suggestSessionName('the login redirect loops', '/cfg')).resolves.toBe('Fix login redirect')
     const opts = run.mock.calls[0][0]
     expect(opts.cwd).not.toMatch(/repo/)
     expect(opts.env).toEqual({ CLAUDE_CONFIG_DIR: '/cfg' })
