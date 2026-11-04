@@ -22,7 +22,8 @@ export function isDeskExternalUrl(url: string): boolean {
       u.hostname === 'github.com' ||
       u.hostname === 'notion.so' ||
       u.hostname.endsWith('.notion.so') ||
-      u.hostname.endsWith('.notion.site')
+      u.hostname.endsWith('.notion.site') ||
+      u.hostname === 'app.notion.com'
     )
   } catch {
     return false

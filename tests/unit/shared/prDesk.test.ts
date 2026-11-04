@@ -71,6 +71,14 @@ describe('parseTicketRef', () => {
     expect(parseTicketRef('ENG-7: fix', 'no links')).toEqual({ ticketId: 'ENG-7', pageId: null, url: null })
   })
 
+  it('reads app.notion.com links (bot comment and body)', () => {
+    const url = `https://app.notion.com/p/Navigator-summary-${PAGE}`
+    expect(parseTicketRef('fix', '', [
+      { body: `<!-- notion-tickets-comment -->\n| \`ENG-4815\` | ENG-4815 | [Open in Notion](${url}) |` },
+    ])).toEqual({ ticketId: 'ENG-4815', pageId: PAGE, url })
+    expect(parseTicketRef('fix', `## Notion Ticket\n\nNo ticket yet. See https://app.notion.com/p/${PAGE}`)?.pageId).toBe(PAGE)
+  })
+
   it('returns null when nothing names a ticket', () => {
     expect(parseTicketRef('Tidy up', 'Just a refactor')).toBeNull()
   })

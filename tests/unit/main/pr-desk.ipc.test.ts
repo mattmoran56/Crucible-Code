@@ -13,6 +13,7 @@ describe('isDeskExternalUrl', () => {
     expect(isDeskExternalUrl('https://www.notion.so/abc')).toBe(true)
     expect(isDeskExternalUrl('https://notion.so/abc')).toBe(true)
     expect(isDeskExternalUrl('https://team.notion.site/abc')).toBe(true)
+    expect(isDeskExternalUrl('https://app.notion.com/p/abc')).toBe(true)
   })
 
   it('refuses anything else', () => {

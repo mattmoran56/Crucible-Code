@@ -155,7 +155,7 @@ export function deriveReviewState(input: ReviewInput): DeskReviewState {
 // ── Ticket links ────────────────────────────────────────────────────────────
 
 const TICKET_ID_RE = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/g
-const NOTION_URL_RE = /https?:\/\/(?:www\.)?notion\.(?:so|site)\/[^\s)>\]]+/gi
+const NOTION_URL_RE = /https?:\/\/(?:[a-z0-9-]+\.)?(?:notion\.so|notion\.site|app\.notion\.com)\/[^\s)\]>"'<]+/gi
 
 /** 32-hex Notion page id from a URL, dashed UUID or bare id; else null. */
 export function pageIdFromUrl(url: string | null | undefined): string | null {
