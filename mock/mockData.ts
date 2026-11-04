@@ -1,3 +1,4 @@
+import type { DeskPR, DeskTicket } from '../src/shared/prDesk'
 import type {
   Project,
   Session,
@@ -1042,3 +1043,78 @@ export const mockReviewLoopEfficient: ReviewLoopState = {
   ],
 }
 
+
+// ── PR Desk (full-width staged PR bar) ──────────────────────────────────────
+
+const deskReview = (
+  approved: DeskPR['review']['approved'] = null,
+  extra: Partial<DeskPR['review']> = {}
+): DeskPR['review'] => ({
+  auto: approved === 'auto' ? 'approve' : null,
+  autoCurrent: approved === 'auto',
+  humanApprovers: approved === 'human' ? ['bob'] : [],
+  humanChangesRequested: approved === 'changes',
+  requirement: null,
+  approved,
+  ...extra,
+})
+
+const deskPR = (p: Partial<DeskPR> & Pick<DeskPR, 'number' | 'title' | 'author'>): DeskPR => ({
+  url: `https://github.com/example/codecrucible/pull/${p.number}`,
+  isDraft: false,
+  assignees: [],
+  requestedReviewers: [],
+  labels: [],
+  headRefName: `session/pr-${p.number}`,
+  baseRefName: 'main',
+  createdAt: daysAgo(2),
+  updatedAt: hoursAgo(p.number % 9),
+  ciStatus: 'success',
+  mergeable: 'mergeable',
+  commentsCount: 2,
+  review: deskReview(),
+  ticket: null,
+  ...p,
+})
+
+const notionPage = (n: number) => `0f3c9a1e4b2d4c8e9a7b${String(n).padStart(12, '0')}`
+const ticketRef = (n: number) => ({
+  ticketId: `ENG-${n}`,
+  pageId: notionPage(n),
+  url: `https://www.notion.so/${notionPage(n)}`,
+})
+
+export const mockDeskPRs: DeskPR[] = [
+  deskPR({ number: 42, title: 'Add PR review panel with conversation and checks', author: 'alice', assignees: ['alice'], ciStatus: 'pending', ticket: ticketRef(1201), labels: [{ name: 'enhancement', color: 'a2eeef' }] }),
+  deskPR({ number: 38, title: 'Fix terminal resize handling on split panes', author: 'bob', requestedReviewers: ['alice'], review: deskReview('auto'), ticket: ticketRef(1188) }),
+  deskPR({ number: 47, title: 'Show the usage meter in the status bar', author: 'carol', review: deskReview('human'), ticket: ticketRef(1215) }),
+  deskPR({ number: 45, title: 'Cache gh auth status between polls', author: 'alice', review: deskReview('auto') }),
+  deskPR({ number: 44, title: 'Draft: rework the session namer prompt', author: 'alice', isDraft: true, ticket: ticketRef(1210) }),
+  deskPR({ number: 40, title: 'WIP: split the settings page into tabs', author: 'dave', isDraft: true, ciStatus: 'failure' }),
+  deskPR({ number: 39, title: 'Move worktree cleanup off the main thread', author: 'carol', assignees: ['dave'], requestedReviewers: ['dave'], ticket: ticketRef(1190) }),
+  deskPR({ number: 36, title: 'Retry Notion writes on 429', author: 'bob', mergeable: 'conflicting', review: deskReview('changes'), ticket: ticketRef(1176) }),
+  deskPR({ number: 35, title: 'Add a dark variant of the app icon', author: 'dave', labels: [{ name: 'on-hold', color: 'fbca04' }] }),
+  deskPR({ number: 33, title: 'Export transcripts as markdown', author: 'carol', ticket: ticketRef(1150) }),
+]
+
+export const mockDeskTickets: Record<string, DeskTicket> = Object.fromEntries(
+  [
+    [1201, 'PR review panel', 'In review'],
+    [1188, 'Terminal resize on split panes', 'In review'],
+    [1215, 'Usage meter in the status bar', 'In review'],
+    [1210, 'Better session names', 'In progress'],
+    [1190, 'Worktree cleanup blocks the UI', 'In review'],
+    [1176, 'Notion rate limits', 'In progress'],
+    [1150, 'Transcript export', 'Deprioritised'],
+  ].map(([n, title, status]) => [
+    notionPage(n as number),
+    {
+      pageId: notionPage(n as number),
+      ticketId: `ENG-${n}`,
+      title: title as string,
+      status: status as string,
+      url: `https://www.notion.so/${notionPage(n as number)}`,
+      assignees: ['Alice Example'],
+    },
+  ])
+)
