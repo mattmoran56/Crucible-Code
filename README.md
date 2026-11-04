@@ -22,6 +22,7 @@
 - **Session isolation** — Each session gets its own git worktree and branch — no conflicts between parallel agents
 - **Agents without a worktree** — A second button next to **+** in Sessions starts a short-lived agent straight in the main checkout (no worktree, no branch) for PR reviews and other non-code work, listed alongside your other sessions and named by Haiku from your first message
 - **Cloud sessions & Teleport** — New sessions start in Claude Code on the web by default, so heavy builds and CI-style test runs happen off your machine. Watch and chat with it on the real claude.ai page embedded in the Agent tab, then hit **Teleport** to pull it down into the local worktree and carry on there
+- **Agents that dispatch sessions** — Ask any agent to "start another session to do X" and it does: every agent gets Crucible's built-in `crucible` MCP server, whose `dispatch_session` tool starts a new session (its own worktree and branch by default, locally or in the cloud) that shows up in the sidebar for you to open and talk to
 - **Embedded terminals** — Full xterm.js shell terminals per session, opened from the workspace tab bar
 - **Git integration** — Commit log, changed files, and a GitHub-style syntax-highlighted diff viewer (Shiki) with full-file syntax context, click-anywhere context expansion, per-hunk collapse, and side-by-side or unified modes
 - **PR review panel** — Review pull requests without leaving the IDE: conversation, checks, file tree, inline comments, merge
@@ -263,6 +264,23 @@ Each session creates a git worktree at `<repo-parent>/.codecrucible-worktrees/<r
 ![An agent without a worktree, open on its Agent tab in the main checkout](docs/screenshots/repo-agent-session.png)
 
 ![A link from the conversation open in the Agent tab's link browser](docs/screenshots/agent-browser-link-open.png)
+
+</details>
+
+<details>
+<summary><strong>Dispatching sessions from an agent</strong></summary>
+
+Talk a plan through with one agent, then have it hand the pieces off: "start a session to fix the login redirect", "spin up two sessions for these, one in the cloud". The agent starts them and you open them from the sidebar like any other session.
+
+- **How the agent can** — The app runs a small MCP server called `crucible` on `127.0.0.1` (on the same local port as the notification hooks, behind a token minted each time the app starts). Every interactive agent the app starts gets it with `--mcp-config`: the Agent tab and other visual agents, in sessions and in the Code workspace, and `claude` terminals. `--mcp-config` adds to your MCP servers rather than replacing them, so agents keep everything they would have anyway. The server's instructions tell the agent it can dispatch sessions and when to, so asking in plain words is enough. Cloud sessions, the review loop and other one-off `claude -p` runs don't get it
+- **`dispatch_session`** — Starts a session from a task. The task becomes the new agent's first message, so the agent writes it to stand on its own. Options: `name` (otherwise taken from the task), `location` (`local`, the default, or `cloud`), `worktree` (`true` by default; `false` makes an agent in the main checkout with no branch, local only), `base_branch`, `branch_name` and `mode` (`single-branch`, the default, or `orchestrator`)
+- **One task, one worktree, one PR** — By default a dispatched session is an ordinary worktree session: its own worktree and `session/<name>` branch, so its own pull request, cleaned up after the PR merges by the same **Settings → Merged PR Cleanup** rule as every other session. The agent is told to dispatch one session per task instead of bundling tasks together. The session that did the dispatching is left alone: a no-worktree "talking it through" session has no branch, so it stays until you delete it
+- **Same as starting it yourself** — A dispatched session is created the same way as one from the New Session dialog: the same Claude account, settings, hooks and MCP servers (including `crucible`, so it can dispatch sessions of its own). It is created quietly: it appears in its project's sidebar with its agent already working, and your view doesn't switch to it. A toast says which session started it, and its card shows **from &lt;session&gt;** under the branch
+- **In the cloud** — With `location: "cloud"` the worktree and branch are created and pushed, and the `claude --cloud` create starts straight away (see **Cloud sessions & Teleport**) instead of waiting for you to open the session. If the CLI asks anything while creating it, the session's Agent tab shows the question for you to answer
+- **`list_sessions` and `send_to_session`** — The agent can list the project's sessions (name, id, branch, local or cloud, who dispatched it) and send any of them a follow-up message: a local session gets it as its agent's next turn (starting the agent if it isn't running), a cloud session through `claude -p --cloud <id>`
+- **Permissions** — No permission flag is added: the `crucible` tools go through your default (auto) mode like any other MCP tool, so you may be asked to approve the first call
+
+![A dispatched session's card in the sidebar](docs/screenshots/dispatched-session-card.png)
 
 </details>
 

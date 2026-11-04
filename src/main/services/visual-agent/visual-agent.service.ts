@@ -37,6 +37,7 @@ import { handleHookEvent, VISUAL_AGENT_HOOK_TAB } from '../notification-server'
 import { killChildTree } from '../claude-headless.service'
 import { writeClaudeHookSettings } from '../hook.service'
 import { scrubInheritedClaudeSession } from '../claude-env'
+import { crucibleMcpArgs } from '../session-dispatch.service'
 import {
   QUESTION_TOOL,
   agentArgv,
@@ -411,6 +412,8 @@ function spawnMain(held: LiveAgent): void {
     resume: held.claudeSessionId,
     addDirs: [dir],
     orchestratorBranch: held.opts.orchestratorBranch,
+    // The `crucible` MCP server, so this agent can dispatch other sessions.
+    mcpArgs: crucibleMcpArgs(held.opts.sessionId),
   })
   held.noise = []
   held.sawJson = false

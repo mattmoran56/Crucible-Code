@@ -28,6 +28,7 @@ import { useReviewLoopStore } from './stores/reviewLoopStore'
 import { useCloudCreateBootstrap } from './lib/cloudCreate'
 import { useSchedulerBootstrap } from './hooks/useSchedulerBootstrap'
 import { useNotionBootstrap } from './hooks/useNotionBootstrap'
+import { useSessionDispatchBootstrap } from './lib/sessionDispatch'
 import { UsageLimitToast } from './components/usage/UsageLimitToast'
 import { CloudWebPool } from './components/cloud/CloudWebPool'
 import { AgentBrowserLayer } from './components/agent-browser/AgentBrowserLayer'
@@ -52,6 +53,7 @@ export default function App() {
   useSchedulerBootstrap()
   useNotionBootstrap()
   useCloudCreateBootstrap()
+  useSessionDispatchBootstrap()
 
   const sidebar = useResizable({ direction: 'horizontal', initialSize: 224, minSize: 140, maxSize: 400 })
   const rightPanel = useResizable({ direction: 'horizontal', initialSize: 300, minSize: 200, maxSize: 600, inverted: true })

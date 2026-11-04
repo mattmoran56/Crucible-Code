@@ -304,4 +304,8 @@ export const IPC = {
   WINDOW_PROJECTS_CHANGED: 'window:projects-changed',
   /** main → renderer: another window saved a project's sessions. */
   WINDOW_SESSIONS_CHANGED: 'window:sessions-changed',
+  /** main → renderer: an agent called a `crucible` MCP tool (dispatch a session, list, send). */
+  SESSION_DISPATCH_REQUEST: 'session:dispatch-request',
+  /** renderer → main: the answer to a SESSION_DISPATCH_REQUEST. */
+  SESSION_DISPATCH_RESPOND: 'session:dispatch-respond',
 } as const

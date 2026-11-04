@@ -39,6 +39,11 @@ export interface AgentArgvOptions {
   addDirs?: readonly string[]
   /** A local orchestrator session's branch: adds the orchestrator system prompt. */
   orchestratorBranch?: string | null
+  /**
+   * `--mcp-config …` for the app's `crucible` server (session dispatch). Adds
+   * to the user's MCP servers; never combined with --strict-mcp-config.
+   */
+  mcpArgs?: readonly string[]
 }
 
 /**
@@ -70,6 +75,7 @@ export const agentArgv = (opts: AgentArgvOptions): string[] => {
   ]
   if (opts.resume) argv.push('--resume', opts.resume)
   for (const dir of opts.addDirs ?? []) argv.push('--add-dir', dir)
+  argv.push(...(opts.mcpArgs ?? []))
   const branch = opts.orchestratorBranch?.trim()
   if (branch && !validateBranchName(branch)) {
     argv.push('--append-system-prompt', localOrchestratorSystemPrompt(branch))

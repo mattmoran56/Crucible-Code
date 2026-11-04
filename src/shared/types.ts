@@ -1,3 +1,4 @@
+import type { DispatchedBy } from './session-dispatch'
 export interface ClaudeAccount {
   id: string
   label: string
@@ -303,6 +304,11 @@ export interface Session {
    * renames the session themselves.
    */
   namePending?: boolean
+  /**
+   * Set when another agent started this session through the `crucible` MCP
+   * server's dispatch_session tool: which session asked.
+   */
+  dispatchedBy?: DispatchedBy
 }
 
 export interface Commit {
