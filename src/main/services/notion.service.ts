@@ -30,7 +30,7 @@ interface NotionAPIError {
   message: string
 }
 
-async function notionFetch(
+export async function notionFetch(
   token: string,
   path: string,
   init: RequestInit = {}
@@ -265,7 +265,7 @@ async function queryRawPages(
 
 // ── Page property extraction ────────────────────────────────────────────────
 
-function extractTitleFromPage(
+export function extractTitleFromPage(
   page: Record<string, unknown>,
   titlePropertyName?: string
 ): string {

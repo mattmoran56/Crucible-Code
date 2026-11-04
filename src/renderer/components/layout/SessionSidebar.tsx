@@ -27,6 +27,8 @@ import { IconButton } from '../ui/IconButton'
 import { DropdownMenu } from '../ui/DropdownMenu'
 import { ResizeHandle } from '../ui/ResizeHandle'
 import { useMultiPanelResize } from '../../hooks/useMultiPanelResize'
+import { usePRDeskStore } from '../../stores/prDeskStore'
+import { DockBottomIcon } from '../prdesk/PRDeskBar'
 
 const PR_POLL_INTERVAL = 30_000
 
@@ -54,6 +56,10 @@ export function SessionSidebar() {
   const [showImport, setShowImport] = useState(false)
   const [showOpenBranch, setShowOpenBranch] = useState(false)
   const [prCollapsed, setPRCollapsed] = useState(false)
+  // When the PR list is shown as the full-width bottom bar, the sidebar drops
+  // its Pull Requests section and Sessions takes the whole height.
+  const prDeskOpen = usePRDeskStore((s) => s.open)
+  const setPRDeskUI = usePRDeskStore((s) => s.setUI)
   const [refreshingPRs, setRefreshingPRs] = useState(false)
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -564,7 +570,10 @@ export function SessionSidebar() {
 
       <div ref={setPanelsContainerEl} className="flex flex-col flex-1 min-h-0">
         {/* Sessions section */}
-        <div style={{ height: sizes[0], flexShrink: 0 }} className="min-h-0 overflow-hidden">
+        <div
+          style={prDeskOpen ? undefined : { height: sizes[0], flexShrink: 0 }}
+          className={`min-h-0 overflow-hidden ${prDeskOpen ? 'flex-1' : ''}`}
+        >
           <SidebarSection
             title="Sessions"
             action={
@@ -669,6 +678,7 @@ export function SessionSidebar() {
           </SidebarSection>
         </div>
 
+        {!prDeskOpen && (<>
         {/* Resize handle: Sessions ↔ Pull Requests */}
         <ResizeHandle direction="vertical" onMouseDown={onHandleMouseDown(0)} />
 
@@ -683,6 +693,13 @@ export function SessionSidebar() {
             action={
               <div className="flex items-center gap-1">
                 <PRSortFilterMenu repoPath={activeProject.repoPath} />
+                <IconButton
+                  label="Show as full-width bar"
+                  size="sm"
+                  onClick={() => setPRDeskUI({ open: true, collapsed: false })}
+                >
+                  <DockBottomIcon />
+                </IconButton>
                 <IconButton
                   label="Refresh pull requests"
                   size="sm"
@@ -729,6 +746,7 @@ export function SessionSidebar() {
             )}
           </SidebarSection>
         </div>
+        </>)}
       </div>
 
       <CreateSessionDialog
