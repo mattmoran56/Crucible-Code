@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import { SessionCard } from './SessionCard'
+import { AssignPRDialog, SessionCard } from './SessionCard'
 import type { PullRequest } from '../../../shared/types'
 
 const baseSession = {
@@ -181,5 +181,45 @@ export const Dispatched: Story = {
         status="running"
       />
     </div>
+  ),
+}
+
+const assignablePRs: PullRequest[] = [
+  { ...basePR, number: 156, title: 'Assign PRs to sessions with no worktree', headRefName: 'pr-assign' },
+  { ...basePR, number: 155, title: 'Fix login redirect on expired sessions', headRefName: 'session/fix-login-redirect', isDraft: true, ciStatus: 'pending' },
+  { ...basePR, number: 154, title: "Give PR Desk's expanded view a row per Notion project", headRefName: 'session/pr-desk-built-in', state: 'MERGED' },
+]
+
+/** A no-worktree agent with a PR assigned to it (it opened the PR from the main checkout). */
+export const RepoAgentAssignedPR: Story = {
+  args: {
+    session: {
+      ...baseSession,
+      name: 'Planning chat',
+      branchName: '',
+      worktreePath: '/mock/repo',
+      repoRoot: true,
+      prNumber: 156,
+    },
+    repoBranch: 'pr-assign',
+    pr: assignablePRs[0],
+    assignablePRs,
+    onAssignPR: async () => {},
+    status: 'completed',
+  },
+}
+
+/** The Assign pull request dialog from a no-worktree agent's ⋯ menu. */
+export const AssignPRDialogOpen: Story = {
+  parameters: { layout: 'fullscreen' },
+  decorators: [(Story) => <div style={{ width: 600, height: 520 }}><Story /></div>],
+  render: () => (
+    <AssignPRDialog
+      open
+      sessionName="Planning chat"
+      pullRequests={assignablePRs}
+      onClose={noop}
+      onAssign={async () => {}}
+    />
   ),
 }

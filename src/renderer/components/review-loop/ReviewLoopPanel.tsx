@@ -14,6 +14,7 @@ import type {
   ReviewLoopTriagedIssue,
   ReviewLoopVariant,
 } from '../../../shared/types'
+import { sessionPullRequest } from '../../../shared/session-pr'
 
 interface Props {
   visible?: boolean
@@ -56,7 +57,7 @@ export function ReviewLoopPanel({ visible = true }: Props) {
     )
   }
 
-  const sessionPR = pullRequests.find((pr) => pr.headRefName === session.branchName)
+  const sessionPR = sessionPullRequest(session, pullRequests)
   const baseBranch = session.baseBranch ?? sessionPR?.baseRefName ?? 'main'
 
   const isRunning = state?.status === 'running'

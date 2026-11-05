@@ -1,7 +1,7 @@
 /**
  * The app's built-in `crucible` MCP server: gives every interactive agent the
  * tools to start other Crucible sessions (local or cloud, worktree or not), see
- * which exist, and message them.
+ * which exist, message them, and assign a PR to a session with no worktree.
  *
  * Transport: MCP Streamable HTTP, stateless, JSON responses only (no SSE). It
  * is served by the notification server on 127.0.0.1 at `/mcp`, behind a bearer
@@ -20,6 +20,7 @@ import {
   DISPATCH_TOOLS,
   parseDispatchSessionArgs,
   parseSendToSessionArgs,
+  parseAssignPRArgs,
   type SessionDispatchRequest,
   type SessionDispatchResponse,
 } from '../../shared/session-dispatch'
@@ -150,6 +151,8 @@ async function callTool(contextId: string, name: unknown, rawArgs: unknown): Pro
       response = await forward({ contextId, tool: 'list_sessions', args: {} }, 30_000)
     } else if (name === 'send_to_session') {
       response = await forward({ contextId, tool: 'send_to_session', args: parseSendToSessionArgs(rawArgs) }, 60_000)
+    } else if (name === 'assign_pr') {
+      response = await forward({ contextId, tool: 'assign_pr', args: parseAssignPRArgs(rawArgs) }, 60_000)
     } else {
       return toolText(`Unknown tool: ${String(name)}`, true)
     }

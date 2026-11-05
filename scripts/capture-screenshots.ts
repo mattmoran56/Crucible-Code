@@ -131,6 +131,18 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 320, height: 200 },
   },
   {
+    name: 'assigned-pr-session-card',
+    storyId: 'sessions-sessioncard--repo-agent-assigned-pr',
+    delay: 500,
+    viewport: { width: 320, height: 200 },
+  },
+  {
+    name: 'assign-pr-dialog',
+    storyId: 'sessions-sessioncard--assign-pr-dialog-open',
+    delay: 500,
+    viewport: { width: 640, height: 520 },
+  },
+  {
     name: 'dispatched-session-card',
     storyId: 'sessions-sessioncard--dispatched',
     delay: 500,

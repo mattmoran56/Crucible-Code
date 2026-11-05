@@ -4,6 +4,7 @@ import {
   DISPATCH_TOOLS,
   parseDispatchSessionArgs,
   parseSendToSessionArgs,
+  parseAssignPRArgs,
 } from '../../../src/shared/session-dispatch'
 
 describe('parseDispatchSessionArgs', () => {
@@ -62,7 +63,28 @@ describe('parseSendToSessionArgs', () => {
   })
 })
 
+describe('parseAssignPRArgs', () => {
+  it('takes a PR number (or "#42"), null to unassign, and an optional session id', () => {
+    expect(parseAssignPRArgs({ pr_number: 42 })).toEqual({ prNumber: 42 })
+    expect(parseAssignPRArgs({ pr_number: '#42', session_id: ' s ' })).toEqual({ prNumber: 42, sessionId: 's' })
+    expect(parseAssignPRArgs({ pr_number: null })).toEqual({ prNumber: null })
+  })
+
+  it('rejects a missing or invalid number', () => {
+    expect(() => parseAssignPRArgs({})).toThrow('"pr_number" is required')
+    expect(() => parseAssignPRArgs({ pr_number: 0 })).toThrow('positive whole number')
+    expect(() => parseAssignPRArgs({ pr_number: 1.5 })).toThrow('positive whole number')
+    expect(() => parseAssignPRArgs({ pr_number: 'abc' })).toThrow('positive whole number')
+  })
+})
+
 describe('tool definitions and instructions', () => {
+  it('requires pr_number for assign_pr and tells agents when to use it', () => {
+    const tool = DISPATCH_TOOLS.find((t) => t.name === 'assign_pr')!
+    expect(tool.inputSchema.required).toEqual(['pr_number'])
+    expect(DISPATCH_MCP_INSTRUCTIONS).toContain('assign_pr')
+  })
+
   it('only requires the task for dispatch_session', () => {
     const dispatch = DISPATCH_TOOLS.find((t) => t.name === 'dispatch_session')!
     expect(dispatch.inputSchema.required).toEqual(['task'])

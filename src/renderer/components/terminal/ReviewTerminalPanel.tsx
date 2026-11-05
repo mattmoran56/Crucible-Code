@@ -4,6 +4,7 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
 import { TerminalView } from './TerminalView'
+import { sessionPullRequest } from '../../../shared/session-pr'
 
 interface Props {
   visible?: boolean
@@ -31,9 +32,7 @@ export function ReviewTerminalPanel({ visible = true }: Props) {
   const cwd = activeSession?.worktreePath ?? activePRWorktreePath ?? activeProject?.repoPath
 
   // Match session branch to a PR in the list
-  const sessionPR = activeSession
-    ? pullRequests.find((pr) => pr.headRefName === activeSession.branchName)
-    : null
+  const sessionPR = sessionPullRequest(activeSession, pullRequests) ?? null
   const effectivePRNumber = activePRNumber ?? sessionPR?.number ?? null
 
   // Use session ID if available, otherwise a synthetic key for PR-only mode

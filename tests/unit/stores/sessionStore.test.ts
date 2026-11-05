@@ -528,6 +528,30 @@ describe('sessionStore.removeSession', () => {
   })
 })
 
+describe('sessionStore.assignSessionPR', () => {
+  beforeEach(() => {
+    sessionApi.save.mockClear()
+    useSessionStore.setState({
+      currentProjectId: 'p1',
+      sessions: [S('root', { repoRoot: true, branchName: '' }), S('wt', { branchName: 'session/wt' })],
+    } as any)
+  })
+
+  it('assigns and clears a PR on a repo-root session and saves it', async () => {
+    await useSessionStore.getState().assignSessionPR('p1', 'root', 42)
+    expect(useSessionStore.getState().sessions[0].prNumber).toBe(42)
+    expect(sessionApi.save).toHaveBeenCalledWith('p1', expect.arrayContaining([expect.objectContaining({ id: 'root', prNumber: 42 })]))
+    await useSessionStore.getState().assignSessionPR('p1', 'root', null)
+    expect('prNumber' in useSessionStore.getState().sessions[0]).toBe(false)
+  })
+
+  it('refuses a worktree session and unknown sessions', async () => {
+    await expect(useSessionStore.getState().assignSessionPR('p1', 'wt', 42)).rejects.toThrow('no worktree')
+    await expect(useSessionStore.getState().assignSessionPR('p1', 'ghost', 42)).rejects.toThrow('Session not found')
+    expect(sessionApi.save).not.toHaveBeenCalled()
+  })
+})
+
 describe('sessionStore.renameSession', () => {
   beforeEach(() => {
     ;(worktreeApi as any).renameBranch = vi.fn()

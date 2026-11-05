@@ -264,6 +264,12 @@ export interface Session {
   projectId: string
   createdAt: string
   lastActiveAt?: string
+  /**
+   * A pull request assigned to this session by hand (from the session's menu)
+   * or by an agent (the `crucible` MCP server's assign_pr tool). Used by
+   * repo-root sessions, which have no branch of their own to match a PR on.
+   * A worktree session's PR is found from its branch instead.
+   */
   prNumber?: number
   baseBranch?: string
   notionTicket?: NotionTicketLink

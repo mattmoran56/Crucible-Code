@@ -61,6 +61,11 @@ const api = {
     send: vi.fn(async () => {}),
     onFrame: vi.fn(() => () => {}),
   },
+  github: {
+    listPRs: vi.fn(async () => [
+      { number: 42, title: 'Fix login', headRefName: 'fix-login', state: 'OPEN' },
+    ]),
+  },
   cloudSession: {
     start: vi.fn(async (opts: { sessionId: string; projectId: string }) => ({
       sessionId: opts.sessionId,
@@ -244,5 +249,66 @@ describe('send_to_session', () => {
     expect(missing.ok).toBe(false)
     const pending = await handleSessionDispatchRequest({ id: 'r', contextId: 'sess-1', tool: 'send_to_session', args: { sessionId: 'sess-4', message: 'hi' } })
     expect(pending).toEqual({ ok: false, error: 'The cloud session "Pending" has not finished being created yet.' })
+  })
+})
+
+describe('assign_pr', () => {
+  const assign = (args: { prNumber: number | null; sessionId?: string }, contextId = 'sess-1'): SessionDispatchRequest => ({
+    id: 'r',
+    contextId,
+    tool: 'assign_pr',
+    args,
+  })
+
+  it('assigns a PR to the calling no-worktree session', async () => {
+    persisted['proj-A'] = [session()]
+    const res = await handleSessionDispatchRequest(assign({ prNumber: 42 }))
+    expect(res.ok).toBe(true)
+    expect((res as { text: string }).text).toContain('Assigned PR #42 "Fix login" to "Planning chat"')
+    expect(persisted['proj-A'][0].prNumber).toBe(42)
+    expect(api.github.listPRs).toHaveBeenCalledWith('/repo/A')
+  })
+
+  it('assigns to another session by id, and shows it in list_sessions', async () => {
+    persisted['proj-A'] = [session(), session({ id: 'sess-2', name: 'Other chat' })]
+    const res = await handleSessionDispatchRequest(assign({ prNumber: 42, sessionId: 'sess-2' }))
+    expect(res.ok).toBe(true)
+    expect(persisted['proj-A'][1].prNumber).toBe(42)
+    expect(persisted['proj-A'][0].prNumber).toBeUndefined()
+    const listed = await handleSessionDispatchRequest({ id: 'r', contextId: 'sess-1', tool: 'list_sessions', args: {} })
+    expect(JSON.parse((listed as { text: string }).text).sessions[1]).toMatchObject({ id: 'sess-2', assignedPR: 42 })
+  })
+
+  it('updates the on-screen session list when the project is shown', async () => {
+    persisted['proj-A'] = [session()]
+    useSessionStore.setState({ sessions: [session()], currentProjectId: 'proj-A' } as any)
+    await handleSessionDispatchRequest(assign({ prNumber: 42 }))
+    expect(useSessionStore.getState().sessions[0].prNumber).toBe(42)
+  })
+
+  it('unassigns with a null pr number', async () => {
+    persisted['proj-A'] = [session({ prNumber: 42 })]
+    const res = await handleSessionDispatchRequest(assign({ prNumber: null }))
+    expect(res).toEqual({ ok: true, text: 'Unassigned PR #42 from "Planning chat".' })
+    expect('prNumber' in persisted['proj-A'][0]).toBe(false)
+  })
+
+  it('refuses worktree sessions, unknown PRs and unknown sessions', async () => {
+    persisted['proj-A'] = [session(), session({ id: 'sess-2', name: 'Child', repoRoot: undefined, branchName: 'session/child', worktreePath: '/wt/child' })]
+    const worktree = await handleSessionDispatchRequest(assign({ prNumber: 42, sessionId: 'sess-2' }))
+    expect(worktree.ok).toBe(false)
+    expect((worktree as { error: string }).error).toMatch(/own worktree/)
+    const unknownPR = await handleSessionDispatchRequest(assign({ prNumber: 7 }))
+    expect(unknownPR.ok).toBe(false)
+    expect((unknownPR as { error: string }).error).toMatch(/PR #7/)
+    const unknownSession = await handleSessionDispatchRequest(assign({ prNumber: 42, sessionId: 'zzz' }))
+    expect(unknownSession.ok).toBe(false)
+    expect(persisted['proj-A'].every((s) => s.prNumber === undefined)).toBe(true)
+  })
+
+  it('needs a session id from the Code workspace', async () => {
+    const res = await handleSessionDispatchRequest(assign({ prNumber: 42 }, 'code-editor:proj-A'))
+    expect(res.ok).toBe(false)
+    expect((res as { error: string }).error).toMatch(/session_id/)
   })
 })

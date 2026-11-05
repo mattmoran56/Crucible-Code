@@ -105,7 +105,7 @@ describe('handleMcpPost', () => {
   it('lists the three tools', async () => {
     const res = await handleMcpPost(auth(), 'sess-1', rpc('tools/list'))
     const names = (res.body as any).result.tools.map((t: { name: string }) => t.name)
-    expect(names).toEqual(['dispatch_session', 'list_sessions', 'send_to_session'])
+    expect(names).toEqual(['dispatch_session', 'list_sessions', 'send_to_session', 'assign_pr'])
   })
 
   it('reports a parse error and unknown methods', async () => {
@@ -207,6 +207,6 @@ describe('notification server /mcp route', () => {
 
     const res = await post(port, '/mcp?context=sess-1', rpc('tools/list'), { Authorization: server.headers.Authorization })
     expect(res.status).toBe(200)
-    expect(JSON.parse(res.body).result.tools).toHaveLength(3)
+    expect(JSON.parse(res.body).result.tools).toHaveLength(4)
   })
 })

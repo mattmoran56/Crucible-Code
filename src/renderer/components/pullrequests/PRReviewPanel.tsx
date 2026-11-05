@@ -16,6 +16,7 @@ import { Dialog } from '../ui/Dialog'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import type { PRReviewEvent, PRFile, PullRequest } from '../../../shared/types'
 import { extractFileDiff } from '../../lib/extractFileDiff'
+import { sessionPullRequest } from '../../../shared/session-pr'
 
 export function PRReviewPanel() {
   const { activePRNumber, activeSessionId, sessions, didStash, clearActiveContext } = useSessionStore()
@@ -24,9 +25,7 @@ export function PRReviewPanel() {
 
   // Compute effective PR: explicit activePRNumber, or session's matched PR
   const activeSession = sessions.find((s) => s.id === activeSessionId)
-  const sessionPR: PullRequest | undefined = activeSession
-    ? pullRequests.find((pr) => pr.headRefName === activeSession.branchName)
-    : undefined
+  const sessionPR: PullRequest | undefined = sessionPullRequest(activeSession, pullRequests)
   const effectivePRNumber = activePRNumber ?? sessionPR?.number ?? null
   const {
     files, selectedFilePath, fullDiff, fileDiffCache, fileDiffLoading, comments, loading, mergeable,

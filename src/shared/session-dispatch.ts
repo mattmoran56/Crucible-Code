@@ -29,11 +29,20 @@ export interface SendToSessionArgs {
   message: string
 }
 
+/** `assign_pr` arguments, validated. */
+export interface AssignPRArgs {
+  /** The PR to assign; `null` clears the assignment. */
+  prNumber: number | null
+  /** The session to assign it to; the calling session when absent. */
+  sessionId?: string
+}
+
 /** One call forwarded from the MCP server to the renderer. */
 export type SessionDispatchRequest =
   | { id: string; contextId: string; tool: 'dispatch_session'; args: DispatchSessionArgs }
   | { id: string; contextId: string; tool: 'list_sessions'; args: Record<string, never> }
   | { id: string; contextId: string; tool: 'send_to_session'; args: SendToSessionArgs }
+  | { id: string; contextId: string; tool: 'assign_pr'; args: AssignPRArgs }
 
 /** The renderer's answer: text for the agent, or an error message. */
 export type SessionDispatchResponse = { ok: true; text: string } | { ok: false; error: string }
@@ -45,7 +54,7 @@ export interface DispatchedBy {
   name: string
 }
 
-export const DISPATCH_TOOL_NAMES = ['dispatch_session', 'list_sessions', 'send_to_session'] as const
+export const DISPATCH_TOOL_NAMES = ['dispatch_session', 'list_sessions', 'send_to_session', 'assign_pr'] as const
 export type DispatchToolName = (typeof DISPATCH_TOOL_NAMES)[number]
 
 /** Name of the MCP server as agents see it (`mcp__crucible__dispatch_session`). */
@@ -60,6 +69,7 @@ export const DISPATCH_MCP_INSTRUCTIONS = [
   'Sessions run locally by default. Pass location "cloud" only when the user asks for the cloud (Claude Code on the web); it needs a worktree. Pass worktree false only for a conversation in the main checkout with no branch of its own.',
   'Every dispatched session gets the same MCP servers, settings and Claude account as a session the user starts by hand, including these tools.',
   'Use list_sessions to see what exists, and send_to_session to send a follow-up message to a session. After dispatching, tell the user the name of each session you started.',
+  'A session with no worktree (it runs in the main checkout) has no branch of its own, so Crucible cannot match it to a pull request. When you open a pull request from such a session, call assign_pr with its number so the PR shows on the session in Crucible.',
 ].join(' ')
 
 type JsonSchema = Record<string, unknown>
@@ -136,6 +146,27 @@ export const DISPATCH_TOOLS: DispatchToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'assign_pr',
+    description:
+      'Assign a GitHub pull request to a Crucible session with no worktree (one running in the project\'s main checkout), so the PR shows on that session and opens in its PR tab. Call it after you open a PR from such a session. Worktree sessions are matched to their branch\'s PR automatically and cannot be assigned one. Pass pr_number null to clear the assignment.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pr_number: {
+          type: ['integer', 'null'],
+          minimum: 1,
+          description: 'The pull request number in this project\'s repository, or null to unassign.',
+        },
+        session_id: {
+          type: 'string',
+          description: 'The session to assign it to. Defaults to this session.',
+        },
+      },
+      required: ['pr_number'],
+      additionalProperties: false,
+    },
+  },
 ]
 
 const MAX_TASK_CHARS = 100_000
@@ -198,4 +229,23 @@ export function parseSendToSessionArgs(raw: unknown): SendToSessionArgs {
   if (!message) throw new Error('"message" is required')
   if (message.length > MAX_TASK_CHARS) throw new Error(`"message" is too long (max ${MAX_TASK_CHARS} characters)`)
   return { sessionId, message }
+}
+
+/** Validate `assign_pr` arguments. */
+export function parseAssignPRArgs(raw: unknown): AssignPRArgs {
+  const args = asObject(raw)
+  if (!('pr_number' in args)) throw new Error('"pr_number" is required: the PR number, or null to unassign')
+  let prNumber: number | null
+  const value = args.pr_number
+  if (value === null) {
+    prNumber = null
+  } else {
+    const n = typeof value === 'string' && /^#?\d+$/.test(value.trim()) ? Number(value.trim().replace(/^#/, '')) : value
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1) {
+      throw new Error('"pr_number" must be a positive whole number, or null to unassign')
+    }
+    prNumber = n
+  }
+  const sessionId = optionalString(args.session_id, 'session_id')
+  return { prNumber, ...(sessionId ? { sessionId } : {}) }
 }

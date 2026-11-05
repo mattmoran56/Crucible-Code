@@ -9,6 +9,7 @@ import { ListBox, ListItem } from '../ui/ListBox'
 import { ResizeHandle } from '../ui/ResizeHandle'
 import { useResizable } from '../../hooks/useResizable'
 import { extractFileDiff } from '../../lib/extractFileDiff'
+import { sessionPullRequest } from '../../../shared/session-pr'
 
 export function PRCommitsTab() {
   const { projects, activeProjectId } = useProjectStore()
@@ -17,9 +18,7 @@ export function PRCommitsTab() {
 
   const activeProject = projects.find((p) => p.id === activeProjectId)
   const activeSession = sessions.find((s) => s.id === activeSessionId)
-  const sessionPR = activeSession
-    ? pullRequests.find((pr) => pr.headRefName === activeSession.branchName)
-    : undefined
+  const sessionPR = sessionPullRequest(activeSession, pullRequests)
   const prNumber = activePRNumber ?? sessionPR?.number ?? null
 
   const {
