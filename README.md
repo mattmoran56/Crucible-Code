@@ -367,6 +367,7 @@ The agent interface: a chat UI for Claude Code, driven over `claude -p --input-f
 - **Stop / interrupt** — `Esc` or **Stop turn** interrupts the current turn; **End session** stops the process; **Restart** brings it back on the same conversation
 - **Resume** — Each visual agent's Claude session id and model are saved on the session, so after an app restart the tab picks up the same conversation (its transcript is replayed from disk)
 - **Permissions** — Runs in your default (auto) permission mode: no `--permission-mode` or bypass flag is ever passed, and the worktree's hooks are written exactly as for terminal agents
+- **Claude in Chrome** — Every Agent tab (and every `claude` terminal) starts with `--chrome`, so the Chrome connector works in a session just as it does in a plain `claude`. Without the flag Claude Code never connects Chrome for a `claude -p` process like the visual agent, even with Chrome's **Enabled by default** setting on. `/btw` asides and one-off runs such as the review loop don't get it
 
 ![Adding a visual agent tab](docs/screenshots/visual-agent-add-tab.png)
 

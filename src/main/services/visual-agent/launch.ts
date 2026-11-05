@@ -8,6 +8,7 @@
  * the user's configured default (auto) — see CLAUDE.md.
  */
 import { AUTO_PERMISSION_MODE_ARGS } from '../terminal.service'
+import { CHROME_ARGS } from '../claude-chrome'
 import { DEFAULT_VISUAL_AGENT_MODEL } from '../../../shared/visual-agent'
 import type { VisualAgentAskDecision } from '../../../shared/visual-agent'
 import { validateBranchName } from '../../../shared/branch-name'
@@ -61,6 +62,11 @@ export const localOrchestratorSystemPrompt = (branch: string): string =>
  * `--permission-prompt-tool stdio` routes permission questions over this same
  * stream as `control_request` `can_use_tool` (hidden flag in the CLI, but
  * accepted — verified against 2.1.306). It also enables AskUserQuestion.
+ *
+ * `--chrome` (CHROME_ARGS) connects Claude in Chrome. A `-p` process counts as
+ * non-interactive, and the CLI never connects Chrome for one from the
+ * "Enabled by default" setting alone, so without the flag the Agent tab has no
+ * Chrome tools.
  */
 export const agentArgv = (opts: AgentArgvOptions): string[] => {
   const argv = [
@@ -70,6 +76,7 @@ export const agentArgv = (opts: AgentArgvOptions): string[] => {
     '--permission-prompt-tool',
     'stdio',
     ...AUTO_PERMISSION_MODE_ARGS,
+    ...CHROME_ARGS,
     '--model',
     resolveModel(opts.model),
   ]

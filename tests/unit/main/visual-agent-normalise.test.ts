@@ -339,6 +339,15 @@ describe('lineReader', () => {
 describe('launch argv', () => {
   const FORBIDDEN = ['--permission-mode', '--dangerously-skip-permissions', 'acceptEdits', 'bypassPermissions', 'dontAsk']
 
+  it('connects Claude in Chrome for the main agent (a -p process never does from the default setting alone)', () => {
+    expect(agentArgv({ model: 'claude-opus-5-5' })).toContain('--chrome')
+    expect(agentArgv({ model: 'claude-opus-5-5', resume: 'abc' })).toContain('--chrome')
+  })
+
+  it('leaves Chrome off a /btw fork, which has no tools', () => {
+    expect(forkArgv({ parentSessionId: 'p', forkSessionId: 'f', model: 'claude-opus-5-5' })).not.toContain('--chrome')
+  })
+
   it('main argv speaks stream-json both ways with partials and the stdio prompt tool, and never sets a permission mode', () => {
     const argv = agentArgv({ model: 'claude-opus-5-5' })
     expect(argv.slice(0, 6)).toEqual(['-p', '--output-format', 'stream-json', '--input-format', 'stream-json', '--verbose'])

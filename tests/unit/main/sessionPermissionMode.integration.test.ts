@@ -69,6 +69,7 @@ vi.mock('../../../src/main/services/hook.service', () => ({
 import { IPC } from '../../../src/shared/constants'
 import { invokeHandler } from '../../../src/main/ipc/handle'
 import { registerTerminalHandlers } from '../../../src/main/ipc/terminal.ipc'
+import { withChromeArgs } from '../../../src/main/services/claude-chrome'
 
 const fakeWindow = {
   isDestroyed: () => false,
@@ -112,7 +113,8 @@ describe('opening a Claude Code session (TERMINAL_SPAWN)', () => {
     const body = lastShellBody()
 
     // The decisive assertion: opens in auto (inherited default), NOT acceptEdits.
-    expect(body).toBe('claude')
+    // Plain `claude` plus the Chrome connector — no permission flag at all.
+    expect(body).toBe('claude --chrome')
     expect(body).not.toContain('--permission-mode')
     expect(body).not.toContain('acceptEdits')
     expect(body).not.toContain('bypassPermissions')
@@ -133,7 +135,7 @@ describe('opening a Claude Code session (TERMINAL_SPAWN)', () => {
     ])
 
     const body = lastShellBody()
-    expect(body).toBe('claude --resume')
+    expect(body).toBe('claude --chrome --resume')
     expect(body).not.toContain('--permission-mode')
     expect(body).not.toContain('acceptEdits')
   })
@@ -157,6 +159,21 @@ describe('opening a Claude Code session (TERMINAL_SPAWN)', () => {
     const launched = [last.command, ...last.args].join(' ')
     expect(launched).not.toContain('--permission-mode')
     expect(launched).not.toContain('claude')
+  })
+})
+
+describe('the Chrome connector in a session', () => {
+  it('keeps a choice the args already make, and adds --chrome otherwise', () => {
+    expect(withChromeArgs()).toEqual(['--chrome'])
+    expect(withChromeArgs(['--teleport', 'x'])).toEqual(['--teleport', 'x', '--chrome'])
+    expect(withChromeArgs(['--chrome'])).toEqual(['--chrome'])
+    expect(withChromeArgs(['--no-chrome'])).toEqual(['--no-chrome'])
+  })
+
+  it('does not add --chrome to a plain shell terminal', async () => {
+    await invokeHandler(IPC.TERMINAL_SPAWN, ['sess-sh', '/wt/sess-sh', 'shell', 'dark', undefined, undefined, false, 'sess-sh', 'shell'])
+    const last = ptyState.spawns.at(-1)!
+    expect([last.command, ...last.args].join(' ')).not.toContain('--chrome')
   })
 })
 
