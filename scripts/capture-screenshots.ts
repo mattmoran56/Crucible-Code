@@ -131,6 +131,12 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 320, height: 200 },
   },
   {
+    name: 'dispatched-session-card',
+    storyId: 'sessions-sessioncard--dispatched',
+    delay: 500,
+    viewport: { width: 320, height: 300 },
+  },
+  {
     name: 'sandbox-panel-links',
     storyId: 'sandboxer-sandboxpanel--links-with-readiness',
     delay: 1000,
