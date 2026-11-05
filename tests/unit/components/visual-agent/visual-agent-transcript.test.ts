@@ -135,6 +135,30 @@ describe('buildTranscript', () => {
     expect(t.threads.get('inner')!.rows).toHaveLength(1)
   })
 
+  it('keeps every ancestor running while a sub-agent any levels down still runs', () => {
+    const events = [
+      tool('a', 'Agent', MAIN_THREAD, true),
+      tool('b', 'Agent', 'a', true),
+      tool('c', 'Agent', 'b', true),
+      say('deep', 'c'),
+      result('b', true, 'a'),
+      result('a'),
+    ]
+    let t = buildTranscript(events)
+    expect(t.threads.get('c')!.status).toBe('running')
+    expect(t.threads.get('b')!.status).toBe('running')
+    expect(t.threads.get('a')!.status).toBe('running')
+
+    t = buildTranscript([...events, result('c', true, 'b')])
+    expect(t.threads.get('c')!.status).toBe('done')
+    expect(t.threads.get('b')!.status).toBe('done')
+    expect(t.threads.get('a')!.status).toBe('done')
+
+    // A parent that failed or was stopped keeps saying so.
+    t = buildTranscript([tool('a', 'Agent', MAIN_THREAD, true), tool('b', 'Agent', 'a', true), result('a', false)])
+    expect(t.threads.get('a')!.status).toBe('failed')
+  })
+
   it('hangs an orphan thread off main so it stays reachable', () => {
     const t = buildTranscript([say('lost', 'never-seen')])
     expect(t.main.children).toContain('never-seen')

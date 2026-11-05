@@ -172,6 +172,23 @@ export const buildTranscript = (events: readonly VisualAgentEvent[]): Transcript
 
   for (const held of threads.values()) held.steps = held.rows.length
 
+  // A sub-agent is not finished while anything it started still runs, however
+  // deep. Only a 'done' parent is lifted: failed and stopped say more than
+  // "still busy" and stay as reported.
+  const live = new Map<string, boolean>()
+  const anyRunning = (id: string): boolean => {
+    const known = live.get(id)
+    if (known !== undefined) return known
+    live.set(id, false) // cycle guard
+    const held = threads.get(id)
+    let running = held?.status === 'running'
+    for (const child of held?.children ?? []) if (anyRunning(child)) running = true
+    if (held && id !== MAIN_THREAD && running && held.status === 'done') held.status = 'running'
+    live.set(id, running)
+    return running
+  }
+  for (const id of threads.keys()) anyRunning(id)
+
   const main = thread(MAIN_THREAD)
   const reachable = new Set<string>()
   const walk = (id: string): void => {
