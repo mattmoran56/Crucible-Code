@@ -3,6 +3,7 @@ import { IPC } from '../shared/constants'
 import type { VisualAgentAskDecision, VisualAgentAttachment, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
 import type { AgentBrowserLinkEvent } from '../shared/agent-browser'
 import type { TabStripGeometry } from '../shared/tab-drag'
+import type { DeskPR, DeskTicketRef, DeskTicketsResult } from '../shared/prDesk'
 import type { SessionDispatchRequest, SessionDispatchResponse } from '../shared/session-dispatch'
 import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, CloudSessionMode, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck, WindowLayout, WindowSummary } from '../shared/types'
 
@@ -285,6 +286,16 @@ const api = {
       ipcRenderer.on('account:auth-exit', listener)
       return () => ipcRenderer.removeListener('account:auth-exit', listener)
     },
+  },
+
+  prDesk: {
+    list: (repoPath: string): Promise<DeskPR[]> => ipcRenderer.invoke(IPC.PR_DESK_LIST, repoPath),
+    tickets: (projectId: string, refs: DeskTicketRef[]): Promise<DeskTicketsResult> =>
+      ipcRenderer.invoke(IPC.PR_DESK_TICKETS, projectId, refs),
+    getParked: (projectId: string): Promise<number[]> => ipcRenderer.invoke(IPC.PR_DESK_PARKED_GET, projectId),
+    setParked: (projectId: string, numbers: number[]): Promise<void> =>
+      ipcRenderer.invoke(IPC.PR_DESK_PARKED_SET, projectId, numbers),
+    openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.PR_DESK_OPEN_EXTERNAL, url),
   },
 
   github: {

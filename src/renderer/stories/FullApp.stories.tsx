@@ -3,6 +3,8 @@ import type { Meta, StoryObj } from '@storybook/react'
 import App from '../App'
 import { setupStoresForStory, resetStores } from './helpers/storeSetup'
 import { useNotificationStore } from '../stores/notificationStore'
+import { usePRDeskStore } from '../stores/prDeskStore'
+import { usePRStore } from '../stores/prStore'
 import type { SessionStatus } from '../../shared/types'
 import { mockReviewLoopRunning, mockReviewLoopCompleted, mockReviewLoopHeadless, mockReviewLoopEfficient } from '@mock/mockData'
 
@@ -38,6 +40,30 @@ export const GitView: Story = {
   decorators: [
     (Story) => {
       setupStoresForStory({ activeWorkspaceTab: 'git' })
+      return <Story />
+    },
+  ],
+}
+
+/** The PR list moved into the full-width bottom bar (PR Desk), compact cards. */
+export const PRDeskCompact: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory()
+      usePRStore.setState({ currentUser: 'alice' })
+      usePRDeskStore.setState({ open: true, collapsed: false, view: 'compact', scope: 'all', height: 240 })
+      return <Story />
+    },
+  ],
+}
+
+/** PR Desk with expanded cards: Notion ticket, review state, Notion/GitHub links and Park. */
+export const PRDeskExpanded: Story = {
+  decorators: [
+    (Story) => {
+      setupStoresForStory()
+      usePRStore.setState({ currentUser: 'alice' })
+      usePRDeskStore.setState({ open: true, collapsed: false, view: 'expanded', scope: 'all', height: 760 })
       return <Story />
     },
   ],

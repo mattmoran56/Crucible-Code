@@ -21,7 +21,7 @@ export async function getCurrentGitHubUser(repoPath: string): Promise<string | n
   }
 }
 
-async function getRepoOwnerName(repoPath: string): Promise<{ owner: string; name: string }> {
+export async function getRepoOwnerName(repoPath: string): Promise<{ owner: string; name: string }> {
   const { stdout } = await execFileAsync(
     'gh',
     ['repo', 'view', '--json', 'owner,name'],

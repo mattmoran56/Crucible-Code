@@ -6,6 +6,7 @@ import { registerTerminalHandlers } from './terminal.ipc'
 import { registerNotificationHandlers } from './notification.ipc'
 import { registerProjectHandlers } from './project.ipc'
 import { registerGithubHandlers } from './github.ipc'
+import { registerPRDeskHandlers } from './pr-desk.ipc'
 import { registerUpdateHandlers } from './update.ipc'
 import { registerNotesHandlers } from './notes.ipc'
 import { registerUsageHandlers } from './usage.ipc'
@@ -36,6 +37,7 @@ export function registerAllHandlers(window: BrowserWindow) {
   registerNotificationHandlers()
   registerProjectHandlers(window)
   registerGithubHandlers()
+  registerPRDeskHandlers()
   registerUpdateHandlers(window)
   registerNotesHandlers()
   registerUsageHandlers(window)

@@ -76,6 +76,12 @@ export const IPC = {
 
   // Pull Requests
   PR_LIST: 'pr:list',
+  // PR Desk (the full-width staged PR bar)
+  PR_DESK_LIST: 'pr:desk-list',
+  PR_DESK_TICKETS: 'pr:desk-tickets',
+  PR_DESK_PARKED_GET: 'pr:desk-parked:get',
+  PR_DESK_PARKED_SET: 'pr:desk-parked:set',
+  PR_DESK_OPEN_EXTERNAL: 'pr:desk-open-external',
   PR_CURRENT_USER: 'pr:current-user',
   PR_SEEN_GET: 'pr:seen:get',
   PR_SEEN_SET: 'pr:seen:set',

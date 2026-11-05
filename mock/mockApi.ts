@@ -7,6 +7,9 @@ import {
   mockWorkingFiles,
   mockUnifiedDiff,
   mockPullRequests,
+  mockDeskPRs,
+  mockDeskTickets,
+  mockDeskProjects,
   mockPRDetail,
   mockPRFiles,
   mockPRConversationComments,
@@ -307,6 +310,19 @@ export const mockApi = {
     onAuthData: () => noop(),
     onAuthExit: () => noop(),
   },
+
+  prDesk: (() => {
+    const parkedByProject: Record<string, number[]> = {}
+    return {
+      list: async () => mockDeskPRs,
+      tickets: async () => ({ configured: true, tickets: mockDeskTickets, projects: mockDeskProjects }),
+      getParked: async (projectId: string) => parkedByProject[projectId] ?? [],
+      setParked: async (projectId: string, numbers: number[]) => {
+        parkedByProject[projectId] = numbers
+      },
+      openExternal: async () => {},
+    }
+  })(),
 
   github: {
     listPRs: async () => mockPullRequests,

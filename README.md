@@ -447,6 +447,23 @@ Full pull request review without leaving the IDE — comparable to GitHub's web 
 </tr>
 </table>
 
+#### PR Desk (full-width PR bar)
+
+The bottom-bar button in the sidebar's **Pull Requests** header moves the PR list into a full-width bar along the bottom of the window. The sidebar gives Sessions the whole height while the bar is open; the bar's own sidebar button puts the list back. Drag the bar's top edge to make it taller or shorter, or fold it to its header with the chevron. It's off until you open it, and it only polls GitHub (once a minute) while it's showing.
+
+- **Stages** — Every open PR sits in one column: **Draft**, **Pending**, **Ready for me**, **Assigned** or **Parked**. The first rule that fits wins: parked by you; a draft; a parking label (hold, blocked, parked, delayed, deprioritised, later, wip) or a ticket in *Deprioritised*; assigned to or awaiting review from someone other than you; ready when CI is green, there are no merge conflicts and it's approved (by a person, or by the auto-review on the current commit); otherwise pending. These are the same rules the standalone PR Desk board uses
+- **Notion tickets** — Each PR's ticket comes from the ticket bot's comment, the body's `## Notion Ticket` section, any Notion link in the body, or a ticket ID in the title. Its ID, status, title and project are read with the project's Notion integration token (Settings → Notion), so nothing extra to set up
+- **Compact and Expanded** — Compact shows one line per PR: CI, number, title and author. Expanded has a row per Notion project (oldest project first, PRs without one under **No project** last), each split across the stage columns, with a link out to the project. Its cards add the branch, the ticket, review state (approved, auto-approved, changes requested, stale approval, conflicts), labels, and **Notion** / **GitHub** buttons that open in your browser, plus **Park** / **Unpark**
+- **Mine / All** — Mine keeps PRs you wrote, are assigned to, or are asked to review
+- **Click a card** to open the PR exactly as from the sidebar
+
+<table>
+<tr>
+<td><img src="docs/screenshots/pr-desk-compact.png" alt="PR Desk bar in compact view" /></td>
+<td><img src="docs/screenshots/pr-desk-expanded.png" alt="PR Desk bar in expanded view" /></td>
+</tr>
+</table>
+
 </details>
 
 <details>

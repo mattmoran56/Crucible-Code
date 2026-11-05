@@ -4,6 +4,7 @@ import { useGitStore } from '../../stores/gitStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { usePRStore } from '../../stores/prStore'
 import { usePRViewStore } from '../../stores/prViewStore'
+import { DEFAULT_PR_DESK_UI, usePRDeskStore } from '../../stores/prDeskStore'
 import { usePRListDisplayStore } from '../../stores/prListDisplayStore'
 import { DEFAULT_PR_LIST_DISPLAY } from '../../../shared/prDisplay'
 import { usePRReviewStore } from '../../stores/prReviewStore'
@@ -390,6 +391,7 @@ export function resetStores() {
     currentUser: null,
   })
   usePRViewStore.setState({ byRepo: {} })
+  usePRDeskStore.setState({ ...DEFAULT_PR_DESK_UI, byProject: {} })
   usePRListDisplayStore.setState({ default: DEFAULT_PR_LIST_DISPLAY, byRepo: {} })
   usePRReviewStore.setState({ prNumber: null, files: [], selectedFilePath: null, fullDiff: null, comments: [], detail: null, conversationComments: [], checks: [], commits: [] })
   useEditorStore.setState({ editorMode: false, openFiles: [], activeFilePath: null })

@@ -32,6 +32,8 @@ import { useSessionDispatchBootstrap } from './lib/sessionDispatch'
 import { UsageLimitToast } from './components/usage/UsageLimitToast'
 import { CloudWebPool } from './components/cloud/CloudWebPool'
 import { AgentBrowserLayer } from './components/agent-browser/AgentBrowserLayer'
+import { PRDeskBar } from './components/prdesk/PRDeskBar'
+import { usePRDeskStore } from './stores/prDeskStore'
 
 const RIGHT_PANEL_LABELS = { notes: 'Notes', usage: 'Usage', sandbox: 'Sandbox' } as const
 type RightPanelId = keyof typeof RIGHT_PANEL_LABELS
@@ -44,6 +46,7 @@ export default function App() {
   const { editorMode } = useEditorStore()
   const { handleHookEvent, registerSessions, clearContextStatuses } = useNotificationStore()
   const { isOpen: settingsOpen } = useSettingsStore()
+  const prDeskOpen = usePRDeskStore((s) => s.open)
   const { loadButtons, loadGroups } = useButtonStore()
   const loadReviewLoopSettings = useReviewLoopStore((s) => s.loadSettings)
   const applyReviewLoopState = useReviewLoopStore((s) => s.applyState)
@@ -237,6 +240,7 @@ export default function App() {
       <div style={{ display: settingsOpen ? 'none' : 'contents' }}>
         <ProjectTabs />
 
+        <div className="flex-1 flex flex-col min-h-0">
         <div className="flex-1 flex min-h-0">
           {/* Session sidebar — resizable width */}
           <div style={{ width: sidebar.size }} className="flex-shrink-0 h-full">
@@ -279,6 +283,10 @@ export default function App() {
 
           {/* Right activity bar — always visible */}
           <RightActivityBar activePanel={activeRightPanel} onToggle={toggleRightPanel} />
+        </div>
+
+        {/* PR Desk — the PR list as a full-width, resizable bar along the bottom */}
+        {prDeskOpen && <PRDeskBar />}
         </div>
       </div>
       {/* Embedded claude.ai pages: never unmounted, so they never reload. */}

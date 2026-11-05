@@ -32,8 +32,8 @@ describe('IPC channel constants', () => {
 describe('IPC channel naming conventions', () => {
   const entries = Object.entries(IPC) as Array<[string, string]>
 
-  it('exposes exactly 209 channels (update this count when adding channels)', () => {
-    expect(entries.length).toBe(222)
+  it('exposes exactly 227 channels (update this count when adding channels)', () => {
+    expect(entries.length).toBe(227)
   })
 
   it('every key is SCREAMING_SNAKE_CASE', () => {
@@ -99,8 +99,8 @@ describe('IPC namespace group sizes', () => {
     expect(values.filter((v) => v.startsWith('git:')).length).toBe(30)
   })
 
-  it('has 29 pr channels', () => {
-    expect(values.filter((v) => v.startsWith('pr:')).length).toBe(29)
+  it('has 34 pr channels', () => {
+    expect(values.filter((v) => v.startsWith('pr:')).length).toBe(34)
   })
 
   it('has 13 scheduler channels', () => {
