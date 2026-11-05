@@ -10,6 +10,7 @@ import { handleHookEvent, findContextById } from './notification-server'
 import { getSessionUsage } from './usage.service'
 import { getStorePath } from '../store-path'
 import { scrubInheritedClaudeSession } from './claude-env'
+import { crucibleMcpArgs } from './session-dispatch.service'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
@@ -330,7 +331,13 @@ function spawnPty(
       isResume,
       isReview: instance.mode === 'review',
       commandString: instance.commandString,
-      claudeArgs: instance.claudeArgs,
+      // An interactive agent terminal also gets the app's `crucible` MCP
+      // server (session dispatch). Added per spawn, never persisted: the
+      // server's port changes with every app run.
+      claudeArgs:
+        instance.mode === 'claude'
+          ? [...(instance.claudeArgs ?? []), ...crucibleMcpArgs(instance.contextId)]
+          : instance.claudeArgs,
     })
     args = ['-l', '-c', shellBody]
   } else if (instance.mode === 'command' && instance.commandString) {

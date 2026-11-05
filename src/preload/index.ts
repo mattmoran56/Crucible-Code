@@ -3,6 +3,7 @@ import { IPC } from '../shared/constants'
 import type { VisualAgentAskDecision, VisualAgentAttachment, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
 import type { AgentBrowserLinkEvent } from '../shared/agent-browser'
 import type { TabStripGeometry } from '../shared/tab-drag'
+import type { SessionDispatchRequest, SessionDispatchResponse } from '../shared/session-dispatch'
 import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, CloudSessionMode, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck, WindowLayout, WindowSummary } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
@@ -699,6 +700,21 @@ const api = {
       ipcRenderer.on(IPC.NOTION_FIRE_TASK, listener)
       return () => ipcRenderer.removeListener(IPC.NOTION_FIRE_TASK, listener)
     },
+  },
+
+  /**
+   * The `crucible` MCP server's tool calls (an agent dispatching a session,
+   * listing sessions or messaging one). Delivered to one window only; it must
+   * answer each request with respond().
+   */
+  sessionDispatch: {
+    onRequest: (callback: (req: SessionDispatchRequest) => void) => {
+      const listener = (_e: unknown, req: SessionDispatchRequest) => callback(req)
+      ipcRenderer.on(IPC.SESSION_DISPATCH_REQUEST, listener)
+      return () => ipcRenderer.removeListener(IPC.SESSION_DISPATCH_REQUEST, listener)
+    },
+    respond: (id: string, response: SessionDispatchResponse): Promise<void> =>
+      ipcRenderer.invoke(IPC.SESSION_DISPATCH_RESPOND, id, response),
   },
 
   remote: {

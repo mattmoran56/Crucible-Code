@@ -142,3 +142,44 @@ export const RepoAgentNamed: Story = {
     status: 'running',
   },
 }
+
+/**
+ * Sessions started by another session's agent through the `crucible`
+ * dispatch_session tool: a no-worktree planning chat and the two sessions it
+ * handed work off to (one local, one in the cloud).
+ */
+export const Dispatched: Story = {
+  render: (args) => (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <SessionCard
+        {...args}
+        session={{ ...baseSession, id: 'sess-0', name: 'Planning chat', branchName: '', worktreePath: '/mock/repo', repoRoot: true }}
+        repoBranch="main"
+        status="completed"
+      />
+      <SessionCard
+        {...args}
+        session={{
+          ...baseSession,
+          name: 'Fix login redirect',
+          branchName: 'session/fix-login-redirect',
+          dispatchedBy: { sessionId: 'sess-0', name: 'Planning chat' },
+        }}
+        status="running"
+      />
+      <SessionCard
+        {...args}
+        session={{
+          ...baseSession,
+          id: 'sess-2',
+          name: 'Add dark mode toggle',
+          branchName: 'session/add-dark-mode-toggle',
+          location: 'cloud',
+          cloud: { sessionId: 'session_01abc', url: 'https://claude.ai/code/session_01abc' },
+          dispatchedBy: { sessionId: 'sess-0', name: 'Planning chat' },
+        }}
+        status="running"
+      />
+    </div>
+  ),
+}

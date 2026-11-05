@@ -6,6 +6,7 @@ import { IPC } from '../../shared/constants'
 import type { HookType, ContextKind } from '../../shared/types'
 import { showNotification } from './notification.service'
 import { emitToRenderer } from './event-bus'
+import { MCP_PATH, handleMcpPost, setDispatchMcpPort } from './session-dispatch.service'
 
 /**
  * Fired for every routed hook event (prompt | notification | stop) as soon as
@@ -150,6 +151,40 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
 
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
+      const path = (req.url ?? '').split('?')[0]
+      // The built-in `crucible` MCP server (session dispatch). Stateless
+      // Streamable HTTP: POST only, JSON responses, no SSE stream to GET.
+      if (path === MCP_PATH) {
+        if (req.method !== 'POST') {
+          res.writeHead(405, { Allow: 'POST' })
+          res.end()
+          return
+        }
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => {
+          chunks.push(chunk)
+        })
+        req.on('end', () => {
+          const url = new URL(req.url!, 'http://127.0.0.1')
+          const contextId = url.searchParams.get('context') || ''
+          void handleMcpPost(req.headers.authorization, contextId, Buffer.concat(chunks).toString('utf8'))
+            .then(({ status, body }) => {
+              if (body === undefined) {
+                res.writeHead(status)
+                res.end()
+                return
+              }
+              res.writeHead(status, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify(body))
+            })
+            .catch((err) => {
+              res.writeHead(500, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+            })
+        })
+        return
+      }
+
       // Typed endpoint: POST /hook?type=prompt|notification|stop&context=...&tab=...
       if (req.method === 'POST' && req.url?.startsWith('/hook')) {
         // Collect raw Buffer chunks and decode once at the end. The previous
@@ -220,6 +255,7 @@ export function startNotificationServer(window: BrowserWindow): Promise<number> 
       const addr = server!.address()
       if (addr && typeof addr === 'object') {
         serverPort = addr.port
+        setDispatchMcpPort(serverPort)
         console.log(`Notification server listening on port ${serverPort}`)
         resolve(serverPort)
       } else {
@@ -236,5 +272,6 @@ export function stopNotificationServer() {
     server.close()
     server = null
     serverPort = null
+    setDispatchMcpPort(null)
   }
 }
