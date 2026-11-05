@@ -21,6 +21,14 @@ interface Props {
   /** `deleteRemoteBranch` is only offered for cloud (or teleported) sessions. */
   onDelete: (opts?: { deleteRemoteBranch?: boolean }) => void
   onRename: (newName: string) => Promise<void>
+  /**
+   * PRs the user can pick from to assign to this session. Passed (with
+   * `onAssignPR`) only for a repo-root session: a worktree session's PR comes
+   * from its branch.
+   */
+  assignablePRs?: PullRequest[]
+  /** Assign a PR to the session, or with `null` clear it. */
+  onAssignPR?: (prNumber: number | null) => Promise<void>
 }
 
 const EllipsisIcon = () => (
@@ -126,13 +134,14 @@ function StatusIndicator({ status }: { status: SessionStatus | null }) {
   }
 }
 
-export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, repoBranch, onClick, onOpenAsMainBranch, onDelete, onRename }: Props) {
+export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, repoBranch, onClick, onOpenAsMainBranch, onDelete, onRename, assignablePRs, onAssignPR }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [showRename, setShowRename] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
   const [renameError, setRenameError] = useState<string | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [deleteRemote, setDeleteRemote] = useState(false)
+  const [showAssignPR, setShowAssignPR] = useState(false)
   const remoteBranch = session.cloud || session.cloudPending ? sessionRemoteBranch(session) : undefined
   const deletesLocalBranch = sessionDeletesLocalBranch(session)
   const movesBranch = renameMovesBranch(session)
@@ -227,6 +236,11 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, rep
             <span className="truncate">{session.notionTicket.title || 'Notion ticket'}</span>
           </button>
         )}
+        {!pr && session.prNumber != null && (
+          <div className="flex items-center gap-1 mt-0.5 pr-5" title="Assigned PR (not in the loaded PR list)">
+            <span className="text-text-muted text-[10px] truncate">#{session.prNumber}</span>
+          </div>
+        )}
         {pr && (
           <div className="flex items-center gap-1 mt-0.5 pr-5">
             <span
@@ -246,6 +260,17 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, rep
             items={[
               ...(!isOpenedAsMain && !session.repoRoot ? [{ label: 'Open as main branch', onClick: onOpenAsMainBranch }] : []),
               { label: 'Rename', onClick: openRename },
+              ...(onAssignPR
+                ? [
+                    {
+                      label: session.prNumber != null ? 'Change pull request…' : 'Assign pull request…',
+                      onClick: () => setShowAssignPR(true),
+                    },
+                    ...(session.prNumber != null
+                      ? [{ label: 'Unassign pull request', onClick: () => void onAssignPR(null) }]
+                      : []),
+                  ]
+                : []),
               {
                 label: 'Delete',
                 variant: 'danger' as const,
@@ -301,6 +326,17 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, rep
         </form>
       </Dialog>
 
+      {onAssignPR && (
+        <AssignPRDialog
+          open={showAssignPR}
+          sessionName={session.name}
+          currentPR={session.prNumber}
+          pullRequests={assignablePRs ?? []}
+          onClose={() => setShowAssignPR(false)}
+          onAssign={onAssignPR}
+        />
+      )}
+
       <Dialog open={showConfirm} onClose={() => setShowConfirm(false)} title="Delete session?">
         {session.repoRoot ? (
           <p className="text-xs text-text-muted mb-5">
@@ -341,5 +377,107 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, rep
         </div>
       </Dialog>
     </>
+  )
+}
+
+interface AssignPRDialogProps {
+  open: boolean
+  sessionName: string
+  currentPR?: number
+  pullRequests: PullRequest[]
+  onClose: () => void
+  onAssign: (prNumber: number | null) => Promise<void>
+}
+
+/** Pick one of the repo's PRs (or type its number) to assign to a repo-root session. */
+export function AssignPRDialog({ open, sessionName, currentPR, pullRequests, onClose, onAssign }: AssignPRDialogProps) {
+  const [query, setQuery] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const q = query.trim().replace(/^#/, '').toLowerCase()
+  const matches = pullRequests.filter(
+    (pr) => !q || String(pr.number).startsWith(q) || pr.title.toLowerCase().includes(q) || pr.headRefName.toLowerCase().includes(q)
+  )
+  const typedNumber = /^\d+$/.test(q) ? Number(q) : null
+
+  const close = () => {
+    if (saving) return
+    setQuery('')
+    setError(null)
+    onClose()
+  }
+
+  const assign = async (prNumber: number) => {
+    setSaving(true)
+    setError(null)
+    try {
+      await onAssign(prNumber)
+      setQuery('')
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={close} title="Assign pull request">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          const target = typedNumber ?? (matches.length === 1 ? matches[0].number : null)
+          if (target != null && !saving) void assign(target)
+        }}
+        className="flex flex-col gap-3"
+      >
+        <p className="text-xs text-text-muted">
+          Link a PR to <strong className="text-text">{sessionName}</strong>. It shows on the session and opens in its PR tab.
+        </p>
+        <Input
+          label="Search or PR number"
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="e.g. 154 or a title"
+          disabled={saving}
+          error={error || undefined}
+        />
+        <div role="listbox" aria-label="Pull requests" className="max-h-64 overflow-y-auto flex flex-col border border-border rounded">
+          {matches.map((pr) => (
+            <button
+              key={pr.number}
+              type="button"
+              role="option"
+              aria-selected={pr.number === currentPR}
+              disabled={saving}
+              onClick={() => void assign(pr.number)}
+              className={`text-left text-xs px-2.5 py-1.5 flex items-center gap-1.5 hover:bg-bg-tertiary focus:outline-none focus-visible:bg-bg-tertiary ${
+                pr.number === currentPR ? 'text-accent' : 'text-text'
+              }`}
+            >
+              <span
+                className={`shrink-0 w-1.5 h-1.5 rounded-full ${
+                  pr.state === 'MERGED' ? 'bg-merged' : pr.isDraft ? 'bg-text-muted' : 'bg-success'
+                }`}
+              />
+              <span className="shrink-0 tabular-nums text-text-muted">#{pr.number}</span>
+              <span className="truncate">{pr.title}</span>
+            </button>
+          ))}
+          {matches.length === 0 && (
+            <p className="text-text-muted text-xs text-center py-3">
+              {typedNumber != null ? `Press Enter to assign #${typedNumber}` : 'No matching pull requests'}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-3 justify-end">
+          <Button type="button" variant="ghost" size="sm" onClick={close} disabled={saving}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   )
 }

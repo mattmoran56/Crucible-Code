@@ -6,6 +6,7 @@ import { useSettingsStore } from './settingsStore'
 import { useReviewLoopStore } from './reviewLoopStore'
 import { usePRStore } from './prStore'
 import { useToastStore } from './toastStore'
+import { sessionPullRequest } from '../../shared/session-pr'
 
 export interface AppActionDef {
   id: AppAction
@@ -254,7 +255,7 @@ export function getAppActions(): AppActionDef[] {
         }
 
         const { pullRequests } = usePRStore.getState()
-        const sessionPR = pullRequests.find((pr) => pr.headRefName === session.branchName)
+        const sessionPR = sessionPullRequest(session, pullRequests)
         const baseBranch = session.baseBranch ?? sessionPR?.baseRefName ?? 'main'
 
         // Switch focus to the Review Loop tab so users see what's happening.

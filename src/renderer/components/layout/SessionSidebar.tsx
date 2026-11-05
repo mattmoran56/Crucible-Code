@@ -29,6 +29,7 @@ import { ResizeHandle } from '../ui/ResizeHandle'
 import { useMultiPanelResize } from '../../hooks/useMultiPanelResize'
 import { usePRDeskStore } from '../../stores/prDeskStore'
 import { DockBottomIcon } from '../prdesk/PRDeskBar'
+import { canAssignSessionPR, sessionPullRequest } from '../../../shared/session-pr'
 
 const PR_POLL_INTERVAL = 30_000
 
@@ -43,7 +44,7 @@ const NewRepoAgentIcon = () => (
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, openPR, openAsMainBranch, reconcilePRWorktrees, createRepoAgent } =
+  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, assignSessionPR, openPR, openAsMainBranch, reconcilePRWorktrees, createRepoAgent } =
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, loadCurrentUser, markSeen, clear: clearPRs, currentUser } =
     usePRStore()
@@ -325,7 +326,7 @@ export function SessionSidebar() {
     const merged: typeof sortedSessions = []
 
     for (const s of sortedSessions) {
-      const pr = pullRequests.find((pr) => pr.headRefName === s.branchName)
+      const pr = sessionPullRequest(s, pullRequests)
       if (!pr) noPR.push(s)
       else if (pr.state === 'MERGED') merged.push(s)
       else if (pr.isDraft) draft.push(s)
@@ -385,8 +386,10 @@ export function SessionSidebar() {
 
   // Find sessions with merged PRs
   const mergedSessions = useMemo(() => {
+    // A repo-root session is not tied to its PR's branch: it stays after the PR merges.
     return sessions.filter((s) => {
-      const pr = pullRequests.find((pr) => pr.headRefName === s.branchName)
+      if (s.repoRoot) return false
+      const pr = sessionPullRequest(s, pullRequests)
       return pr?.state === 'MERGED'
     })
   }, [sessions, pullRequests])
@@ -657,7 +660,7 @@ export function SessionSidebar() {
                       isActive={!editorMode && session.id === activeSessionId}
                       isOpenedAsMain={session.id === openedAsMainBranch}
                       status={getContextStatus(session.id)}
-                      pr={session.repoRoot ? undefined : pullRequests.find((pr) => pr.headRefName === session.branchName)}
+                      pr={sessionPullRequest(session, pullRequests)}
                       repoBranch={currentBranch}
                       onClick={() => {
                         setEditorMode(false)
@@ -667,6 +670,12 @@ export function SessionSidebar() {
                       onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
                       onDelete={(opts) => removeSession(activeProject.id, activeProject.repoPath, session.id, opts)}
                       onRename={(newName) => renameSession(activeProject.id, activeProject.repoPath, session.id, newName)}
+                      {...(canAssignSessionPR(session)
+                        ? {
+                            assignablePRs: pullRequests,
+                            onAssignPR: (prNumber: number | null) => assignSessionPR(activeProject.id, session.id, prNumber),
+                          }
+                        : {})}
                     />
                   ))}
                 </React.Fragment>

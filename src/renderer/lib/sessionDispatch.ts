@@ -10,6 +10,7 @@
 import { useEffect } from 'react'
 import type { Project, Session } from '../../shared/types'
 import type {
+  AssignPRArgs,
   DispatchedBy,
   DispatchSessionArgs,
   SendToSessionArgs,
@@ -17,11 +18,13 @@ import type {
   SessionDispatchResponse,
 } from '../../shared/session-dispatch'
 import { toSessionName, uniqueSessionName } from '../../shared/session-name'
+import { canAssignSessionPR, withAssignedPR } from '../../shared/session-pr'
 import { useProjectStore } from '../stores/projectStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useCloudSessionStore } from '../stores/cloudSessionStore'
 import { useToastStore } from '../stores/toastStore'
+import { usePRStore } from '../stores/prStore'
 import { startSessionVisualAgent } from './startVisualAgent'
 import { projectConfigDir } from './visualAgents'
 
@@ -188,6 +191,7 @@ export async function listSessions(origin: DispatchOrigin): Promise<string> {
     worktree: !s.repoRoot,
     ...(s.mode === 'orchestrator' || s.cloudPending?.mode === 'orchestrator' ? { mode: 'orchestrator' } : {}),
     ...(s.dispatchedBy ? { dispatchedBy: s.dispatchedBy.name } : {}),
+    ...(s.prNumber != null ? { assignedPR: s.prNumber } : {}),
     ...(s.id === origin.session?.id ? { thisSession: true } : {}),
     createdAt: s.createdAt,
   }))
@@ -214,6 +218,49 @@ export async function sendToSession(origin: DispatchOrigin, args: SendToSessionA
   return `Sent to "${target.name}".`
 }
 
+/**
+ * Assign a PR to a repo-root session in the origin's project (the calling
+ * session by default), or clear it. The PR must be one of the repository's
+ * open or recently merged PRs.
+ */
+export async function assignPR(origin: DispatchOrigin, args: AssignPRArgs): Promise<string> {
+  const { project } = origin
+  const sessionId = args.sessionId ?? origin.session?.id
+  if (!sessionId) {
+    throw new Error('This agent is not in a session (it runs in the Code workspace): pass session_id to say which session gets the PR.')
+  }
+  const sessions = await projectSessions(project.id)
+  const target = sessions.find((s) => s.id === sessionId)
+  if (!target) throw new Error(`No session with id ${sessionId} in project "${project.name}". Use list_sessions to see them.`)
+  if (!canAssignSessionPR(target)) {
+    throw new Error(
+      `"${target.name}" has its own worktree and branch (${target.branchName}), so Crucible already matches it to that branch's PR. assign_pr is for sessions with no worktree.`
+    )
+  }
+
+  if (args.prNumber == null) {
+    if (target.prNumber == null) return `"${target.name}" has no PR assigned.`
+    await saveProjectSessions(project.id, sessions.map((s) => (s.id === target.id ? withAssignedPR(s, null) : s)))
+    return `Unassigned PR #${target.prNumber} from "${target.name}".`
+  }
+
+  // Fresh list: the PR was most likely opened moments ago.
+  const pullRequests = await window.api.github.listPRs(project.repoPath)
+  const pr = pullRequests.find((p) => p.number === args.prNumber)
+  if (!pr) {
+    throw new Error(`PR #${args.prNumber} is not among the open or recently merged PRs of ${project.name}'s repository. Check the number.`)
+  }
+  const prStore = usePRStore.getState()
+  if (prStore.currentRepoPath === project.repoPath) usePRStore.setState({ pullRequests })
+  usePRStore.setState((s) => ({ prCache: { ...s.prCache, [project.repoPath]: pullRequests } }))
+
+  // Re-read: the list may have changed while GitHub answered.
+  const latest = await projectSessions(project.id)
+  await saveProjectSessions(project.id, latest.map((s) => (s.id === target.id ? withAssignedPR(s, pr.number) : s)))
+  useToastStore.getState().addToast('info', `Assigned PR #${pr.number} to "${target.name}"`)
+  return `Assigned PR #${pr.number} "${pr.title}" to "${target.name}". It shows on the session in Crucible's sidebar and opens in its PR tab.`
+}
+
 /** Answer one forwarded tool call. Never throws: errors go back to the agent. */
 export async function handleSessionDispatchRequest(req: SessionDispatchRequest): Promise<SessionDispatchResponse> {
   try {
@@ -225,6 +272,8 @@ export async function handleSessionDispatchRequest(req: SessionDispatchRequest):
         return { ok: true, text: await listSessions(origin) }
       case 'send_to_session':
         return { ok: true, text: await sendToSession(origin, req.args) }
+      case 'assign_pr':
+        return { ok: true, text: await assignPR(origin, req.args) }
       default:
         return { ok: false, error: 'Unknown tool' }
     }

@@ -142,4 +142,52 @@ describe('SessionCard', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
     expect(screen.getByText(/remove the worktree for/)).toBeInTheDocument()
   })
+
+  describe('assigning a PR to a no-worktree session', () => {
+    const root = { ...session, name: 'Planning chat', branchName: '', repoRoot: true }
+    const prs = [
+      { number: 42, title: 'Add foo', state: 'OPEN', isDraft: false, headRefName: 'foo' },
+      { number: 7, title: 'Fix bar', state: 'OPEN', isDraft: true, headRefName: 'bar' },
+    ] as any
+
+    it('is not offered without onAssignPR (worktree sessions)', async () => {
+      const user = userEvent.setup()
+      render(<SessionCard {...baseProps} />)
+      await user.click(screen.getByRole('button', { name: /Actions for feat\/x/ }))
+      expect(screen.queryByRole('menuitem', { name: /pull request/ })).toBeNull()
+    })
+
+    it('picks a PR from the list', async () => {
+      const user = userEvent.setup()
+      const onAssignPR = vi.fn(async () => {})
+      render(<SessionCard {...baseProps} session={root} assignablePRs={prs} onAssignPR={onAssignPR} />)
+      await user.click(screen.getByRole('button', { name: /Actions for Planning chat/ }))
+      await user.click(screen.getByRole('menuitem', { name: 'Assign pull request…' }))
+      await user.type(screen.getByLabelText('Search or PR number'), 'bar')
+      expect(screen.queryByText('Add foo')).toBeNull()
+      await user.click(screen.getByRole('option', { name: /Fix bar/ }))
+      expect(onAssignPR).toHaveBeenCalledWith(7)
+    })
+
+    it('assigns a typed number on Enter', async () => {
+      const user = userEvent.setup()
+      const onAssignPR = vi.fn(async () => {})
+      render(<SessionCard {...baseProps} session={root} assignablePRs={prs} onAssignPR={onAssignPR} />)
+      await user.click(screen.getByRole('button', { name: /Actions for Planning chat/ }))
+      await user.click(screen.getByRole('menuitem', { name: 'Assign pull request…' }))
+      await user.type(screen.getByLabelText('Search or PR number'), '#123{Enter}')
+      expect(onAssignPR).toHaveBeenCalledWith(123)
+    })
+
+    it('shows the assigned number and can unassign it', async () => {
+      const user = userEvent.setup()
+      const onAssignPR = vi.fn(async () => {})
+      render(<SessionCard {...baseProps} session={{ ...root, prNumber: 99 }} assignablePRs={prs} onAssignPR={onAssignPR} />)
+      expect(screen.getByText('#99')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: /Actions for Planning chat/ }))
+      expect(screen.getByRole('menuitem', { name: 'Change pull request…' })).toBeInTheDocument()
+      await user.click(screen.getByRole('menuitem', { name: 'Unassign pull request' }))
+      expect(onAssignPR).toHaveBeenCalledWith(null)
+    })
+  })
 })

@@ -27,6 +27,7 @@ import {
 } from '../../stores/workspaceLayoutStore'
 import { visualAgentId } from '../../lib/visualAgents'
 import { ColumnPanel } from './WorkspaceColumn'
+import { sessionPullRequest } from '../../../shared/session-pr'
 
 /** Tabs that require an active PR to be enabled */
 const PR_REQUIRED_TABS: Set<WorkspaceTab> = new Set(['review'])
@@ -47,9 +48,7 @@ export function SessionWorkspace() {
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const { pullRequests } = usePRStore()
   // Match session branch to a PR in the list
-  const sessionPR = activeSession
-    ? pullRequests.find((pr) => pr.headRefName === activeSession.branchName)
-    : null
+  const sessionPR = sessionPullRequest(activeSession, pullRequests) ?? null
   // PR number: explicit activePRNumber takes priority, fall back to matched PR
   const effectivePRNumber = activePRNumber ?? sessionPR?.number ?? null
   const prOnlyMode = activePRNumber != null && activeSessionId == null
@@ -87,9 +86,12 @@ export function SessionWorkspace() {
         resetLayout(['pr', 'review'], 'pr', contextId)
       } else if (activeSessionId) {
         // A repo-root agent has no branch to diff or review: just the agent
-        // (more agents and terminals come from the column's + menu).
+        // (more agents and terminals come from the column's + menu), plus the
+        // PR tab when a PR has been assigned to it.
         const sessionTabs: WorkspaceTab[] = activeSession?.repoRoot
-          ? ['agent']
+          ? sessionPR
+            ? ['agent', 'pr']
+            : ['agent']
           : sessionPR
             ? ['agent', 'git', 'pr', 'review', 'review-loop']
             : ['agent', 'git', 'review', 'review-loop']

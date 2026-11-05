@@ -3,6 +3,7 @@ import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocat
 import { useToastStore } from './toastStore'
 import { defaultSessionBranch, renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name'
 import { uniqueSessionName } from '../../shared/session-name'
+import { canAssignSessionPR, withAssignedPR } from '../../shared/session-pr'
 import { useTerminalStore } from './terminalStore'
 import { useCloudSessionStore } from './cloudSessionStore'
 import { useVisualAgentStore } from './visualAgentStore'
@@ -83,6 +84,11 @@ interface SessionState {
     opts?: { deleteRemoteBranch?: boolean }
   ) => Promise<void>
   renameSession: (projectId: string, repoPath: string, sessionId: string, newName: string) => Promise<void>
+  /**
+   * Assign a pull request to a repo-root session (one with no worktree, so no
+   * branch to match a PR on), or with `null` clear it.
+   */
+  assignSessionPR: (projectId: string, sessionId: string, prNumber: number | null) => Promise<void>
   /**
    * Name a session still on its placeholder (`namePending`) from the first
    * message sent to it, via a quick Haiku turn. No-op for any other session,
@@ -481,6 +487,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const sessions = get().sessions.map((s) =>
       s.id === sessionId ? { ...withoutNamePending(s), name: trimmed, branchName: newBranch } : s
     )
+    await window.api.session.save(projectId, sessions)
+    if (get().currentProjectId !== projectId) return
+    set({ sessions })
+  },
+
+  assignSessionPR: async (projectId, sessionId, prNumber) => {
+    const session = get().sessions.find((s) => s.id === sessionId)
+    if (!session) throw new Error('Session not found')
+    if (!canAssignSessionPR(session)) {
+      throw new Error('Only a session with no worktree can have a PR assigned: a worktree session uses its branch\'s PR')
+    }
+    if ((session.prNumber ?? null) === prNumber) return
+    const sessions = get().sessions.map((s) => (s.id === sessionId ? withAssignedPR(s, prNumber) : s))
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
     set({ sessions })
