@@ -17,13 +17,14 @@ const PR = (n: number, pageId: string | null) => ({ number: n, ticket: pageId ? 
 describe('prDeskStore', () => {
   it('loads PRs then their tickets', async () => {
     list.mockResolvedValue([PR(1, 'abc'), PR(2, null)])
-    tickets.mockResolvedValue({ configured: true, tickets: { abc: { title: 'T' } } })
+    tickets.mockResolvedValue({ configured: true, tickets: { abc: { title: 'T' } }, projects: { p1: { title: 'Proj' } } })
     await usePRDeskStore.getState().load('p', '/repo')
     expect(list).toHaveBeenCalledWith('/repo')
     expect(tickets).toHaveBeenCalledWith('p', [{ ticketId: null, pageId: 'abc', url: null }])
     const data = deskProject(usePRDeskStore.getState(), 'p')
     expect(data.prs).toHaveLength(2)
     expect(data.tickets.abc).toEqual({ title: 'T' })
+    expect(data.projects.p1).toEqual({ title: 'Proj' })
     expect(data.notionConfigured).toBe(true)
     expect(data.hasLoaded).toBe(true)
   })

@@ -164,7 +164,7 @@ describe('deskStageOf', () => {
 
   it('parks by label or ticket status', () => {
     expect(deskStageOf(pr({ labels: [{ name: 'on-hold', color: '' }] }), ctx)).toBe('parked')
-    const ticket = { pageId: PAGE, ticketId: 'ENG-1', title: 't', status: 'Deprioritised', url: '', assignees: [] }
+    const ticket = { pageId: PAGE, ticketId: 'ENG-1', title: 't', status: 'Deprioritised', url: '', assignees: [], projectId: null }
     expect(deskStageOf(pr(), { ...ctx, ticket })).toBe('parked')
     expect(parkedReason(pr(), { ...ctx, ticket })).toBe('Ticket status “Deprioritised”')
   })

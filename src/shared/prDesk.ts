@@ -80,6 +80,16 @@ export interface DeskTicket {
   status: string | null
   url: string
   assignees: string[]
+  /** The Notion project the ticket belongs to (32-hex page id), from its Project relation. */
+  projectId: string | null
+}
+
+/** A Notion project page: the expanded desk has one row per project. */
+export interface DeskProject {
+  id: string
+  title: string
+  url: string
+  createdAt: string | null
 }
 
 export interface DeskTicketsResult {
@@ -87,6 +97,8 @@ export interface DeskTicketsResult {
   configured: boolean
   /** Keyed by `ticketKey(ref)`. */
   tickets: Record<string, DeskTicket>
+  /** The tickets' Notion projects, keyed by id. */
+  projects: Record<string, DeskProject>
   error?: string
 }
 

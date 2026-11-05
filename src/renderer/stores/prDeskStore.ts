@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DeskPR, DeskTicket } from '../../shared/prDesk'
+import type { DeskPR, DeskProject, DeskTicket } from '../../shared/prDesk'
 import { ticketKey } from '../../shared/prDesk'
 
 const UI_STORAGE_KEY = 'codecrucible-pr-desk-ui'
@@ -31,6 +31,8 @@ export interface PRDeskProjectData {
   hasLoaded: boolean
   error: string | null
   tickets: Record<string, DeskTicket>
+  /** Notion projects of the tickets, keyed by id. */
+  projects: Record<string, DeskProject>
   /** The project's Notion integration has a token and database. */
   notionConfigured: boolean
   notionError: string | null
@@ -43,6 +45,7 @@ const EMPTY_PROJECT: PRDeskProjectData = {
   hasLoaded: false,
   error: null,
   tickets: {},
+  projects: {},
   notionConfigured: false,
   notionError: null,
   parked: [],
@@ -114,6 +117,7 @@ export const usePRDeskStore = create<PRDeskState>((set, get) => {
         const res = await window.api.prDesk.tickets(projectId, refs)
         patchProject(projectId, {
           tickets: { ...deskProject(get(), projectId).tickets, ...res.tickets },
+          projects: { ...deskProject(get(), projectId).projects, ...(res.projects ?? {}) },
           notionConfigured: res.configured,
           notionError: res.error ?? null,
         })

@@ -1,4 +1,4 @@
-import type { DeskPR, DeskTicket } from '../src/shared/prDesk'
+import type { DeskPR, DeskProject, DeskTicket } from '../src/shared/prDesk'
 import type {
   Project,
   Session,
@@ -1097,16 +1097,34 @@ export const mockDeskPRs: DeskPR[] = [
   deskPR({ number: 33, title: 'Export transcripts as markdown', author: 'carol', ticket: ticketRef(1150) }),
 ]
 
+const projectPage = (n: number) => `7a1d2e3f4b5c4d6e8f90${String(n).padStart(12, '0')}`
+
+export const mockDeskProjects: Record<string, DeskProject> = Object.fromEntries(
+  [
+    [1, 'Review workflow', daysAgo(40)],
+    [2, 'Terminal polish', daysAgo(25)],
+    [3, 'Insights & usage', daysAgo(10)],
+  ].map(([n, title, createdAt]) => [
+    projectPage(n as number),
+    {
+      id: projectPage(n as number),
+      title: title as string,
+      url: `https://www.notion.so/${projectPage(n as number)}`,
+      createdAt: createdAt as string,
+    },
+  ])
+)
+
 export const mockDeskTickets: Record<string, DeskTicket> = Object.fromEntries(
   [
-    [1201, 'PR review panel', 'In review'],
-    [1188, 'Terminal resize on split panes', 'In review'],
-    [1215, 'Usage meter in the status bar', 'In review'],
-    [1210, 'Better session names', 'In progress'],
-    [1190, 'Worktree cleanup blocks the UI', 'In review'],
-    [1176, 'Notion rate limits', 'In progress'],
-    [1150, 'Transcript export', 'Deprioritised'],
-  ].map(([n, title, status]) => [
+    [1201, 'PR review panel', 'In review', 1],
+    [1188, 'Terminal resize on split panes', 'In review', 2],
+    [1215, 'Usage meter in the status bar', 'In review', 3],
+    [1210, 'Better session names', 'In progress', 1],
+    [1190, 'Worktree cleanup blocks the UI', 'In review', 2],
+    [1176, 'Notion rate limits', 'In progress', 1],
+    [1150, 'Transcript export', 'Deprioritised', 3],
+  ].map(([n, title, status, project]) => [
     notionPage(n as number),
     {
       pageId: notionPage(n as number),
@@ -1115,6 +1133,7 @@ export const mockDeskTickets: Record<string, DeskTicket> = Object.fromEntries(
       status: status as string,
       url: `https://www.notion.so/${notionPage(n as number)}`,
       assignees: ['Alice Example'],
+      projectId: projectPage(project as number),
     },
   ])
 )

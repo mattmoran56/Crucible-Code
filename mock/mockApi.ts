@@ -9,6 +9,7 @@ import {
   mockPullRequests,
   mockDeskPRs,
   mockDeskTickets,
+  mockDeskProjects,
   mockPRDetail,
   mockPRFiles,
   mockPRConversationComments,
@@ -314,7 +315,7 @@ export const mockApi = {
     const parkedByProject: Record<string, number[]> = {}
     return {
       list: async () => mockDeskPRs,
-      tickets: async () => ({ configured: true, tickets: mockDeskTickets }),
+      tickets: async () => ({ configured: true, tickets: mockDeskTickets, projects: mockDeskProjects }),
       getParked: async (projectId: string) => parkedByProject[projectId] ?? [],
       setParked: async (projectId: string, numbers: number[]) => {
         parkedByProject[projectId] = numbers

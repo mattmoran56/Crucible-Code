@@ -174,6 +174,7 @@ export function PRDeskBar() {
           <PRDeskBoard
             prs={data.prs}
             tickets={data.tickets}
+            projects={data.projects}
             parked={data.parked}
             me={currentUser}
             view={view}

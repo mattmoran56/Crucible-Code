@@ -7,6 +7,7 @@ import {
   ticketKey,
   type DeskMergeable,
   type DeskPR,
+  type DeskProject,
   type DeskTicket,
   type DeskTicketRef,
   type DeskTicketsResult,
@@ -144,11 +145,14 @@ const SCHEMA_TTL_MS = 10 * 60_000
 
 const ticketCache = new Map<string, { at: number; ticket: DeskTicket | null }>()
 const schemaCache = new Map<string, { at: number; uniqueIdProp: string | null; prefix: string | null }>()
+const PROJECT_TTL_MS = 10 * 60_000
+const projectCache = new Map<string, { at: number; project: DeskProject | null }>()
 
 /** Test hook. */
 export function clearDeskCaches(): void {
   ticketCache.clear()
   schemaCache.clear()
+  projectCache.clear()
 }
 
 function dashed(id: string): string {
@@ -163,8 +167,14 @@ export function pageToDeskTicket(page: Record<string, unknown>): DeskTicket {
   let status: string | null = null
   let ticketId: string | null = null
   let assignees: string[] = []
-  for (const prop of Object.values(props)) {
+  let projectId: string | null = null
+  for (const [name, prop] of Object.entries(props)) {
     if (!prop || typeof prop !== 'object') continue
+    // The project is the relation named like "Project" (Sprint is a relation too).
+    if (projectId == null && prop.type === 'relation' && /project/i.test(name)) {
+      const rel = (prop.relation as Array<{ id?: string }> | null) ?? []
+      projectId = rel[0]?.id ? rel[0].id.replace(/-/g, '') : null
+    }
     if (status == null && prop.type === 'status') {
       status = (prop.status as { name?: string } | null)?.name ?? null
     }
@@ -184,7 +194,27 @@ export function pageToDeskTicket(page: Record<string, unknown>): DeskTicket {
     status,
     url: String(page.url ?? ''),
     assignees,
+    projectId,
   }
+}
+
+async function fetchProject(token: string, id: string): Promise<DeskProject | null> {
+  const hit = projectCache.get(id)
+  if (hit && Date.now() - hit.at < PROJECT_TTL_MS) return hit.project
+  let project: DeskProject | null = null
+  try {
+    const page = (await notionFetch(token, `/pages/${dashed(id)}`)) as Record<string, unknown>
+    project = {
+      id,
+      title: extractTitleFromPage(page) || 'Untitled project',
+      url: String(page.url ?? ''),
+      createdAt: typeof page.created_time === 'string' ? page.created_time : null,
+    }
+  } catch {
+    // Not shared with the integration: its PRs fall under "No project".
+  }
+  projectCache.set(id, { at: Date.now(), project })
+  return project
 }
 
 async function getTicketSchema(token: string, databaseId: string) {
@@ -239,7 +269,7 @@ async function fetchTicket(token: string, databaseId: string, ref: DeskTicketRef
  */
 export async function getDeskTickets(projectId: string, refs: DeskTicketRef[]): Promise<DeskTicketsResult> {
   const config = loadConfig(projectId)
-  if (!config?.apiToken || !config.databaseId) return { configured: false, tickets: {} }
+  if (!config?.apiToken || !config.databaseId) return { configured: false, tickets: {}, projects: {} }
   const { apiToken, databaseId } = config
 
   const tickets: Record<string, DeskTicket> = {}
@@ -272,5 +302,14 @@ export async function getDeskTickets(projectId: string, refs: DeskTicketRef[]): 
     }
   }
   await Promise.all([worker(), worker(), worker(), worker()])
-  return { configured: true, tickets, ...(error ? { error } : {}) }
+
+  const projects: Record<string, DeskProject> = {}
+  const projectIds = [...new Set(Object.values(tickets).map((t) => t.projectId).filter((id): id is string => !!id))]
+  await Promise.all(
+    projectIds.map(async (id) => {
+      const project = await fetchProject(apiToken, id)
+      if (project) projects[id] = project
+    })
+  )
+  return { configured: true, tickets, projects, ...(error ? { error } : {}) }
 }

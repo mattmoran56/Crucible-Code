@@ -7,6 +7,7 @@ import {
   parkedReason,
   ticketKey,
   type DeskPR,
+  type DeskProject,
   type DeskStage,
   type DeskTicket,
 } from '../../../shared/prDesk'
@@ -18,6 +19,8 @@ import type { PRDeskScope, PRDeskView } from '../../stores/prDeskStore'
 export interface PRDeskBoardProps {
   prs: DeskPR[]
   tickets: Record<string, DeskTicket>
+  /** Notion projects by id: the expanded view has a row per project. */
+  projects?: Record<string, DeskProject>
   parked: number[]
   me: string | null
   view: PRDeskView
@@ -65,6 +68,50 @@ export function placePRs(
   }
   for (const list of Object.values(out)) list.sort((a, b) => b.pr.updatedAt.localeCompare(a.pr.updatedAt))
   return out
+}
+
+export interface ProjectRow {
+  /** Project id, or null for PRs without one. */
+  id: string | null
+  project: DeskProject | null
+  stages: Record<DeskStage, PlacedPR[]>
+  count: number
+}
+
+const emptyStages = (): Record<DeskStage, PlacedPR[]> => ({ draft: [], pending: [], ready: [], assigned: [], parked: [] })
+
+/**
+ * Splits placed PRs into one row per Notion project: oldest project first (as
+ * PR Desk orders them), then any without a created date by name, and PRs with
+ * no known project last. Exported for tests.
+ */
+export function groupByProject(
+  placed: Record<DeskStage, PlacedPR[]>,
+  projects: Record<string, DeskProject>
+): ProjectRow[] {
+  const rows = new Map<string | null, ProjectRow>()
+  for (const stage of DESK_STAGES) {
+    for (const p of placed[stage.id]) {
+      const pid = p.ticket?.projectId ?? null
+      const id = pid && projects[pid] ? pid : null
+      let row = rows.get(id)
+      if (!row) {
+        row = { id, project: id ? projects[id] : null, stages: emptyStages(), count: 0 }
+        rows.set(id, row)
+      }
+      row.stages[stage.id].push(p)
+      row.count++
+    }
+  }
+  const time = (r: ProjectRow) => (r.project?.createdAt ? Date.parse(r.project.createdAt) : NaN)
+  return [...rows.values()].sort((a, b) => {
+    if (!a.project || !b.project) return a.project ? -1 : b.project ? 1 : 0
+    const ta = time(a)
+    const tb = time(b)
+    if (!Number.isNaN(ta) && !Number.isNaN(tb) && ta !== tb) return ta - tb
+    if (Number.isNaN(ta) !== Number.isNaN(tb)) return Number.isNaN(ta) ? 1 : -1
+    return a.project.title.localeCompare(b.project.title)
+  })
 }
 
 const ExternalIcon = () => (
@@ -242,10 +289,87 @@ function ExpandedCard({ placed, active, attention, isParkedByMe, onOpen, onOpenE
 }
 
 export function PRDeskBoard(props: PRDeskBoardProps) {
-  const { prs, tickets, parked, me, view, scope, activePRNumber, attention, onOpen, onOpenExternal, onTogglePark } = props
+  const { prs, tickets, projects, parked, me, view, scope, activePRNumber, attention, onOpen, onOpenExternal, onTogglePark } = props
   const placed = useMemo(() => placePRs(prs, { tickets, parked, me, scope }), [prs, tickets, parked, me, scope])
   const parkedSet = useMemo(() => new Set(parked), [parked])
-  const Card = view === 'compact' ? CompactCard : ExpandedCard
+  const rows = useMemo(
+    () => (view === 'expanded' ? groupByProject(placed, projects ?? {}) : []),
+    [view, placed, projects]
+  )
+
+  const renderCards = (list: PlacedPR[]) => {
+    const Card = view === 'compact' ? CompactCard : ExpandedCard
+    return list.map((p) => (
+      <Card
+        key={p.pr.number}
+        placed={p}
+        active={activePRNumber === p.pr.number}
+        attention={!!attention?.(p.pr.number)}
+        isParkedByMe={parkedSet.has(p.pr.number)}
+        onOpen={() => onOpen(p.pr)}
+        onOpenExternal={onOpenExternal}
+        onTogglePark={() => onTogglePark(p.pr.number)}
+      />
+    ))
+  }
+
+  const stageHeader = (stage: (typeof DESK_STAGES)[number]) => (
+    <div className="flex items-center gap-1.5 min-w-0" style={{ padding: '6px 12px' }}>
+      <h3 className="text-[10px] font-semibold uppercase tracking-wide text-text-muted truncate">{stage.label}</h3>
+      <span className="text-[10px] text-text-muted tabular-nums">{placed[stage.id].length}</span>
+    </div>
+  )
+
+  if (view === 'expanded') {
+    // One row per Notion project, the stage columns running across every row.
+    return (
+      <div className="flex-1 min-h-0 flex flex-col" data-testid="pr-desk-board">
+        <div className="grid grid-cols-5 divide-x divide-border border-b border-border flex-shrink-0">
+          {DESK_STAGES.map((stage) => (
+            <React.Fragment key={stage.id}>{stageHeader(stage)}</React.Fragment>
+          ))}
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {rows.map((row) => {
+            const name = row.project?.title ?? 'No project'
+            return (
+              <section key={row.id ?? '__none'} aria-label={name} className="border-b border-border">
+                <div className="flex items-center gap-2 bg-bg-tertiary/40 border-b border-border" style={{ padding: '6px 12px' }}>
+                  <h4 className={`text-[11px] font-semibold truncate ${row.project ? 'text-text' : 'text-text-muted'}`}>{name}</h4>
+                  <span className="text-[10px] text-text-muted tabular-nums">{row.count}</span>
+                  {row.project?.url && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenExternal(row.project!.url)}
+                      className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text"
+                      title="Open the project in your browser"
+                      aria-label={`Open ${name} in Notion`}
+                    >
+                      <ExternalIcon />
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-5 divide-x divide-border">
+                  {DESK_STAGES.map((stage) => (
+                    <div
+                      key={stage.id}
+                      role="group"
+                      aria-label={`${name}: ${stage.label}`}
+                      className="flex flex-col min-w-0"
+                      style={{ padding: 8, gap: 8 }}
+                    >
+                      {renderCards(row.stages[stage.id])}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )
+          })}
+          {rows.length === 0 && <p className="text-[10px] text-text-muted text-center" style={{ padding: '12px 0' }}>No pull requests</p>}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex-1 min-h-0 grid grid-cols-5 divide-x divide-border" data-testid="pr-desk-board">
@@ -253,26 +377,9 @@ export function PRDeskBoard(props: PRDeskBoardProps) {
         const list = placed[stage.id]
         return (
           <section key={stage.id} className="flex flex-col min-h-0 min-w-0" aria-label={stage.label}>
-            <div className="flex items-center gap-1.5 border-b border-border flex-shrink-0" style={{ padding: '6px 12px' }}>
-              <h3 className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">{stage.label}</h3>
-              <span className="text-[10px] text-text-muted tabular-nums">{list.length}</span>
-            </div>
-            <div
-              className="flex-1 min-h-0 overflow-y-auto flex flex-col"
-              style={view === 'compact' ? { padding: 4, gap: 2 } : { padding: 8, gap: 8 }}
-            >
-              {list.map((p) => (
-                <Card
-                  key={p.pr.number}
-                  placed={p}
-                  active={activePRNumber === p.pr.number}
-                  attention={!!attention?.(p.pr.number)}
-                  isParkedByMe={parkedSet.has(p.pr.number)}
-                  onOpen={() => onOpen(p.pr)}
-                  onOpenExternal={onOpenExternal}
-                  onTogglePark={() => onTogglePark(p.pr.number)}
-                />
-              ))}
+            <div className="border-b border-border flex-shrink-0">{stageHeader(stage)}</div>
+            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col" style={{ padding: 4, gap: 2 }}>
+              {renderCards(list)}
               {list.length === 0 && <p className="text-[10px] text-text-muted text-center" style={{ padding: '12px 0' }}>None</p>}
             </div>
           </section>

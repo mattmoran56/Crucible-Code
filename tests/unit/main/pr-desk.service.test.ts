@@ -70,7 +70,16 @@ const notionPage = {
     Status: { type: 'status', status: { name: 'In review' } },
     ID: { type: 'unique_id', unique_id: { prefix: 'ENG', number: 12 } },
     Assign: { type: 'people', people: [{ name: 'Alice' }] },
+    Sprint: { type: 'relation', relation: [{ id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' }] },
+    Project: { type: 'relation', relation: [{ id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' }] },
   },
+}
+const PROJECT = 'b'.repeat(32)
+const projectPage = {
+  id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  url: 'https://www.notion.so/Review-workflow-' + PROJECT,
+  created_time: '2026-09-01T00:00:00.000Z',
+  properties: { Name: { type: 'title', title: [{ plain_text: 'Review workflow' }] } },
 }
 
 describe('pageToDeskTicket', () => {
@@ -82,6 +91,7 @@ describe('pageToDeskTicket', () => {
       status: 'In review',
       url: notionPage.url,
       assignees: ['Alice'],
+      projectId: PROJECT,
     })
   })
 })
@@ -100,20 +110,26 @@ describe('getDeskTickets', () => {
 
   it('reports unconfigured when the project has no Notion token', async () => {
     loadConfig.mockReturnValue(null)
-    expect(await getDeskTickets('p', [{ ticketId: 'ENG-1', pageId: null, url: null }])).toEqual({ configured: false, tickets: {} })
+    expect(await getDeskTickets('p', [{ ticketId: 'ENG-1', pageId: null, url: null }])).toEqual({ configured: false, tickets: {}, projects: {} })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('fetches pages by id and caches them', async () => {
+  it('fetches pages by id, then their projects, and caches both', async () => {
     loadConfig.mockReturnValue({ apiToken: 't', databaseId: 'db' })
-    fetchMock.mockResolvedValue(ok(notionPage))
+    fetchMock.mockImplementation(async (url: string) => ok(url.includes('/pages/bbbbbbbb') ? projectPage : notionPage))
     const ref = { ticketId: 'ENG-12', pageId: PAGE, url: null }
     const first = await getDeskTickets('p', [ref, ref])
     expect(first.tickets[PAGE].status).toBe('In review')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(first.projects[PROJECT]).toEqual({
+      id: PROJECT,
+      title: 'Review workflow',
+      url: projectPage.url,
+      createdAt: '2026-09-01T00:00:00.000Z',
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(String(fetchMock.mock.calls[0][0])).toContain('/pages/40ec9cf4-af01-80f8-98c2-ed0a9f09e286')
     await getDeskTickets('p', [ref])
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('looks up a bare ticket id by the database unique ID, only for its prefix', async () => {
@@ -137,11 +153,14 @@ describe('getDeskTickets', () => {
     fetchMock
       .mockResolvedValueOnce({ ok: false, status: 404, statusText: 'Not Found', text: async () => '{"message":"not shared"}' })
       .mockResolvedValueOnce(ok(notionPage))
+      .mockResolvedValueOnce({ ok: false, status: 404, statusText: 'Not Found', text: async () => '{}' })
     const res = await getDeskTickets('p', [
       { ticketId: null, pageId: 'a'.repeat(32), url: null },
       { ticketId: null, pageId: PAGE, url: null },
     ])
     expect(res.error).toContain('404')
     expect(res.tickets[PAGE]).toBeDefined()
+    // The project page isn't shared: no row for it, and no error for the desk.
+    expect(res.projects).toEqual({})
   })
 })

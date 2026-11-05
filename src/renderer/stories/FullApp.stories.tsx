@@ -63,7 +63,7 @@ export const PRDeskExpanded: Story = {
     (Story) => {
       setupStoresForStory()
       usePRStore.setState({ currentUser: 'alice' })
-      usePRDeskStore.setState({ open: true, collapsed: false, view: 'expanded', scope: 'all', height: 430 })
+      usePRDeskStore.setState({ open: true, collapsed: false, view: 'expanded', scope: 'all', height: 760 })
       return <Story />
     },
   ],
