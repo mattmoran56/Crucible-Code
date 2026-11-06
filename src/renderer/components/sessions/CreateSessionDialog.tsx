@@ -149,6 +149,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   const autoNamingHint = (() => {
     if (!autoName && !autoBranch) return null
     const what = autoName && autoBranch ? 'The name and branch' : autoName ? 'The name' : 'The branch'
+    if (cloud && !selectedPrompt) return `${what} will be picked from the task.`
     if (hasStartupPrompt) return `${what} will be picked from the startup prompt.`
     if (autoBranch && mode === 'orchestrator') {
       return autoName

@@ -138,11 +138,10 @@ describe('<CreateSessionDialog> blank name and branch', () => {
     )
   })
 
-  it('says a cloud task names them', async () => {
+  it('says a cloud session is named from its task', async () => {
     render(<CreateSessionDialog open project={project()} onClose={() => {}} />)
     await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
-    fireEvent.change(screen.getByLabelText('Task'), { target: { value: 'Fix the auth bug' } })
-    expect(screen.getByTestId('auto-naming-hint').textContent).toBe('The name and branch will be picked from the startup prompt.')
+    expect(screen.getByTestId('auto-naming-hint').textContent).toBe('The name and branch will be picked from the task.')
   })
 
   it('still needs a name to schedule', () => {
