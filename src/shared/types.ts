@@ -311,6 +311,13 @@ export interface Session {
    */
   namePending?: boolean
   /**
+   * Still on its placeholder branch (`session/new-session-3f9a2c`): the first
+   * message names it too (`feat/…`, `fix/…` or `chore/…`, from the same Haiku
+   * turn) and the branch is renamed in place. Cleared once that has run, or
+   * when renaming the session moves the branch.
+   */
+  branchPending?: boolean
+  /**
    * Set when another agent started this session through the `crucible` MCP
    * server's dispatch_session tool: which session asked.
    */
@@ -752,6 +759,14 @@ export const DEFAULT_REVIEW_LOOP_CONFIG: ReviewLoopConfig = {
 }
 
 // Scheduler ──────────────────────────────────────────────────────────────────
+
+/** What the namer suggests for a session from its first message. */
+export interface SessionNameSuggestion {
+  /** Human-readable, like `Fix login redirect`. */
+  name: string
+  /** `feat/…`, `fix/…` or `chore/…`, or null when nothing usable came back. */
+  branch: string | null
+}
 
 export interface QueuedSession {
   id: string

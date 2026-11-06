@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   defaultSessionBranch,
   isDefaultSessionBranch,
+  placeholderSessionBranch,
+  placeholderSessionName,
+  toTypedBranchName,
+  uniqueBranchName,
   renameMovesBranch,
   sessionDeletesLocalBranch,
   sessionNameSlug,
@@ -80,5 +84,54 @@ describe('session branch helpers', () => {
     expect(
       renameMovesBranch({ name: 'a', branchName: 'session/a', cloudPending: { task: 't', branch: 'session/a', createdAt: '' } })
     ).toBe(false)
+  })
+})
+
+describe('toTypedBranchName', () => {
+  it('keeps feat/fix/chore and slugs the description', () => {
+    expect(toTypedBranchName('feat/dark-mode-toggle')).toBe('feat/dark-mode-toggle')
+    expect(toTypedBranchName('Fix: Login Redirect loop')).toBe('fix/login-redirect-loop')
+    expect(toTypedBranchName('`chore/bump deps`')).toBe('chore/bump-deps')
+  })
+
+  it('maps feature/bugfix and defaults an untyped branch to chore', () => {
+    expect(toTypedBranchName('feature/x-y')).toBe('feat/x-y')
+    expect(toTypedBranchName('bugfix/x')).toBe('fix/x')
+    expect(toTypedBranchName('update readme')).toBe('chore/update-readme')
+  })
+
+  it('keeps the description short', () => {
+    expect(toTypedBranchName('feat/one two three four five six seven')).toBe('feat/one-two-three-four-five')
+    expect(toTypedBranchName(`fix/${'a'.repeat(60)}`)).toBeNull()
+  })
+
+  it('falls back to the given description, else null', () => {
+    expect(toTypedBranchName('feat/', 'Dark mode')).toBe('feat/dark-mode')
+    expect(toTypedBranchName('', '')).toBeNull()
+  })
+
+  it('always produces a valid branch name', () => {
+    for (const raw of ['feat/..lock', 'fix/a~b^c', 'chore/@{x}', 'fix/ -x ']) {
+      const b = toTypedBranchName(raw, 'fallback')
+      expect(b && validateBranchName(b)).toBeNull()
+    }
+  })
+})
+
+describe('uniqueBranchName', () => {
+  it('adds -2, -3… until free', () => {
+    expect(uniqueBranchName('fix/a', ['main'])).toBe('fix/a')
+    expect(uniqueBranchName('fix/a', ['fix/a', 'fix/a-2'])).toBe('fix/a-3')
+  })
+})
+
+describe('placeholder names', () => {
+  it('names a pending session new-session-<random> on its default branch', () => {
+    expect(placeholderSessionName(() => 'abc123')).toBe('new-session-abc123')
+    expect(placeholderSessionBranch('new-session-abc123', true)).toBe('session/new-session-abc123')
+  })
+
+  it('suffixes a typed name so it never takes the name’s own default branch', () => {
+    expect(placeholderSessionBranch('Login', false, () => 'abc123')).toBe('session/login-abc123')
   })
 })

@@ -241,6 +241,7 @@ export const mockApi = {
     currentBranch: async () => 'session/new',
     deleteLocalBranch: async () => {},
     deleteRemoteBranch: async () => {},
+    renameBranch: async (_repoPath: string, _worktreePath: string, oldBranch: string, newBranch: string) => ({ oldBranch, newBranch }),
   },
 
   terminal: {
@@ -358,6 +359,7 @@ export const mockApi = {
     save: async () => {},
     saveContext: async () => {},
     getContext: async () => null,
+    suggestName: async () => ({ name: 'Fix login redirect', branch: 'fix/login-redirect' }),
   },
 
   notes: {
