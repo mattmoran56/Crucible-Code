@@ -10,6 +10,7 @@ import {
   deleteRemoteBranch,
   listWorktrees,
   removeWorktree,
+  renameWorktreeBranch,
 } from '../../../src/main/services/worktree.service'
 
 let tmpRoot: string
@@ -263,5 +264,33 @@ describe('worktree.service', () => {
     expect(remoteBranches).not.toMatch(/gone/)
 
     await expect(deleteRemoteBranch(repoPath, 'main')).rejects.toThrow(/default branch/)
+  })
+})
+
+describe('renameWorktreeBranch with placeholder', () => {
+  it('renames an unpushed placeholder branch in place, worktree and all', async () => {
+    const info = await createWorktree(repoPath, 'new-session-abc123', 'main')
+    const result = await renameWorktreeBranch(repoPath, info.path, info.branch, 'fix/login', { placeholder: true })
+    expect(result).toEqual({ oldBranch: 'session/new-session-abc123', newBranch: 'fix/login' })
+    expect((await simpleGit(info.path).raw(['symbolic-ref', '--short', 'HEAD'])).trim()).toBe('fix/login')
+  })
+
+  it('leaves a placeholder that was already pushed', async () => {
+    const remotePath = join(tmpRoot, 'remote.git')
+    await mkdir(remotePath)
+    await simpleGit(remotePath).raw(['init', '--bare'])
+    await simpleGit(repoPath).addRemote('origin', remotePath)
+    const info = await createWorktree(repoPath, 'new-session-abc123', 'main')
+    await simpleGit(info.path).raw(['push', '-u', 'origin', info.branch])
+    const result = await renameWorktreeBranch(repoPath, info.path, info.branch, 'fix/login', { placeholder: true })
+    expect(result.newBranch).toBe(info.branch)
+    expect((await simpleGit(info.path).raw(['symbolic-ref', '--short', 'HEAD'])).trim()).toBe(info.branch)
+  })
+
+  it('leaves a branch that is no longer the placeholder', async () => {
+    const info = await createWorktree(repoPath, 'new-session-abc123', 'main')
+    await simpleGit(repoPath).raw(['branch', '-m', info.branch, 'session/mine'])
+    const result = await renameWorktreeBranch(repoPath, info.path, info.branch, 'fix/login', { placeholder: true })
+    expect(result).toEqual({ oldBranch: 'session/mine', newBranch: 'session/mine' })
   })
 })

@@ -5,7 +5,7 @@ import type { AgentBrowserLinkEvent } from '../shared/agent-browser'
 import type { TabStripGeometry } from '../shared/tab-drag'
 import type { DeskPR, DeskTicketRef, DeskTicketsResult } from '../shared/prDesk'
 import type { SessionDispatchRequest, SessionDispatchResponse } from '../shared/session-dispatch'
-import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, CloudSessionMode, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck, WindowLayout, WindowSummary } from '../shared/types'
+import type { Project, Session, Commit, FileDiff, PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, UpdateStatus, Note, PRDetail, PRConversationComment, PRCheck, PRReviewThread, SessionUsage, UsageStats, SubscriptionInfo, FileEntry, FileStat, ClaudeAccount, CustomButton, CustomButtonGroup, ButtonActionType, ButtonExecutionMode, ContextKind, GitHubCollaborator, PRLabel, StartupPrompt, ReviewLoopConfig, ReviewLoopSettings, ReviewLoopState, QueuedSession, QueuedMessage, UsageLimitEvent, NotionDatabaseSchema, NotionFireTaskPayload, NotionIntegrationConfig, NotionRelationOption, NotionTaskPayload, NotionTestConnectionResult, NotionUser, CloudSessionResult, CloudTeleportResult, CloudTeleportState, CloudCreateState, CloudSessionMode, SandboxJob, SandboxInfo, SandboxTeardownReport, SandboxerConfigCheck, WindowLayout, WindowSummary, SessionNameSuggestion } from '../shared/types'
 
 // Multiplex many subscribers through a single ipcRenderer listener per channel.
 // Without this, each useTerminal/onData/onExit caller adds its own listener and
@@ -125,8 +125,14 @@ const api = {
       remoteBranch: string
     ): Promise<{ path: string; branch: string }> =>
       ipcRenderer.invoke(IPC.WORKTREE_CREATE_FROM_BRANCH, repoPath, sessionName, remoteBranch),
-    renameBranch: (repoPath: string, worktreePath: string, fallbackBranch: string, newBranch: string): Promise<{ oldBranch: string; newBranch: string }> =>
-      ipcRenderer.invoke(IPC.WORKTREE_RENAME_BRANCH, repoPath, worktreePath, fallbackBranch, newBranch),
+    renameBranch: (
+      repoPath: string,
+      worktreePath: string,
+      fallbackBranch: string,
+      newBranch: string,
+      opts?: { placeholder?: boolean }
+    ): Promise<{ oldBranch: string; newBranch: string }> =>
+      ipcRenderer.invoke(IPC.WORKTREE_RENAME_BRANCH, repoPath, worktreePath, fallbackBranch, newBranch, opts),
     createForPR: (
       repoPath: string,
       prNumber: number,
@@ -388,8 +394,8 @@ const api = {
       ipcRenderer.invoke(IPC.SESSION_CONTEXT_SAVE, projectId, context),
     getContext: (projectId: string): Promise<Record<string, unknown> | null> =>
       ipcRenderer.invoke(IPC.SESSION_CONTEXT_GET, projectId),
-    /** A short name for a session from its first message (one Haiku turn), or null. */
-    suggestName: (firstMessage: string, configDir?: string | null): Promise<string | null> =>
+    /** A short name and typed branch for a session from its first message (one Haiku turn), or null. */
+    suggestName: (firstMessage: string, configDir?: string | null): Promise<SessionNameSuggestion | null> =>
       ipcRenderer.invoke(IPC.SESSION_SUGGEST_NAME, firstMessage, configDir),
   },
 

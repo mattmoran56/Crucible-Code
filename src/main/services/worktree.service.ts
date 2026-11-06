@@ -302,11 +302,23 @@ export async function createWorktreeFromBranch(
 // `fallbackBranch`, or (3) verifying `fallbackBranch` exists as-is. This keeps
 // renames working when the worktree directory is gone but the branch is still
 // around (or vice-versa).
+/**
+ * Rename the branch checked out in `worktreePath` (else `fallbackBranch`) to
+ * `newBranch`.
+ *
+ * With `placeholder` (naming a session's placeholder branch after its first
+ * prompt), the rename only happens while the branch is still exactly
+ * `fallbackBranch` and has never been pushed; otherwise it is left alone and
+ * `newBranch` comes back equal to `oldBranch`. Someone (or the agent) renamed
+ * it meanwhile, or renaming only the local side would leave pushes going to
+ * (or failing against) the old remote name.
+ */
 export async function renameWorktreeBranch(
   repoPath: string,
   worktreePath: string,
   fallbackBranch: string,
-  newBranch: string
+  newBranch: string,
+  opts?: { placeholder?: boolean }
 ): Promise<{ oldBranch: string; newBranch: string }> {
   const g = simpleGit(repoPath)
   await pruneWorktrees(repoPath)
@@ -345,8 +357,31 @@ export async function renameWorktreeBranch(
   }
 
   if (oldBranch === newBranch) return { oldBranch, newBranch }
+  if (opts?.placeholder && (oldBranch !== fallbackBranch || (await branchIsPushed(repoPath, oldBranch)))) {
+    return { oldBranch, newBranch: oldBranch }
+  }
   await g.raw(['branch', '-m', oldBranch, newBranch])
   return { oldBranch, newBranch }
+}
+
+/** Whether `branch` has an upstream configured or a remote-tracking copy on origin. */
+async function branchIsPushed(repoPath: string, branch: string): Promise<boolean> {
+  try {
+    const out = await simpleGit(repoPath).raw([
+      'for-each-ref',
+      '--format=%(refname) %(upstream)',
+      `refs/heads/${branch}`,
+      `refs/remotes/origin/${branch}`,
+    ])
+    // A remote-tracking copy, or the local branch with an upstream set.
+    return out
+      .split('\n')
+      .map((l) => l.trim().split(' '))
+      .some(([ref, upstream]) => ref === `refs/remotes/origin/${branch}` || (ref === `refs/heads/${branch}` && !!upstream))
+  } catch {
+    // Can't tell: leave the branch where it is.
+    return true
+  }
 }
 
 export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {

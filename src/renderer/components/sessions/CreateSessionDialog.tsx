@@ -10,7 +10,7 @@ import {
 } from '../../stores/startupPromptStore'
 import type { SessionMode, Project, QueuedSession, SessionLocation } from '../../../shared/types'
 import { resolveDefaultSessionLocation } from '../../../shared/cloud-session'
-import { defaultSessionBranch, validateBranchName } from '../../../shared/branch-name'
+import { validateBranchName } from '../../../shared/branch-name'
 import { ToggleGroup } from '../ui/ToggleGroup'
 import { Dialog } from '../ui/Dialog'
 import { Input } from '../ui/Input'
@@ -47,9 +47,8 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   const [cloudTask, setCloudTask] = useState('')
   // Single-branch (stays on the session branch) or an orchestrator that may move between branches.
   const [mode, setMode] = useState<SessionMode>('single-branch')
-  // The session branch follows the name/location until the user edits it.
+  // Left blank, the branch is named from the first prompt (feat/…, fix/…, chore/…).
   const [branchInput, setBranchInput] = useState('')
-  const [branchEdited, setBranchEdited] = useState(false)
   const { createSession } = useSessionStore()
   const addQueuedSession = useSchedulerStore((s) => s.addQueuedSession)
   const usageResetDelayMinutes = useSettingsStore((s) => s.usageResetDelayMinutes)
@@ -84,7 +83,6 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
     setCloudTask('')
     setMode('single-branch')
     setBranchInput('')
-    setBranchEdited(false)
     setBranchesLoading(true)
     Promise.all([
       window.api.git.defaultBranch(project.repoPath),
@@ -132,10 +130,9 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   // Scheduled sessions are created later by the scheduler on the default
   // `session/<name>` branch, so the field is only offered for immediate creates.
   const showBranch = !scheduleEnabled
-  const autoBranch = name.trim() ? defaultSessionBranch(name.trim(), cloud ? 'cloud' : 'local') : ''
-  const branch = (branchEdited ? branchInput : autoBranch).trim()
+  const branch = branchInput.trim()
   const branchError = useMemo(() => {
-    if (!showBranch || (!branch && !branchEdited)) return null
+    if (!showBranch || !branch) return null
     const invalid = validateBranchName(branch)
     if (invalid) return invalid
     if (cloud && baseBranch && branch === baseBranch) {
@@ -143,9 +140,25 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
     }
     if (branches.includes(branch)) return `A branch named ${branch} already exists`
     return null
-  }, [showBranch, branch, branchEdited, cloud, baseBranch, branches])
+  }, [showBranch, branch, cloud, baseBranch, branches])
+  // Left blank, the name and/or branch come from the first prompt (one quick
+  // Haiku turn). Scheduled sessions are created later, so they need a name now.
+  const autoName = !name.trim()
+  const autoBranch = showBranch && !branch
+  const hasStartupPrompt = !!selectedPrompt || (cloud && !!cloudTask.trim())
+  const autoNamingHint = (() => {
+    if (!autoName && !autoBranch) return null
+    const what = autoName && autoBranch ? 'The name and branch' : autoName ? 'The name' : 'The branch'
+    if (hasStartupPrompt) return `${what} will be picked from the startup prompt.`
+    if (autoBranch && mode === 'orchestrator') {
+      return autoName
+        ? 'The name will be picked from your first message. An orchestrator is told its branch when it starts, so without a startup prompt it keeps a placeholder branch.'
+        : 'An orchestrator is told its branch when it starts, so without a startup prompt it keeps a placeholder branch.'
+    }
+    return `${what} will be picked from your first message.`
+  })()
   const canSubmit =
-    !!name.trim() &&
+    (!scheduleEnabled || !!name.trim()) &&
     !inputMissing &&
     !cloudNeedsTask &&
     !branchError &&
@@ -173,7 +186,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault()
-    if (!name.trim()) return
+    if (scheduleEnabled && !name.trim()) return
     // inputMissing is only enforced for the non-scheduled path — in schedule
     // mode the chip is just a textarea pre-fill helper, not a hard input.
     if (inputMissing && !scheduleEnabled) {
@@ -210,6 +223,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           undefined,
           {
             branchName: branch || undefined,
+            autoBranch: !branch,
             mode,
             ...(cloud ? { location: 'cloud' as const } : {}),
           }
@@ -225,7 +239,6 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
       setCloudTask('')
       setMode('single-branch')
       setBranchInput('')
-      setBranchEdited(false)
       onClose()
     } catch (err: any) {
       setError(err.message || 'Failed to create session')
@@ -243,6 +256,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. fix-auth-bug"
+          hint={scheduleEnabled ? undefined : 'Optional: leave blank to name it from the first prompt'}
           error={error || undefined}
         />
 
@@ -300,12 +314,9 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
         {showBranch && (
           <Input
             label="Branch"
-            value={branchEdited ? branchInput : autoBranch}
-            onChange={(e) => {
-              setBranchEdited(true)
-              setBranchInput(e.target.value)
-            }}
-            placeholder={defaultSessionBranch('<name>', cloud ? 'cloud' : 'local')}
+            value={branchInput}
+            onChange={(e) => setBranchInput(e.target.value)}
+            placeholder="Blank: feat/…, fix/… or chore/… from the first prompt"
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
@@ -392,6 +403,12 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
               A cloud session starts with a task{prompts.length > 0 ? ' — type one, or pick a startup prompt above' : ''}.
             </p>
           </div>
+        )}
+
+        {!scheduleEnabled && autoNamingHint && (
+          <p className="text-[11px] text-text-muted" data-testid="auto-naming-hint">
+            {autoNamingHint}
+          </p>
         )}
 
         {creating && cloud && (
