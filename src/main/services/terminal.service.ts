@@ -11,6 +11,7 @@ import { getSessionUsage } from './usage.service'
 import { getStorePath } from '../store-path'
 import { scrubInheritedClaudeSession } from './claude-env'
 import { crucibleMcpArgs } from './session-dispatch.service'
+import { withChromeArgs } from './claude-chrome'
 
 export type TerminalMode = 'shell' | 'claude' | 'review' | 'command'
 
@@ -331,12 +332,12 @@ function spawnPty(
       isResume,
       isReview: instance.mode === 'review',
       commandString: instance.commandString,
-      // An interactive agent terminal also gets the app's `crucible` MCP
-      // server (session dispatch). Added per spawn, never persisted: the
-      // server's port changes with every app run.
+      // An interactive agent terminal also gets the Chrome connector and the
+      // app's `crucible` MCP server (session dispatch). Added per spawn, never
+      // persisted: the server's port changes with every app run.
       claudeArgs:
         instance.mode === 'claude'
-          ? [...(instance.claudeArgs ?? []), ...crucibleMcpArgs(instance.contextId)]
+          ? [...withChromeArgs(instance.claudeArgs), ...crucibleMcpArgs(instance.contextId)]
           : instance.claudeArgs,
     })
     args = ['-l', '-c', shellBody]
