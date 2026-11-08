@@ -61,7 +61,7 @@ export function SuggestionBlock({ text, author, startLine, endLine, onApply }: S
             Copy
           </button>
           <button
-            className="bg-accent text-white rounded hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+            className="bg-accent text-bg rounded hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
             style={{ padding: '2px 8px' }}
             onClick={handleApply}
             disabled={busy || !onApply}

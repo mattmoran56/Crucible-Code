@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { THEMES, type ThemeName } from '../../../src/shared/themes'
 
-const EXPECTED_NAMES: ThemeName[] = ['dark', 'light', 'soft-light', 'ultra-dark']
+const EXPECTED_NAMES: ThemeName[] = [
+  'dark', 'light', 'soft-light', 'ultra-dark',
+  'dark-hc', 'light-hc', 'soft-light-hc', 'ultra-dark-hc',
+]
+const HIGH_CONTRAST_NAMES: ThemeName[] = ['dark-hc', 'light-hc', 'soft-light-hc', 'ultra-dark-hc']
 
 describe('THEMES', () => {
   it('includes every expected theme exactly once', () => {
@@ -51,12 +55,16 @@ function hexBrightness(hex: string): number {
 }
 
 describe('THEMES — ordering and labels', () => {
-  it('lists exactly four themes in declaration order (dark first = app default)', () => {
-    expect(THEMES.map((t) => t.name)).toEqual(['dark', 'light', 'soft-light', 'ultra-dark'])
+  it('lists every theme in declaration order (dark first = app default)', () => {
+    expect(THEMES.map((t) => t.name)).toEqual(EXPECTED_NAMES)
   })
 
   it('uses the expected human labels', () => {
-    expect(THEMES.map((t) => t.label)).toEqual(['Tokyo Night', 'Light', 'Soft Light', 'Ultra Dark'])
+    expect(THEMES.map((t) => t.label)).toEqual([
+      'Tokyo Night', 'Light', 'Soft Light', 'Ultra Dark',
+      'Tokyo Night High Contrast', 'Light High Contrast',
+      'Soft Light High Contrast', 'Ultra Dark High Contrast',
+    ])
   })
 
   it('labels are unique and trimmed', () => {
@@ -65,9 +73,17 @@ describe('THEMES — ordering and labels', () => {
     for (const l of labels) expect(l).toBe(l.trim())
   })
 
-  it('splits evenly into two dark and two light themes', () => {
-    expect(THEMES.filter((t) => t.isDark).map((t) => t.name)).toEqual(['dark', 'ultra-dark'])
-    expect(THEMES.filter((t) => !t.isDark).map((t) => t.name)).toEqual(['light', 'soft-light'])
+  it('splits evenly into dark and light themes', () => {
+    expect(THEMES.filter((t) => t.isDark).map((t) => t.name)).toEqual(['dark', 'ultra-dark', 'dark-hc', 'ultra-dark-hc'])
+    expect(THEMES.filter((t) => !t.isDark).map((t) => t.name)).toEqual(['light', 'soft-light', 'light-hc', 'soft-light-hc'])
+  })
+
+  it('every high-contrast theme has a matching base theme with the same darkness', () => {
+    for (const name of HIGH_CONTRAST_NAMES) {
+      const base = byName(name.replace(/-hc$/, '') as ThemeName)
+      expect(base).toBeDefined()
+      expect(byName(name).isDark).toBe(base.isDark)
+    }
   })
 
   it('claudeTheme only ever takes the two supported values', () => {
@@ -185,5 +201,89 @@ describe('THEMES — consumer lookup pattern', () => {
 
   it('lookup is case-sensitive ("Dark" does not resolve)', () => {
     expect(THEMES.find((t) => (t.name as string) === 'Dark')).toBeUndefined()
+  })
+})
+
+// WCAG 2.x relative luminance / contrast ratio (https://www.w3.org/TR/WCAG22/#dfn-contrast-ratio).
+function relativeLuminance(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function contrastRatio(a: string, b: string): number {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+describe('contrastRatio helper', () => {
+  it('matches the WCAG reference values', () => {
+    expect(contrastRatio('#000000', '#ffffff')).toBeCloseTo(21, 5)
+    expect(contrastRatio('#ffffff', '#ffffff')).toBeCloseTo(1, 5)
+    expect(contrastRatio('#767676', '#ffffff')).toBeCloseTo(4.54, 2)
+  })
+})
+
+describe('High-contrast themes — WCAG 2.2 AAA', () => {
+  // 1.4.6 Contrast (Enhanced): 7:1 for text. 1.4.11 Non-text Contrast: 3:1 for borders.
+  const AAA_TEXT = 7
+  const NON_TEXT = 3
+  const TEXT_TOKENS = [
+    'text', 'text-muted', 'accent', 'accent-hover', 'success', 'danger', 'warning',
+  ] as const
+  const backgrounds = (name: ThemeName) => {
+    const c = byName(name).colors
+    return [c.bg, c['bg-secondary'], c['bg-tertiary']]
+  }
+
+  it.each(HIGH_CONTRAST_NAMES)('%s: every text-bearing UI token is >= 7:1 on every bg layer', (name) => {
+    const t = byName(name)
+    for (const token of TEXT_TOKENS) {
+      for (const bg of backgrounds(name)) {
+        expect(contrastRatio(t.colors[token], bg), `${token} on ${bg}`).toBeGreaterThanOrEqual(AAA_TEXT)
+      }
+    }
+  })
+
+  it.each(HIGH_CONTRAST_NAMES)('%s: borders meet the 3:1 non-text ratio on every bg layer', (name) => {
+    const t = byName(name)
+    for (const bg of backgrounds(name)) {
+      expect(contrastRatio(t.colors.border, bg)).toBeGreaterThanOrEqual(NON_TEXT)
+    }
+  })
+
+  it.each(HIGH_CONTRAST_NAMES)('%s: every ANSI text colour is >= 7:1 on every bg layer', (name) => {
+    const t = byName(name)
+    const keys = ['foreground', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan'] as const
+    // `black` is a background-role colour in dark themes and `white` is in
+    // light ones under most palettes, but here the light themes use both as text.
+    const extra = t.isDark ? (['white'] as const) : (['black', 'white'] as const)
+    for (const key of [...keys, ...extra]) {
+      for (const bg of backgrounds(name)) {
+        expect(contrastRatio(t.terminal[key], bg), `${key} on ${bg}`).toBeGreaterThanOrEqual(AAA_TEXT)
+      }
+    }
+  })
+
+  it.each(HIGH_CONTRAST_NAMES)('%s: dark-theme ANSI black still carries foreground text at 7:1', (name) => {
+    const t = byName(name)
+    if (!t.isDark) return
+    expect(contrastRatio(t.terminal.foreground, t.terminal.black)).toBeGreaterThanOrEqual(AAA_TEXT)
+  })
+
+  it.each(HIGH_CONTRAST_NAMES)('%s: selected terminal text stays >= 7:1', (name) => {
+    const t = byName(name)
+    expect(t.terminal.selectionBackground).toMatch(/^#[0-9a-f]{6}$/)
+    expect(contrastRatio(t.terminal.foreground, t.terminal.selectionBackground)).toBeGreaterThanOrEqual(AAA_TEXT)
+  })
+
+  it.each(HIGH_CONTRAST_NAMES)('%s: is strictly higher contrast than its base theme', (name) => {
+    const hc = byName(name)
+    const base = byName(name.replace(/-hc$/, '') as ThemeName)
+    expect(contrastRatio(hc.colors.text, hc.colors.bg)).toBeGreaterThan(contrastRatio(base.colors.text, base.colors.bg))
+    expect(contrastRatio(hc.colors['text-muted'], hc.colors.bg))
+      .toBeGreaterThan(contrastRatio(base.colors['text-muted'], base.colors.bg))
   })
 })

@@ -76,6 +76,76 @@
   --color-merged: #a78bfa;
 }
 
+/*
+ * High-contrast variants — WCAG 2.2 AAA. Every text-bearing token is >= 7:1
+ * against all three bg layers; borders are >= 3:1. Keep in sync with
+ * src/shared/themes.ts (the unit tests check the ratios there).
+ */
+
+/* --- Tokyo Night High Contrast --- */
+[data-theme="dark-hc"] {
+  --color-bg: #101119;
+  --color-bg-secondary: #1a1c2b;
+  --color-bg-tertiary: #15161f;
+  --color-border: #5d6898;
+  --color-text: #eef1ff;
+  --color-text-muted: #a5accf;
+  --color-accent: #9ab8f9;
+  --color-accent-hover: #bed1fb;
+  --color-success: #9ece6a;
+  --color-danger: #f99fb0;
+  --color-warning: #e0b06a;
+  --color-merged: #c6abf8;
+}
+
+/* --- Light High Contrast --- */
+[data-theme="light-hc"] {
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f0f0f0;
+  --color-bg-tertiary: #f7f7f7;
+  --color-border: #888888;
+  --color-text: #0b0b14;
+  --color-text-muted: #4b505a;
+  --color-accent: #0849b2;
+  --color-accent-hover: #063787;
+  --color-success: #105c2c;
+  --color-danger: #a20e0e;
+  --color-warning: #6f4705;
+  --color-merged: #6e0ace;
+}
+
+/* --- Soft Light High Contrast --- */
+[data-theme="soft-light-hc"] {
+  --color-bg: #fdfaf6;
+  --color-bg-secondary: #f3ede5;
+  --color-bg-tertiary: #f8f4ee;
+  --color-border: #9b8363;
+  --color-text: #1c140d;
+  --color-text-muted: #564d46;
+  --color-accent: #53496a;
+  --color-accent-hover: #403851;
+  --color-success: #385639;
+  --color-danger: #853535;
+  --color-warning: #684829;
+  --color-merged: #5a4576;
+}
+
+/* --- Ultra Dark High Contrast --- */
+[data-theme="ultra-dark-hc"] {
+  --color-bg: #000000;
+  --color-bg-secondary: #0f0f0f;
+  --color-bg-tertiary: #080808;
+  --color-border: #626262;
+  --color-text: #f5f5f5;
+  --color-text-muted: #a2a2a2;
+  --color-accent: #83adfd;
+  --color-accent-hover: #a5c4fe;
+  --color-success: #4ade80;
+  --color-danger: #fc8c9c;
+  --color-warning: #fbbf24;
+  --color-merged: #b69ffb;
+}
+
 /* Tailwind theme tokens — reference the CSS custom properties */
 @theme {
   --color-bg: var(--color-bg);

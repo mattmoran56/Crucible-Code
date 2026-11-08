@@ -2,8 +2,8 @@ import React from 'react'
 import { useToastStore, type ToastType } from '../../stores/toastStore'
 
 const TYPE_STYLES: Record<ToastType, string> = {
-  error: 'bg-danger text-white',
-  success: 'bg-success text-white',
+  error: 'bg-danger text-bg',
+  success: 'bg-success text-bg',
   info: 'bg-accent text-bg',
 }
 

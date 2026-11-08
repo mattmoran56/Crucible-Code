@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildFullText } from '../../../src/renderer/hooks/useDiffHighlighting'
+import { buildFullText, shikiThemeFor } from '../../../src/renderer/hooks/useDiffHighlighting'
 
 describe('buildFullText', () => {
   it('returns null when there is no content to highlight', () => {
@@ -84,5 +84,25 @@ describe('buildFullText', () => {
       'new',
     )
     expect(out!.text).toBe('patched')
+  })
+})
+
+describe('shikiThemeFor', () => {
+  it('keeps the original syntax themes for the standard app themes', () => {
+    expect(shikiThemeFor('dark')).toBe('tokyo-night')
+    expect(shikiThemeFor('ultra-dark')).toBe('tokyo-night')
+    expect(shikiThemeFor('light')).toBe('github-light')
+    expect(shikiThemeFor('soft-light')).toBe('github-light')
+  })
+
+  it('uses the GitHub high-contrast syntax themes for the high-contrast app themes', () => {
+    expect(shikiThemeFor('dark-hc')).toBe('github-dark-high-contrast')
+    expect(shikiThemeFor('ultra-dark-hc')).toBe('github-dark-high-contrast')
+    expect(shikiThemeFor('light-hc')).toBe('github-light-high-contrast')
+    expect(shikiThemeFor('soft-light-hc')).toBe('github-light-high-contrast')
+  })
+
+  it('falls back to the dark syntax theme for unknown names', () => {
+    expect(shikiThemeFor('solarized')).toBe('tokyo-night')
   })
 })
