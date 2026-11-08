@@ -50,7 +50,8 @@ describe('<CreateSessionDialog> location toggle', () => {
     fireEvent.click(submit)
     await waitFor(() => expect(createSession).toHaveBeenCalled())
     expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'fix-auth', 'main', 'Fix the auth bug', undefined, {
-      branchName: 'session/fix-auth',
+      branchName: undefined,
+      autoBranch: true,
       mode: 'single-branch',
       location: 'cloud',
     })
@@ -67,7 +68,8 @@ describe('<CreateSessionDialog> location toggle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start in cloud' }))
     await waitFor(() =>
       expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'Big Refactor', 'main', 'Split it up', undefined, {
-        branchName: 'session/big-refactor',
+        branchName: undefined,
+        autoBranch: true,
         mode: 'orchestrator',
         location: 'cloud',
       })
@@ -83,7 +85,8 @@ describe('<CreateSessionDialog> location toggle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() =>
       expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'Big Refactor', 'main', undefined, undefined, {
-        branchName: 'session/big-refactor',
+        branchName: undefined,
+        autoBranch: true,
         mode: 'orchestrator',
       })
     )
@@ -103,7 +106,8 @@ describe('<CreateSessionDialog> location toggle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() =>
       expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'fix-auth', 'main', undefined, undefined, {
-        branchName: 'session/fix-auth',
+        branchName: undefined,
+        autoBranch: true,
         mode: 'single-branch',
       })
     )
@@ -117,21 +121,52 @@ describe('<CreateSessionDialog> location toggle', () => {
   })
 })
 
+describe('<CreateSessionDialog> blank name and branch', () => {
+  it('creates with both blank, to be named from the first message', async () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    expect(screen.getByTestId('auto-naming-hint').textContent).toBe('The name and branch will be picked from your first message.')
+    const submit = screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement
+    expect(submit.disabled).toBe(false)
+    fireEvent.click(submit)
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('p1', '/repo', '', 'main', undefined, undefined, {
+        branchName: undefined,
+        autoBranch: true,
+        mode: 'single-branch',
+      })
+    )
+  })
+
+  it('says a cloud session is named from its task', async () => {
+    render(<CreateSessionDialog open project={project()} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    expect(screen.getByTestId('auto-naming-hint').textContent).toBe('The name and branch will be picked from the task.')
+  })
+
+  it('still needs a name to schedule', () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    fireEvent.click(screen.getByLabelText('Schedule for later'))
+    expect((screen.getByRole('button', { name: 'Schedule' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
 describe('<CreateSessionDialog> branch field', () => {
   const branchInput = () => screen.getByLabelText('Branch') as HTMLInputElement
 
-  it('follows the session name until edited, then keeps the user value', async () => {
+  it('stays blank (named from the first prompt) and passes a typed branch through', async () => {
     render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
     await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
     fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'login' } })
-    expect(branchInput().value).toBe('session/login')
+    expect(branchInput().value).toBe('')
+    expect(screen.getByTestId('auto-naming-hint').textContent).toBe('The branch will be picked from your first message.')
     fireEvent.change(branchInput(), { target: { value: 'feature/login' } })
-    fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'login-2' } })
-    expect(branchInput().value).toBe('feature/login')
+    expect(screen.queryByTestId('auto-naming-hint')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() =>
-      expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'login-2', 'main', undefined, undefined, {
+      expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'login', 'main', undefined, undefined, {
         branchName: 'feature/login',
+        autoBranch: false,
         mode: 'single-branch',
       })
     )

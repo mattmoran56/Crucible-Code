@@ -14,6 +14,7 @@ const gitApi = {
   status: vi.fn(),
   checkout: vi.fn(),
   restoreWorktree: vi.fn(),
+  listBranches: vi.fn(),
 }
 const worktreeApi = {
   create: vi.fn(),
@@ -23,6 +24,7 @@ const worktreeApi = {
   createForPR: vi.fn(),
   listPR: vi.fn(),
   removePR: vi.fn(),
+  renameBranch: vi.fn(),
 }
 const terminalApi = {
   killSession: vi.fn(),
@@ -1130,7 +1132,7 @@ describe('sessionStore.nameFromFirstMessage', () => {
   const r1 = () => useSessionStore.getState().sessions.find((s) => s.id === 'r1')!
 
   it('renames a pending session to the suggested name, on the project account, and clears the flag', async () => {
-    sessionApi.suggestName.mockResolvedValue('review-pr-42')
+    sessionApi.suggestName.mockResolvedValue({ name: 'review-pr-42', branch: null })
     await useSessionStore.getState().nameFromFirstMessage('r1', 'Review PR 42 please')
     expect(sessionApi.suggestName).toHaveBeenCalledWith('Review PR 42 please', '/cfg/work')
     expect(r1().name).toBe('review-pr-42')
@@ -1139,7 +1141,7 @@ describe('sessionStore.nameFromFirstMessage', () => {
   })
 
   it('only names a session once', async () => {
-    sessionApi.suggestName.mockResolvedValue('first-task')
+    sessionApi.suggestName.mockResolvedValue({ name: 'first-task', branch: null })
     await useSessionStore.getState().nameFromFirstMessage('r1', 'first')
     await useSessionStore.getState().nameFromFirstMessage('r1', 'second')
     expect(sessionApi.suggestName).toHaveBeenCalledTimes(1)
@@ -1158,17 +1160,17 @@ describe('sessionStore.nameFromFirstMessage', () => {
   })
 
   it('makes the name unique against other sessions', async () => {
-    sessionApi.suggestName.mockResolvedValue('Fix login')
+    sessionApi.suggestName.mockResolvedValue({ name: 'Fix login', branch: null })
     await useSessionStore.getState().nameFromFirstMessage('r1', 'fix the login')
     expect(r1().name).toBe('Fix login 2')
   })
 
   it('keeps a name the user picked while the suggestion was in flight', async () => {
-    let resolve!: (name: string) => void
+    let resolve!: (v: { name: string; branch: null }) => void
     sessionApi.suggestName.mockReturnValue(new Promise((r) => (resolve = r)))
     const naming = useSessionStore.getState().nameFromFirstMessage('r1', 'do a thing')
     await useSessionStore.getState().renameSession('p1', '/repo', 'r1', 'mine')
-    resolve('suggested-name')
+    resolve({ name: 'suggested-name', branch: null })
     await naming
     expect(r1().name).toBe('mine')
     expect(r1()).not.toHaveProperty('namePending')
@@ -1179,5 +1181,122 @@ describe('sessionStore.nameFromFirstMessage', () => {
     await useSessionStore.getState().nameFromFirstMessage('r1', 'hello there')
     expect(r1().name).toBe('agent-1')
     expect(r1()).not.toHaveProperty('namePending')
+  })
+})
+
+describe('sessionStore — naming a worktree session from its first prompt', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ currentProjectId: 'p1', sessions: [] } as any)
+    useProjectStore.setState({
+      projects: [{ id: 'p1', name: 'acme', repoPath: '/repo', claudeAccountId: 'a1' }],
+      claudeAccounts: [{ id: 'a1', label: 'Work', configDir: '/cfg/work' }],
+    } as any)
+    worktreeApi.create.mockImplementation(async (_r: string, _n: string, _b?: string, branch?: string) => ({ path: '/wt/x', branch }))
+    worktreeApi.renameBranch.mockImplementation(async (_r: string, _w: string, oldBranch: string, newBranch: string) => ({ oldBranch, newBranch }))
+    gitApi.listBranches.mockResolvedValue(['main'])
+  })
+  const only = () => useSessionStore.getState().sessions[0]
+
+  it('starts a blank-named, blank-branch session on a placeholder, then renames both from the first message', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', '', undefined, undefined, undefined, { autoBranch: true })
+    const placeholder = only()
+    expect(placeholder.name).toMatch(/^new-session-[0-9a-f]{6}$/)
+    expect(placeholder.branchName).toBe(`session/${placeholder.name}`)
+    expect(placeholder).toMatchObject({ namePending: true, branchPending: true, ownsBranch: true })
+    expect(worktreeApi.create).toHaveBeenCalledWith('/repo', placeholder.name, undefined, placeholder.branchName)
+
+    sessionApi.suggestName.mockResolvedValue({ name: 'Fix login redirect', branch: 'fix/login-redirect' })
+    await useSessionStore.getState().nameFromFirstMessage(placeholder.id, 'the login redirect loops forever')
+    expect(sessionApi.suggestName).toHaveBeenCalledWith('the login redirect loops forever', '/cfg/work')
+    expect(worktreeApi.renameBranch).toHaveBeenCalledWith('/repo', '/wt/x', placeholder.branchName, 'fix/login-redirect', { placeholder: true })
+    expect(only()).toMatchObject({ name: 'Fix login redirect', branchName: 'fix/login-redirect', worktreePath: '/wt/x' })
+    expect(only()).not.toHaveProperty('namePending')
+    expect(only()).not.toHaveProperty('branchPending')
+  })
+
+  it('names straight away from a startup prompt', async () => {
+    sessionApi.suggestName.mockResolvedValue({ name: 'Add dark mode', branch: 'feat/dark-mode' })
+    await useSessionStore.getState().createSession('p1', '/repo', '', undefined, 'add a dark mode toggle', undefined, { autoBranch: true })
+    await vi.waitFor(() => expect(only().name).toBe('Add dark mode'))
+    expect(only().branchName).toBe('feat/dark-mode')
+    expect(useSessionStore.getState().pendingStartup?.command).toBe('add a dark mode toggle')
+  })
+
+  it('keeps a typed name and only names the branch', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', 'login', undefined, undefined, undefined, { autoBranch: true })
+    expect(only().name).toBe('login')
+    expect(only().branchName).toMatch(/^session\/login-[0-9a-f]{6}$/)
+    expect(only()).not.toHaveProperty('namePending')
+    sessionApi.suggestName.mockResolvedValue({ name: 'Something else', branch: 'fix/login' })
+    await useSessionStore.getState().nameFromFirstMessage(only().id, 'fix login')
+    expect(only()).toMatchObject({ name: 'login', branchName: 'fix/login' })
+  })
+
+  it('keeps a typed branch and only names the session', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', '', undefined, undefined, undefined, { branchName: 'mine/branch', autoBranch: false })
+    expect(only().branchName).toBe('mine/branch')
+    expect(only()).not.toHaveProperty('branchPending')
+    sessionApi.suggestName.mockResolvedValue({ name: 'Do thing', branch: 'chore/do-thing' })
+    await useSessionStore.getState().nameFromFirstMessage(only().id, 'do the thing')
+    expect(worktreeApi.renameBranch).not.toHaveBeenCalled()
+    expect(only()).toMatchObject({ name: 'Do thing', branchName: 'mine/branch' })
+  })
+
+  it('picks a free branch when the suggested one exists', async () => {
+    gitApi.listBranches.mockResolvedValue(['main', 'fix/login', 'fix/login-2'])
+    await useSessionStore.getState().createSession('p1', '/repo', '', undefined, undefined, undefined, { autoBranch: true })
+    sessionApi.suggestName.mockResolvedValue({ name: 'Fix login', branch: 'fix/login' })
+    await useSessionStore.getState().nameFromFirstMessage(only().id, 'fix login')
+    expect(only().branchName).toBe('fix/login-3')
+  })
+
+  it('keeps the branch the main process reports when it refused to move a pushed placeholder', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', '', undefined, undefined, undefined, { autoBranch: true })
+    const placeholderBranch = only().branchName
+    worktreeApi.renameBranch.mockResolvedValue({ oldBranch: placeholderBranch, newBranch: placeholderBranch })
+    sessionApi.suggestName.mockResolvedValue({ name: 'Fix login', branch: 'fix/login' })
+    await useSessionStore.getState().nameFromFirstMessage(only().id, 'fix login')
+    expect(only()).toMatchObject({ name: 'Fix login', branchName: placeholderBranch })
+    expect(only()).not.toHaveProperty('branchPending')
+  })
+
+  it('keeps the placeholders and stops asking when naming fails', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', '', undefined, undefined, undefined, { autoBranch: true })
+    const before = only()
+    sessionApi.suggestName.mockRejectedValue(new Error('claude not found'))
+    await useSessionStore.getState().nameFromFirstMessage(before.id, 'hello')
+    expect(worktreeApi.renameBranch).not.toHaveBeenCalled()
+    expect(only()).toMatchObject({ name: before.name, branchName: before.branchName })
+    expect(only()).not.toHaveProperty('namePending')
+    expect(only()).not.toHaveProperty('branchPending')
+  })
+
+  it('a manual rename moves the placeholder branch and stops the suggestion replacing either', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', '', undefined, undefined, undefined, { autoBranch: true })
+    await useSessionStore.getState().renameSession('p1', '/repo', only().id, 'my-name')
+    expect(only()).toMatchObject({ name: 'my-name', branchName: 'session/my-name' })
+    expect(only()).not.toHaveProperty('branchPending')
+    worktreeApi.renameBranch.mockClear()
+    await useSessionStore.getState().nameFromFirstMessage(only().id, 'fix login')
+    expect(sessionApi.suggestName).not.toHaveBeenCalled()
+    expect(worktreeApi.renameBranch).not.toHaveBeenCalled()
+  })
+
+  it('names a cloud session from its task before creating the worktree, and never renames it later', async () => {
+    ;(window as any).api.cloudSession = { start: vi.fn(), create: vi.fn() }
+    sessionApi.suggestName.mockResolvedValue({ name: 'Fix login', branch: 'fix/login' })
+    await useSessionStore.getState().createSession('p1', '/repo', '', 'main', 'fix the login', undefined, { location: 'cloud', autoBranch: true })
+    expect(worktreeApi.create).toHaveBeenCalledWith('/repo', 'Fix login', 'main', 'fix/login')
+    expect(only()).toMatchObject({ name: 'Fix login', branchName: 'fix/login' })
+    expect(only().cloudPending?.branch).toBe('fix/login')
+    expect(only()).not.toHaveProperty('namePending')
+    expect(only()).not.toHaveProperty('branchPending')
+  })
+
+  it('an orchestrator without a startup prompt keeps its placeholder branch (it is told its branch at start)', async () => {
+    await useSessionStore.getState().createSession('p1', '/repo', '', undefined, undefined, undefined, { mode: 'orchestrator', autoBranch: true })
+    expect(sessionApi.suggestName).not.toHaveBeenCalled()
+    expect(only()).toMatchObject({ namePending: true, mode: 'orchestrator' })
+    expect(only()).not.toHaveProperty('branchPending')
   })
 })

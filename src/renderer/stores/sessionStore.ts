@@ -1,7 +1,14 @@
 import { create } from 'zustand'
-import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation, SessionMode } from '../../shared/types'
+import type { Session, PullRequest, WorktreeInfo, NotionTicketLink, SessionLocation, SessionMode, SessionNameSuggestion } from '../../shared/types'
 import { useToastStore } from './toastStore'
-import { defaultSessionBranch, renameMovesBranch, sessionRemoteBranch } from '../../shared/branch-name'
+import {
+  defaultSessionBranch,
+  placeholderSessionBranch,
+  placeholderSessionName,
+  renameMovesBranch,
+  sessionRemoteBranch,
+  uniqueBranchName,
+} from '../../shared/branch-name'
 import { uniqueSessionName } from '../../shared/session-name'
 import { canAssignSessionPR, withAssignedPR } from '../../shared/session-pr'
 import { useTerminalStore } from './terminalStore'
@@ -56,6 +63,11 @@ interface SessionState {
   /** A session whose agent xterm should auto-focus on first attach, consumed by useTerminal. */
   pendingFocusSessionId: string | null
   loadSessions: (projectId: string) => Promise<void>
+  /**
+   * Create a worktree session and open it. A blank `name` gets a placeholder
+   * (`new-session-3f9a2c`) that the first prompt replaces; see
+   * CreateSessionOptions.autoBranch for the branch.
+   */
   createSession: (
     projectId: string,
     repoPath: string,
@@ -90,9 +102,11 @@ interface SessionState {
    */
   assignSessionPR: (projectId: string, sessionId: string, prNumber: number | null) => Promise<void>
   /**
-   * Name a session still on its placeholder (`namePending`) from the first
-   * message sent to it, via a quick Haiku turn. No-op for any other session,
-   * or once the user has renamed it.
+   * Name a session still on its placeholder name (`namePending`) and/or
+   * placeholder branch (`branchPending`) from the first message sent to it,
+   * via a quick Haiku turn; a pending branch is renamed in place to the
+   * suggested `feat/…`, `fix/…` or `chore/…`. No-op for any other session, or
+   * for whatever the user renamed meanwhile.
    */
   nameFromFirstMessage: (sessionId: string, message: string) => Promise<void>
   /**
@@ -133,6 +147,15 @@ export interface CreateSessionOptions {
   /** Branch to create for the session. Defaults to `session/<name>`. */
   branchName?: string
   /**
+   * With no `branchName`: name the branch from the first prompt (`feat/…`,
+   * `fix/…`, `chore/…`) instead of `session/<name>`. A local single-branch
+   * session starts on a placeholder branch that is renamed once the name comes
+   * back. A cloud session or orchestrator is handed its branch when it starts,
+   * so its startup prompt is named before the worktree is created instead (and
+   * it keeps the placeholder when there is no prompt or naming fails).
+   */
+  autoBranch?: boolean
+  /**
    * How the session treats branches, cloud or local. Default 'single-branch'.
    * A cloud orchestrator is told so in its task; a local one is saved with
    * `mode` and its agents get the orchestrator system prompt.
@@ -163,6 +186,36 @@ function withoutNamePending(session: Session): Session {
   const { namePending: _, ...rest } = session
   return rest
 }
+
+function withoutPending(session: Session): Session {
+  const { namePending: _n, branchPending: _b, ...rest } = session
+  return rest
+}
+
+/** Ask Haiku for a name and branch, on the project's Claude account. Best effort: null on any failure. */
+async function suggestNaming(projectId: string, text: string): Promise<SessionNameSuggestion | null> {
+  const { projects, claudeAccounts } = useProjectStore.getState()
+  const project = projects.find((p) => p.id === projectId)
+  try {
+    return (await window.api.session.suggestName(text, projectConfigDir(project, claudeAccounts))) ?? null
+  } catch {
+    return null
+  }
+}
+
+/** `branch`, made unique against the repo's local branches (best effort). */
+async function freeBranchName(repoPath: string, branch: string, ignore?: string): Promise<string> {
+  let taken: string[] = []
+  try {
+    taken = await window.api.git.listBranches(repoPath)
+  } catch {
+    // Creating or renaming still refuses a clash; this just avoids most.
+  }
+  return uniqueBranchName(branch, taken.filter((b) => b !== ignore))
+}
+
+/** A message worth naming a session from: not empty and not a slash command. */
+const namesTask = (text: string): boolean => !!text && !text.startsWith('/')
 
 /** The first free `agent-N` name, so a new repo-root agent never clashes with a session. */
 export function nextRepoAgentName(sessions: Session[]): string {
@@ -282,10 +335,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (cloud && !startupCommand?.trim()) {
       throw new Error('A cloud session needs a task — pick a startup prompt or describe the task')
     }
-    const worktreeInfo = await window.api.worktree.create(repoPath, name, baseBranch, options?.branchName)
+    const orchestrator = options?.mode === 'orchestrator'
+    const takenNames = () => get().sessions.map((s) => s.name)
+    let sessionName = name.trim()
+    let branchName = options?.branchName?.trim() || undefined
+    let namePending = !sessionName
+    let branchPending = !branchName && !!options?.autoBranch
+    const task = startupCommand?.trim() ?? ''
+
+    // A cloud session or orchestrator is handed its branch when it starts, so
+    // renaming it later would pull the branch out from under it: name it from
+    // the task now, before the worktree exists.
+    if ((cloud || orchestrator) && (namePending || branchPending)) {
+      const suggested = namesTask(task) ? await suggestNaming(projectId, task) : null
+      if (suggested && namePending) {
+        sessionName = uniqueSessionName(suggested.name, takenNames())
+        namePending = false
+      }
+      if (suggested?.branch && branchPending) {
+        branchName = await freeBranchName(repoPath, suggested.branch)
+        branchPending = false
+      }
+    }
+
+    if (!sessionName) sessionName = placeholderSessionName()
+    if (branchPending) branchName = placeholderSessionBranch(sessionName, namePending)
+    // Handed its branch at start: a placeholder it still has stays put.
+    if (cloud || orchestrator) branchPending = false
+
+    const worktreeInfo = await window.api.worktree.create(repoPath, sessionName, baseBranch, branchName)
     const session: Session = {
       id: crypto.randomUUID(),
-      name,
+      name: sessionName,
       branchName: worktreeInfo.branch,
       worktreePath: worktreeInfo.path,
       projectId,
@@ -294,6 +375,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       baseBranch,
       notionTicket,
       ownsBranch: true,
+      ...(namePending ? { namePending: true } : {}),
+      ...(branchPending ? { branchPending: true } : {}),
     }
 
     if (cloud) {
@@ -329,6 +412,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       pendingFocusSessionId: session.id,
     })
     saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+    // The startup prompt is the first message: name from it straight away
+    // rather than waiting for the next one typed into the Agent tab.
+    if ((namePending || branchPending) && !cloud && namesTask(task)) {
+      void get().nameFromFirstMessage(session.id, task)
+    }
   },
 
   createRepoAgent: async (projectId, repoPath) => {
@@ -483,9 +571,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       ))
     }
 
-    // A name the user picked is never replaced by a suggested one.
+    // A name the user picked is never replaced by a suggested one, and a
+    // branch that followed it is no longer a placeholder either.
+    const moved = newBranch !== session.branchName
     const sessions = get().sessions.map((s) =>
-      s.id === sessionId ? { ...withoutNamePending(s), name: trimmed, branchName: newBranch } : s
+      s.id === sessionId
+        ? { ...(moved ? withoutPending(s) : withoutNamePending(s)), name: trimmed, branchName: newBranch }
+        : s
     )
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
@@ -509,25 +601,54 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const session = get().sessions.find((s) => s.id === sessionId)
     const text = message.trim()
     // A slash command says nothing about the task: wait for a real message.
-    if (!session?.namePending || !text || text.startsWith('/') || naming.has(sessionId)) return
+    if (!session || !(session.namePending || session.branchPending) || !namesTask(text) || naming.has(sessionId)) return
     naming.add(sessionId)
-    const { projectId, name: placeholder } = session
+    const { projectId, name: placeholder, branchName: placeholderBranch } = session
     try {
-      const project = useProjectStore.getState().projects.find((p) => p.id === projectId)
-      let suggested: string | null = null
-      try {
-        suggested = await window.api.session.suggestName(text, projectConfigDir(project, useProjectStore.getState().claudeAccounts))
-      } catch {
-        // Naming is best effort: the session keeps its placeholder.
-      }
+      const suggested = await suggestNaming(projectId, text)
       if (get().currentProjectId !== projectId) return
       const current = get().sessions.find((s) => s.id === sessionId)
-      // Renamed (or deleted) while Haiku was thinking: leave it be.
-      if (!current?.namePending || current.name !== placeholder) return
-      const name = suggested
-        ? uniqueSessionName(suggested, get().sessions.filter((s) => s.id !== sessionId).map((s) => s.name))
-        : placeholder
-      const sessions = get().sessions.map((s) => (s.id === sessionId ? { ...withoutNamePending(s), name } : s))
+      if (!current) return
+
+      // Renamed while Haiku was thinking: the user's name stays.
+      const name =
+        current.namePending && current.name === placeholder && suggested
+          ? uniqueSessionName(suggested.name, get().sessions.filter((s) => s.id !== sessionId).map((s) => s.name))
+          : current.name
+
+      // The branch only moves while it is still the untouched placeholder; the
+      // main process re-checks that (and that it was never pushed) on disk.
+      let branchName = current.branchName
+      const repoPath = useProjectStore.getState().projects.find((p) => p.id === projectId)?.repoPath
+      if (current.branchPending && current.branchName === placeholderBranch && suggested?.branch && repoPath) {
+        try {
+          const target = await freeBranchName(repoPath, suggested.branch, placeholderBranch)
+          ;({ newBranch: branchName } = await window.api.worktree.renameBranch(
+            repoPath,
+            current.worktreePath,
+            placeholderBranch,
+            target,
+            { placeholder: true }
+          ))
+        } catch (err) {
+          useToastStore
+            .getState()
+            .addToast('error', `Couldn't rename branch ${placeholderBranch}: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+
+      // Re-read: the session may have changed during the rename.
+      const latest = get().sessions.find((s) => s.id === sessionId)
+      if (!latest || get().currentProjectId !== projectId) return
+      const sessions = get().sessions.map((s) =>
+        s.id === sessionId
+          ? {
+              ...withoutPending(s),
+              name: s.name === current.name ? name : s.name,
+              branchName: s.branchName === current.branchName ? branchName : s.branchName,
+            }
+          : s
+      )
       await window.api.session.save(projectId, sessions)
       if (get().currentProjectId !== projectId) return
       set({ sessions })

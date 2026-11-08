@@ -3,14 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const run = vi.hoisted(() => vi.fn())
 vi.mock('../../../src/main/services/claude-headless.service', () => ({ runHeadlessClaude: run }))
 
-import { buildNamerPrompt, suggestSessionName } from '../../../src/main/services/session-namer.service'
+import { buildNamerPrompt, parseNamerReply, suggestSessionName } from '../../../src/main/services/session-namer.service'
 
 beforeEach(() => run.mockReset())
 
 describe('suggestSessionName', () => {
   it('runs one tool-less, unsaved Haiku turn outside any repo', async () => {
-    run.mockResolvedValue({ ok: true, resultText: 'Fix-Login-Redirect', transcript: [] })
-    await expect(suggestSessionName('the login redirect loops', '/cfg')).resolves.toBe('Fix login redirect')
+    run.mockResolvedValue({ ok: true, resultText: 'Fix-Login-Redirect\nfix/login-redirect', transcript: [] })
+    await expect(suggestSessionName('the login redirect loops', '/cfg')).resolves.toEqual({
+      name: 'Fix login redirect',
+      branch: 'fix/login-redirect',
+    })
     const opts = run.mock.calls[0][0]
     expect(opts.cwd).not.toMatch(/repo/)
     expect(opts.env).toEqual({ CLAUDE_CONFIG_DIR: '/cfg' })
@@ -37,5 +40,20 @@ describe('suggestSessionName', () => {
 
   it('sends only the start of a very long message', () => {
     expect(buildNamerPrompt('x'.repeat(10_000)).length).toBeLessThan(2200)
+  })
+})
+
+describe('parseNamerReply', () => {
+  it('reads a name line and a typed branch line', () => {
+    expect(parseNamerReply('Add dark mode\nfeat/dark-mode-toggle')).toEqual({ name: 'Add dark mode', branch: 'feat/dark-mode-toggle' })
+  })
+
+  it('tolerates labels, blank lines and a missing branch', () => {
+    expect(parseNamerReply('Name: Bump deps\n\nBranch: chore/bump-deps')).toEqual({ name: 'Bump deps', branch: 'chore/bump-deps' })
+    expect(parseNamerReply('Update readme')).toEqual({ name: 'Update readme', branch: 'chore/update-readme' })
+  })
+
+  it('returns null with no usable name', () => {
+    expect(parseNamerReply('  \n ')).toBeNull()
   })
 })
