@@ -299,7 +299,11 @@ export const mockApi = {
     remove: async () => mockProjects,
     reorder: async () => mockProjects,
     selectFolder: async () => null,
-    update: async () => mockProjects,
+    update: async (project: (typeof mockProjects)[number]) => {
+      const i = mockProjects.findIndex((p) => p.id === project.id)
+      if (i >= 0) mockProjects[i] = project
+      return [...mockProjects]
+    },
   },
 
   account: {

@@ -33,6 +33,11 @@ export interface Project {
   defaultSessionLocation?: SessionLocation
   /** Sandboxer integration (one container per worktree). Off unless set. */
   sandboxer?: SandboxerProjectConfig
+  /**
+   * Hidden projects stay registered (sessions, settings and all) but are not
+   * shown as a tab in any window. Unhide them from Settings → Projects.
+   */
+  hidden?: boolean
 }
 
 /** Per-project Sandboxer settings. */

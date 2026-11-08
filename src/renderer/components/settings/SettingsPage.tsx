@@ -20,6 +20,7 @@ import { SettingsSidebar, type SettingsSection } from './SettingsSidebar'
 import { ProjectPicker } from './ProjectPicker'
 import { SessionLocationSetting } from './SessionLocationSetting'
 import { SandboxerSettings } from './SandboxerSettings'
+import { ProjectVisibilitySettings } from './ProjectVisibilitySettings'
 
 const LIGHT_THEMES = THEMES.filter((t) => !t.isDark)
 const DARK_THEMES = THEMES.filter((t) => t.isDark)
@@ -40,7 +41,7 @@ export function SettingsPage() {
   const {
     projects,
     activeProjectId,
-    claudeAccounts, saveAccounts, updateProject,
+    claudeAccounts, saveAccounts, updateProject, setProjectHidden,
   } = useProjectStore()
 
   const smartDictation = useDictationStore((s) => s.smart)
@@ -717,6 +718,17 @@ export function SettingsPage() {
             </Panel>
 
             {/* Project Defaults */}
+            <Panel visible={activeSection === 'projects'}>
+              <SectionHeader
+                title="Projects"
+                description="Hide a project to stop showing it as a tab. Its sessions and settings are kept, and you can unhide it here at any time."
+              />
+              <ProjectVisibilitySettings
+                projects={projects}
+                onSetHidden={(id, hidden) => void setProjectHidden(id, hidden)}
+              />
+            </Panel>
+
             <Panel visible={activeSection === 'project-defaults'}>
               <SectionHeader
                 title="Project Defaults"
