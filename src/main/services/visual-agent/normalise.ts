@@ -81,6 +81,74 @@ export const usageIn = (line: unknown): VisualAgentUsage | null => {
   return message ? usageOf(message.usage) : null
 }
 
+/** One plan-limit window: percent used (0–100) and the reset time in epoch seconds. */
+export interface StreamRateLimitWindow {
+  usedPercentage: number
+  resetsAt: number
+}
+
+export interface StreamRateLimits {
+  fiveHour?: StreamRateLimitWindow
+  sevenDay?: StreamRateLimitWindow
+}
+
+const windowOf = (value: unknown): StreamRateLimitWindow | null => {
+  const held = obj(value)
+  const utilization = num(held?.utilization)
+  if (!held || utilization === null) return null
+  return { usedPercentage: Math.round(utilization * 100), resetsAt: num(held.resetsAt) ?? 0 }
+}
+
+/**
+ * The plan limits a `rate_limit_event` reports, or null. Print mode never runs
+ * the `statusLine` command, so this is the only place an agent tab learns how
+ * much of the 5-hour / 7-day allowance is used. Shape:
+ * `{ rate_limit_info: { unifiedWindows: { seven_day: { utilization: 0.47, resetsAt } } } }`
+ * with an older single-window form (`rateLimitType` + `utilization`) as fallback.
+ */
+export const rateLimitsIn = (line: unknown): StreamRateLimits | null => {
+  const raw = obj(line)
+  if (!raw || str(raw.type) !== 'rate_limit_event') return null
+  const info = obj(raw.rate_limit_info)
+  if (!info) return null
+  const limits: StreamRateLimits = {}
+  const windows = obj(info.unifiedWindows)
+  const five = windowOf(windows?.five_hour)
+  const seven = windowOf(windows?.seven_day)
+  if (five) limits.fiveHour = five
+  if (seven) limits.sevenDay = seven
+  if (!five && !seven) {
+    const single = windowOf(info)
+    const kind = str(info.rateLimitType)
+    if (single && kind === 'five_hour') limits.fiveHour = single
+    if (single && kind === 'seven_day') limits.sevenDay = single
+  }
+  return limits.fiveHour || limits.sevenDay ? limits : null
+}
+
+/**
+ * What a `result` line says this process has spent. `total_cost_usd` and
+ * `duration_api_ms` are running totals for the process; `duration_ms` is just
+ * the turn that finished.
+ */
+export interface ResultSpend {
+  totalCostUsd: number
+  totalApiDurationMs: number
+  turnDurationMs: number
+}
+
+export const resultSpendIn = (line: unknown): ResultSpend | null => {
+  const raw = obj(line)
+  if (!raw || str(raw.type) !== 'result') return null
+  const cost = num(raw.total_cost_usd)
+  if (cost === null) return null
+  return {
+    totalCostUsd: cost,
+    totalApiDurationMs: num(raw.duration_api_ms) ?? 0,
+    turnDurationMs: num(raw.duration_ms) ?? 0,
+  }
+}
+
 /**
  * The conversation id a line proves exists, or null. Only from a line that is
  * part of a turn: `system/init`, `user`, `assistant`, `result`. Startup notices

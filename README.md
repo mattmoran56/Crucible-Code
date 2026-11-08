@@ -530,8 +530,8 @@ Detects when Claude Code needs user input: visual agents report it from their ru
 
 Monitor Claude Code usage and rate limits from the right panel.
 
-- **Rate limit bars** — 5-hour and 7-day usage windows with visual progress bars
-- **Session stats** — Cost, duration, lines added/removed per session
+- **Rate limit bars** — 5-hour and 7-day usage windows with visual progress bars. Fed by Claude terminals (via `statusLine`) and by Agent tabs (via the stream's `rate_limit_event`); limits are account-wide, so a session that hasn't reported yet shows the latest seen anywhere
+- **Session stats** — Cost and duration per session (summed across its Agent tabs); lines added/removed for Claude terminals
 - **Activity chart** — Daily activity over the past week (messages, sessions, tool calls)
 - **Subscription info** — Shows your current plan and rate limit tier
 - **Auto-continue on limit** — When a session or agent actually hits its usage limit, a popup offers to queue a follow-up prompt that fires automatically once the window resets. The trigger watches terminal output for Claude's real "usage limit reached" banner (so for now it covers Claude terminals, not visual agents) — the message that genuinely blocks a conversation — not a usage percentage, so accounts with no hard limit (overage/extra usage) never mis-fire. Opt into Settings → Usage Limits to skip the popup and auto-queue `continue` for you

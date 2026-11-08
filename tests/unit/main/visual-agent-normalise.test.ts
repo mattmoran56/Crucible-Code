@@ -10,6 +10,8 @@ import {
   normalise,
   partialDeltaIn,
   permissionRequestIn,
+  rateLimitsIn,
+  resultSpendIn,
   usageIn,
   assistantMessageIdIn,
   controlResponseIn,
@@ -320,6 +322,47 @@ describe('normalise', () => {
     expect(controlResponseIn({ type: 'control_response', response: { subtype: 'error', request_id: 'm1', error: 'nope' } })).toEqual({ requestId: 'm1', ok: false, error: 'nope' })
     expect(normalise({ type: 'rate_limit_event' }, ctx())).toEqual([])
     expect(normalise('garbage', ctx())).toEqual([])
+  })
+})
+
+describe('usage-panel readers', () => {
+  it('rateLimitsIn reads the unified windows as percentages', () => {
+    const line = {
+      type: 'rate_limit_event',
+      rate_limit_info: {
+        status: 'allowed',
+        rateLimitType: 'seven_day',
+        unifiedWindows: {
+          seven_day: { utilization: 0.47, resetsAt: 1794308400, status: 'allowed' },
+          five_hour: { utilization: 0.125, resetsAt: 1794000000, status: 'allowed' },
+        },
+      },
+    }
+    expect(rateLimitsIn(line)).toEqual({
+      sevenDay: { usedPercentage: 47, resetsAt: 1794308400 },
+      fiveHour: { usedPercentage: 13, resetsAt: 1794000000 },
+    })
+  })
+
+  it('rateLimitsIn falls back to the single-window form', () => {
+    const line = {
+      type: 'rate_limit_event',
+      rate_limit_info: { rateLimitType: 'five_hour', utilization: 0.9, resetsAt: 5 },
+    }
+    expect(rateLimitsIn(line)).toEqual({ fiveHour: { usedPercentage: 90, resetsAt: 5 } })
+  })
+
+  it('rateLimitsIn ignores other lines and events with no utilisation', () => {
+    expect(rateLimitsIn({ type: 'assistant' })).toBeNull()
+    expect(rateLimitsIn({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } })).toBeNull()
+  })
+
+  it('resultSpendIn reads the running cost and the turn duration', () => {
+    expect(
+      resultSpendIn({ type: 'result', total_cost_usd: 0.0077, duration_ms: 3540, duration_api_ms: 5763 })
+    ).toEqual({ totalCostUsd: 0.0077, totalApiDurationMs: 5763, turnDurationMs: 3540 })
+    expect(resultSpendIn({ type: 'result' })).toBeNull()
+    expect(resultSpendIn({ type: 'assistant', total_cost_usd: 1 })).toBeNull()
   })
 })
 
