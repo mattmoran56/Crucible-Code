@@ -29,7 +29,7 @@
 - **Intervention alerts** — Desktop notifications and dock badge when Claude Code needs your input
 - **Usage tracking** — Rate limit bars and activity stats per session
 - **Code editor** — CodeMirror editor with file explorer for editing files in any worktree
-- **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — terminal theme syncs automatically
+- **Themes** — Dark (Tokyo Night), Light, Soft Light, and Ultra Dark, plus a WCAG AAA **High Contrast** version of each — terminal theme syncs automatically
 - **Remote access** — Pair a second device's browser to your desktop instance over the LAN, or over a hosted end-to-end encrypted Cloudflare Worker relay that works through VPNs and hotel Wi-Fi. View projects, sessions, settings, and live agent terminals from anywhere (full mobile layout, PWA-installable on iOS)
 - **Custom buttons** — Configurable action buttons that run shell commands or Claude prompts with placement, scope, and shortcut options
 - **Sandboxer sandboxes** — Per-project opt-in: run a session's worktree as a [Sandboxer](https://github.com/mattmoran56/sandboxer-core) sandbox (one container with its own database and storage) from the Sandbox panel. Deleting the session destroys the sandbox and its data
@@ -108,7 +108,7 @@ Full settings UI for creating, editing, and organizing custom buttons.
 
 **Settings & themes**
 
-Four built-in themes with automatic terminal sync, account management, and preferences.
+Eight built-in themes (four standard, four high contrast) with automatic terminal sync, account management, and preferences.
 
 ![Settings](docs/screenshots/settings.png)
 
@@ -117,7 +117,7 @@ Four built-in themes with automatic terminal sync, account management, and prefe
 
 **Themes**
 
-Dark (Tokyo Night), Light, Soft Light, and Ultra Dark.
+Dark (Tokyo Night), Light, Soft Light, and Ultra Dark — each with a WCAG AAA high-contrast variant.
 
 ![Light theme](docs/screenshots/theme-light.png)
 
@@ -690,7 +690,15 @@ So long-running work — terminals, Claude sessions, review loops and the remote
 <details>
 <summary><strong>Theming</strong></summary>
 
-Four built-in themes: **Dark** (Tokyo Night, default), **Light**, **Soft Light**, and **Ultra Dark**.
+Eight built-in themes: **Dark** (Tokyo Night, default), **Light**, **Soft Light**, and **Ultra Dark**, plus a high-contrast version of each — **Tokyo Night High Contrast**, **Light High Contrast**, **Soft Light High Contrast**, and **Ultra Dark High Contrast**.
+
+The high-contrast themes keep the hues of their base theme but meet WCAG 2.2 AAA: every colour that carries text (body and muted text, accent, success/danger/warning, and the terminal ANSI colours) is at least 7:1 against every background layer, borders are at least 3:1, and selected terminal text stays at 7:1. Syntax highlighting in diffs and code blocks uses Shiki's GitHub high-contrast syntax themes. The ratios are enforced by `tests/unit/shared/themes.test.ts`.
+
+| Tokyo Night High Contrast | Ultra Dark High Contrast |
+|---|---|
+| ![Tokyo Night High Contrast](docs/screenshots/theme-dark-hc.png) | ![Ultra Dark High Contrast](docs/screenshots/theme-ultra-dark-hc.png) |
+| **Light High Contrast** | **Soft Light High Contrast** |
+| ![Light High Contrast](docs/screenshots/theme-light-hc.png) | ![Soft Light High Contrast](docs/screenshots/theme-soft-light-hc.png) |
 
 Themes are defined as CSS custom properties in `src/renderer/styles/globals.css`. Tailwind utilities reference these properties via the `@theme` block, so switching themes is instant and all components respond automatically.
 

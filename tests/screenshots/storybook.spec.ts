@@ -24,6 +24,10 @@ const THEMES: { key: string; label: string }[] = [
   { key: 'light', label: 'Light' },
   { key: 'soft-light', label: 'Soft Light' },
   { key: 'ultra-dark', label: 'Ultra Dark' },
+  { key: 'dark-hc', label: 'Tokyo Night High Contrast' },
+  { key: 'light-hc', label: 'Light High Contrast' },
+  { key: 'soft-light-hc', label: 'Soft Light High Contrast' },
+  { key: 'ultra-dark-hc', label: 'Ultra Dark High Contrast' },
 ]
 
 function buttonTargets(): Target[] {

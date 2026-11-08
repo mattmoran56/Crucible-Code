@@ -1,4 +1,12 @@
-export type ThemeName = 'dark' | 'light' | 'soft-light' | 'ultra-dark'
+export type ThemeName =
+  | 'dark'
+  | 'light'
+  | 'soft-light'
+  | 'ultra-dark'
+  | 'dark-hc'
+  | 'light-hc'
+  | 'soft-light-hc'
+  | 'ultra-dark-hc'
 export type ClaudeTheme = 'dark' | 'light'
 
 export interface TerminalTheme {
@@ -166,6 +174,150 @@ export const THEMES: ThemeDefinition[] = [
       yellow: '#fbbf24',
       blue: '#6d9efd',
       magenta: '#c084fc',
+      cyan: '#67e8f9',
+      white: '#d4d4d4',
+    },
+  },
+
+  /*
+   * High-contrast variants.
+   *
+   * Each one keeps the hues of its base theme but is tuned to WCAG 2.2 AAA:
+   * every colour that can carry text (text, text-muted, accent, accent-hover,
+   * success, danger, warning and the terminal ANSI colours) reaches at least
+   * 7:1 against bg, bg-secondary AND bg-tertiary, and borders reach the 3:1
+   * non-text contrast ratio. Because contrast is symmetric, `text-bg` on a
+   * filled accent/status background is also >= 7:1.
+   * tests/unit/shared/themes.test.ts enforces these ratios.
+   */
+  {
+    name: 'dark-hc',
+    label: 'Tokyo Night High Contrast',
+    isDark: true,
+    claudeTheme: 'dark',
+    colors: {
+      bg: '#101119',
+      'bg-secondary': '#1a1c2b',
+      'bg-tertiary': '#15161f',
+      border: '#5d6898',
+      text: '#eef1ff',
+      'text-muted': '#a5accf',
+      accent: '#9ab8f9',
+      'accent-hover': '#bed1fb',
+      success: '#9ece6a',
+      danger: '#f99fb0',
+      warning: '#e0b06a',
+    },
+    terminal: {
+      background: '#101119',
+      foreground: '#eef1ff',
+      cursor: '#eef1ff',
+      selectionBackground: '#2d3c6b',
+      black: '#1a1c2b',
+      red: '#f99fb0',
+      green: '#9ece6a',
+      yellow: '#e0b06a',
+      blue: '#9ab8f9',
+      magenta: '#c6abf8',
+      cyan: '#7dcfff',
+      white: '#afb7d9',
+    },
+  },
+  {
+    name: 'light-hc',
+    label: 'Light High Contrast',
+    isDark: false,
+    claudeTheme: 'light',
+    colors: {
+      bg: '#ffffff',
+      'bg-secondary': '#f0f0f0',
+      'bg-tertiary': '#f7f7f7',
+      border: '#888888',
+      text: '#0b0b14',
+      'text-muted': '#4b505a',
+      accent: '#0849b2',
+      'accent-hover': '#063787',
+      success: '#105c2c',
+      danger: '#a20e0e',
+      warning: '#6f4705',
+    },
+    terminal: {
+      background: '#ffffff',
+      foreground: '#0b0b14',
+      cursor: '#0849b2',
+      selectionBackground: '#c9dcff',
+      black: '#0b0b14',
+      red: '#9e1919',
+      green: '#0c5c2a',
+      yellow: '#6b4902',
+      blue: '#1146ba',
+      magenta: '#5e14dc',
+      cyan: '#05576b',
+      white: '#4b505a',
+    },
+  },
+  {
+    name: 'soft-light-hc',
+    label: 'Soft Light High Contrast',
+    isDark: false,
+    claudeTheme: 'light',
+    colors: {
+      bg: '#fdfaf6',
+      'bg-secondary': '#f3ede5',
+      'bg-tertiary': '#f8f4ee',
+      border: '#9b8363',
+      text: '#1c140d',
+      'text-muted': '#564d46',
+      accent: '#53496a',
+      'accent-hover': '#403851',
+      success: '#385639',
+      danger: '#853535',
+      warning: '#684829',
+    },
+    terminal: {
+      background: '#fdfaf6',
+      foreground: '#1c140d',
+      cursor: '#53496a',
+      selectionBackground: '#e0d6ef',
+      black: '#1c140d',
+      red: '#853535',
+      green: '#385639',
+      yellow: '#684829',
+      blue: '#434f69',
+      magenta: '#63455e',
+      cyan: '#2c564f',
+      white: '#564d46',
+    },
+  },
+  {
+    name: 'ultra-dark-hc',
+    label: 'Ultra Dark High Contrast',
+    isDark: true,
+    claudeTheme: 'dark',
+    colors: {
+      bg: '#000000',
+      'bg-secondary': '#0f0f0f',
+      'bg-tertiary': '#080808',
+      border: '#626262',
+      text: '#f5f5f5',
+      'text-muted': '#a2a2a2',
+      accent: '#83adfd',
+      'accent-hover': '#a5c4fe',
+      success: '#4ade80',
+      danger: '#fc8c9c',
+      warning: '#fbbf24',
+    },
+    terminal: {
+      background: '#000000',
+      foreground: '#f5f5f5',
+      cursor: '#83adfd',
+      selectionBackground: '#24365c',
+      black: '#000000',
+      red: '#fc8c9c',
+      green: '#4ade80',
+      yellow: '#fbbf24',
+      blue: '#83adfd',
+      magenta: '#ca97fc',
       cyan: '#67e8f9',
       white: '#d4d4d4',
     },

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createHighlighter, type Highlighter, type ThemedToken } from 'shiki'
+import { THEMES as APP_THEMES } from '../../shared/themes'
 
 // --- Singleton highlighter ---
 
@@ -7,7 +8,14 @@ let highlighter: Highlighter | null = null
 let highlighterPromise: Promise<Highlighter> | null = null
 const loadedLangs = new Set<string>()
 
-const THEMES = ['tokyo-night', 'github-light'] as const
+const THEMES = [
+  'tokyo-night',
+  'github-light',
+  'github-dark-high-contrast',
+  'github-light-high-contrast',
+] as const
+
+type ShikiTheme = (typeof THEMES)[number]
 
 const PRELOAD_LANGS = [
   'typescript', 'javascript', 'tsx', 'jsx', 'json', 'jsonc',
@@ -61,9 +69,19 @@ function langFromPath(filePath: string): string | null {
 
 // --- Theme mapping ---
 
-function getShikiTheme(): 'tokyo-night' | 'github-light' {
-  const theme = document.documentElement.getAttribute('data-theme') || 'dark'
-  return theme === 'light' || theme === 'soft-light' ? 'github-light' : 'tokyo-night'
+export function shikiThemeFor(themeName: string): ShikiTheme {
+  const def = APP_THEMES.find((t) => t.name === themeName)
+  const isDark = def?.isDark ?? true
+  // The high-contrast app themes (name ends in -hc) get shiki's high-contrast
+  // palettes so syntax colours meet the same bar as the surrounding UI.
+  if (themeName.endsWith('-hc')) {
+    return isDark ? 'github-dark-high-contrast' : 'github-light-high-contrast'
+  }
+  return isDark ? 'tokyo-night' : 'github-light'
+}
+
+function getShikiTheme(): ShikiTheme {
+  return shikiThemeFor(document.documentElement.getAttribute('data-theme') || 'dark')
 }
 
 // --- Core highlighting ---

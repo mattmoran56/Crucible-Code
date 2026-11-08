@@ -452,7 +452,7 @@ function InlineCommentForm({
         />
         <div className="flex flex-col gap-1.5">
           <button
-            className="bg-accent text-white text-xs rounded hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="bg-accent text-bg text-xs rounded hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             style={{ padding: '4px 10px' }}
             onClick={() => {
               if (text.trim()) onSubmit(text.trim())

@@ -5,6 +5,10 @@ const THEMES = [
   { id: 'ultra-dark', label: 'Ultra Dark' },
   { id: 'light', label: 'Light' },
   { id: 'soft-light', label: 'Soft Light' },
+  { id: 'dark-hc', label: 'Tokyo Night High Contrast' },
+  { id: 'ultra-dark-hc', label: 'Ultra Dark High Contrast' },
+  { id: 'light-hc', label: 'Light High Contrast' },
+  { id: 'soft-light-hc', label: 'Soft Light High Contrast' },
 ] as const
 
 type ThemeId = (typeof THEMES)[number]['id']
@@ -69,7 +73,7 @@ export function ThemePicker() {
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full mt-1 z-50 bg-bg-secondary border border-border rounded shadow-lg min-w-[140px]"
+          className="absolute right-0 top-full mt-1 z-50 bg-bg-secondary border border-border rounded shadow-lg min-w-[200px]"
           onClick={(e) => e.stopPropagation()}
         >
           {THEMES.map((t) => (

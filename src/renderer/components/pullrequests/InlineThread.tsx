@@ -235,7 +235,7 @@ export function InlineThread({
               Cancel
             </button>
             <button
-              className="bg-accent text-white text-[10px] rounded hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+              className="bg-accent text-bg text-[10px] rounded hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
               style={{ padding: '3px 8px' }}
               onClick={handleReply}
               disabled={busy || !replyText.trim()}

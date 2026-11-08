@@ -577,6 +577,10 @@ async function captureScreenshots() {
     light: 'Light',
     'soft-light': 'Soft Light',
     'ultra-dark': 'Ultra Dark',
+    'dark-hc': 'Tokyo Night High Contrast',
+    'light-hc': 'Light High Contrast',
+    'soft-light-hc': 'Soft Light High Contrast',
+    'ultra-dark-hc': 'Ultra Dark High Contrast',
   }
 
   // With SCREENSHOT_ONLY set, theme variants are captured only when named.
