@@ -20,6 +20,11 @@ interface ProjectState {
   reorderProjects: (projectIds: string[]) => Promise<void>
   setActiveProject: (id: string) => void
   updateProject: (project: Project) => Promise<void>
+  /**
+   * Hide a project (close its tab everywhere, keep everything else) or show it
+   * again. Unhiding opens it as a tab in this window.
+   */
+  setProjectHidden: (id: string, hidden: boolean) => Promise<void>
   loadAccounts: () => Promise<void>
   saveAccounts: (accounts: ClaudeAccount[]) => Promise<void>
   /** Reorder this window's tabs. */
@@ -32,9 +37,9 @@ interface ProjectState {
 
 /** The projects this window shows as tabs, in tab order. */
 export function selectTabProjects(state: Pick<ProjectState, 'projects' | 'windowId' | 'tabIds'>): Project[] {
-  if (!state.windowId) return state.projects
+  if (!state.windowId) return state.projects.filter((p) => !p.hidden)
   const byId = new Map(state.projects.map((p) => [p.id, p]))
-  return state.tabIds.map((id) => byId.get(id)).filter((p): p is Project => !!p)
+  return state.tabIds.map((id) => byId.get(id)).filter((p): p is Project => !!p && !p.hidden)
 }
 
 function windowsApi() {
@@ -66,14 +71,17 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       }
 
       if (!layout) {
+        const visible = projects.filter((p) => !p.hidden)
+        const current = get().activeProjectId
+        const currentHidden = projects.some((p) => p.id === current && p.hidden)
         set({
           projects,
-          activeProjectId: projects.length > 0 ? (get().activeProjectId ?? projects[0].id) : null,
+          activeProjectId: visible.length > 0 ? (current && !currentHidden ? current : visible[0].id) : null,
         })
         return
       }
 
-      const known = new Set(projects.map((p) => p.id))
+      const known = new Set(projects.filter((p) => !p.hidden).map((p) => p.id))
       const tabIds = layout.projectIds.filter((id) => known.has(id))
       const current = get().activeProjectId
       const activeProjectId =
@@ -122,7 +130,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       set({
         projects,
         activeProjectId: state.activeProjectId === id
-          ? (projects[0]?.id ?? null)
+          ? (projects.find((p) => !p.hidden)?.id ?? null)
           : state.activeProjectId,
       })
     },
@@ -133,7 +141,9 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     },
 
     setActiveProject: (id: string) => {
-      const { windowId, tabIds } = get()
+      const { windowId, tabIds, projects } = get()
+      // A hidden project has no tab to show; unhide it from Settings first.
+      if (projects.find((p) => p.id === id)?.hidden) return
       // Activating a project this window doesn't show (e.g. from a
       // notification click) opens it here as a tab.
       set({
@@ -146,6 +156,41 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     updateProject: async (project: Project) => {
       const projects = await window.api.project.update(project)
       set({ projects })
+    },
+
+    setProjectHidden: async (id: string, hidden: boolean) => {
+      const project = get().projects.find((p) => p.id === id)
+      if (!project || !!project.hidden === hidden) return
+      const { hidden: _wasHidden, ...rest } = project
+      const projects = await window.api.project.update(hidden ? { ...rest, hidden: true } : rest)
+      const state = get()
+      if (state.windowId) {
+        // Main also pushes the new layout; mirror it here so the tab goes at once.
+        if (hidden) {
+          set({
+            projects,
+            tabIds: state.tabIds.filter((t) => t !== id),
+            activeProjectId:
+              state.activeProjectId === id ? neighbourAfterClose(state.tabIds, id) : state.activeProjectId,
+          })
+        } else {
+          set({
+            projects,
+            tabIds: state.tabIds.includes(id) ? state.tabIds : [...state.tabIds, id],
+            activeProjectId: id,
+          })
+        }
+        return
+      }
+      if (hidden) {
+        const before = state.projects.filter((p) => !p.hidden).map((p) => p.id)
+        set({
+          projects,
+          activeProjectId: state.activeProjectId === id ? neighbourAfterClose(before, id) : state.activeProjectId,
+        })
+      } else {
+        set({ projects, activeProjectId: id })
+      }
     },
 
     loadAccounts: async () => {

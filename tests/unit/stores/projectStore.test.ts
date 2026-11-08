@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useProjectStore } from '../../../src/renderer/stores/projectStore'
+import { useProjectStore, selectTabProjects } from '../../../src/renderer/stores/projectStore'
 
 const list = vi.fn()
 const add = vi.fn()
@@ -293,5 +293,71 @@ describe('projectStore with multiple windows', () => {
     await useProjectStore.getState().removeProject('p1')
     expect(useProjectStore.getState().tabIds).toEqual(['p2'])
     expect(useProjectStore.getState().activeProjectId).toBe('p2')
+  })
+})
+
+describe('projectStore hidden projects', () => {
+  beforeEach(() => {
+    delete (window as any).api.windows
+    useProjectStore.setState({ windowId: null, tabIds: [] } as any)
+  })
+
+  it('leaves hidden projects out of the tabs', () => {
+    const projects = [P({ id: 'p1' }), P({ id: 'p2', hidden: true } as any), P({ id: 'p3' })]
+    expect(selectTabProjects({ projects, windowId: null, tabIds: [] }).map((p) => p.id)).toEqual(['p1', 'p3'])
+    expect(selectTabProjects({ projects, windowId: 'w', tabIds: ['p3', 'p2', 'p1'] }).map((p) => p.id)).toEqual(['p3', 'p1'])
+  })
+
+  it('never activates a hidden project on load', async () => {
+    list.mockResolvedValue([P({ id: 'p1', hidden: true } as any), P({ id: 'p2' })])
+    await useProjectStore.getState().loadProjects()
+    expect(useProjectStore.getState().activeProjectId).toBe('p2')
+  })
+
+  it('hiding the active project saves the flag and moves to its neighbour', async () => {
+    const projects = [P({ id: 'p1' }), P({ id: 'p2' }), P({ id: 'p3' })]
+    useProjectStore.setState({ projects, activeProjectId: 'p2' } as any)
+    const saved = [projects[0], { ...projects[1], hidden: true }, projects[2]]
+    update.mockResolvedValue(saved)
+    await useProjectStore.getState().setProjectHidden('p2', true)
+    expect(update).toHaveBeenCalledWith({ ...projects[1], hidden: true })
+    expect(useProjectStore.getState().projects).toEqual(saved)
+    expect(useProjectStore.getState().activeProjectId).toBe('p3')
+  })
+
+  it('unhiding drops the flag and activates the project', async () => {
+    const projects = [P({ id: 'p1' }), P({ id: 'p2', hidden: true } as any)]
+    useProjectStore.setState({ projects, activeProjectId: 'p1' } as any)
+    update.mockResolvedValue([projects[0], P({ id: 'p2' })])
+    await useProjectStore.getState().setProjectHidden('p2', false)
+    expect(update).toHaveBeenCalledWith(P({ id: 'p2' }))
+    expect(useProjectStore.getState().activeProjectId).toBe('p2')
+  })
+
+  it('does nothing when the project is already in that state', async () => {
+    useProjectStore.setState({ projects: [P({ id: 'p1' })], activeProjectId: 'p1' } as any)
+    await useProjectStore.getState().setProjectHidden('p1', false)
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('with windows, hiding closes the tab here and unhiding opens it here', async () => {
+    ;(window as any).api.windows = { setLayout: vi.fn().mockResolvedValue(null) }
+    const projects = [P({ id: 'p1' }), P({ id: 'p2' })]
+    useProjectStore.setState({ projects, windowId: 'w1', tabIds: ['p1', 'p2'], activeProjectId: 'p1' } as any)
+    update.mockResolvedValue([{ ...projects[0], hidden: true }, projects[1]])
+    await useProjectStore.getState().setProjectHidden('p1', true)
+    expect(useProjectStore.getState().tabIds).toEqual(['p2'])
+    expect(useProjectStore.getState().activeProjectId).toBe('p2')
+
+    update.mockResolvedValue(projects)
+    await useProjectStore.getState().setProjectHidden('p1', false)
+    expect(useProjectStore.getState().tabIds).toEqual(['p2', 'p1'])
+    expect(useProjectStore.getState().activeProjectId).toBe('p1')
+  })
+
+  it('ignores a request to activate a hidden project', () => {
+    useProjectStore.setState({ projects: [P({ id: 'p1' }), P({ id: 'p2', hidden: true } as any)], activeProjectId: 'p1' } as any)
+    useProjectStore.getState().setActiveProject('p2')
+    expect(useProjectStore.getState().activeProjectId).toBe('p1')
   })
 })

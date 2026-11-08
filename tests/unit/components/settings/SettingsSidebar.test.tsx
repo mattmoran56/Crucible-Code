@@ -33,6 +33,7 @@ describe('SettingsSidebar', () => {
       'Claude Accounts',
       'Dictation',
       'Buttons',
+      'Projects',
       'Project Defaults',
       'PR List Display',
       'Startup Prompts',
@@ -46,13 +47,14 @@ describe('SettingsSidebar', () => {
     }
   })
 
-  it('renders exactly twelve nav buttons when projects exist', () => {
+  it('renders exactly thirteen nav buttons when projects exist', () => {
     renderSidebar({ hasProjects: true })
-    expect(screen.getAllByRole('button')).toHaveLength(12)
+    expect(screen.getAllByRole('button')).toHaveLength(13)
   })
 
   it('hides project-requiring items when there are no projects', () => {
     renderSidebar({ hasProjects: false })
+    expect(screen.queryByRole('button', { name: 'Projects' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Project Defaults' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Startup Prompts' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Notion' })).not.toBeInTheDocument()
@@ -119,6 +121,7 @@ describe('SettingsSidebar', () => {
       'Claude Accounts',
       'Dictation',
       'Buttons',
+      'Projects',
       'Project Defaults',
       'PR List Display',
       'Startup Prompts',

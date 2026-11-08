@@ -2,6 +2,7 @@ import React from 'react'
 
 export type SettingsSection =
   | 'appearance'
+  | 'projects'
   | 'cleanup-limits'
   | 'dictation'
   | 'claude-accounts'
@@ -27,6 +28,7 @@ const ITEMS: NavItem[] = [
   { id: 'claude-accounts', label: 'Claude Accounts', group: 'global' },
   { id: 'dictation', label: 'Dictation', group: 'global' },
   { id: 'buttons', label: 'Buttons', group: 'global' },
+  { id: 'projects', label: 'Projects', group: 'project', requiresProjects: true },
   { id: 'project-defaults', label: 'Project Defaults', group: 'project', requiresProjects: true },
   { id: 'pr-list', label: 'PR List Display', group: 'project' },
   { id: 'startup-prompts', label: 'Startup Prompts', group: 'project', requiresProjects: true },

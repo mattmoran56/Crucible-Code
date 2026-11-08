@@ -102,3 +102,23 @@ describe('ProjectTabs dragging with a window manager', () => {
     expect(tabDragEnd).toHaveBeenCalledWith({ cancel: false, copy: true })
   })
 })
+
+describe('ProjectTabs hidden projects', () => {
+  it('does not show hidden projects as tabs', () => {
+    useProjectStore.setState({ projects: [projects[0], { ...projects[1], hidden: true }, projects[2]] })
+    render(<ProjectTabs />)
+    expect(tabNames()).toEqual(['alpha', 'gamma'])
+  })
+
+  it('right-click → Hide Project hides it', async () => {
+    const update = vi.fn(async (p: any) => projects.map((q) => (q.id === p.id ? p : q)))
+    ;(window as any).api.project.update = update
+    render(<ProjectTabs />)
+    fireEvent.contextMenu(screen.getByRole('tab', { name: /beta/ }))
+    await act(async () => {
+      fireEvent.click(await screen.findByText('Hide Project'))
+    })
+    expect(update).toHaveBeenCalledWith({ ...projects[1], hidden: true })
+    expect(tabNames()).toEqual(['alpha', 'gamma'])
+  })
+})

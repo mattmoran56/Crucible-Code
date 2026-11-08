@@ -67,6 +67,7 @@ export function ProjectTabs() {
     removeProject,
     reorderTabs,
     closeTab,
+    setProjectHidden,
   } = useProjectStore()
   const tabs = selectTabProjects({ projects, windowId, tabIds })
   const { getNotificationCountForProject } = useNotificationStore()
@@ -264,10 +265,27 @@ export function ProjectTabs() {
   }
 
   const handleTabContextMenu = async (e: React.MouseEvent, project: Project) => {
-    if (!multiWindow) return
     e.preventDefault()
     e.stopPropagation()
     const { clientX, clientY } = e
+    const projectItems: ContextMenuItem[] = [
+      {
+        label: 'Hide Project',
+        onClick: () => void setProjectHidden(project.id, true),
+      },
+      {
+        label: 'Remove Project…',
+        variant: 'danger' as const,
+        onClick: () => setProjectToClose(project),
+      },
+    ]
+    if (!multiWindow) {
+      onContextMenu(
+        { clientX, clientY, preventDefault: () => {}, stopPropagation: () => {} } as React.MouseEvent,
+        projectItems
+      )
+      return
+    }
     let others: WindowSummary[] = []
     let openElsewhere = false
     try {
@@ -294,11 +312,7 @@ export function ProjectTabs() {
         separatorAfter: i === others.length - 1,
       })),
       ...(openElsewhere ? [{ label: 'Close Tab', onClick: () => closeTab(project.id) }] : []),
-      {
-        label: 'Remove Project…',
-        variant: 'danger' as const,
-        onClick: () => setProjectToClose(project),
-      },
+      ...projectItems,
     ]
     onContextMenu(
       { clientX, clientY, preventDefault: () => {}, stopPropagation: () => {} } as React.MouseEvent,
@@ -452,9 +466,23 @@ export function ProjectTabs() {
         <p className="text-sm text-text-muted mb-4">
           Remove <span className="text-text font-medium">{projectToClose?.name}</span> from Crucible Code?
         </p>
+        <p className="text-xs text-text-muted mb-4">
+          Or hide it to just close the tab — its sessions and settings stay, and you can unhide it in Settings → Projects.
+        </p>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={() => setProjectToClose(null)}>
             Cancel
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="border border-border"
+            onClick={() => {
+              if (projectToClose) void setProjectHidden(projectToClose.id, true)
+              setProjectToClose(null)
+            }}
+          >
+            Hide
           </Button>
           <Button
             variant="danger"

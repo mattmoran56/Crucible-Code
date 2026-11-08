@@ -42,9 +42,12 @@ function resolveConfigDir(configDir: string): string {
   return configDir
 }
 
-/** Ids of every registered project (the window manager opens each in some window). */
+/**
+ * Ids of every project shown as a tab (the window manager opens each in some
+ * window). Hidden projects are left out, so no window shows them.
+ */
 export function listProjectIds(): string[] {
-  return store.get('projects', []).map((p) => p.id)
+  return store.get('projects', []).filter((p) => !p.hidden).map((p) => p.id)
 }
 
 export function registerProjectHandlers(window: BrowserWindow) {
@@ -95,8 +98,13 @@ export function registerProjectHandlers(window: BrowserWindow) {
     const projects = store.get('projects', [])
     const index = projects.findIndex((p) => p.id === project.id)
     if (index >= 0) {
+      const wasHidden = !!projects[index].hidden
       projects[index] = project
       store.set('projects', projects)
+      // Hiding closes the project's tab in every window; unhiding opens it in
+      // the window that asked.
+      if (!wasHidden && project.hidden) projectRemoved(project.id)
+      else if (wasHidden && !project.hidden) projectAdded(e?.sender, project.id)
       notifyOtherWindows(e?.sender, IPC.WINDOW_PROJECTS_CHANGED)
     }
     return projects

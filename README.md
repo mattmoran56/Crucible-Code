@@ -220,7 +220,10 @@ Open multiple git repositories as projects. Each project gets its own tab in the
 - **Per-project state** — Active session, PR selection, and workspace layout persist when switching between projects
 - **Per-project accounts** — Assign different Claude accounts to different projects for isolated billing and auth
 - **Notification badges** — Tab badges show how many sessions need attention across all projects
-- **Confirm close** — Closing a project's last tab prompts for confirmation to prevent accidental removal
+- **Confirm close** — Closing a project's last tab prompts for confirmation to prevent accidental removal, and offers **Hide** as a gentler alternative
+- **Hide projects** — Right-click a tab and choose **Hide Project** to stop showing it as a tab (in every window) without removing it: its sessions and settings are kept. Find hidden projects under **Settings → Projects** and click **Unhide** to bring the tab back
+
+  ![Settings → Projects, listing a hidden project with an Unhide button](docs/screenshots/settings-hidden-projects.png)
 
 ### Multiple windows
 
@@ -232,7 +235,7 @@ Projects can be split across as many windows as you like, each with its own tab 
 - **Tear off** — Drag a tab up or down out of the strip and it pops out into its own window straight away, which follows the cursor until you let go. The tab leaves the old window. Dragging a window's only tab just moves that window
 - **Move between windows** — While dragging, move over another window's tab strip and the tab joins it at that spot (you can keep reordering there); let go to leave it. It's a move: the tab leaves the old window, and a window left with no tabs closes. Drag back out to tear it off again. Hold **Option** as you let go to copy instead, keeping it in both windows
 - **Cancel** — Press **Escape** mid-drag to put everything back where it was
-- **Tab menu** — Right-click a tab for **Move to New Window** (moves it), **Duplicate in New Window** (a second copy, kept here too), **Move to Window: …**, **Close Tab** (when another window still shows the project) and **Remove Project…**
+- **Tab menu** — Right-click a tab for **Move to New Window** (moves it), **Duplicate in New Window** (a second copy, kept here too), **Move to Window: …**, **Close Tab** (when another window still shows the project), **Hide Project** and **Remove Project…**
 - **Never loses a project** — Closing a window moves any project only it showed into the window you used last. Removing a project closes its tab in every window
 - **Remembered** — Each window's tabs, active project, size and position are restored on the next launch
 - **Kept in sync** — Adding or editing a project, or creating a session, in one window updates the others. Each window is titled after its active project, so windows are easy to tell apart in the Window menu and Mission Control. Notification clicks bring forward the window showing that project
