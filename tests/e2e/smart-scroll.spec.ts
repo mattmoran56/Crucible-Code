@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 
 /**
  * E2E coverage for the smart-scroll behaviour in workspace terminals. The
@@ -33,6 +33,20 @@ async function viewport(page: Page) {
   return page.locator('.xterm-viewport').filter({ visible: true }).first()
 }
 
+/**
+ * Scroll the terminal the way a user does: with the mouse wheel over it.
+ *
+ * Don't assign `.xterm-viewport.scrollTop` directly: a bare assignment
+ * carries no user input, so it bypasses the smart-scroll controller's input
+ * tracking, and xterm can drop its scroll event when it coalesces with one of
+ * xterm's own repaints (see the comment in smartScroll.ts).
+ */
+async function wheel(page: Page, vp: Locator, deltaY: number) {
+  // The viewport sits under .xterm-screen, so hover the terminal itself.
+  await vp.locator('xpath=..').hover()
+  await page.mouse.wheel(0, deltaY)
+}
+
 test.describe('Workspace terminal — smart scroll', () => {
   test.beforeEach(async ({ page }) => bootApp(page))
 
@@ -48,12 +62,9 @@ test.describe('Workspace terminal — smart scroll', () => {
       })
       .toBeGreaterThan(20)
 
-    // Scroll up to roughly the top while the mock is still streaming.
-    await vp.evaluate((el: HTMLElement) => {
-      el.scrollTop = 0
-    })
-    const scrollTopAfterUserScroll = await vp.evaluate((el: HTMLElement) => el.scrollTop)
-    expect(scrollTopAfterUserScroll).toBe(0)
+    // Scroll up to the top while the mock is still streaming.
+    await wheel(page, vp, -100_000)
+    await expect.poll(() => vp.evaluate((el: HTMLElement) => el.scrollTop)).toBe(0)
 
     // Let more data stream in. The mock pushes one chunk every 80ms for ~50
     // chunks; 1.5s gives us plenty of writes after we scrolled.
@@ -81,13 +92,9 @@ test.describe('Workspace terminal — smart scroll', () => {
       .toBeGreaterThan(20)
 
     // Scroll up, then back to the bottom.
-    await vp.evaluate((el: HTMLElement) => {
-      el.scrollTop = 0
-    })
-    await page.waitForTimeout(200)
-    await vp.evaluate((el: HTMLElement) => {
-      el.scrollTop = el.scrollHeight
-    })
+    await wheel(page, vp, -100_000)
+    await expect.poll(() => vp.evaluate((el: HTMLElement) => el.scrollTop)).toBe(0)
+    await wheel(page, vp, 100_000)
 
     // After streaming continues, we should remain anchored at the bottom.
     await page.waitForTimeout(1000)

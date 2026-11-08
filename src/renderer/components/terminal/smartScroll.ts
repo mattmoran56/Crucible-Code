@@ -129,12 +129,77 @@ export function attachSmartScroll(
     return s ? isDomAnchored(s) : true
   }
 
+  // --- User scroll tracking -------------------------------------------------
+  //
+  // Two races between the user's scroll and a stream of writes:
+  //
+  // 1. Stale snapshots. xterm parses writes asynchronously, so a write's
+  //    "before" snapshot can predate a scroll the user made while it was
+  //    queued; acting on it would undo that scroll (e.g. yank them back to
+  //    the bottom). We count user scroll input and skip the correction for
+  //    any write snapshotted before the latest input.
+  //
+  // 2. Dropped scroll events. xterm (5.x) applies a wheel/scrollbar scroll to
+  //    the DOM first and moves its buffer viewport on the next `scroll` event.
+  //    When xterm repaints it also writes scrollTop itself and flags the next
+  //    scroll event as its own; if the user's scroll lands in the same frame
+  //    the browser coalesces both into one event, xterm ignores it, its buffer
+  //    stays at the bottom, and the following repaint snaps the DOM back.
+  //    While the user is scrolling we sync the buffer from the DOM on every
+  //    scroll event so a dropped one can't lose their position.
+  const USER_SCROLL_WINDOW_MS = 250
+  let userScrollSeq = 0
+  let userScrollUntil = 0
+  let pointerHeld = false
+  const root = term.element
+  const viewportEl = getViewport()
+
+  const onUserScrollInput = () => {
+    userScrollSeq++
+    userScrollUntil = performance.now() + USER_SCROLL_WINDOW_MS
+  }
+  const onPointerDown = () => {
+    pointerHeld = true
+    onUserScrollInput()
+  }
+  const onPointerUp = () => {
+    if (!pointerHeld) return
+    pointerHeld = false
+    onUserScrollInput()
+  }
+  const onViewportScroll = () => {
+    if (!pointerHeld && performance.now() > userScrollUntil) return
+    const v = getViewport()
+    const buf = term.buffer?.active
+    if (!v || !buf || buf.baseY <= 0) return
+    // xterm sizes the scroll area so that the maximum scrollTop maps exactly
+    // onto baseY, so the DOM position converts to a buffer row linearly.
+    const maxScrollTop = v.scrollHeight - v.clientHeight
+    if (maxScrollTop <= 0) return
+    const row = Math.round((v.scrollTop / maxScrollTop) * buf.baseY)
+    if (row !== buf.viewportY) term.scrollToLine(row)
+  }
+
+  const inputEvents = ['wheel', 'touchmove'] as const
+  for (const ev of inputEvents) {
+    root?.addEventListener(ev, onUserScrollInput, { capture: true, passive: true })
+  }
+  root?.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true })
+  window.addEventListener('pointerup', onPointerUp, { capture: true, passive: true })
+  window.addEventListener('pointercancel', onPointerUp, { capture: true, passive: true })
+  viewportEl?.addEventListener('scroll', onViewportScroll, { passive: true })
+
   function write(data: string): void {
     const stateBefore = readState()
     const wasAnchored = stateBefore ? isDomAnchored(stateBefore) : true
     const savedDistanceFromBottom = stateBefore ? distanceFromBottom(stateBefore) : 0
+    const seqAtSnapshot = userScrollSeq
 
     term.write(data, () => {
+      // The user scrolled after this snapshot: their latest position wins,
+      // and the next write takes a fresh snapshot.
+      if (userScrollSeq !== seqAtSnapshot) return
+
       const v = getViewport()
       const stateAfter = readState()
       if (!v || !stateAfter) return
@@ -160,7 +225,13 @@ export function attachSmartScroll(
     write,
     isAnchored,
     dispose: () => {
-      // No persistent listeners; reserved for future use.
+      for (const ev of inputEvents) {
+        root?.removeEventListener(ev, onUserScrollInput, { capture: true })
+      }
+      root?.removeEventListener('pointerdown', onPointerDown, { capture: true })
+      window.removeEventListener('pointerup', onPointerUp, { capture: true })
+      window.removeEventListener('pointercancel', onPointerUp, { capture: true })
+      viewportEl?.removeEventListener('scroll', onViewportScroll)
     },
   }
 }

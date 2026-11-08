@@ -205,3 +205,84 @@ describe('attachSmartScroll controller', () => {
     expect(getScrollTop(term)).toBe(0)
   })
 })
+
+describe('attachSmartScroll — user scrolls while writes stream in', () => {
+  function viewportOf(term: FakeTerm): FakeViewport {
+    return term.element.querySelector('.xterm-viewport') as FakeViewport
+  }
+
+  function userWheelTo(term: FakeTerm, scrollTop: number) {
+    const v = viewportOf(term)
+    v.dispatchEvent(new Event('wheel', { bubbles: true }))
+    v._scrollTop = scrollTop
+  }
+
+  it('does not yank the user back to the bottom with an anchored snapshot taken before they scrolled up', () => {
+    const term = makeFakeTerm(1000, 200)
+    const ctrl = attachSmartScroll(term as never, () => true)
+
+    // Snapshot is taken while anchored…
+    ctrl.write('chunk\r\n')
+    // …then the user scrolls up before xterm has parsed the write.
+    userWheelTo(term, 0)
+    term.flush()
+
+    expect(term.scrollToBottom).not.toHaveBeenCalled()
+    expect(getScrollTop(term)).toBe(0)
+  })
+
+  it('does not drag the user back up with a scrolled-up snapshot taken before they returned to the bottom', () => {
+    const term = makeFakeTerm(1000, 200)
+    const ctrl = attachSmartScroll(term as never, () => true)
+    setUserScrollTop(term, 0)
+
+    ctrl.write('chunk\r\n')
+    userWheelTo(term, 800)
+    term.flush()
+
+    expect(getScrollTop(term)).toBe(800)
+  })
+
+  it('syncs the xterm buffer to the DOM on scroll events right after user input', () => {
+    // 1000px scroll area, 200px visible → maxScrollTop 800 ↔ baseY 40.
+    const term = makeFakeTerm(1000, 200)
+    const buffer = { active: { baseY: 40, viewportY: 40 } }
+    const scrollToLine = vi.fn((row: number) => {
+      buffer.active.viewportY = row
+    })
+    Object.assign(term, { buffer, scrollToLine })
+    attachSmartScroll(term as never, () => true)
+
+    // xterm dropped the scroll event, so its buffer still says "bottom".
+    userWheelTo(term, 200)
+    viewportOf(term).dispatchEvent(new Event('scroll'))
+
+    expect(scrollToLine).toHaveBeenCalledWith(10)
+  })
+
+  it('leaves the buffer alone on scroll events xterm causes itself', () => {
+    const term = makeFakeTerm(1000, 200)
+    const scrollToLine = vi.fn()
+    Object.assign(term, { buffer: { active: { baseY: 40, viewportY: 40 } }, scrollToLine })
+    attachSmartScroll(term as never, () => true)
+
+    setUserScrollTop(term, 200)
+    viewportOf(term).dispatchEvent(new Event('scroll'))
+
+    expect(scrollToLine).not.toHaveBeenCalled()
+  })
+
+  it('removes its listeners on dispose', () => {
+    const term = makeFakeTerm(1000, 200)
+    const ctrl = attachSmartScroll(term as never, () => true)
+    ctrl.dispose()
+
+    ctrl.write('chunk\r\n')
+    userWheelTo(term, 0)
+    term.growBy(20)
+    term.flush()
+
+    // With the listener gone the stale anchored snapshot is acted on.
+    expect(term.scrollToBottom).toHaveBeenCalled()
+  })
+})
