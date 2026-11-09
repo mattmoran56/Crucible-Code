@@ -490,6 +490,12 @@ export interface SessionUsage {
     totalLinesAdded: number
     totalLinesRemoved: number
   }
+  /**
+   * Where the numbers came from. A terminal's `statusLine` reports everything;
+   * an agent tab's stream-json output has no line counts, so the panel hides
+   * those for `'stream'`.
+   */
+  source?: 'statusLine' | 'stream'
   updatedAt: number
 }
 

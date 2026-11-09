@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useUsageStore } from '../../stores/usageStore'
 import { useSessionStore } from '../../stores/sessionStore'
-import type { RateLimitWindow, DailyActivity } from '../../../shared/types'
+import type { RateLimitWindow, DailyActivity, SessionUsage } from '../../../shared/types'
 
 function formatTimeUntil(epochSeconds: number): string {
   const now = Math.floor(Date.now() / 1000)
@@ -101,6 +101,22 @@ function StatBox({ label, value }: { label: string; value: string }) {
   )
 }
 
+/**
+ * Plan limits are account-wide, so when the active session hasn't reported any
+ * yet (e.g. it hasn't run a turn) show the freshest ones any session has seen.
+ */
+function latestRateLimits(
+  all: Record<string, SessionUsage>,
+  active: SessionUsage | null | undefined
+): SessionUsage['rateLimits'] {
+  if (active?.rateLimits) return active.rateLimits
+  let best: SessionUsage | null = null
+  for (const usage of Object.values(all)) {
+    if (usage.rateLimits && (!best || usage.updatedAt > best.updatedAt)) best = usage
+  }
+  return best?.rateLimits
+}
+
 export function UsagePanel() {
   const { sessionUsages, stats, subscription, statsLoading, fetchStats, fetchSubscription } =
     useUsageStore()
@@ -120,6 +136,7 @@ export function UsagePanel() {
   }, [fetchStats, fetchSubscription])
 
   const activeUsage = activeSessionId ? sessionUsages[activeSessionId] : null
+  const rateLimits = latestRateLimits(sessionUsages, activeUsage)
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
@@ -148,16 +165,16 @@ export function UsagePanel() {
           Rate Limits
         </div>
 
-        {activeUsage?.rateLimits?.fiveHour ? (
-          <RateLimitBar label="5-hour window" window={activeUsage.rateLimits.fiveHour} />
+        {rateLimits?.fiveHour ? (
+          <RateLimitBar label="5-hour window" window={rateLimits.fiveHour} />
         ) : (
           <div className="text-xs text-text-muted" style={{ padding: '0 12px', marginBottom: 12 }}>
             5-hour: no data
           </div>
         )}
 
-        {activeUsage?.rateLimits?.sevenDay ? (
-          <RateLimitBar label="7-day window" window={activeUsage.rateLimits.sevenDay} />
+        {rateLimits?.sevenDay ? (
+          <RateLimitBar label="7-day window" window={rateLimits.sevenDay} />
         ) : (
           <div className="text-xs text-text-muted" style={{ padding: '0 12px', marginBottom: 12 }}>
             7-day: no data
@@ -176,8 +193,12 @@ export function UsagePanel() {
             <div className="grid grid-cols-2 gap-2">
               <StatBox label="Cost" value={formatCost(activeUsage.cost.totalCostUsd)} />
               <StatBox label="Duration" value={formatDuration(activeUsage.cost.totalDurationMs)} />
-              <StatBox label="Lines added" value={`+${activeUsage.cost.totalLinesAdded}`} />
-              <StatBox label="Lines removed" value={`-${activeUsage.cost.totalLinesRemoved}`} />
+              {activeUsage.source !== 'stream' && (
+                <>
+                  <StatBox label="Lines added" value={`+${activeUsage.cost.totalLinesAdded}`} />
+                  <StatBox label="Lines removed" value={`-${activeUsage.cost.totalLinesRemoved}`} />
+                </>
+              )}
             </div>
           </div>
         ) : (

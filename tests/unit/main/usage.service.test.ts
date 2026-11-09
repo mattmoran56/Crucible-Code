@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
-import { existsSync, writeFileSync } from 'fs'
+import { existsSync, utimesSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -9,6 +9,8 @@ import {
   getUsageStats,
   getUsageTempPath,
   registerSession,
+  reportAgentSpend,
+  reportRateLimits,
   startUsagePolling,
   stopUsagePolling,
   unregisterSession,
@@ -156,14 +158,67 @@ describe('usage.service getSessionUsage', () => {
     expect(getSessionUsage(id)).toBeNull()
   })
 
-  it('serves a recent cached value instead of re-reading the file', () => {
+  it('picks up a newer statusLine file on read', () => {
     const id = freshSessionId()
     register(id)
     writeStatusLine(id, { cost: { total_cost_usd: 1 } })
     expect(getSessionUsage(id)?.cost.totalCostUsd).toBe(1)
-    // Update on disk; the < 30s cache should still serve the old value.
     writeStatusLine(id, { cost: { total_cost_usd: 99 } })
-    expect(getSessionUsage(id)?.cost.totalCostUsd).toBe(1)
+    const later = new Date(Date.now() + 5_000)
+    utimesSync(getUsageTempPath(id), later, later)
+    expect(getSessionUsage(id)?.cost.totalCostUsd).toBe(99)
+  })
+})
+
+describe('usage.service agent-tab (stream-json) reports', () => {
+  it('sums spend across a session\'s agent tabs and marks it as stream data', () => {
+    const id = freshSessionId()
+    register(id)
+    reportAgentSpend(id, `${id}:a`, { costUsd: 0.5, durationMs: 1000, apiDurationMs: 800 })
+    reportAgentSpend(id, `${id}:b`, { costUsd: 0.25, durationMs: 500, apiDurationMs: 300 })
+    // A later report for the same tab replaces, not adds.
+    reportAgentSpend(id, `${id}:a`, { costUsd: 1, durationMs: 2000, apiDurationMs: 1600 })
+    const usage = getSessionUsage(id)
+    expect(usage?.source).toBe('stream')
+    expect(usage?.cost.totalCostUsd).toBeCloseTo(1.25)
+    expect(usage?.cost.totalDurationMs).toBe(2500)
+    expect(usage?.cost.totalApiDurationMs).toBe(1900)
+  })
+
+  it('keeps rate limits across spend reports', () => {
+    const id = freshSessionId()
+    register(id)
+    reportRateLimits(id, { sevenDay: { usedPercentage: 47, resetsAt: 1794308400 } })
+    reportAgentSpend(id, `${id}:a`, { costUsd: 0.1, durationMs: 10, apiDurationMs: 5 })
+    expect(getSessionUsage(id)?.rateLimits?.sevenDay).toEqual({ usedPercentage: 47, resetsAt: 1794308400 })
+  })
+
+  it('a stale statusLine file left on disk does not overwrite fresher stream data', () => {
+    const id = freshSessionId()
+    register(id)
+    writeStatusLine(id, { cost: { total_cost_usd: 9 } })
+    const earlier = new Date(Date.now() - 60_000)
+    utimesSync(getUsageTempPath(id), earlier, earlier)
+    reportAgentSpend(id, `${id}:a`, { costUsd: 0.2, durationMs: 10, apiDurationMs: 5 })
+    expect(getSessionUsage(id)?.cost.totalCostUsd).toBe(0.2)
+  })
+
+  it('pushes USAGE_SESSION_UPDATE to the window on each report', () => {
+    const sent: Array<{ channel: string; payload: unknown }> = []
+    startUsagePolling({
+      webContents: { send: (channel: string, payload: unknown) => sent.push({ channel, payload }) },
+      isDestroyed: () => false,
+      isMinimized: () => false,
+      isVisible: () => true,
+    } as never)
+    const id = freshSessionId()
+    register(id)
+    reportRateLimits(id, { fiveHour: { usedPercentage: 12, resetsAt: 1 } })
+    expect(sent).toHaveLength(1)
+    expect(sent[0].channel).toBe(IPC.USAGE_SESSION_UPDATE)
+    expect((sent[0].payload as { rateLimits: unknown }).rateLimits).toEqual({
+      fiveHour: { usedPercentage: 12, resetsAt: 1 },
+    })
   })
 })
 

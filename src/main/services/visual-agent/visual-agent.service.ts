@@ -65,6 +65,8 @@ import {
   normalise,
   partialDeltaIn,
   permissionRequestIn,
+  rateLimitsIn,
+  resultSpendIn,
   usageIn,
   usageTotal,
   type NormaliseContext,
@@ -72,6 +74,7 @@ import {
 } from './normalise'
 import { TranscriptWriter, readTranscript } from './transcript-store'
 import { readClaudeTranscript } from './claude-transcript'
+import { reportAgentSpend, reportRateLimits, type AgentSpend } from '../usage.service'
 
 export const MAX_LIVE_FORKS = 3
 const MAX_NOISE_LINES = 20
@@ -105,6 +108,11 @@ interface LiveAgent {
   partials: Map<string, { messageId: string; threadId: string; text: string }>
   lastPartialId: string | null
   usage: { input: number; output: number; total: number } | null
+  /**
+   * Spend for the usage panel. The CLI's totals restart with each process, so
+   * `earlier` holds what finished processes spent and `current` the live one.
+   */
+  spend: { earlier: AgentSpend; current: AgentSpend }
   turnStartedAt: string | null
   /** The slash commands the CLI offers, or null until it has said. */
   commands: VisualAgentCommand[] | null
@@ -133,6 +141,7 @@ export function transcriptDir(): string {
 }
 
 const nowIso = (): string => new Date().toISOString()
+const noSpend = (): AgentSpend => ({ costUsd: 0, durationMs: 0, apiDurationMs: 0 })
 const nextRequestId = (kind: string): string => `crucible-${kind}-${Date.now()}-${++controlCounter}`
 
 function emit(held: LiveAgent, frame: VisualAgentFrame): void {
@@ -314,6 +323,24 @@ function setCommands(held: LiveAgent, commands: VisualAgentCommand[]): void {
   emit(held, { t: 'commands', commands })
 }
 
+/** Feed plan limits and spend into the usage panel (print mode has no statusLine). */
+function noteUsage(held: LiveAgent, parsed: unknown): void {
+  const limits = rateLimitsIn(parsed)
+  if (limits) reportRateLimits(held.opts.sessionId, limits)
+
+  const spent = resultSpendIn(parsed)
+  if (!spent) return
+  const { earlier, current } = held.spend
+  current.costUsd = spent.totalCostUsd
+  current.apiDurationMs = spent.totalApiDurationMs
+  current.durationMs += spent.turnDurationMs
+  reportAgentSpend(held.opts.sessionId, held.agentId, {
+    costUsd: earlier.costUsd + current.costUsd,
+    durationMs: earlier.durationMs + current.durationMs,
+    apiDurationMs: earlier.apiDurationMs + current.apiDurationMs,
+  })
+}
+
 function handleLine(held: LiveAgent, parsed: unknown, raw: string): void {
   held.sawJson = true
 
@@ -360,6 +387,8 @@ function handleLine(held: LiveAgent, parsed: unknown, raw: string): void {
     held.usage = { input: usage.input, output: usage.output, total: usageTotal(usage) }
     emit(held, { t: 'usage', usage: held.usage })
   }
+
+  noteUsage(held, parsed)
 
   const delta = partialDeltaIn(parsed)
   if (delta) {
@@ -418,6 +447,16 @@ function spawnMain(held: LiveAgent): void {
   held.noise = []
   held.sawJson = false
   held.stopping = false
+  // A new process starts its cost totals from zero again.
+  const { earlier, current } = held.spend
+  held.spend = {
+    earlier: {
+      costUsd: earlier.costUsd + current.costUsd,
+      durationMs: earlier.durationMs + current.durationMs,
+      apiDurationMs: earlier.apiDurationMs + current.apiDurationMs,
+    },
+    current: noSpend(),
+  }
   const child = spawnClaude(argv, held.opts)
   held.child = child
   held.turnStartedAt = null
@@ -622,6 +661,7 @@ export async function startVisualAgent(opts: VisualAgentStartOptions): Promise<V
     partials: new Map(),
     lastPartialId: null,
     usage: null,
+    spend: { earlier: noSpend(), current: noSpend() },
     turnStartedAt: null,
     commands: null,
     forks: [],
