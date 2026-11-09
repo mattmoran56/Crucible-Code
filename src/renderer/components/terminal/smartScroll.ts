@@ -79,8 +79,22 @@ export function computeDomScrollAction(args: {
   savedDistanceFromBottom: number
   state: DomScrollState
   visible: boolean
+  /**
+   * scrollTop when the write was queued. xterm only ever scrolls *down* to
+   * follow output, so a viewport that has moved up since then was moved by the
+   * user while the chunk was parsing — leave them where they are.
+   */
+  scrollTopBefore?: number
 }): DomScrollAction {
-  const { wasAnchored, savedDistanceFromBottom, state, visible } = args
+  const { wasAnchored, savedDistanceFromBottom, state, visible, scrollTopBefore } = args
+
+  if (
+    wasAnchored &&
+    scrollTopBefore !== undefined &&
+    state.scrollTop < scrollTopBefore - DOM_ANCHOR_TOLERANCE_PX
+  ) {
+    return { type: 'none' }
+  }
 
   if (wasAnchored) {
     return visible ? { type: 'scrollToBottom' } : { type: 'none' }
@@ -144,6 +158,7 @@ export function attachSmartScroll(
         savedDistanceFromBottom,
         state: stateAfter,
         visible: getVisible(),
+        scrollTopBefore: stateBefore?.scrollTop,
       })
       if (action.type === 'scrollToBottom') {
         term.scrollToBottom()

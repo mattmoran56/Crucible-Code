@@ -173,6 +173,30 @@ describe('distanceFromBottom', () => {
 })
 
 describe('computeDomScrollAction', () => {
+  it('leaves the viewport alone when the user scrolled up while a write was parsing', () => {
+    expect(
+      computeDomScrollAction({
+        wasAnchored: true,
+        savedDistanceFromBottom: 0,
+        state: { scrollTop: 0, scrollHeight: 1200, clientHeight: 200 },
+        visible: true,
+        scrollTopBefore: 1000,
+      }),
+    ).toEqual({ type: 'none' })
+  })
+
+  it('still follows output when anchored and the viewport only moved down', () => {
+    expect(
+      computeDomScrollAction({
+        wasAnchored: true,
+        savedDistanceFromBottom: 0,
+        state: { scrollTop: 1000, scrollHeight: 1300, clientHeight: 200 },
+        visible: true,
+        scrollTopBefore: 1000,
+      }),
+    ).toEqual({ type: 'scrollToBottom' })
+  })
+
   it('scrolls to bottom when the user was anchored and we are visible', () => {
     expect(
       computeDomScrollAction({
