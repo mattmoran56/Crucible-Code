@@ -15,6 +15,7 @@ import {
   usageIn,
   assistantMessageIdIn,
   controlResponseIn,
+  modelsIn,
   type NormaliseContext,
 } from '../../../src/main/services/visual-agent/normalise'
 import {
@@ -494,5 +495,41 @@ describe('stdin frames', () => {
       request: { subtype: 'set_model', model: 'claude-haiku-5-5' },
     })
     expect(sideQuestionPreamble('why?').endsWith('\nwhy?')).toBe(true)
+  })
+})
+
+describe('modelsIn', () => {
+  const reply = (models: unknown, subtype = 'success') => ({
+    type: 'control_response',
+    response: { subtype, request_id: 'r1', response: { commands: [], models } },
+  })
+
+  it('reads the initialize reply into menu items keyed by full model id', () => {
+    // Shaped like Claude Code 2.1.322's reply (trimmed).
+    const models = modelsIn(
+      reply([
+        { value: 'default', resolvedModel: 'claude-opus-5-5', displayName: 'Default (recommended)', description: 'Opus 5.5 · Best for everyday, complex tasks' },
+        { value: 'opus', resolvedModel: 'claude-opus-5-5', displayName: 'Opus 5.5', description: 'Best for everyday, complex tasks' },
+        { value: 'fable', resolvedModel: 'claude-fable-5-2', displayName: 'Fable 5.2', description: 'Most capable for your hardest and longest-running tasks' },
+        { value: 'claude-fable-5-1', resolvedModel: 'claude-fable-5-1', displayName: 'Fable 5.1', description: 'Older' },
+        { value: 'claude-opus-4-8', displayName: 'Opus 4.8', description: 'No resolvedModel field' },
+      ])
+    )
+    expect(models).toEqual([
+      { id: 'claude-opus-5-5', label: 'Opus 5.5', hint: 'Best for everyday, complex tasks' },
+      { id: 'claude-fable-5-2', label: 'Fable 5.2', hint: 'Most capable for your hardest and longest-running tasks' },
+      { id: 'claude-fable-5-1', label: 'Fable 5.1', hint: 'Older' },
+      { id: 'claude-opus-4-8', label: 'Opus 4.8', hint: 'No resolvedModel field' },
+    ])
+  })
+
+  it('drops entries without a usable model id, and returns null for anything else', () => {
+    expect(modelsIn(reply([{ value: 'opus' }, { value: 'claude-x; rm -rf /' }, 'junk']))).toBeNull()
+    expect(modelsIn(reply([{ value: 'claude-sonnet-5-5' }]))).toEqual([
+      { id: 'claude-sonnet-5-5', label: 'sonnet-5-5', hint: '' },
+    ])
+    expect(modelsIn(reply([{ value: 'claude-sonnet-5-5' }], 'error'))).toBeNull()
+    expect(modelsIn({ type: 'control_response', response: { subtype: 'success', request_id: 'r1', response: {} } })).toBeNull()
+    expect(modelsIn(INIT)).toBeNull()
   })
 })

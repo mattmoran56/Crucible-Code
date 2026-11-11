@@ -159,6 +159,33 @@ describe('visual agent service', () => {
     ])
   })
 
+  it('reports the models the CLI says the account can use, outside the conversation', async () => {
+    await svc.startVisualAgent(baseOpts())
+    const c = lastChild()
+    c._line({
+      type: 'control_response',
+      response: {
+        subtype: 'success',
+        request_id: c.writes()[0].request_id,
+        response: {
+          commands: [],
+          models: [
+            { value: 'default', resolvedModel: 'claude-opus-5-5', displayName: 'Default (recommended)', description: 'Opus 5.5' },
+            { value: 'opus', resolvedModel: 'claude-opus-5-5', displayName: 'Opus 5.5', description: 'Everyday' },
+            { value: 'fable', resolvedModel: 'claude-fable-5-2', displayName: 'Fable 5.2', description: 'Hardest tasks' },
+          ],
+        },
+      },
+    })
+    const expected = [
+      { id: 'claude-opus-5-5', label: 'Opus 5.5', hint: 'Everyday' },
+      { id: 'claude-fable-5-2', label: 'Fable 5.2', hint: 'Hardest tasks' },
+    ]
+    expect(frames('models')).toEqual([{ t: 'models', models: expected }])
+    expect(svc.getVisualAgentState('agent-1')?.models).toEqual(expected)
+    expect(events()).toEqual([])
+  })
+
   it('a CLI that refuses the handshake keeps quiet and falls back to the names system/init lists', async () => {
     await svc.startVisualAgent(baseOpts())
     const c = lastChild()

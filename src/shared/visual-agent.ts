@@ -7,13 +7,26 @@
  */
 
 export interface VisualAgentModel { id: string; label: string; hint: string }
+/**
+ * The fallback model menu. A running session replaces it with what its own
+ * Claude Code reports (the `models` list in the `initialize` reply), so new
+ * models show up without an app release; this list only covers the moment
+ * before the CLI has answered, or a CLI too old to say.
+ */
 export const VISUAL_AGENT_MODELS: VisualAgentModel[] = [
   { id: 'claude-opus-5-5', label: 'Opus 5.5', hint: 'Most capable — default' },
-  { id: 'claude-fable-5-1', label: 'Fable 5.1', hint: 'Frontier reasoning' },
+  { id: 'claude-fable-5-2', label: 'Fable 5.2', hint: 'Frontier reasoning' },
   { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', hint: 'Fast and capable' },
   { id: 'claude-haiku-5-5', label: 'Haiku 5.5', hint: 'Fastest, cheapest' },
 ]
 export const DEFAULT_VISUAL_AGENT_MODEL = 'claude-opus-5-5'
+
+/** A full model id we will pass to `--model` / `set_model` (no bare aliases). */
+export const MODEL_ID_PATTERN = /^claude-[a-z0-9-]+(\[1m\])?$/
+
+/** The models a session can pick from: what its CLI reported, else the fallback list. */
+export const modelsOf = (snap: Pick<VisualAgentSnapshot, 'models'>): readonly VisualAgentModel[] =>
+  snap.models?.length ? snap.models : VISUAL_AGENT_MODELS
 
 /**
  * The fixed first message Crucible Code sends into a teleported REPL so Claude
@@ -91,6 +104,8 @@ export interface VisualAgentSnapshot {
   turnStartedAt: string | null
   /** What the CLI reported it offers; absent until it has said. */
   commands?: VisualAgentCommand[]
+  /** The models the CLI reported this account can use; absent until it has said. */
+  models?: VisualAgentModel[]
 }
 
 export type VisualAgentFrame =
@@ -102,6 +117,7 @@ export type VisualAgentFrame =
   | { t: 'forks'; forks: VisualAgentFork[] }
   | { t: 'fork-event'; forkId: string; event: VisualAgentEvent }
   | { t: 'commands'; commands: VisualAgentCommand[] }
+  | { t: 'models'; models: VisualAgentModel[] }
   | { t: 'error'; message: string }
 
 export interface VisualAgentStartOptions {

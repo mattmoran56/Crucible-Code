@@ -9,13 +9,13 @@
  */
 import { AUTO_PERMISSION_MODE_ARGS } from '../terminal.service'
 import { CHROME_ARGS } from '../claude-chrome'
-import { DEFAULT_VISUAL_AGENT_MODEL } from '../../../shared/visual-agent'
+import { DEFAULT_VISUAL_AGENT_MODEL, MODEL_ID_PATTERN } from '../../../shared/visual-agent'
 import type { VisualAgentAskDecision } from '../../../shared/visual-agent'
 import { validateBranchName } from '../../../shared/branch-name'
 import type { PermissionRequest } from './normalise'
 import type { ImageBlock } from './attachments'
 
-export const MODEL_PATTERN = /^claude-[a-z0-9-]+(\[1m\])?$/
+export const MODEL_PATTERN = MODEL_ID_PATTERN
 
 export const isValidModel = (model: unknown): model is string =>
   typeof model === 'string' && MODEL_PATTERN.test(model)

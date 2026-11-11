@@ -110,6 +110,13 @@ describe('mergeSnapshot / isAskPending', () => {
     expect(mergeSnapshot(held, snap({ state: 'idle' })).commands).toEqual(commands)
   })
 
+  it('takes the model list from a frame and keeps it over a start reply that has none yet', () => {
+    const models = [{ id: 'claude-fable-5-2', label: 'Fable 5.2', hint: 'Hardest tasks' }]
+    const held = reduceFrame(snap(), { t: 'models', models })
+    expect(held.models).toEqual(models)
+    expect(mergeSnapshot(held, snap({ state: 'idle' })).models).toEqual(models)
+  })
+
   it('keeps a later state over a start reply that still says starting', () => {
     // The process reported idle by frame before `start` resolved.
     const held = snap({ state: 'idle' })
