@@ -16,10 +16,16 @@
 import type {
   VisualAgentCommand,
   VisualAgentEvent,
+  VisualAgentModel,
   VisualAgentTaskStatus,
   VisualAgentUsage,
 } from '../../../shared/visual-agent'
-import { TELEPORT_AUTO_LABEL, TELEPORT_AUTO_MESSAGE, parseSubagentRelay } from '../../../shared/visual-agent'
+import {
+  MODEL_ID_PATTERN,
+  TELEPORT_AUTO_LABEL,
+  TELEPORT_AUTO_MESSAGE,
+  parseSubagentRelay,
+} from '../../../shared/visual-agent'
 
 export const MAIN_THREAD = 'main'
 
@@ -215,6 +221,53 @@ export const commandsIn = (line: unknown): VisualAgentCommand[] | null => {
     commands.push(command)
   }
   return commands
+}
+
+/* --- models --------------------------------------------------------------- */
+
+/**
+ * One entry of the `initialize` reply's `models` list, as a menu item keyed by
+ * its full model id. The CLI lists aliases (`opus`, `fable`) with the id they
+ * currently point at in `resolvedModel`; using that id keeps the menu in step
+ * with the model `system/init` announces, and keeps `--model` / `set_model`
+ * pinned to a concrete model.
+ */
+const modelOf = (value: unknown): VisualAgentModel | null => {
+  const held = obj(value)
+  if (!held) return null
+  const value_ = nonEmpty(held.value)
+  // `default` is a pointer to one of the other entries, not a model of its own.
+  if (!value_ || value_ === 'default') return null
+  const id = [nonEmpty(held.resolvedModel), value_].find((v) => v !== null && MODEL_ID_PATTERN.test(v))
+  if (!id) return null
+  return {
+    id,
+    label: nonEmpty(held.displayName) ?? id.replace(/^claude-/, ''),
+    hint: str(held.description) ?? '',
+  }
+}
+
+/**
+ * The models the account can use, from the reply to our `initialize` request,
+ * or null when the line is not such a reply or carries no usable list. In the
+ * CLI's order (newest families first), one entry per model id.
+ */
+export const modelsIn = (line: unknown): VisualAgentModel[] | null => {
+  const raw = obj(line)
+  if (!raw || raw.type !== 'control_response') return null
+  const outer = obj(raw.response)
+  if (outer?.subtype !== 'success') return null
+  const list = obj(outer.response)?.models
+  if (!Array.isArray(list)) return null
+  const seen = new Set<string>()
+  const models: VisualAgentModel[] = []
+  for (const entry of list) {
+    const model = modelOf(entry)
+    if (!model || seen.has(model.id)) continue
+    seen.add(model.id)
+    models.push(model)
+  }
+  return models.length ? models : null
 }
 
 /**

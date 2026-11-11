@@ -361,7 +361,10 @@ The agent interface: a chat UI for Claude Code, driven over `claude -p --input-f
 - **Images and files** — Drop images or any other files anywhere on the agent, paste them (a screenshot from the clipboard), or pick them with the **+** button beside the composer. They wait as chips (images with a thumbnail) above the message and can be removed before sending; a message can be just attachments. Each file is saved to a per-agent folder in your temp directory (never the worktree) that the session can read (`--add-dir`), and the message names its path so Claude can open it; PNG, JPEG, GIF and WebP images up to 5 MB also go in as image blocks so Claude sees them directly. Up to 10 files of 20 MB each per message. Sent messages show their attachments as chips
 
   ![Attachments in the composer](docs/screenshots/visual-agent-attachments.png)
-- **Model picker** — Choose Opus, Fable, Sonnet or Haiku below the composer (or with `/model`); switching mid-conversation keeps the conversation
+- **Model picker** — Choose a model below the composer (or with `/model`); switching mid-conversation keeps the conversation. The list comes from the session's own Claude Code, so it shows every model your account can use — including newly released ones such as Fable 5.2 — without an app update. A built-in list (Opus, Fable, Sonnet, Haiku) covers the moment before Claude Code has answered
+
+  ![Model picker listing the models Claude Code reports](docs/screenshots/visual-agent-model-picker.png)
+
 - **Dictation mode** — The **Dictation** toggle beside the model picker (on by default) sends text pasted into the composer straight away, as if you had pressed Enter, so a dictation app that pastes what you said sends it hands-free. It sends the whole draft, including anything typed before the paste; pasted images are still just attached. Turn it off to have pasted text wait for Enter or **Send**. The setting applies to every agent and is remembered across restarts
 
   ![Dictation toggle beside the model picker](docs/screenshots/visual-agent-dictation.png)

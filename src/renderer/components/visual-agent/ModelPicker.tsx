@@ -7,7 +7,7 @@ import { cn } from '../../lib/cn'
 import { Check, ChevronUp } from './icons'
 
 export const modelLabel = (id: string, models: readonly VisualAgentModel[] = VISUAL_AGENT_MODELS): string =>
-  models.find((m) => m.id === id)?.label ?? id.replace(/^claude-/, '')
+  (models.find((m) => m.id === id) ?? VISUAL_AGENT_MODELS.find((m) => m.id === id))?.label ?? id.replace(/^claude-/, '')
 
 export interface ModelPickerHandle {
   open: () => void
@@ -96,7 +96,7 @@ export const ModelPicker = forwardRef<
                 button.current?.focus()
               }
             }}
-            className="absolute bottom-[calc(100%+6px)] left-0 z-40 w-64 overflow-hidden rounded-lg border border-border bg-bg-secondary py-1! shadow-2xl outline-none animate-[va-rise_150ms_ease-out] motion-reduce:animate-none"
+            className="absolute bottom-[calc(100%+6px)] left-0 z-40 max-h-80 w-64 overflow-y-auto rounded-lg border border-border bg-bg-secondary py-1! shadow-2xl outline-none animate-[va-rise_150ms_ease-out] motion-reduce:animate-none"
           >
             {models.map((m, index) => (
               <li

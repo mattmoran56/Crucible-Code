@@ -26,6 +26,7 @@ import {
   type VisualAgentEvent,
   type VisualAgentFork,
   type VisualAgentFrame,
+  type VisualAgentModel,
   type VisualAgentRunState,
   type VisualAgentSnapshot,
   type VisualAgentStartOptions,
@@ -62,6 +63,7 @@ import {
   initCommandNamesIn,
   initModelIn,
   lineReader,
+  modelsIn,
   normalise,
   partialDeltaIn,
   permissionRequestIn,
@@ -116,6 +118,8 @@ interface LiveAgent {
   turnStartedAt: string | null
   /** The slash commands the CLI offers, or null until it has said. */
   commands: VisualAgentCommand[] | null
+  /** The models the CLI says this account can use, or null until it has said. */
+  models: VisualAgentModel[] | null
   forks: LiveFork[]
   child: Child | null
   ctx: NormaliseContext
@@ -218,6 +222,7 @@ function snapshotOf(held: LiveAgent): VisualAgentSnapshot {
     forks: held.forks.map(forkSnapshot),
     turnStartedAt: held.turnStartedAt,
     ...(held.commands ? { commands: [...held.commands] } : {}),
+    ...(held.models ? { models: [...held.models] } : {}),
   }
 }
 
@@ -346,10 +351,15 @@ function handleLine(held: LiveAgent, parsed: unknown, raw: string): void {
 
   const control = controlResponseIn(parsed)
   const commands = commandsIn(parsed)
-  if (commands) {
-    // Not part of the conversation: kept out of the transcript.
+  const models = modelsIn(parsed)
+  if (commands || models) {
+    // The `initialize` reply: not part of the conversation, kept out of the transcript.
     if (control) handleControlResponse(held, control.requestId, control.ok, control.error)
-    setCommands(held, commands)
+    if (commands) setCommands(held, commands)
+    if (models) {
+      held.models = models
+      emit(held, { t: 'models', models })
+    }
     return
   }
 
@@ -664,6 +674,7 @@ export async function startVisualAgent(opts: VisualAgentStartOptions): Promise<V
     spend: { earlier: noSpend(), current: noSpend() },
     turnStartedAt: null,
     commands: null,
+    models: null,
     forks: [],
     child: null,
     ctx: { seq: 0, fallbackId: randomUUID, now: nowIso, lastSession: null },

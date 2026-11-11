@@ -52,6 +52,26 @@ describe('<VisualAgentPanel>', () => {
     expect(api.start).not.toHaveBeenCalled()
   })
 
+  it("offers the models the session's CLI reported, not the built-in list", () => {
+    useVisualAgentStore.getState().seed({
+      ...demoVisualAgentSnapshot('p1'),
+      state: 'idle',
+      turnStartedAt: null,
+      model: 'claude-opus-5-5',
+      models: [
+        { id: 'claude-opus-5-5', label: 'Opus 5.5', hint: 'Everyday' },
+        { id: 'claude-fable-5-2', label: 'Fable 5.2', hint: 'Hardest tasks' },
+        { id: 'claude-opus-4-8', label: 'Opus 4.8', hint: 'Older' },
+      ],
+    })
+    render(<VisualAgentPanel agentId="p1" startOptions={{ agentId: 'p1', sessionId: 's', cwd: DEMO_CWD }} visible />)
+    fireEvent.click(screen.getByRole('button', { name: /Opus 5\.5/ }))
+    const options = within(screen.getByRole('listbox', { name: 'Model' })).getAllByRole('option')
+    expect(options.map((o) => o.textContent)).toEqual(['Opus 5.5Everyday', 'Fable 5.2Hardest tasks', 'Opus 4.8Older'])
+    fireEvent.mouseDown(options[1])
+    expect(api.setModel).toHaveBeenCalledWith('p1', 'claude-fable-5-2')
+  })
+
   it('answers a pending permission ask', () => {
     mount()
     fireEvent.click(screen.getByRole('button', { name: 'Always allow' }))

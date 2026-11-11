@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
-import type { VisualAgentAttachment, VisualAgentCommand, VisualAgentSnapshot } from '../../../shared/visual-agent'
+import type { VisualAgentAttachment, VisualAgentCommand, VisualAgentModel, VisualAgentSnapshot } from '../../../shared/visual-agent'
 import { useVisualAgentStore, type VisualAgentUi } from '../../stores/visualAgentStore'
 import { AsideSplit } from './AsidePanel'
 import { VisualAgentPanel } from './VisualAgentPanel'
@@ -91,6 +91,24 @@ export const SlashMenuRepoCommands: Story = {
   args: {
     snapshot: { ...demoSnapshot('story-slash-repo'), state: 'idle', turnStartedAt: null, commands: REPORTED_COMMANDS },
     ui: { draft: '/' },
+  },
+}
+
+/** What a session's Claude Code reports from its `initialize` reply (2.1.322, trimmed). */
+const REPORTED_MODELS: VisualAgentModel[] = [
+  { id: 'claude-opus-5-5', label: 'Opus 5.5', hint: 'Best for everyday, complex tasks' },
+  { id: 'claude-fable-5-2', label: 'Fable 5.2', hint: 'Most capable for your hardest and longest-running tasks' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', hint: 'Efficient for routine tasks' },
+  { id: 'claude-haiku-5-5', label: 'Haiku 5.5', hint: 'Fastest for quick answers' },
+  { id: 'claude-fable-5-1', label: 'Fable 5.1', hint: 'Most capable for your hardest and longest-running tasks' },
+  { id: 'claude-opus-5', label: 'Opus 5', hint: 'Best for everyday, complex tasks' },
+  { id: 'claude-opus-4-8', label: 'Opus 4.8', hint: 'Best for everyday, complex tasks' },
+]
+
+/** The model pill lists what the session's Claude Code says the account can use. */
+export const ReportedModels: Story = {
+  args: {
+    snapshot: { ...demoSnapshot('story-models'), state: 'idle', turnStartedAt: null, model: 'claude-fable-5-2', models: REPORTED_MODELS },
   },
 }
 

@@ -14,7 +14,7 @@ import type {
   VisualAgentSnapshot,
   VisualAgentStartOptions,
 } from '../../../shared/visual-agent'
-import { subagentRelayText } from '../../../shared/visual-agent'
+import { modelsOf, subagentRelayText } from '../../../shared/visual-agent'
 import { cn } from '../../lib/cn'
 import { useDictationStore } from '../../stores/dictationStore'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -109,7 +109,7 @@ function SessionBar({
         ·
       </span>
       <span className="text-text-muted" title={snap.model}>
-        {modelLabel(snap.model)}
+        {modelLabel(snap.model, modelsOf(snap))}
       </span>
       {snap.claudeSessionId ? (
         <>
@@ -227,6 +227,7 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
   const transcript = useMemo(() => buildTranscript(snap.events), [snap.events])
   const asides = useMemo(() => snap.forks.map(asideOf), [snap.forks])
   const commands = useMemo(() => sessionCommands(snap.commands), [snap.commands])
+  const models = useMemo(() => modelsOf({ models: snap.models }), [snap.models])
   const pendingAsks = useMemo(() => {
     const ids = new Set<string>()
     for (const e of snap.events) if (e.kind === 'ask' && isAskPending(snap, e.id)) ids.add(e.id)
@@ -498,6 +499,7 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
           disabled={ended || snap.state === 'starting'}
           placeholder={ended ? 'This session has ended — Restart to continue' : snap.state === 'starting' ? 'Starting Claude…' : undefined}
           model={snap.model}
+          models={models}
           onModel={(model) => void actions.setModel(agentId, model)}
           onSend={send}
           attachments={ui.attachments}
