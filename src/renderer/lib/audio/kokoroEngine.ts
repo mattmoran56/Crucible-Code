@@ -34,7 +34,11 @@ export class KokoroEngine implements TtsEngine {
   private nextId = 0
   private current: { id: number; out: AsyncQueue<AudioChunk>; error: Error | null; finished: boolean } | null = null
 
-  constructor(private readonly makeWorker: WorkerFactory = defaultWorker) {}
+  constructor(
+    private readonly makeWorker: WorkerFactory = defaultWorker,
+    /** Skip WebGPU even when an adapter exists (diagnostics, broken drivers). */
+    private readonly forceWasm = false,
+  ) {}
 
   init(onProgress?: (progress: DownloadProgress) => void): Promise<EngineInfo> {
     if (this.ready) return this.ready
@@ -78,7 +82,7 @@ export class KokoroEngine implements TtsEngine {
       // A failed load can be retried from scratch.
       this.dispose()
     })
-    this.send({ type: 'init', modelId: KOKORO_MODEL_ID })
+    this.send({ type: 'init', modelId: KOKORO_MODEL_ID, ...(this.forceWasm ? { forceWasm: true } : {}) })
     return this.ready
   }
 

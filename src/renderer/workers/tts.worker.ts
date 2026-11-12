@@ -9,6 +9,10 @@
 
 import { KokoroTTS, TextSplitterStream } from 'kokoro-js'
 import { env } from '@huggingface/transformers'
+// onnxruntime's WASM runtime, bundled with the app. transformers.js otherwise
+// fetches it from a CDN at run time, which fails offline.
+import ortMjsUrl from '../../../node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.mjs?url'
+import ortWasmUrl from '../../../node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.wasm?url'
 import { modelCache } from '../lib/audio/modelCache'
 import { DTYPE, type FromWorker, type ToWorker } from '../lib/audio/ttsProtocol'
 import type { TtsBackend } from '../lib/audio/engine'
@@ -21,6 +25,7 @@ env.allowLocalModels = false
 env.useBrowserCache = false
 env.useCustomCache = true
 env.customCache = modelCache
+if (env.backends.onnx.wasm) env.backends.onnx.wasm.wasmPaths = { mjs: ortMjsUrl, wasm: ortWasmUrl }
 
 const post = (msg: FromWorker, transfer: Transferable[] = []): void => self.postMessage(msg, transfer)
 
