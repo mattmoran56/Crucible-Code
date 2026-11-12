@@ -453,6 +453,30 @@ const targets: ScreenshotTarget[] = [
     delay: 2500,
     clickSelector: 'button[aria-label="Add tab"]',
   },
+  {
+    name: 'audio-settings',
+    storyId: 'settings-audiosettings--ready',
+    viewport: { width: 780, height: 900 },
+    delay: 800,
+  },
+  {
+    name: 'audio-settings-downloading',
+    storyId: 'settings-audiosettings--downloading',
+    viewport: { width: 780, height: 560 },
+    delay: 800,
+  },
+  {
+    name: 'audio-mode-session',
+    storyId: 'visual-agent-visualagentpanel--audio-mode',
+    viewport: { width: 900, height: 560 },
+    delay: 1500,
+  },
+  {
+    name: 'audio-session-card',
+    storyId: 'sessions-sessioncard--audio-mode',
+    viewport: { width: 320, height: 160 },
+    delay: 500,
+  },
 ]
 
 async function captureScreenshots() {
