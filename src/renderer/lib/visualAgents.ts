@@ -37,5 +37,6 @@ export function buildVisualAgentStartOptions(args: {
     claudeConfigDir: projectConfigDir(project, accounts),
     initialPrompt: initialPrompt?.trim() ? initialPrompt.trim() : null,
     orchestratorBranch: session.mode === 'orchestrator' && session.branchName ? session.branchName : null,
+    audioMode: session.audioMode === true,
   }
 }

@@ -136,6 +136,12 @@ export interface VisualAgentStartOptions {
    */
   orchestratorBranch?: string | null
   /**
+   * The session was started in audio mode: the agent gets a system prompt
+   * telling it to write for the ear (no Markdown, short sentences), since its
+   * replies are spoken aloud. Fixed for the session's life.
+   */
+  audioMode?: boolean
+  /**
    * Restart only: when the agent already exists but its process has ended,
    * drop the held conversation and begin a new Claude session instead of
    * resuming the old one.

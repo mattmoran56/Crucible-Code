@@ -34,7 +34,15 @@ describe('buildVisualAgentStartOptions', () => {
       claudeConfigDir: '/cfg/two',
       initialPrompt: 'fix it',
       orchestratorBranch: null,
+      audioMode: false,
     })
+  })
+
+  it('carries the session audio mode to every agent tab', () => {
+    const audio: Session = { ...session, audioMode: true }
+    expect(buildVisualAgentStartOptions({ session: audio, project, accounts, tabKey: 'agent' }).audioMode).toBe(true)
+    expect(buildVisualAgentStartOptions({ session: audio, project, accounts, tabKey: 'agent:3' }).audioMode).toBe(true)
+    expect(buildVisualAgentStartOptions({ session, project, accounts, tabKey: 'agent' }).audioMode).toBe(false)
   })
 
   it('passes a local orchestrator session its branch', () => {

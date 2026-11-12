@@ -451,6 +451,7 @@ function spawnMain(held: LiveAgent): void {
     resume: held.claudeSessionId,
     addDirs: [dir],
     orchestratorBranch: held.opts.orchestratorBranch,
+    audioMode: held.opts.audioMode === true,
     // The `crucible` MCP server, so this agent can dispatch other sessions.
     mcpArgs: crucibleMcpArgs(held.opts.sessionId),
   })

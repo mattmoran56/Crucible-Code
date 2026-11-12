@@ -40,6 +40,8 @@ export interface AgentArgvOptions {
   addDirs?: readonly string[]
   /** A local orchestrator session's branch: adds the orchestrator system prompt. */
   orchestratorBranch?: string | null
+  /** An audio-mode session: adds the write-for-the-ear system prompt. */
+  audioMode?: boolean
   /**
    * `--mcp-config …` for the app's `crucible` server (session dispatch). Adds
    * to the user's MCP servers; never combined with --strict-mcp-config.
@@ -55,6 +57,37 @@ export interface AgentArgvOptions {
  */
 export const localOrchestratorSystemPrompt = (branch: string): string =>
   `You are an orchestrator session. You start on the git branch \`${branch}\` in this worktree, but you are not limited to it: create, check out, merge and push to whichever branches the task needs, and split the work across branches where that helps. When you finish, list every branch you created or pushed and what is on each.`
+
+/**
+ * Appended to an audio-mode agent's system prompt: its replies are read aloud
+ * by a local text-to-speech voice, so it should write for the ear. Fixed at
+ * session start (it changes the prompt), and passed on every launch so it
+ * holds across restarts and resumes.
+ */
+export const AUDIO_MODE_SYSTEM_PROMPT = [
+  'You are in audio mode: your replies to the user will be read aloud by a text-to-speech voice, so write for the ear.',
+  'Do not use Markdown: no headings, bullet or number markers, bold, italics, tables or code fences.',
+  'Speak in short, natural sentences and plain paragraphs.',
+  "Don't read out long code, file paths, URLs, hashes or command output; describe them briefly instead (\"I updated the settings page component\") and say you've left the details in the code or the terminal.",
+  'If you would normally use a list, say it as a sentence ("three things: first..., then..., and finally...").',
+  'Spell out numbers, units and symbols the way a person would say them.',
+  'Keep replies concise and conversational, and lead with the answer.',
+  'Tool use, code edits and commit messages work exactly as normal: this only changes how you write your messages to the user.',
+].join(' ')
+
+/**
+ * Everything appended to the system prompt, as ONE value. The CLI's
+ * `--append-system-prompt <prompt>` is a plain single-value option (2.1.322's
+ * --help; repeating it keeps only the last value), so orchestrator and audio prompts are joined here and passed
+ * once. Null when nothing applies.
+ */
+export const appendedSystemPrompt = (opts: Pick<AgentArgvOptions, 'orchestratorBranch' | 'audioMode'>): string | null => {
+  const parts: string[] = []
+  const branch = opts.orchestratorBranch?.trim()
+  if (branch && !validateBranchName(branch)) parts.push(localOrchestratorSystemPrompt(branch))
+  if (opts.audioMode === true) parts.push(AUDIO_MODE_SYSTEM_PROMPT)
+  return parts.length > 0 ? parts.join('\n\n') : null
+}
 
 /**
  * The long-lived main process.
@@ -83,10 +116,8 @@ export const agentArgv = (opts: AgentArgvOptions): string[] => {
   if (opts.resume) argv.push('--resume', opts.resume)
   for (const dir of opts.addDirs ?? []) argv.push('--add-dir', dir)
   argv.push(...(opts.mcpArgs ?? []))
-  const branch = opts.orchestratorBranch?.trim()
-  if (branch && !validateBranchName(branch)) {
-    argv.push('--append-system-prompt', localOrchestratorSystemPrompt(branch))
-  }
+  const appended = appendedSystemPrompt(opts)
+  if (appended) argv.push('--append-system-prompt', appended)
   return argv
 }
 

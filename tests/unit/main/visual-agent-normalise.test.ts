@@ -21,6 +21,8 @@ import {
 import {
   agentArgv,
   localOrchestratorSystemPrompt,
+  AUDIO_MODE_SYSTEM_PROMPT,
+  appendedSystemPrompt,
   forkArgv,
   interruptFrame,
   isValidModel,
@@ -412,6 +414,31 @@ describe('launch argv', () => {
     expect(prompt).toContain('You are an orchestrator session')
     expect(prompt).toContain('`session/big`')
     expect(agentArgv({ model: 'claude-opus-5-5', orchestratorBranch: '--evil' })).not.toContain('--append-system-prompt')
+    for (const f of FORBIDDEN) expect(argv).not.toContain(f)
+  })
+
+  it('appends the audio-mode prompt only in audio mode', () => {
+    expect(agentArgv({ model: 'claude-opus-5-5', audioMode: false })).not.toContain('--append-system-prompt')
+    const argv = agentArgv({ model: 'claude-opus-5-5', audioMode: true })
+    expect(argv.filter((a) => a === '--append-system-prompt')).toHaveLength(1)
+    const prompt = argv[argv.indexOf('--append-system-prompt') + 1]
+    expect(prompt).toBe(AUDIO_MODE_SYSTEM_PROMPT)
+    expect(prompt).toContain('You are in audio mode')
+    expect(prompt).toContain('Do not use Markdown')
+    expect(prompt).not.toContain('orchestrator')
+    for (const f of FORBIDDEN) expect(argv).not.toContain(f)
+  })
+
+  it('combines the orchestrator and audio prompts into one --append-system-prompt', () => {
+    const argv = agentArgv({ model: 'claude-opus-5-5', orchestratorBranch: 'session/big', audioMode: true, resume: SID })
+    expect(argv.filter((a) => a === '--append-system-prompt')).toHaveLength(1)
+    const prompt = argv[argv.indexOf('--append-system-prompt') + 1]
+    expect(prompt).toBe(`${localOrchestratorSystemPrompt('session/big')}\n\n${AUDIO_MODE_SYSTEM_PROMPT}`)
+    // A resume carries it too, so audio mode holds across restarts.
+    expect(argv[argv.indexOf('--resume') + 1]).toBe(SID)
+    // An invalid branch drops only the orchestrator half.
+    expect(appendedSystemPrompt({ orchestratorBranch: '--evil', audioMode: true })).toBe(AUDIO_MODE_SYSTEM_PROMPT)
+    expect(appendedSystemPrompt({ orchestratorBranch: null, audioMode: false })).toBeNull()
     for (const f of FORBIDDEN) expect(argv).not.toContain(f)
   })
 
