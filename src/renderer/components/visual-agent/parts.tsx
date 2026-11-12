@@ -6,7 +6,7 @@ import React, { useState } from 'react'
 import { cn } from '../../lib/cn'
 import { AskCard, type AskDecide } from './AskCard'
 import { splitAttachmentLines } from '../../../shared/visual-agent'
-import { ChevronRight, FileIcon, Fold, ImageIcon, Sparkle, Spinner } from './icons'
+import { ChevronRight, FileIcon, Fold, ImageIcon, Replay, Sparkle, Spinner } from './icons'
 import { Markdown } from './Markdown'
 import { ToolCard, ToolGroup } from './ToolCard'
 import {
@@ -278,6 +278,40 @@ export interface RowsContext {
   pendingAsks?: ReadonlySet<string>
   answering?: string | null
   onDecide?: AskDecide
+  /** Audio mode: offer to read an assistant message aloud again. */
+  onReplay?: (key: string, text: string) => void
+  /** The message being read aloud right now (its event uuid). */
+  speakingKey?: string | null
+}
+
+/** An assistant message with a replay button (audio-mode sessions). */
+function ReplayableText({
+  event,
+  speaking,
+  onReplay,
+}: {
+  event: EventOf<'text'>
+  speaking: boolean
+  onReplay: (key: string, text: string) => void
+}) {
+  return (
+    <div className="group/replay relative">
+      <Markdown text={event.text} />
+      <button
+        type="button"
+        onClick={() => onReplay(event.uuid, event.text)}
+        aria-label={speaking ? 'Reading this message aloud' : 'Read this message aloud again'}
+        title={speaking ? 'Reading aloud…' : 'Replay aloud'}
+        data-testid="replay-message"
+        className={cn(
+          'mt-1! inline-flex items-center gap-1 rounded-md border border-transparent px-1.5! py-[1px]! text-[11px] text-text-muted transition-opacity hover:border-border hover:text-text focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+          speaking ? 'text-accent opacity-100' : 'opacity-0 group-hover/replay:opacity-100',
+        )}
+      >
+        <Replay size={11} /> {speaking ? 'Speaking' : 'Replay'}
+      </button>
+    </div>
+  )
 }
 
 const EMPTY_SET: ReadonlySet<string> = new Set()
@@ -286,7 +320,11 @@ function RowView({ row, live, ctx }: { row: Row; live: boolean; ctx: RowsContext
   const event = row.event
   switch (event.kind) {
     case 'text':
-      return <TextBubble event={event} />
+      return event.role === 'assistant' && ctx.onReplay ? (
+        <ReplayableText event={event} speaking={ctx.speakingKey === event.uuid} onReplay={ctx.onReplay} />
+      ) : (
+        <TextBubble event={event} />
+      )
     case 'note':
       return <NoteMark event={event} />
     case 'thinking':

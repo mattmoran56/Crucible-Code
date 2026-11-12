@@ -3,6 +3,7 @@ import { useSessionStore } from '../../stores/sessionStore'
 import { useSchedulerStore } from '../../stores/schedulerStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useUsageStore } from '../../stores/usageStore'
+import { useAudioSettingsStore } from '../../stores/audioSettingsStore'
 import {
   promptNeedsInput,
   resolveStartupCommand,
@@ -49,6 +50,10 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   const [mode, setMode] = useState<SessionMode>('single-branch')
   // Left blank, the branch is named from the first prompt (feat/…, fix/…, chore/…).
   const [branchInput, setBranchInput] = useState('')
+  // Audio out: only offered once it is switched on in Settings → Audio.
+  const audioEnabled = useAudioSettingsStore((s) => s.enabled)
+  const defaultAudioMode = useAudioSettingsStore((s) => s.defaultAudioMode)
+  const [audioMode, setAudioMode] = useState(false)
   const { createSession } = useSessionStore()
   const addQueuedSession = useSchedulerStore((s) => s.addQueuedSession)
   const usageResetDelayMinutes = useSettingsStore((s) => s.usageResetDelayMinutes)
@@ -83,6 +88,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
     setCloudTask('')
     setMode('single-branch')
     setBranchInput('')
+    setAudioMode(useAudioSettingsStore.getState().enabled && useAudioSettingsStore.getState().defaultAudioMode)
     setBranchesLoading(true)
     Promise.all([
       window.api.git.defaultBranch(project.repoPath),
@@ -227,6 +233,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
             autoBranch: !branch,
             mode,
             ...(cloud ? { location: 'cloud' as const } : {}),
+            ...(!cloud && audioEnabled && audioMode ? { audioMode: true } : {}),
           }
         )
       }
@@ -297,6 +304,25 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
                 : cloud
                   ? 'Works on the branch below only and pushes nowhere else.'
                   : 'Works on the branch below in the session worktree.'}
+            </p>
+          </div>
+        )}
+
+        {!scheduleEnabled && !cloud && audioEnabled && (
+          <div data-testid="audio-mode-toggle">
+            <label className="block text-xs text-text-muted mb-2">Audio mode</label>
+            <ToggleGroup<'off' | 'on'>
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'on', label: 'Read replies aloud' },
+              ]}
+              value={audioMode ? 'on' : 'off'}
+              onChange={(v) => setAudioMode(v === 'on')}
+            />
+            <p className="text-[10px] text-text-muted mt-2">
+              {audioMode
+                ? 'Claude writes for the ear (no Markdown) and each reply is spoken as it streams in. Fixed for this session.'
+                : `Replies stay as text.${defaultAudioMode ? '' : ' Change the default in Settings → Audio.'}`}
             </p>
           </div>
         )}

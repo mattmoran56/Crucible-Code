@@ -393,6 +393,25 @@ The agent interface: a chat UI for Claude Code, driven over `claude -p --input-f
 </details>
 
 <details>
+<summary><strong>Audio out (voice mode)</strong></summary>
+
+![An audio-mode session reading its reply aloud](docs/screenshots/audio-mode-session.png)
+
+An optional voice for Agent tab sessions. In an audio-mode session Claude writes for the ear, and each reply is spoken by a local text-to-speech model as it streams in, a sentence at a time. It is output only: you still type, or use your own dictation app. It is **off by default**, and with it off nothing loads, nothing downloads and nothing changes.
+
+- **Switching it on** — **Settings → Audio → Audio out**. The first time, this downloads the [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) voice model (Apache 2.0) from Hugging Face with a progress bar. It then runs locally in a Web Worker through `kokoro-js`: WebGPU in full precision where the machine has it (about 330 MB), otherwise WASM with the 8-bit model (about 90 MB). The model is cached and never downloaded again unless you remove it
+- **Starting an audio session** — The **New Session** dialog has an **Audio mode** toggle (local sessions only, shown once audio out is on). Its default comes from **New sessions start in audio mode**. Audio mode is fixed when the session is created because it changes Claude's system prompt: every agent in the session starts with an appended prompt asking for plain spoken prose with no Markdown, lists said as sentences, and code, paths and URLs described rather than read out. It is passed on every launch, so restarts and resumes keep it, and it is combined with the orchestrator prompt into a single `--append-system-prompt` when both apply
+- **What is spoken** — Only Claude's own prose in the main conversation. Tool calls and results, thinking, permission prompts and sub-agent text are never spoken, and nor is history replayed on resume. Each sentence is cleaned first in case Claude slips into Markdown: formatting is stripped, fenced code is skipped or announced as "code block omitted" (your choice), tables are dropped, URLs become their domain, long paths become their file name, and emoji and commit hashes go. Sentences are queued back to back so playback is continuous
+- **Controls** — An audio session shows a speaker badge in the sidebar and in its Agent tab's bar, with **Mute / Unmute** (pauses the voice without changing the prompt) and **Stop speaking**. Speech also stops when you type in that session's composer (setting, on by default), send it a message, or press `Esc` in it (a second `Esc` interrupts the turn as usual). Hover any reply for **Replay** to hear it again
+- **One voice at a time** — Only one session speaks at once, and a reply arriving in another session doesn't interrupt it. Switching to a session that is replying hands the voice to that session. **Stop speaking when I switch sessions** (off by default) also silences the voice when you look elsewhere
+- **Settings** — Voice (Kokoro's US and UK English voices, with **Preview**), speed (0.75× to 1.5×), volume, code blocks, and the two stop options. **Voice engine** shows WebGPU or WASM, whether the model is downloaded and its size, and the last reply's time to first audio and real-time factor. **Remove model** deletes the download
+- **Not covered** — Terminal (PTY) sessions are not spoken: they have no clean text stream to read
+
+![Settings → Audio](docs/screenshots/audio-settings.png)
+
+</details>
+
+<details>
 <summary><strong>Git integration</strong></summary>
 
 Built-in git panel with commit history, changed files, and a GitHub-style diff viewer.

@@ -17,6 +17,8 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()]
   },
   renderer: {
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss()],
+    // The TTS worker (audio out) imports kokoro-js, which code-splits.
+    worker: { format: 'es' },
   }
 })

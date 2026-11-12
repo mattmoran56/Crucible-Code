@@ -5,6 +5,7 @@ export type SettingsSection =
   | 'projects'
   | 'cleanup-limits'
   | 'dictation'
+  | 'audio'
   | 'claude-accounts'
   | 'pr-list'
   | 'startup-prompts'
@@ -27,6 +28,7 @@ const ITEMS: NavItem[] = [
   { id: 'cleanup-limits', label: 'Cleanup & Limits', group: 'global' },
   { id: 'claude-accounts', label: 'Claude Accounts', group: 'global' },
   { id: 'dictation', label: 'Dictation', group: 'global' },
+  { id: 'audio', label: 'Audio', group: 'global' },
   { id: 'buttons', label: 'Buttons', group: 'global' },
   { id: 'projects', label: 'Projects', group: 'project', requiresProjects: true },
   { id: 'project-defaults', label: 'Project Defaults', group: 'project', requiresProjects: true },

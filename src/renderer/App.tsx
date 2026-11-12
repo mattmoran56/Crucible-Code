@@ -34,6 +34,7 @@ import { CloudWebPool } from './components/cloud/CloudWebPool'
 import { AgentBrowserLayer } from './components/agent-browser/AgentBrowserLayer'
 import { PRDeskBar } from './components/prdesk/PRDeskBar'
 import { usePRDeskStore } from './stores/prDeskStore'
+import { startAudioOut } from './stores/speechStore'
 
 const RIGHT_PANEL_LABELS = { notes: 'Notes', usage: 'Usage', sandbox: 'Sandbox' } as const
 type RightPanelId = keyof typeof RIGHT_PANEL_LABELS
@@ -70,6 +71,9 @@ export default function App() {
     if (!isRightPanelId(panel)) return
     setActiveRightPanel((prev) => (prev === panel ? null : panel))
   }
+
+  // Audio out follows its master switch (Settings → Audio); off, it loads nothing.
+  useEffect(() => startAudioOut(), [])
 
   // Listen for app-action panel toggle events from custom buttons
   useEffect(() => {

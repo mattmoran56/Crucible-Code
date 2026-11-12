@@ -223,3 +223,12 @@ export const AssignPRDialogOpen: Story = {
     />
   ),
 }
+
+/** A session started in audio mode: its replies are read aloud. */
+export const AudioMode: Story = {
+  args: {
+    session: { ...baseSession, name: 'voice-walkthrough', branchName: 'feat/voice-walkthrough', audioMode: true },
+    isActive: true,
+    status: 'running',
+  },
+}

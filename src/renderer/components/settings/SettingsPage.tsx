@@ -21,6 +21,7 @@ import { ProjectPicker } from './ProjectPicker'
 import { SessionLocationSetting } from './SessionLocationSetting'
 import { SandboxerSettings } from './SandboxerSettings'
 import { ProjectVisibilitySettings } from './ProjectVisibilitySettings'
+import { AudioSettings } from './AudioSettings'
 
 const LIGHT_THEMES = THEMES.filter((t) => !t.isDark)
 const DARK_THEMES = THEMES.filter((t) => t.isDark)
@@ -560,6 +561,15 @@ export function SettingsPage() {
                   onChange={(v) => setSmartDictation(v === 'smart')}
                 />
               </div>
+            </Panel>
+
+            {/* Audio */}
+            <Panel visible={activeSection === 'audio'}>
+              <SectionHeader
+                title="Audio"
+                description="Audio out for Agent sessions: Claude writes for the ear and a local voice reads each reply aloud as it streams in."
+              />
+              <AudioSettings />
             </Panel>
 
             {/* Claude Accounts */}
