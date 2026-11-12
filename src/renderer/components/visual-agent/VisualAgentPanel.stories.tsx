@@ -2,6 +2,8 @@ import React, { useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import type { VisualAgentAttachment, VisualAgentCommand, VisualAgentModel, VisualAgentSnapshot } from '../../../shared/visual-agent'
 import { useVisualAgentStore, type VisualAgentUi } from '../../stores/visualAgentStore'
+import { useAudioSettingsStore } from '../../stores/audioSettingsStore'
+import { useSpeechStore } from '../../stores/speechStore'
 import { AsideSplit } from './AsidePanel'
 import { VisualAgentPanel } from './VisualAgentPanel'
 import {
@@ -18,9 +20,25 @@ import {
 } from './__fixtures__/demo'
 
 /** Seeds the store for one agent, then mounts the panel (seeded agents skip `start`). */
-function Seeded({ snapshot, ui }: { snapshot: VisualAgentSnapshot; ui?: Partial<VisualAgentUi> }) {
+function Seeded({
+  snapshot,
+  ui,
+  audio,
+}: {
+  snapshot: VisualAgentSnapshot
+  ui?: Partial<VisualAgentUi>
+  /** An audio-mode session, with audio out on and (optionally) this message being spoken. */
+  audio?: { speakingKey: string | null }
+}) {
   const [ready, setReady] = useState(false)
   useLayoutEffect(() => {
+    useAudioSettingsStore.getState().reset({ enabled: !!audio })
+    useSpeechStore.setState({
+      speakingAgentId: audio?.speakingKey ? snapshot.agentId : null,
+      speakingKey: audio?.speakingKey ?? null,
+      // Stories never load the voice engine.
+      ensureEngine: async () => undefined,
+    })
     useVisualAgentStore.getState().seed(snapshot, { draft: '', openForkId: null, asideDrafts: {}, subagentPath: [], answering: null, ...ui })
     setReady(true)
     // Give the mock bridge a snapshot for this agent too, so the frames it
@@ -35,7 +53,7 @@ function Seeded({ snapshot, ui }: { snapshot: VisualAgentSnapshot; ui?: Partial<
       <AsideSplit agentId={snapshot.agentId} visible>
         <VisualAgentPanel
           agentId={snapshot.agentId}
-          startOptions={{ agentId: snapshot.agentId, sessionId: 'story-session', cwd: DEMO_CWD }}
+          startOptions={{ agentId: snapshot.agentId, sessionId: 'story-session', cwd: DEMO_CWD, audioMode: !!audio }}
           visible
         />
       </AsideSplit>
@@ -192,4 +210,54 @@ export const WithAttachments: Story = {
     },
     ui: { draft: 'Here is the console output too', attachments: ATTACHMENTS },
   },
+}
+
+/** An audio-mode reply: plain spoken prose, a tool call in between, read aloud as it streams. */
+const audioSnapshot = (agentId: string): VisualAgentSnapshot => {
+  const at = '2026-11-12T09:00:00.000Z'
+  const base = { threadId: 'main', at }
+  return {
+    agentId,
+    claudeSessionId: '7c0ffee0-0000-4000-8000-000000000001',
+    model: 'claude-opus-5-5',
+    state: 'idle',
+    turnStartedAt: null,
+    partial: null,
+    usage: null,
+    forks: [],
+    events: [
+      { ...base, uuid: 'u1', seq: 1, kind: 'text', role: 'user', text: 'Why is the settings test flaky?' },
+      {
+        ...base,
+        uuid: 'a1',
+        seq: 2,
+        kind: 'text',
+        role: 'assistant',
+        text: "Let me look at the test and the store it touches. I'll check how the theme is loaded first.",
+      },
+      { ...base, uuid: 't1', seq: 3, kind: 'tool', id: 'toolu_1', name: 'Read', input: { file_path: `${DEMO_CWD}/tests/e2e/theme-settings.spec.ts` }, spawnsThread: false },
+      { ...base, uuid: 't2', seq: 4, kind: 'tool-result', id: 'toolu_1', ok: true, text: '…' },
+      {
+        ...base,
+        uuid: 'a2',
+        seq: 5,
+        kind: 'text',
+        role: 'assistant',
+        text:
+          "Found it. The test opens settings before the saved theme has loaded, so about one run in ten it reads the default instead. " +
+          "I've made it wait for the theme to apply before it clicks, and it passed fifty runs in a row. The change is in the theme settings spec if you want to look.",
+      },
+      { ...base, uuid: 'r1', seq: 6, kind: 'result', ok: true, costUsd: 0.04, durationMs: 21000, usage: null, text: '' },
+    ],
+  }
+}
+
+/** An audio-mode session reading its latest reply aloud: speaker badge, Stop speaking, Mute, and Replay. */
+export const AudioMode: Story = {
+  args: { snapshot: audioSnapshot('story-audio'), audio: { speakingKey: 'a2' } },
+}
+
+/** An audio-mode session between replies: hover a message to replay it. */
+export const AudioModeIdle: Story = {
+  args: { snapshot: audioSnapshot('story-audio-idle'), audio: { speakingKey: null } },
 }

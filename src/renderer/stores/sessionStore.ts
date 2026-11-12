@@ -161,6 +161,11 @@ export interface CreateSessionOptions {
    * `mode` and its agents get the orchestrator system prompt.
    */
   mode?: SessionMode
+  /**
+   * Start a local session in audio mode: its agents write for the ear and
+   * replies are read aloud (Settings → Audio). Fixed for the session's life.
+   */
+  audioMode?: boolean
 }
 
 async function restoreDetachedWorktree(info: DetachedWorktreeInfo | null) {
@@ -393,6 +398,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     } else if (options?.mode === 'orchestrator') {
       session.mode = 'orchestrator'
     }
+    if (!cloud && options?.audioMode === true) session.audioMode = true
 
     const sessions = sortByCreatedAtDesc([...get().sessions, session])
     await window.api.session.save(projectId, sessions)

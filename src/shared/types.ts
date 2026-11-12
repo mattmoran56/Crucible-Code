@@ -299,6 +299,12 @@ export interface Session {
    */
   mode?: SessionMode
   /**
+   * Started in audio mode (Settings → Audio): its agents are told to write for
+   * the ear, and their replies are read aloud by the local voice. Fixed at
+   * creation because it changes the system prompt. Missing means off.
+   */
+  audioMode?: boolean
+  /**
    * True when the app created `branchName` (via createWorktree), so removing
    * the session may delete it even when it does not use the `session/` prefix.
    */

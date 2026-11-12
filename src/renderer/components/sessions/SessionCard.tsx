@@ -59,6 +59,25 @@ const TicketIcon = () => (
   </svg>
 )
 
+const SpeakerIcon = () => (
+  <svg
+    aria-hidden="true"
+    className="shrink-0"
+    width="10"
+    height="10"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M11 5 6 9H2v6h4l5 4V5z" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+    <path d="M19 5a10 10 0 0 1 0 14" />
+  </svg>
+)
+
 const CloudIcon = () => (
   <svg
     aria-hidden="true"
@@ -196,6 +215,16 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, rep
             >
               <RepoRootIcon />
               No worktree
+            </span>
+          )}
+          {session.audioMode && (
+            <span
+              title="Audio mode: replies are written for the ear and read aloud"
+              data-testid="session-audio-badge"
+              className="shrink-0 inline-flex items-center gap-0.5 rounded border border-border px-1 text-[9px] font-semibold uppercase tracking-wide text-text-muted"
+            >
+              <SpeakerIcon />
+              Audio
             </span>
           )}
           {session.location === 'cloud' && (

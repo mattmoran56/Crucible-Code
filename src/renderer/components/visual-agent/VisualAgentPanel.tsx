@@ -28,7 +28,9 @@ import { draggingFiles, readAttachments } from './attachments'
 import { sessionCommands } from './commands'
 import { Composer } from './Composer'
 import { useComposerFocus } from './composerFocus'
-import { Close, Power, Restart, Spinner, StopSquare } from './icons'
+import { Close, Power, Restart, Speaker, SpeakerOff, Spinner, StopSquare } from './icons'
+import { useAudioSettingsStore } from '../../stores/audioSettingsStore'
+import { useSpeechStore } from '../../stores/speechStore'
 import { modelLabel } from './ModelPicker'
 import { Rows, StreamingText, type RowsContext } from './parts'
 import { SubagentSheet, SubagentTray, useChips } from './SubagentTray'
@@ -80,16 +82,69 @@ function useNow(active: boolean): number {
 const BAR_BTN =
   'inline-flex items-center gap-1 rounded-md border border-transparent px-1.5! py-[2px]! text-[11px] text-text-muted transition-colors hover:border-border hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
+export interface SessionBarAudio {
+  /** Audio out is switched on in Settings (the controls only work then). */
+  enabled: boolean
+  muted: boolean
+  speaking: boolean
+  onToggleMute: () => void
+  onStopSpeaking: () => void
+}
+
+/** The speaker badge and controls an audio-mode session shows in its bar. */
+export function AudioControls({ audio }: { audio: SessionBarAudio }) {
+  return (
+    <span className="flex items-center gap-1" data-testid="audio-controls">
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 rounded border px-1! text-[9.5px] font-semibold uppercase tracking-wide',
+          audio.speaking ? 'border-accent/50 text-accent' : 'border-border text-text-muted',
+        )}
+        title={
+          audio.enabled
+            ? 'Audio mode: Claude writes for the ear and replies are read aloud'
+            : 'Audio mode: Claude writes for the ear. Switch on audio out in Settings → Audio to hear it.'
+        }
+      >
+        <Speaker size={10} className={cn(audio.speaking && 'animate-pulse motion-reduce:animate-none')} />
+        {audio.speaking ? 'Speaking' : 'Audio'}
+      </span>
+      {audio.enabled ? (
+        <>
+          {audio.speaking ? (
+            <button type="button" onClick={audio.onStopSpeaking} className={BAR_BTN} title="Stop speaking (Esc)">
+              <StopSquare size={9} /> Stop speaking
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={audio.onToggleMute}
+            className={BAR_BTN}
+            aria-pressed={audio.muted}
+            title={audio.muted ? 'Unmute: read replies aloud again' : 'Mute: stop reading replies aloud (audio mode stays on)'}
+          >
+            {audio.muted ? <SpeakerOff size={11} /> : <Speaker size={11} />}
+            {audio.muted ? 'Unmute' : 'Mute'}
+          </button>
+        </>
+      ) : null}
+    </span>
+  )
+}
+
 function SessionBar({
   snap,
   onInterrupt,
   onEnd,
   onRestart,
+  audio,
 }: {
   snap: VisualAgentSnapshot
   onInterrupt: () => void
   onEnd: () => void
   onRestart: () => void
+  /** Set for an audio-mode session. */
+  audio?: SessionBarAudio | null
 }) {
   const [confirming, setConfirming] = useState(false)
   const state = STATE[snap.state]
@@ -128,6 +183,8 @@ function SessionBar({
       ) : null}
 
       <span className="flex-1" />
+
+      {audio ? <AudioControls audio={audio} /> : null}
 
       {isLive(snap.state) ? (
         <button type="button" onClick={onInterrupt} className={BAR_BTN} title="Stop this turn (Esc)">
@@ -212,6 +269,26 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
   const setDictation = useDictationStore((s) => s.setEnabled)
   const smartDictation = useDictationStore((s) => s.smart)
   const actions = useVisualAgentStore.getState()
+  const audioMode = startOptions.audioMode === true
+  const audioEnabled = useAudioSettingsStore((s) => s.enabled)
+  const speakingHere = useSpeechStore((s) => s.speakingAgentId === agentId)
+  const speakingKey = useSpeechStore((s) => (s.speakingAgentId === agentId ? s.speakingKey : null))
+  const muted = useSpeechStore((s) => !!s.muted[agentId])
+  const speech = useSpeechStore.getState()
+  const audio: SessionBarAudio | null = audioMode
+    ? {
+        enabled: audioEnabled,
+        muted,
+        speaking: speakingHere,
+        onToggleMute: () => speech.setMuted(agentId, !muted),
+        onStopSpeaking: () => speech.stop(),
+      }
+    : null
+
+  // An audio-mode agent warms the voice up so its first reply speaks promptly.
+  useEffect(() => {
+    if (audioMode && audioEnabled) void useSpeechStore.getState().ensureEngine()
+  }, [audioMode, audioEnabled])
 
   const snap = useMemo(
     () => stored ?? emptySnapshot(agentId, startOptions.model),
@@ -249,7 +326,10 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
   const focus = useComposerFocus({
     composer,
     root,
-    onCharacter: (c) => setUi({ draft: (useVisualAgentStore.getState().ui[agentId]?.draft ?? '') + c }),
+    onCharacter: (c) => {
+      useSpeechStore.getState().typed(agentId)
+      setUi({ draft: (useVisualAgentStore.getState().ui[agentId]?.draft ?? '') + c })
+    },
     enabled: visible && !sheetOpen,
   })
 
@@ -324,9 +404,13 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
     pendingAsks,
     answering: ui.answering,
     onDecide: (id, decision, answers) => void actions.answer(agentId, id, decision, answers),
+    ...(audioMode && audioEnabled
+      ? { onReplay: (key: string, text: string) => speech.replay(agentId, key, text), speakingKey }
+      : {}),
   }
 
   const send = (text: string, attachments: VisualAgentAttachment[] = []): void => {
+    speech.sent(agentId)
     stick.current = true
     setAttachNotice(null)
     if (attachments.length > 0) setUi({ attachments: [] })
@@ -400,6 +484,14 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
       className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden bg-bg text-text', !visible && 'hidden')}
       onMouseDown={focus.onMouseDown}
       onClick={focus.onClick}
+      onKeyDownCapture={(event) => {
+        // Esc stops this agent's speech first; a second Esc interrupts the turn.
+        if (event.key === 'Escape' && speakingHere) {
+          event.preventDefault()
+          event.stopPropagation()
+          speech.sent(agentId)
+        }
+      }}
       {...drop}
     >
       {dropping ? (
@@ -416,6 +508,7 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
         onInterrupt={() => void actions.interrupt(agentId)}
         onEnd={() => void actions.stop(agentId)}
         onRestart={() => void actions.restart(agentId)}
+        audio={audio}
       />
 
       {error ? (
@@ -494,7 +587,10 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
         <Composer
           ref={composer}
           draft={ui.draft}
-          onDraft={(draft) => setUi({ draft })}
+          onDraft={(draft) => {
+            if (draft.length > ui.draft.length) speech.typed(agentId)
+            setUi({ draft })
+          }}
           running={running}
           disabled={ended || snap.state === 'starting'}
           placeholder={ended ? 'This session has ended — Restart to continue' : snap.state === 'starting' ? 'Starting Claude…' : undefined}

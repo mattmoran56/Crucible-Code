@@ -134,3 +134,29 @@ export const Spinner = ({ className }: { className?: string }) => (
     className={`inline-block size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent motion-reduce:animate-none ${className ?? ''}`}
   />
 )
+
+/** A speaker: audio-mode sessions. */
+export const Speaker = ({ size = 12, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M2.5 6h2.5l3.5-3v10l-3.5-3h-2.5z" />
+    <path d="M11 5.5a3.5 3.5 0 0 1 0 5" />
+    <path d="M12.8 3.6a6 6 0 0 1 0 8.8" />
+  </svg>
+)
+
+/** A speaker with a cross: audio muted. */
+export const SpeakerOff = ({ size = 12, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M2.5 6h2.5l3.5-3v10l-3.5-3h-2.5z" />
+    <path d="M11 6l3.5 4M14.5 6l-3.5 4" />
+  </svg>
+)
+
+/** Play-again arrow: replay a message aloud. */
+export const Replay = ({ size = 12, className }: IconProps) => (
+  <svg {...base(size, className)}>
+    <path d="M3 8a5 5 0 1 0 1.5-3.6" />
+    <path d="M3 2.5v2.5h2.5" />
+    <path d="M7 6l3 2-3 2z" fill="currentColor" />
+  </svg>
+)
