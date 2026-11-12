@@ -509,6 +509,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         )
         warnAboutSandboxTeardown(report, repoPath)
       } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err)
+        // A cloud session's work lives on claude.ai and origin, not in its
+        // local worktree, so a failed teardown must not keep it in the
+        // sidebar (its PR merged, or the user deleted it): drop it anyway and
+        // say what is left on disk.
+        if (session.location === 'cloud') {
+          useToastStore
+            .getState()
+            .addToast('error', `Removed "${session.name}", but its local worktree is still on disk: ${reason}`)
+          const sessions = (visible() ? get().sessions : before).filter((s) => s.id !== sessionId)
+          await window.api.session.save(projectId, sessions)
+          if (visible()) set({ sessions })
+          return
+        }
         // A worktree that was already gone is not an error (the main process
         // treats it as removed), so this means files are still on disk: put
         // the session back rather than lose track of them.
@@ -516,7 +530,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           .getState()
           .addToast(
             'error',
-            `Couldn't delete "${session.name}": ${err instanceof Error ? err.message : String(err)}. It's back in the list so you can try again.`
+            `Couldn't delete "${session.name}": ${reason}. It's back in the list so you can try again.`
           )
         if (visible() && !get().sessions.some((s) => s.id === sessionId)) {
           const sessions = [...get().sessions]

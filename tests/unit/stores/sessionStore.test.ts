@@ -503,6 +503,18 @@ describe('sessionStore.removeSession', () => {
     expect(useToastStore.getState().toasts[0].message).toMatch(/Couldn't delete .*not fully removed.*try again/)
   })
 
+  it('still removes a cloud session from the list when its local worktree removal fails', async () => {
+    worktreeApi.remove.mockRejectedValue(new Error('Worktree directory was not fully removed'))
+    useToastStore.setState({ toasts: [] })
+    useSessionStore.setState({
+      sessions: [S('s1', { location: 'cloud', cloud: { sessionId: 'session_1', url: 'u', branch: 'session/s1' } }), S('s2')],
+    } as any)
+    await useSessionStore.getState().removeSession('p1', '/repo', 's1')
+    expect(useSessionStore.getState().sessions.map((x) => x.id)).toEqual(['s2'])
+    expect(sessionApi.save).toHaveBeenCalledWith('p1', [expect.objectContaining({ id: 's2' })])
+    expect(useToastStore.getState().toasts[0].message).toMatch(/Removed .*local worktree is still on disk.*not fully removed/)
+  })
+
   it('skips the worktree removal for an unknown session id but still persists', async () => {
     await useSessionStore.getState().removeSession('p1', '/repo', 'ghost')
     expect(worktreeApi.remove).not.toHaveBeenCalled()
