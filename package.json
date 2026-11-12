@@ -66,6 +66,7 @@
     "clsx": "^2.1.1",
     "electron-store": "^8.2.0",
     "fix-path": "^5.0.0",
+    "kokoro-js": "^1.2.1",
     "libsodium-wrappers": "^0.8.4",
     "marked": "^17.0.5",
     "node-pty": "^1.0.0",

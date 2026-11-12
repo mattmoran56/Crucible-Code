@@ -261,6 +261,20 @@ interface VisualAgentStoreState {
 }
 
 let localCount = 0
+
+type FrameListener = (agentId: string, frame: VisualAgentFrame) => void
+const frameListeners = new Set<FrameListener>()
+
+/**
+ * Hear every live frame after it is applied (audio out reads the streamed
+ * text from here). Snapshots from start/getState are not frames, so a resumed
+ * conversation's history never comes through. Returns an unsubscribe.
+ */
+export function addVisualAgentFrameListener(listener: FrameListener): () => void {
+  frameListeners.add(listener)
+  return () => frameListeners.delete(listener)
+}
+
 let unsubscribe: (() => void) | null = null
 const inFlight = new Map<string, Promise<void>>()
 /** Agents this renderer has fetched a snapshot for (frames alone don't count). */
@@ -348,6 +362,13 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
         return
       }
       patchSnap(agentId, (snap) => reduceFrame(snap, frame))
+      for (const listener of frameListeners) {
+        try {
+          listener(agentId, frame)
+        } catch (error) {
+          console.warn('[visual-agent] frame listener failed:', error)
+        }
+      }
       // An answer is settled once its ask-result arrives.
       if (frame.t === 'event' && frame.event.kind === 'ask-result') {
         const ui = get().ui[agentId]
