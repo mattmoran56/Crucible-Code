@@ -47,7 +47,9 @@ jobs:
 
   e2e:
     name: E2E (mock app)
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.59 can't install
+    # browsers on, and the snapshot baselines were rendered on 24.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -96,7 +98,9 @@ jobs:
 
   screenshots:
     name: Visual regression
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.59 can't install
+    # browsers on, and the snapshot baselines were rendered on 24.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
