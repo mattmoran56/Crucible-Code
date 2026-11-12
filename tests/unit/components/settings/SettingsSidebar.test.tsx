@@ -32,6 +32,7 @@ describe('SettingsSidebar', () => {
       'Cleanup & Limits',
       'Claude Accounts',
       'Dictation',
+      'Audio',
       'Buttons',
       'Projects',
       'Project Defaults',
@@ -47,9 +48,9 @@ describe('SettingsSidebar', () => {
     }
   })
 
-  it('renders exactly thirteen nav buttons when projects exist', () => {
+  it('renders exactly fourteen nav buttons when projects exist', () => {
     renderSidebar({ hasProjects: true })
-    expect(screen.getAllByRole('button')).toHaveLength(13)
+    expect(screen.getAllByRole('button')).toHaveLength(14)
   })
 
   it('hides project-requiring items when there are no projects', () => {
@@ -120,6 +121,7 @@ describe('SettingsSidebar', () => {
       'Cleanup & Limits',
       'Claude Accounts',
       'Dictation',
+      'Audio',
       'Buttons',
       'Projects',
       'Project Defaults',
