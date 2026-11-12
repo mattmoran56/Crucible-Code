@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { promisify } from 'util'
 import type { PullRequest, PRFile, PRComment, PRReviewEvent, PRMergeMethod, PRDetail, PRConversationComment, PRCheck, Commit, PRReviewThread, PRReviewState, PRReviewSummary, GitHubCollaborator, PRLabel } from '../../shared/types'
 import { deriveCIStatus } from '../../shared/ci'
+import { cloudSessionIdsIn } from '../../shared/session-pr'
 
 const execFileAsync = promisify(execFile)
 
@@ -60,7 +61,7 @@ function summarizeLatestReviews(
 }
 
 export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
-  const fields = 'number,title,headRefName,baseRefName,author,assignees,reviewRequests,createdAt,updatedAt,isDraft,state,statusCheckRollup,labels,latestReviews,comments'
+  const fields = 'number,title,headRefName,baseRefName,author,assignees,reviewRequests,createdAt,updatedAt,isDraft,state,statusCheckRollup,labels,latestReviews,comments,body'
 
   async function fetchPRs(state: string): Promise<PullRequest[]> {
     try {
@@ -86,6 +87,7 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         labels?: Array<{ name: string; color: string; description?: string }>
         latestReviews?: Array<{ author: { login: string }; state: string; submittedAt: string }>
         comments?: Array<unknown>
+        body?: string | null
       }>
 
       return raw.map((pr) => ({
@@ -110,6 +112,8 @@ export async function listOpenPRs(repoPath: string): Promise<PullRequest[]> {
         })),
         commentsCount: (pr.comments || []).length,
         reviews: summarizeLatestReviews(pr.latestReviews, undefined),
+        // Only the cloud session links, not the whole body: the list is polled.
+        cloudSessionIds: cloudSessionIdsIn(pr.body),
       }))
     } catch {
       return []

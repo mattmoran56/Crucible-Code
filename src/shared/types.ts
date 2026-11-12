@@ -372,6 +372,12 @@ export interface PullRequest {
   labels: PRLabel[]
   commentsCount: number
   reviews: PRReviewSummary[]
+  /**
+   * Claude Code on the web session ids (`session_...`) the PR description
+   * links to (`claude.ai/code/session_...`). A cloud agent may open its PR
+   * from a branch the app never saw, so this is how a cloud session finds it.
+   */
+  cloudSessionIds?: string[]
 }
 
 export interface PRFile {
