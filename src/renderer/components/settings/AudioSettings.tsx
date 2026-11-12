@@ -222,7 +222,7 @@ export function AudioSettings() {
       )}
 
       <p className="text-[11px] text-text-muted">
-        Audio out works in Agent tab sessions only, and Esc in the composer stops the voice. Terminal sessions are not spoken.
+        Audio out is for Agent tab sessions only, and Esc in the composer stops the voice. Terminal sessions are never spoken.
       </p>
     </div>
   )
