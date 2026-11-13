@@ -44,8 +44,9 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   const [customPrompt, setCustomPrompt] = useState('')
   // Cloud (Claude Code on the web) unless the project opted into local.
   const [location, setLocation] = useState<SessionLocation>(() => resolveDefaultSessionLocation(project))
-  // The cloud session's task when no startup prompt is picked.
-  const [cloudTask, setCloudTask] = useState('')
+  // The session's task when no startup prompt is picked. Required for a cloud
+  // session; optional for a local one, where it becomes the first prompt.
+  const [task, setTask] = useState('')
   // Single-branch (stays on the session branch) or an orchestrator that may move between branches.
   const [mode, setMode] = useState<SessionMode>('single-branch')
   // Left blank, the branch is named from the first prompt (feat/…, fix/…, chore/…).
@@ -85,7 +86,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
     setScheduledForInput('')
     setCustomPrompt('')
     setLocation(resolveDefaultSessionLocation(project))
-    setCloudTask('')
+    setTask('')
     setMode('single-branch')
     setBranchInput('')
     setAudioMode(useAudioSettingsStore.getState().enabled && useAudioSettingsStore.getState().defaultAudioMode)
@@ -132,7 +133,9 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   // Scheduled sessions always start locally (the scheduler spawns a local agent).
   const cloud = location === 'cloud' && !scheduleEnabled
   // A cloud session must start with a task: the picked prompt, or a typed one.
-  const cloudNeedsTask = cloud && !selectedPrompt && !cloudTask.trim()
+  const cloudNeedsTask = cloud && !selectedPrompt && !task.trim()
+  // Typed into the Task box (offered for both locations when no prompt is picked).
+  const typedTask = !scheduleEnabled && !selectedPrompt ? task.trim() : ''
   // Scheduled sessions are created later by the scheduler on the default
   // `session/<name>` branch, so the field is only offered for immediate creates.
   const showBranch = !scheduleEnabled
@@ -151,11 +154,11 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
   // Haiku turn). Scheduled sessions are created later, so they need a name now.
   const autoName = !name.trim()
   const autoBranch = showBranch && !branch
-  const hasStartupPrompt = !!selectedPrompt || (cloud && !!cloudTask.trim())
+  const hasStartupPrompt = !!selectedPrompt || !!typedTask
   const autoNamingHint = (() => {
     if (!autoName && !autoBranch) return null
     const what = autoName && autoBranch ? 'The name and branch' : autoName ? 'The name' : 'The branch'
-    if (cloud && !selectedPrompt) return `${what} will be picked from the task.`
+    if ((cloud && !selectedPrompt) || typedTask) return `${what} will be picked from the task.`
     if (hasStartupPrompt) return `${what} will be picked from the startup prompt.`
     if (autoBranch && mode === 'orchestrator') {
       return autoName
@@ -218,9 +221,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
       } else {
         const startupCommand = selectedPrompt
           ? resolveStartupCommand(selectedPrompt.command, promptInput.trim())
-          : cloud
-            ? cloudTask.trim()
-            : undefined
+          : typedTask || undefined
         await createSession(
           project.id,
           project.repoPath,
@@ -244,7 +245,7 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
       setScheduleEnabled(false)
       setScheduledForInput('')
       setCustomPrompt('')
-      setCloudTask('')
+      setTask('')
       setMode('single-branch')
       setBranchInput('')
       onClose()
@@ -412,22 +413,24 @@ export function CreateSessionDialog({ open, project, onClose }: Props) {
           />
         )}
 
-        {cloud && !selectedPrompt && (
+        {!scheduleEnabled && !selectedPrompt && (
           <div>
-            <label htmlFor="cloud-task" className="block text-[11px] text-text-muted" style={{ marginBottom: 4 }}>
+            <label htmlFor="session-task" className="block text-[11px] text-text-muted" style={{ marginBottom: 4 }}>
               Task
             </label>
             <textarea
-              id="cloud-task"
-              value={cloudTask}
-              onChange={(e) => setCloudTask(e.target.value)}
-              placeholder="What should Claude do in the cloud?"
+              id="session-task"
+              value={task}
+              onChange={(e) => setTask(e.target.value)}
+              placeholder={cloud ? 'What should Claude do in the cloud?' : 'What should Claude do? (optional)'}
               rows={3}
               className="w-full bg-bg border border-border rounded-md text-xs text-text focus:outline-none focus:border-accent font-mono resize-y"
               style={{ padding: '6px 10px' }}
             />
             <p className="text-[10px] text-text-muted mt-1">
-              A cloud session starts with a task{prompts.length > 0 ? ' — type one, or pick a startup prompt above' : ''}.
+              {cloud
+                ? `A cloud session starts with a task${prompts.length > 0 ? ' — type one, or pick a startup prompt above' : ''}.`
+                : 'Optional: sent as the first prompt once Claude is ready. Leave blank to start with an empty prompt.'}
             </p>
           </div>
         )}

@@ -43,7 +43,7 @@ export const CloudDefault: Story = {
   args: { project: PROJECT },
 }
 
-/** A project whose default session location is Local. */
+/** A project whose default session location is Local, with the optional Task box. */
 export const Local: Story = {
   args: { project: { ...PROJECT, defaultSessionLocation: 'local' } },
 }
