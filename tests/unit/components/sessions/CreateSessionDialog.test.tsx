@@ -34,7 +34,6 @@ describe('<CreateSessionDialog> location toggle', () => {
   it('defaults to Local when the project opted out', () => {
     render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
     expect(radio('Local').getAttribute('aria-checked')).toBe('true')
-    expect(screen.queryByLabelText('Task')).toBeNull()
     expect(screen.getByRole('button', { name: 'Create' })).toBeTruthy()
   })
 
@@ -202,5 +201,62 @@ describe('<CreateSessionDialog> branch field', () => {
     render(<CreateSessionDialog open project={project()} onClose={() => {}} />)
     fireEvent.click(screen.getByLabelText('Schedule for later'))
     expect(screen.queryByLabelText('Branch')).toBeNull()
+  })
+})
+
+describe('<CreateSessionDialog> local task', () => {
+  it('offers an optional Task box for a local session', async () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    const task = screen.getByLabelText('Task') as HTMLTextAreaElement
+    expect(task.placeholder).toBe('What should Claude do? (optional)')
+    expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('names the session and branch from the typed task and sends it as the first prompt', async () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Task'), { target: { value: '  Fix the login redirect  ' } })
+    expect(screen.getByTestId('auto-naming-hint').textContent).toBe('The name and branch will be picked from the task.')
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('p1', '/repo', '', 'main', 'Fix the login redirect', undefined, {
+        branchName: undefined,
+        autoBranch: true,
+        mode: 'single-branch',
+      })
+    )
+  })
+
+  it('keeps a typed name and branch, and still sends the task', async () => {
+    render(<CreateSessionDialog open project={project({ defaultSessionLocation: 'local' })} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Session name'), { target: { value: 'login' } })
+    fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'fix/login' } })
+    fireEvent.change(screen.getByLabelText('Task'), { target: { value: 'Fix it' } })
+    expect(screen.queryByTestId('auto-naming-hint')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('p1', '/repo', 'login', 'main', 'Fix it', undefined, {
+        branchName: 'fix/login',
+        autoBranch: false,
+        mode: 'single-branch',
+      })
+    )
+  })
+
+  it('carries a task typed for the cloud over when switching to Local', async () => {
+    render(<CreateSessionDialog open project={project()} onClose={() => {}} />)
+    await waitFor(() => expect((window as any).api.git.defaultBranch).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Task'), { target: { value: 'Add dark mode' } })
+    fireEvent.click(radio('Local'))
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() =>
+      expect(createSession).toHaveBeenCalledWith('p1', '/repo', '', 'main', 'Add dark mode', undefined, {
+        branchName: undefined,
+        autoBranch: true,
+        mode: 'single-branch',
+      })
+    )
   })
 })
