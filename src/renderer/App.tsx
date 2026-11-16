@@ -12,6 +12,7 @@ import { useUsageStore } from './stores/usageStore'
 import { ResizeHandle, IconButton } from './components/ui'
 import { useProjectStore } from './stores/projectStore'
 import { useSessionStore } from './stores/sessionStore'
+import { relayCloudWebNotification } from './lib/cloudNotifications'
 import { useNotificationStore } from './stores/notificationStore'
 import { useTerminalStore } from './stores/terminalStore'
 import { usePRStore } from './stores/prStore'
@@ -214,6 +215,15 @@ export default function App() {
     })
     return () => { remove() }
   }, [clearContextStatuses])
+
+  // A cloud session's claude.ai page raised a web notification: replay it as a
+  // Crucible notification on the session it is about.
+  useEffect(() => {
+    const remove = window.api.notification.onCloudWebNotification((event) => {
+      void relayCloudWebNotification(event).catch((err) => console.warn('[cloud-notify]', err))
+    })
+    return remove
+  }, [])
 
   // Listen for usage updates pushed from the main process
   useEffect(() => {

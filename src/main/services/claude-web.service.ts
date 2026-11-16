@@ -14,7 +14,8 @@
  * - In-view navigation is limited to claude.ai / anthropic.com and the sign-in
  *   providers claude.ai uses; anything else opens in the system browser.
  * - Permission requests are denied except clipboard writes (the page's "copy"
- *   buttons).
+ *   buttons). The page's web notifications are relayed into Crucible instead
+ *   (claude-web-notifications), so the real permission stays denied.
  * - The partition reports a plain Chrome user agent: Google sign-in rejects
  *   user agents carrying an `Electron/x` token as "not a secure browser".
  *
@@ -26,7 +27,8 @@
  */
 import { app, session as electronSession, shell, type WebContents } from 'electron'
 import { AGENT_BROWSER_ENTRY_URL, isWebUrl, type AgentBrowserLinkEvent } from '../../shared/agent-browser'
-import { CLAUDE_WEB_PARTITION } from '../../shared/cloud-session'
+import { CLAUDE_WEB_PARTITION, type CloudWebNotificationEvent } from '../../shared/cloud-session'
+import { installNotificationRelay } from './claude-web-notifications'
 import { IPC } from '../../shared/constants'
 
 /** Hosts (and their subdomains) the embedded page may navigate to. */
@@ -277,6 +279,13 @@ export function installClaudeWebGuards(host: WebContents): void {
       if (!isWebUrl(url) || host.isDestroyed()) return openExternally(url)
       const link: AgentBrowserLinkEvent = { webContentsId: guest.id, url }
       host.send(IPC.AGENT_BROWSER_OPEN_LINK, link)
+    })
+    // The page's web notifications ("needs your input", "finished") are
+    // replayed by the renderer as Crucible notifications on their session.
+    installNotificationRelay(guest, (n) => {
+      if (host.isDestroyed()) return
+      const event: CloudWebNotificationEvent = { webContentsId: guest.id, ...n }
+      host.send(IPC.NOTIFICATION_CLOUD_WEB, event)
     })
   })
 }

@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import type { Session, PullRequest, SessionStatus } from '../../../shared/types'
+import type { CloudNotice } from '../../../shared/cloud-session'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu } from '../ui/DropdownMenu'
 import { Dialog } from '../ui/Dialog'
@@ -29,7 +30,31 @@ interface Props {
   assignablePRs?: PullRequest[]
   /** Assign a PR to the session, or with `null` clear it. */
   onAssignPR?: (prNumber: number | null) => Promise<void>
+  /** The latest notification the session's claude.ai page raised (cloud sessions). */
+  notice?: CloudNotice | null
 }
+
+const BellIcon = () => (
+  <svg
+    aria-hidden="true"
+    className="shrink-0"
+    width="10"
+    height="10"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+  </svg>
+)
+
+/** One line: "Title — body", or whichever of the two there is. */
+export const cloudNoticeText = (n: Pick<CloudNotice, 'title' | 'body'>): string =>
+  n.title && n.body ? `${n.title} — ${n.body}` : n.title || n.body
 
 const EllipsisIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -153,7 +178,7 @@ function StatusIndicator({ status }: { status: SessionStatus | null }) {
   }
 }
 
-export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, repoBranch, onClick, onOpenAsMainBranch, onDelete, onRename, assignablePRs, onAssignPR }: Props) {
+export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, repoBranch, onClick, onOpenAsMainBranch, onDelete, onRename, assignablePRs, onAssignPR, notice }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [showRename, setShowRename] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
@@ -242,6 +267,18 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, rep
             </span>
           )}
         </div>
+        {notice && (
+          <div
+            title={`From Claude Code on the web: ${cloudNoticeText(notice)}`}
+            data-testid="session-cloud-notice"
+            className={`mt-0.5 pr-5 flex items-center gap-1 text-[10px] max-w-full ${
+              notice.kind === 'completed' ? 'text-success' : 'text-warning'
+            }`}
+          >
+            <BellIcon />
+            <span className="truncate">{cloudNoticeText(notice)}</span>
+          </div>
+        )}
         {session.dispatchedBy && (
           <div
             title={`Started by the agent in "${session.dispatchedBy.name}"`}

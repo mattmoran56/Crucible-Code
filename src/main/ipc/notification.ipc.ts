@@ -7,6 +7,7 @@ import {
   registerContextMapping,
   removeContextMapping,
   handleHookEvent,
+  handleCloudWebNotification,
   setBadgeCount,
 } from '../services/notification-server'
 
@@ -22,6 +23,19 @@ export function registerNotificationHandlers() {
   handle(IPC.NOTIFICATION_SET_BADGE, async (_e, count: number) => {
     setBadgeCount(count)
   })
+
+  // A claude.ai page's web notification, attributed to a session by the renderer.
+  handle(
+    IPC.NOTIFICATION_CLOUD_RELAY,
+    async (_e, contextId: string | null, title: string, body: string, kind?: string) => {
+      handleCloudWebNotification(
+        typeof contextId === 'string' && contextId ? contextId : null,
+        String(title ?? ''),
+        String(body ?? ''),
+        kind === 'completed' ? 'completed' : 'attention'
+      )
+    }
+  )
 
   // Renderer fallback path. Caller passes contextId/tabId directly.
   handle(
