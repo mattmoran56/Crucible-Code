@@ -29,6 +29,11 @@ interface Props {
   assignablePRs?: PullRequest[]
   /** Assign a PR to the session, or with `null` clear it. */
   onAssignPR?: (prNumber: number | null) => Promise<void>
+  /**
+   * Turn audio mode on or off for this (local) session. Passed only while
+   * audio out is switched on in Settings → Audio.
+   */
+  onSetAudioMode?: (audioMode: boolean) => void
 }
 
 const EllipsisIcon = () => (
@@ -153,7 +158,7 @@ function StatusIndicator({ status }: { status: SessionStatus | null }) {
   }
 }
 
-export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, repoBranch, onClick, onOpenAsMainBranch, onDelete, onRename, assignablePRs, onAssignPR }: Props) {
+export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, repoBranch, onClick, onOpenAsMainBranch, onDelete, onRename, assignablePRs, onAssignPR, onSetAudioMode }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [showRename, setShowRename] = useState(false)
   const [renameValue, setRenameValue] = useState(session.name)
@@ -289,6 +294,14 @@ export function SessionCard({ session, isActive, isOpenedAsMain, status, pr, rep
             items={[
               ...(!isOpenedAsMain && !session.repoRoot ? [{ label: 'Open as main branch', onClick: onOpenAsMainBranch }] : []),
               { label: 'Rename', onClick: openRename },
+              ...(onSetAudioMode && session.location !== 'cloud'
+                ? [
+                    {
+                      label: session.audioMode ? 'Turn off audio mode' : 'Turn on audio mode',
+                      onClick: () => onSetAudioMode(!session.audioMode),
+                    },
+                  ]
+                : []),
               ...(onAssignPR
                 ? [
                     {

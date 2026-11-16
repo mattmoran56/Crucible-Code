@@ -14,6 +14,7 @@ import { canAssignSessionPR, withAssignedPR } from '../../shared/session-pr'
 import { useTerminalStore } from './terminalStore'
 import { useCloudSessionStore } from './cloudSessionStore'
 import { useVisualAgentStore } from './visualAgentStore'
+import { useAudioSettingsStore } from './audioSettingsStore'
 import { useProjectStore } from './projectStore'
 import { projectConfigDir } from '../lib/visualAgents'
 import { recoverAbandonedTeleports } from '../lib/teleportRecovery'
@@ -82,6 +83,12 @@ interface SessionState {
    * its agent in the project's main checkout, and open it.
    */
   createRepoAgent: (projectId: string, repoPath: string) => Promise<void>
+  /**
+   * Turn audio mode on or off for an existing local session. Saved on the
+   * session, and any of its open agents switch over straight away (relaunched
+   * on the same conversation so the system prompt follows).
+   */
+  setSessionAudioMode: (projectId: string, sessionId: string, audioMode: boolean) => Promise<void>
   /** Merge `patch` into one session and persist it (location, cloud link, …). */
   patchSession: (projectId: string, sessionId: string, patch: Partial<Omit<Session, 'id' | 'projectId'>>) => Promise<void>
   /**
@@ -438,6 +445,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       repoRoot: true,
       namePending: true,
     }
+    // Same default as the New Session dialog: Settings → Audio's "start in audio mode".
+    const audio = useAudioSettingsStore.getState()
+    if (audio.enabled && audio.defaultAudioMode) session.audioMode = true
     const sessions = sortByCreatedAtDesc([...get().sessions, session])
     await window.api.session.save(projectId, sessions)
     if (get().currentProjectId !== projectId) return
@@ -451,6 +461,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       detachedWorktree: null,
     })
     saveLastActiveContext(projectId, { sessionId: session.id, prNumber: null, prWorktreePath: null, openedAsMainBranch: null, previousMainBranch: null, detachedWorktree: null, didStash: false })
+  },
+
+  setSessionAudioMode: async (projectId, sessionId, audioMode) => {
+    const session = get().sessions.find((s) => s.id === sessionId)
+    if (!session || session.location === 'cloud') return
+    if ((session.audioMode === true) !== audioMode) {
+      const sessions = get().sessions.map((s) => {
+        if (s.id !== sessionId) return s
+        const next = { ...s }
+        if (audioMode) next.audioMode = true
+        else delete next.audioMode
+        return next
+      })
+      await window.api.session.save(projectId, sessions)
+      if (get().currentProjectId === projectId) set({ sessions })
+    }
+    await useVisualAgentStore.getState().setSessionAudioMode(sessionId, audioMode)
   },
 
   patchSession: async (projectId, sessionId, patch) => {

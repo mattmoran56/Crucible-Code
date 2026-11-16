@@ -138,6 +138,7 @@ function SessionBar({
   onEnd,
   onRestart,
   audio,
+  onAudioOn,
 }: {
   snap: VisualAgentSnapshot
   onInterrupt: () => void
@@ -145,6 +146,8 @@ function SessionBar({
   onRestart: () => void
   /** Set for an audio-mode session. */
   audio?: SessionBarAudio | null
+  /** Offered when audio out is on but this session is not in audio mode: switch it on. */
+  onAudioOn?: (() => void) | null
 }) {
   const [confirming, setConfirming] = useState(false)
   const state = STATE[snap.state]
@@ -184,7 +187,19 @@ function SessionBar({
 
       <span className="flex-1" />
 
-      {audio ? <AudioControls audio={audio} /> : null}
+      {audio ? (
+        <AudioControls audio={audio} />
+      ) : onAudioOn ? (
+        <button
+          type="button"
+          onClick={onAudioOn}
+          className={BAR_BTN}
+          data-testid="audio-mode-on"
+          title="Turn on audio mode: Claude writes for the ear and replies are read aloud (resumes this conversation)"
+        >
+          <Speaker size={11} /> Read aloud
+        </button>
+      ) : null}
 
       {isLive(snap.state) ? (
         <button type="button" onClick={onInterrupt} className={BAR_BTN} title="Stop this turn (Esc)">
@@ -269,7 +284,8 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
   const setDictation = useDictationStore((s) => s.setEnabled)
   const smartDictation = useDictationStore((s) => s.smart)
   const actions = useVisualAgentStore.getState()
-  const audioMode = startOptions.audioMode === true
+  // Live: audio mode can be switched on or off for a session that is already open.
+  const audioMode = useVisualAgentStore((s) => s.options[agentId]?.audioMode ?? startOptions.audioMode) === true
   const audioEnabled = useAudioSettingsStore((s) => s.enabled)
   const speakingHere = useSpeechStore((s) => s.speakingAgentId === agentId)
   const speakingKey = useSpeechStore((s) => (s.speakingAgentId === agentId ? s.speakingKey : null))
@@ -509,6 +525,14 @@ export function VisualAgentPanel({ agentId, startOptions, visible }: VisualAgent
         onEnd={() => void actions.stop(agentId)}
         onRestart={() => void actions.restart(agentId)}
         audio={audio}
+        onAudioOn={
+          audioEnabled && !audioMode
+            ? () => {
+                const session = useSessionStore.getState().sessions.find((x) => x.id === startOptions.sessionId)
+                if (session) void useSessionStore.getState().setSessionAudioMode(session.projectId, session.id, true)
+              }
+            : null
+        }
       />
 
       {error ? (

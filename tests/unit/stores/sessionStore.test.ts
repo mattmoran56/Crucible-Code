@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCloudSessionStore } from '../../../src/renderer/stores/cloudSessionStore'
 import { useSessionStore, nextRepoAgentName } from '../../../src/renderer/stores/sessionStore'
 import { useProjectStore } from '../../../src/renderer/stores/projectStore'
+import { useVisualAgentStore } from '../../../src/renderer/stores/visualAgentStore'
+import { useAudioSettingsStore } from '../../../src/renderer/stores/audioSettingsStore'
 
 const sessionApi = {
   list: vi.fn(),
@@ -1112,6 +1114,23 @@ describe('sessionStore repo-root agents', () => {
     expect(sessionApi.save).toHaveBeenCalledWith('p1', expect.arrayContaining([expect.objectContaining({ repoRoot: true })]))
   })
 
+  it('starts a repo-root agent in audio mode when audio out defaults new sessions to it', async () => {
+    useAudioSettingsStore.getState().reset({ enabled: true, defaultAudioMode: true })
+    try {
+      await useSessionStore.getState().createRepoAgent('p1', '/repo')
+      expect(useSessionStore.getState().sessions.find((s) => s.repoRoot)?.audioMode).toBe(true)
+    } finally {
+      useAudioSettingsStore.getState().reset()
+    }
+  })
+
+  it('leaves a repo-root agent out of audio mode when audio out is off', async () => {
+    useAudioSettingsStore.getState().reset({ enabled: false, defaultAudioMode: true })
+    await useSessionStore.getState().createRepoAgent('p1', '/repo')
+    expect(useSessionStore.getState().sessions.find((s) => s.repoRoot)?.audioMode).toBeUndefined()
+    useAudioSettingsStore.getState().reset()
+  })
+
   it('picks the first free agent-N name', () => {
     expect(nextRepoAgentName([S('a', { name: 'agent-1' }), S('b', { name: 'agent-3' })] as any)).toBe('agent-2')
   })
@@ -1310,5 +1329,37 @@ describe('sessionStore — naming a worktree session from its first prompt', () 
     expect(sessionApi.suggestName).not.toHaveBeenCalled()
     expect(only()).toMatchObject({ namePending: true, mode: 'orchestrator' })
     expect(only()).not.toHaveProperty('branchPending')
+  })
+})
+
+describe('sessionStore setSessionAudioMode', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ currentProjectId: 'p1', sessions: [S('s1'), S('c1', { location: 'cloud' })], activeSessionId: 's1' } as any)
+  })
+
+  it('turns audio mode on and off for an existing session and tells its open agents', async () => {
+    const spy = vi.spyOn(useVisualAgentStore.getState(), 'setSessionAudioMode').mockResolvedValue()
+    try {
+      await useSessionStore.getState().setSessionAudioMode('p1', 's1', true)
+      expect(useSessionStore.getState().sessions.find((s) => s.id === 's1')?.audioMode).toBe(true)
+      expect(sessionApi.save).toHaveBeenLastCalledWith('p1', expect.arrayContaining([expect.objectContaining({ id: 's1', audioMode: true })]))
+      expect(spy).toHaveBeenLastCalledWith('s1', true)
+      await useSessionStore.getState().setSessionAudioMode('p1', 's1', false)
+      expect(useSessionStore.getState().sessions.find((s) => s.id === 's1')).not.toHaveProperty('audioMode')
+      expect(spy).toHaveBeenLastCalledWith('s1', false)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('ignores cloud sessions', async () => {
+    const spy = vi.spyOn(useVisualAgentStore.getState(), 'setSessionAudioMode').mockResolvedValue()
+    try {
+      await useSessionStore.getState().setSessionAudioMode('p1', 'c1', true)
+      expect(useSessionStore.getState().sessions.find((s) => s.id === 'c1')?.audioMode).toBeUndefined()
+      expect(spy).not.toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

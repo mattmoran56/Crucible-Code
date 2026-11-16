@@ -244,6 +244,13 @@ interface VisualAgentStoreState {
   release: (agentId: string) => Promise<void>
   /** Release every agent started for a session (session deleted). */
   releaseSession: (sessionId: string) => Promise<void>
+  /**
+   * Turn audio mode on or off for a session's agents that are already open.
+   * Speech follows at once; the write-for-the-ear system prompt is a launch
+   * argument, so each live agent is relaunched on its same conversation: now
+   * when it is idle, else as soon as its current turn ends.
+   */
+  setSessionAudioMode: (sessionId: string, audioMode: boolean) => Promise<void>
   answer: (
     agentId: string,
     requestId: string,
@@ -274,6 +281,9 @@ export function addVisualAgentFrameListener(listener: FrameListener): () => void
   frameListeners.add(listener)
   return () => frameListeners.delete(listener)
 }
+
+/** Agents to relaunch (same conversation) once their turn ends: their system prompt changed. */
+const relaunchWhenIdle = new Set<string>()
 
 let unsubscribe: (() => void) | null = null
 const inFlight = new Map<string, Promise<void>>()
@@ -369,6 +379,9 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
           console.warn('[visual-agent] frame listener failed:', error)
         }
       }
+      if (frame.t === 'state' && frame.state === 'idle' && relaunchWhenIdle.delete(agentId)) {
+        void get().restart(agentId)
+      }
       // An answer is settled once its ask-result arrives.
       if (frame.t === 'event' && frame.event.kind === 'ask-result') {
         const ui = get().ui[agentId]
@@ -413,6 +426,7 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
     },
 
     restart: async (agentId, fresh = false) => {
+      relaunchWhenIdle.delete(agentId)
       const opts = get().options[agentId]
       const snap = get().agents[agentId]
       if (!opts) return
@@ -451,6 +465,7 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
     },
 
     release: async (agentId) => {
+      relaunchWhenIdle.delete(agentId)
       const wasHeld = started.has(agentId) || inFlight.has(agentId) || !!get().options[agentId]
       started.delete(agentId)
       if (!wasHeld) return
@@ -467,6 +482,32 @@ export const useVisualAgentStore = create<VisualAgentStoreState>((set, get) => {
         .filter((opts) => opts.sessionId === sessionId)
         .map((opts) => opts.agentId)
       await Promise.all(ids.map((id) => get().release(id)))
+    },
+
+    setSessionAudioMode: async (sessionId, audioMode) => {
+      const ids = Object.values(get().options)
+        .filter((opts) => opts.sessionId === sessionId && (opts.audioMode === true) !== audioMode)
+        .map((opts) => opts.agentId)
+      if (ids.length === 0) return
+      set((s) => {
+        const options = { ...s.options }
+        for (const id of ids) options[id] = { ...options[id], audioMode }
+        return { options }
+      })
+      await Promise.all(
+        ids.map(async (id) => {
+          if (!started.has(id) && !inFlight.has(id)) return
+          const state = get().agents[id]?.state
+          // Ended: the next restart launches with the new options anyway.
+          if (state === 'done' || state === 'failed') return
+          if (state === 'idle') {
+            relaunchWhenIdle.delete(id)
+            await get().restart(id)
+          } else {
+            relaunchWhenIdle.add(id)
+          }
+        }),
+      )
     },
 
     answer: async (agentId, requestId, decision, answers) => {

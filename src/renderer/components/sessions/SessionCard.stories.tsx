@@ -232,3 +232,24 @@ export const AudioMode: Story = {
     status: 'running',
   },
 }
+
+/** A no-worktree agent in audio mode, with the ⋯ menu's audio toggle (shown while audio out is on). */
+export const NoWorktreeAudioMode: Story = {
+  args: {
+    session: { ...baseSession, name: 'agent-1', branchName: '', repoRoot: true, audioMode: true },
+    repoBranch: 'main',
+    isActive: true,
+    status: 'completed',
+    onSetAudioMode: noop,
+  },
+}
+
+/** An existing session not in audio mode: its ⋯ menu offers Turn on audio mode. */
+export const AudioModeAvailable: Story = {
+  args: {
+    session: { ...baseSession, name: 'fix-login-redirect', branchName: 'fix/login-redirect' },
+    isActive: true,
+    status: 'completed',
+    onSetAudioMode: noop,
+  },
+}
