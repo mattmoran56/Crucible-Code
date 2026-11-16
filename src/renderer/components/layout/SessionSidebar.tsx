@@ -30,6 +30,7 @@ import { useMultiPanelResize } from '../../hooks/useMultiPanelResize'
 import { usePRDeskStore } from '../../stores/prDeskStore'
 import { DockBottomIcon } from '../prdesk/PRDeskBar'
 import { canAssignSessionPR, sessionPullRequest } from '../../../shared/session-pr'
+import { useAudioSettingsStore } from '../../stores/audioSettingsStore'
 
 const PR_POLL_INTERVAL = 30_000
 
@@ -44,7 +45,7 @@ const NewRepoAgentIcon = () => (
 
 export function SessionSidebar() {
   const { projects, activeProjectId } = useProjectStore()
-  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, assignSessionPR, openPR, openAsMainBranch, reconcilePRWorktrees, createRepoAgent } =
+  const { sessions, activeSessionId, activePRNumber, openedAsMainBranch, loadSessions, setActiveSession, removeSession, renameSession, assignSessionPR, openPR, openAsMainBranch, reconcilePRWorktrees, createRepoAgent, setSessionAudioMode } =
     useSessionStore()
   const { pullRequests, seenPRs, loading: prsLoading, loadPRs, loadSeenPRs, loadCurrentUser, markSeen, clear: clearPRs, currentUser } =
     usePRStore()
@@ -53,6 +54,7 @@ export function SessionSidebar() {
   const prListDisplayDefault = usePRListDisplayStore((s) => s.default)
   const prListDisplayByRepo = usePRListDisplayStore((s) => s.byRepo)
   const { clearContextStatuses, getContextStatus, registerSessions } = useNotificationStore()
+  const audioEnabled = useAudioSettingsStore((s) => s.enabled)
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showOpenBranch, setShowOpenBranch] = useState(false)
@@ -670,6 +672,9 @@ export function SessionSidebar() {
                       onOpenAsMainBranch={() => openAsMainBranch(activeProject.repoPath, session.id)}
                       onDelete={(opts) => removeSession(activeProject.id, activeProject.repoPath, session.id, opts)}
                       onRename={(newName) => renameSession(activeProject.id, activeProject.repoPath, session.id, newName)}
+                      {...(audioEnabled
+                        ? { onSetAudioMode: (on: boolean) => void setSessionAudioMode(activeProject.id, session.id, on) }
+                        : {})}
                       {...(canAssignSessionPR(session)
                         ? {
                             assignablePRs: pullRequests,

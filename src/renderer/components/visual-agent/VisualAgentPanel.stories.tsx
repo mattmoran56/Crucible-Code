@@ -24,15 +24,18 @@ function Seeded({
   snapshot,
   ui,
   audio,
+  audioOut,
 }: {
   snapshot: VisualAgentSnapshot
   ui?: Partial<VisualAgentUi>
   /** An audio-mode session, with audio out on and (optionally) this message being spoken. */
   audio?: { speakingKey: string | null }
+  /** Audio out is on in Settings but this session is not in audio mode (it offers Read aloud). */
+  audioOut?: boolean
 }) {
   const [ready, setReady] = useState(false)
   useLayoutEffect(() => {
-    useAudioSettingsStore.getState().reset({ enabled: !!audio })
+    useAudioSettingsStore.getState().reset({ enabled: !!audio || !!audioOut })
     useSpeechStore.setState({
       speakingAgentId: audio?.speakingKey ? snapshot.agentId : null,
       speakingKey: audio?.speakingKey ?? null,
@@ -260,4 +263,9 @@ export const AudioMode: Story = {
 /** An audio-mode session between replies: hover a message to replay it. */
 export const AudioModeIdle: Story = {
   args: { snapshot: audioSnapshot('story-audio-idle'), audio: { speakingKey: null } },
+}
+
+/** Audio out is on but this existing session started without it: Read aloud switches it over. */
+export const AudioAvailable: Story = {
+  args: { snapshot: audioSnapshot('story-audio-available'), audioOut: true },
 }

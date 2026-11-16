@@ -477,6 +477,25 @@ const targets: ScreenshotTarget[] = [
     viewport: { width: 320, height: 160 },
     delay: 500,
   },
+  {
+    name: 'audio-no-worktree-card',
+    storyId: 'sessions-sessioncard--no-worktree-audio-mode',
+    viewport: { width: 320, height: 160 },
+    delay: 500,
+  },
+  {
+    name: 'audio-turn-on-menu',
+    storyId: 'sessions-sessioncard--audio-mode-available',
+    viewport: { width: 360, height: 300 },
+    delay: 500,
+    clickSelector: 'button[aria-label="Actions for fix-login-redirect"]',
+  },
+  {
+    name: 'audio-read-aloud-button',
+    storyId: 'visual-agent-visualagentpanel--audio-available',
+    viewport: { width: 900, height: 560 },
+    delay: 1500,
+  },
 ]
 
 async function captureScreenshots() {

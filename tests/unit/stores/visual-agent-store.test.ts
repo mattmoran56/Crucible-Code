@@ -225,6 +225,46 @@ describe('store wiring', () => {
     expect(api.getState).toHaveBeenCalledTimes(1)
   })
 
+  it('setSessionAudioMode relaunches an idle agent at once with audio mode, on the same conversation', async () => {
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w' })
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 'other', sessionId: 'x', cwd: '/w' })
+    api.start.mockClear()
+    await useVisualAgentStore.getState().setSessionAudioMode('s', true)
+    expect(useVisualAgentStore.getState().options.a1.audioMode).toBe(true)
+    expect(useVisualAgentStore.getState().options.other.audioMode).toBeUndefined()
+    expect(api.stop).toHaveBeenCalledWith('a1')
+    expect(api.start).toHaveBeenCalledTimes(1)
+    expect(api.start).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: 'a1', audioMode: true, resumeClaudeSessionId: 'sid', fresh: false }))
+    // Already on: nothing to do.
+    await useVisualAgentStore.getState().setSessionAudioMode('s', true)
+    expect(api.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('setSessionAudioMode waits for a busy agent to finish its turn before relaunching', async () => {
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w', audioMode: true })
+    emit('a1', { t: 'state', state: 'running', turnStartedAt: 'T' })
+    api.start.mockClear()
+    await useVisualAgentStore.getState().setSessionAudioMode('s', false)
+    expect(useVisualAgentStore.getState().options.a1.audioMode).toBe(false)
+    expect(api.stop).not.toHaveBeenCalled()
+    emit('a1', { t: 'state', state: 'idle', turnStartedAt: null })
+    await vi.waitFor(() => expect(api.start).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'a1', audioMode: false })))
+    expect(api.stop).toHaveBeenCalledWith('a1')
+    // Only once: a later idle does not relaunch again.
+    emit('a1', { t: 'state', state: 'idle', turnStartedAt: null })
+    expect(api.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('setSessionAudioMode leaves an ended agent for its next restart', async () => {
+    api.start.mockResolvedValueOnce(snap({ agentId: 'a1', state: 'done', claudeSessionId: 'sid' }))
+    await useVisualAgentStore.getState().ensureStarted({ agentId: 'a1', sessionId: 's', cwd: '/w' })
+    api.start.mockClear()
+    await useVisualAgentStore.getState().setSessionAudioMode('s', true)
+    expect(api.start).not.toHaveBeenCalled()
+    await useVisualAgentStore.getState().restart('a1')
+    expect(api.start).toHaveBeenLastCalledWith(expect.objectContaining({ audioMode: true }))
+  })
+
   it('release stops the agent and a later ensureStarted respawns it rather than re-reading the ended snapshot', async () => {
     const opts = { agentId: 'a1', sessionId: 's', cwd: '/w' }
     await useVisualAgentStore.getState().ensureStarted(opts)
