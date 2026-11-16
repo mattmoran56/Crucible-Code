@@ -190,4 +190,14 @@ describe('SessionCard', () => {
       expect(onAssignPR).toHaveBeenCalledWith(null)
     })
   })
+
+  it("shows the latest claude.ai notification on a cloud session's card", () => {
+    render(
+      <SessionCard
+        {...baseProps}
+        notice={{ title: 'Claude needs your input', body: 'Approve running npm test?', kind: 'attention', at: 0 }}
+      />,
+    )
+    expect(screen.getByTestId('session-cloud-notice')).toHaveTextContent('Claude needs your input — Approve running npm test?')
+  })
 })

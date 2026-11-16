@@ -67,6 +67,15 @@ export const Attention: Story = {
   args: { status: 'attention' },
 }
 
+/** A cloud session whose claude.ai page notified: status dot plus what it said. */
+export const CloudNotification: Story = {
+  args: {
+    session: { ...baseSession, location: 'cloud', cloud: { sessionId: 'session_01Hx7QmCloudDemo', url: 'https://claude.ai/code/session_01Hx7QmCloudDemo' } },
+    status: 'attention',
+    notice: { title: 'Claude needs your input', body: 'Approve running npm test?', kind: 'attention', at: 0 },
+  },
+}
+
 export const Completed: Story = {
   args: { status: 'completed' },
 }

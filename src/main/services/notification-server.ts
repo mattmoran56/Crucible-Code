@@ -146,6 +146,32 @@ export function handleHookEvent(
   }
 }
 
+/**
+ * Replay a notification a cloud session's claude.ai page raised (see
+ * claude-web-notifications) as a Crucible one. With a known session it is
+ * routed like a hook event on that session's Agent tab — the session card
+ * shows attention / completed and a click on the OS notification opens the
+ * session — but the OS notification carries claude.ai's own words. Without a
+ * session (a cloud session the app doesn't track) it is shown as is.
+ */
+export function handleCloudWebNotification(
+  contextId: string | null,
+  title: string,
+  body: string,
+  kind: 'attention' | 'completed' = 'attention'
+) {
+  const heading = title || 'Claude Code on the web'
+  const mapping = contextId ? contextMappings.get(contextId) : undefined
+  if (!contextId || !mapping) {
+    showNotification(heading, body)
+    return
+  }
+  const hookType: HookType = kind === 'completed' ? 'stop' : 'notification'
+  hookEvents.emit('hook', { contextId, tabId: 'agent', hookType })
+  if (mainWindow) emitToRenderer(mainWindow, IPC.NOTIFICATION_SESSION_STATUS, contextId, 'agent', hookType)
+  showNotification(`${contextDisplayPrefix(mapping)} · ${heading}`, body, { contextId, tabId: 'agent' })
+}
+
 export function startNotificationServer(window: BrowserWindow): Promise<number> {
   mainWindow = window
 

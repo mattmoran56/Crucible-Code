@@ -10,6 +10,7 @@ import { applyTeleportState } from '../../lib/cloudTeleport'
 import { projectConfigDir } from '../../lib/visualAgents'
 import { branchMismatchToast, reconcileTeleportBranch } from '../../lib/teleportBranch'
 import { useCloudSessionStore } from '../../stores/cloudSessionStore'
+import { useCloudNoticeStore } from '../../stores/cloudNoticeStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useSettingsStore } from '../../stores/settingsStore'
@@ -47,6 +48,7 @@ export function CloudAgentHost({
   embedWebview?: boolean
 }) {
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === sessionId))
+  const notice = useCloudNoticeStore((s) => s.notices[sessionId] ?? null)
   const project = useProjectStore((s) => s.projects.find((p) => p.id === session?.projectId))
   const accounts = useProjectStore((s) => s.claudeAccounts)
   const teleportTerminal = useCloudSessionStore((s) => s.teleports[sessionId] ?? null)
@@ -344,6 +346,8 @@ export function CloudAgentHost({
       branchNotice={branchNotice}
       onCleanupBranch={cleanupBranch}
       embedWebview={embedWebview}
+      notice={notice}
+      onDismissNotice={() => useCloudNoticeStore.getState().dismiss(session.id)}
     />
   )
 }

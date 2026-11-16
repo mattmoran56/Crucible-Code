@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/constants'
 import type { VisualAgentAskDecision, VisualAgentAttachment, VisualAgentFrame, VisualAgentSnapshot, VisualAgentStartOptions } from '../shared/visual-agent'
 import type { AgentBrowserLinkEvent } from '../shared/agent-browser'
+import type { CloudNoticeKind, CloudWebNotificationEvent } from '../shared/cloud-session'
 import type { TabStripGeometry } from '../shared/tab-drag'
 import type { DeskPR, DeskTicketRef, DeskTicketsResult } from '../shared/prDesk'
 import type { SessionDispatchRequest, SessionDispatchResponse } from '../shared/session-dispatch'
@@ -34,6 +35,7 @@ const onCloudCreateEvent = makeMultiplex<[CloudCreateState]>(IPC.CLOUD_SESSION_C
 const onCloudTeleportEvent = makeMultiplex<[CloudTeleportState]>(IPC.CLOUD_SESSION_TELEPORT_EVENT)
 const onSandboxerJobEvent = makeMultiplex<[SandboxJob]>(IPC.SANDBOXER_JOB_EVENT)
 const onAgentBrowserLink = makeMultiplex<[AgentBrowserLinkEvent]>(IPC.AGENT_BROWSER_OPEN_LINK)
+const onCloudWebNotification = makeMultiplex<[CloudWebNotificationEvent]>(IPC.NOTIFICATION_CLOUD_WEB)
 
 const api = {
   git: {
@@ -224,6 +226,16 @@ const api = {
       ipcRenderer.invoke('notification:unregister-session', contextId),
     setBadge: (count: number) =>
       ipcRenderer.invoke(IPC.NOTIFICATION_SET_BADGE, count),
+    /** A cloud session's claude.ai page raised a web notification. */
+    onCloudWebNotification: (cb: (event: CloudWebNotificationEvent) => void): (() => void) =>
+      onCloudWebNotification(cb),
+    /**
+     * Replay a claude.ai notification as a Crucible one: on `contextId`'s Agent
+     * tab (attention / completed status, click focuses it), or with no session
+     * when it is about a cloud session the app doesn't have.
+     */
+    relayCloudNotification: (contextId: string | null, title: string, body: string, kind: CloudNoticeKind) =>
+      ipcRenderer.invoke(IPC.NOTIFICATION_CLOUD_RELAY, contextId, title, body, kind),
   },
 
   project: {

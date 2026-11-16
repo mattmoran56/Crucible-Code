@@ -7,7 +7,7 @@
 
 import React, { useState } from 'react'
 import type { CloudTeleportState, Session } from '../../../shared/types'
-import { shortCloudId } from '../../../shared/cloud-session'
+import { shortCloudId, type CloudNotice } from '../../../shared/cloud-session'
 import { cn } from '../../lib/cn'
 import { TerminalView } from '../terminal/TerminalView'
 import { Spinner } from '../visual-agent/icons'
@@ -95,7 +95,14 @@ export interface CloudAgentPanelProps {
   onToggleCli?: () => void
   /** End the local CLI (the cloud session keeps running). */
   onCloseCli?: () => void
+  /** The latest notification the session's claude.ai page raised, relayed into Crucible. */
+  notice?: CloudNotice | null
+  /** Hide the notice. */
+  onDismissNotice?: () => void
 }
+
+const formatNoticeTime = (at: number): string =>
+  new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 export function CloudAgentPanel({
   session,
@@ -123,6 +130,8 @@ export function CloudAgentPanel({
   showingCli,
   onToggleCli,
   onCloseCli,
+  notice,
+  onDismissNotice,
 }: CloudAgentPanelProps) {
   const [confirming, setConfirming] = useState(false)
   const cloud = session.cloud
@@ -232,6 +241,27 @@ export function CloudAgentPanel({
           </button>
           {onDismissIncomplete ? (
             <button type="button" onClick={onDismissIncomplete} className={BAR_BTN}>
+              Dismiss
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {notice && !teleported ? (
+        <div
+          role="status"
+          className={cn(
+            'flex shrink-0 items-center gap-2 border-b px-3! py-1.5! text-[11.5px] text-text',
+            notice.kind === 'completed' ? 'border-success/50 bg-success/10' : 'border-warning/50 bg-warning/10',
+          )}
+          data-testid="cloud-notice"
+        >
+          <span className="min-w-0 flex-1 truncate" title={notice.body || notice.title}>
+            <span className="font-medium">{notice.title || 'Claude Code on the web'}</span>
+            {notice.body ? <span className="text-text-muted"> — {notice.body}</span> : null}
+          </span>
+          <span className="shrink-0 text-[10.5px] text-text-muted tabular-nums">{formatNoticeTime(notice.at)}</span>
+          {onDismissNotice ? (
+            <button type="button" onClick={onDismissNotice} className={BAR_BTN}>
               Dismiss
             </button>
           ) : null}

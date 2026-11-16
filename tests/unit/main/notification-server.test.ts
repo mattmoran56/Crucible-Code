@@ -116,3 +116,22 @@ describe('notification-server /hook endpoint', () => {
     expect(received).toEqual(['ctx-1|agent:2|stop'])
   })
 })
+
+describe('notification-server handleCloudWebNotification', () => {
+  it("routes a known session's claude.ai notification to its Agent tab", async () => {
+    const { handleCloudWebNotification } = await import('../../../src/main/services/notification-server')
+    registerContextMapping({ contextId: 'cloud-1', name: 'Cloud', kind: 'session', projectId: 'p', worktreePath: '/w' })
+    const received: Array<{ contextId: string; tabId: string; hookType: string }> = []
+    const off = onHookEvent((e) => received.push(e))
+    handleCloudWebNotification('cloud-1', 'Claude needs your input', 'Approve?', 'attention')
+    handleCloudWebNotification('cloud-1', 'Session finished', '', 'completed')
+    handleCloudWebNotification(null, 'Other session', '', 'attention')
+    handleCloudWebNotification('unknown', 'Other session', '', 'attention')
+    expect(received).toEqual([
+      { contextId: 'cloud-1', tabId: 'agent', hookType: 'notification' },
+      { contextId: 'cloud-1', tabId: 'agent', hookType: 'stop' },
+    ])
+    off()
+    removeContextMapping('cloud-1')
+  })
+})
