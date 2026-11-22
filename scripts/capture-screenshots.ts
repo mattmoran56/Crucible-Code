@@ -395,6 +395,18 @@ const targets: ScreenshotTarget[] = [
     delay: 1500,
   },
   {
+    name: 'cloud-notification-agent-tab',
+    storyId: 'cloud-cloudagentpanel--notification-relayed',
+    viewport: { width: 1100, height: 420 },
+    delay: 800,
+  },
+  {
+    name: 'cloud-notification-session-card',
+    storyId: 'sessions-sessioncard--cloud-notification',
+    viewport: { width: 320, height: 200 },
+    delay: 500,
+  },
+  {
     name: 'cloud-relay-popover',
     storyId: 'layout-remotetogglepopover--open-cloud-connected',
     viewport: { width: 520, height: 720 },

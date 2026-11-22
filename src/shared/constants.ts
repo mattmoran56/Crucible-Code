@@ -59,6 +59,10 @@ export const IPC = {
   NOTIFICATION_GET_PORT: 'notification:get-port',
   NOTIFICATION_SET_BADGE: 'notification:set-badge',
   NOTIFICATION_FOCUS_REQUEST: 'notification:focus-request',
+  /** main → renderer: a cloud session's claude.ai page raised a web notification. */
+  NOTIFICATION_CLOUD_WEB: 'notification:cloud-web',
+  /** renderer → main: show a relayed claude.ai notification for a session (or none). */
+  NOTIFICATION_CLOUD_RELAY: 'notification:cloud-relay',
 
   // Projects (persisted via electron-store)
   PROJECT_LIST: 'project:list',

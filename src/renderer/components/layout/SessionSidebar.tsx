@@ -4,6 +4,7 @@ import { useProjectStore } from '../../stores/projectStore'
 import { usePRStore } from '../../stores/prStore'
 import { usePRReviewStore } from '../../stores/prReviewStore'
 import { useNotificationStore } from '../../stores/notificationStore'
+import { useCloudNoticeStore } from '../../stores/cloudNoticeStore'
 import { useEditorStore } from '../../stores/editorStore'
 import { editorContextIdFor } from '../editor/EditorWorkspace'
 import { useSessionViewStore } from '../../stores/sessionViewStore'
@@ -53,6 +54,7 @@ export function SessionSidebar() {
   const prListDisplayDefault = usePRListDisplayStore((s) => s.default)
   const prListDisplayByRepo = usePRListDisplayStore((s) => s.byRepo)
   const { clearContextStatuses, getContextStatus, registerSessions } = useNotificationStore()
+  const cloudNotices = useCloudNoticeStore((s) => s.notices)
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showOpenBranch, setShowOpenBranch] = useState(false)
@@ -660,6 +662,7 @@ export function SessionSidebar() {
                       isActive={!editorMode && session.id === activeSessionId}
                       isOpenedAsMain={session.id === openedAsMainBranch}
                       status={getContextStatus(session.id)}
+                      notice={cloudNotices[session.id] ?? null}
                       pr={sessionPullRequest(session, pullRequests)}
                       repoBranch={currentBranch}
                       onClick={() => {

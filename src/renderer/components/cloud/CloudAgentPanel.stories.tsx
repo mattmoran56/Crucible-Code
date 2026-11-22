@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import type { CloudTeleportState, Session } from '../../../shared/types'
+import type { CloudNotice } from '../../../shared/cloud-session'
 import { CloudAgentPanel, type BranchNotice, type CloudAgentPhase } from './CloudAgentPanel'
 
 /** A fixed cloud session — no clock-dependent fields, so baselines stay stable. */
@@ -100,6 +101,8 @@ interface StoryProps {
   teleportIncomplete?: boolean
   /** The main process's teleport run, for the Teleporting… view. */
   teleportRun?: Pick<CloudTeleportState, 'status' | 'steps'> & { error?: string }
+  /** A notification the claude.ai page raised, relayed into Crucible. */
+  notice?: CloudNotice
 }
 
 /** Spawns a fake PTY for the transcript (if any), then mounts the panel. */
@@ -116,6 +119,7 @@ function Harness({
   cliAttached,
   teleportIncomplete,
   teleportRun,
+  notice,
 }: StoryProps) {
   const [terminalId, setTerminalId] = useState<string | null>(null)
   const [ready, setReady] = useState(!transcript)
@@ -166,6 +170,8 @@ function Harness({
         showingCli={false}
         onToggleCli={noop}
         onCloseCli={noop}
+        notice={notice}
+        onDismissNotice={noop}
       />
     </div>
   )
@@ -272,6 +278,19 @@ export const TeleportEnded: Story = {
 /** A teleport abandoned before Claude saved anything: back on the cloud page, with a retry. */
 export const TeleportIncomplete: Story = {
   args: { phase: 'web', teleportIncomplete: true },
+}
+
+/** claude.ai notified that the session needs input: Crucible replays it and keeps it here. */
+export const NotificationRelayed: Story = {
+  args: {
+    phase: 'web',
+    notice: {
+      title: 'Claude needs your input',
+      body: 'Approve running `npm test -- --run` in session/fix-auth-refresh?',
+      kind: 'attention',
+      at: new Date('2026-10-21T08:52:00').getTime(),
+    },
+  },
 }
 
 /** The teleport checked out another branch: the session follows it; cleanup is offered. */
